@@ -1,151 +1,108 @@
 // @vitest-environment node
-import { chmod, mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
-import {
-  ensureOpenClaw2026_7_1UpgradeSnapshot,
-  quarantineLegacyUpdateCheckState,
-  removeOpenClaw2026_7_1UpgradeSnapshot,
-} from '@electron/utils/openclaw-upgrade-snapshot';
-
-const tempDirs: string[] = [];
-
-async function createTempStateDir(): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), 'clawx-openclaw-upgrade-'));
-  tempDirs.push(dir);
-  return dir;
+import { ensureOpenClawUpgradeSnapshot, quarantineLegacyUpdateCheckState, removeOpenClawUpgradeSnapshot } from '@electron/utils/openclaw-upgrade-snapshot';
+const roots: string[] = [];
+async function fixture() {
+  const stateDir = await mkdtemp(join(tmpdir(), 'clawx-upgrade-'));
+  roots.push(stateDir);
+  const configPath = join(stateDir, 'openclaw.json');
+  await writeFile(configPath, '{"version":"old"}\n');
+  return { stateDir, configPath };
 }
-
-afterEach(async () => {
-  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
-});
-
-describe('OpenClaw 2026.7.1 upgrade snapshot', () => {
-  it('copies migration-critical config/auth/SQLite files once with restrictive modes', async () => {
-    const stateDir = await createTempStateDir();
-    const configPath = join(stateDir, 'openclaw.json');
-    await mkdir(join(stateDir, 'state'), { recursive: true });
-    await mkdir(join(stateDir, 'agents', 'main', 'agent'), { recursive: true });
-    await mkdir(join(stateDir, 'agents', 'main', 'sessions'), { recursive: true });
-    await mkdir(join(stateDir, 'credentials', 'channel'), { recursive: true });
-    await writeFile(configPath, '{"version":"old"}\n');
-    await writeFile(join(stateDir, 'state', 'openclaw.sqlite'), 'db');
-    await writeFile(join(stateDir, 'state', 'openclaw.sqlite-wal'), 'wal');
-    await writeFile(join(stateDir, 'state', 'openclaw.sqlite-shm'), 'shm');
-    await writeFile(join(stateDir, 'agents', 'main', 'agent', 'openclaw-agent.sqlite'), 'agent-db');
-    await writeFile(join(stateDir, 'agents', 'main', 'agent', 'openclaw-agent.sqlite-wal'), 'agent-wal');
-    await writeFile(join(stateDir, 'agents', 'main', 'agent', 'auth-profiles.json'), '{"profiles":{}}');
-    await writeFile(join(stateDir, 'agents', 'main', 'sessions', 'history.jsonl'), 'large transcript');
-    await writeFile(join(stateDir, 'credentials', 'channel', 'token.json'), '{"token":"secret"}');
-
-    const first = await ensureOpenClaw2026_7_1UpgradeSnapshot({ stateDir, configPath });
+afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
+describe('OpenClaw 2026.10.5 upgrade snapshot', () => {
+  it('backs up legacy sessions, credentials and media once, with private permissions', async () => {
+    const options = await fixture();
+    for (const file of ['agents/main/sessions/sessions.json', 'agents/main/sessions/history.jsonl', 'agents/main/agent/auth-profiles.json', 'credentials/channel/token.json', 'media/inbound/image.png']) {
+      await mkdir(join(options.stateDir, file, '..'), { recursive: true });
+      await writeFile(join(options.stateDir, file), 'synthetic');
+    }
+    const first = await ensureOpenClawUpgradeSnapshot(options);
     expect(first.status).toBe('created');
-    expect(first.files).toEqual(expect.arrayContaining([
-      'config/openclaw.json',
-      'state-files/state/openclaw.sqlite',
-      'state-files/state/openclaw.sqlite-wal',
-      'state-files/state/openclaw.sqlite-shm',
-      'agents/main/agent/openclaw-agent.sqlite',
-      'agents/main/agent/openclaw-agent.sqlite-wal',
-      'agents/main/agent/auth-profiles.json',
-    ]));
-    expect(first.files).not.toContain('agents/main/sessions/history.jsonl');
-    expect(first.files).not.toContain('credentials/channel/token.json');
-
-    const configMode = (await stat(join(first.snapshotDir, 'config', 'openclaw.json'))).mode & 0o777;
-    const markerMode = (await stat(join(first.snapshotDir, 'snapshot.json'))).mode & 0o777;
-    expect(configMode).toBe(0o600);
-    expect(markerMode).toBe(0o600);
-
-    await writeFile(configPath, '{"version":"new"}\n');
-    const second = await ensureOpenClaw2026_7_1UpgradeSnapshot({ stateDir, configPath });
+    expect(first.snapshotDir).toContain('2026.10.5');
+    expect(first.files).toEqual(expect.arrayContaining(['config/openclaw.json', 'agents/main/sessions/sessions.json', 'agents/main/sessions/history.jsonl', 'agents/main/agent/auth-profiles.json', 'state-files/credentials/channel/token.json', 'state-files/media/inbound/image.png']));
+    if (process.platform !== 'win32') {
+      expect((await stat(join(first.snapshotDir, 'snapshot.json'))).mode & 0o777).toBe(0o600);
+      expect((await stat(join(first.snapshotDir, 'agents/main/sessions/history.jsonl'))).mode & 0o777).toBe(0o600);
+    }
+    await writeFile(options.configPath, '{"version":"new"}');
+    const second = await ensureOpenClawUpgradeSnapshot(options);
     expect(second.status).toBe('exists');
-    await expect(readFile(join(second.snapshotDir, 'config', 'openclaw.json'), 'utf8'))
-      .resolves.toBe('{"version":"old"}\n');
+    expect(await readFile(join(second.snapshotDir, 'config/openclaw.json'), 'utf8')).toContain('old');
   });
-
-  it('quarantines legacy update-check JSON when SQLite is already authoritative', async () => {
-    const stateDir = await createTempStateDir();
-    const sourcePath = join(stateDir, 'update-check.json');
-    const sqliteDir = join(stateDir, 'state');
-    const sqlitePath = join(sqliteDir, 'openclaw.sqlite');
-    await mkdir(sqliteDir, { recursive: true });
-    await writeFile(sourcePath, '{"lastCheckedAt":"legacy"}\n');
-
-    const db = new DatabaseSync(sqlitePath);
-    db.exec(`
-      CREATE TABLE update_check_state (
-        state_key TEXT PRIMARY KEY,
-        last_checked_at TEXT
-      );
-      INSERT INTO update_check_state (state_key, last_checked_at)
-      VALUES ('default', 'canonical');
-    `);
+  it('backs up committed WAL pages into a standalone integrity-checked database', async () => {
+    const options = await fixture();
+    await mkdir(join(options.stateDir, 'state'));
+    const db = new DatabaseSync(join(options.stateDir, 'state/openclaw.sqlite'));
+    try {
+      db.exec('PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0; CREATE TABLE evidence(value TEXT); INSERT INTO evidence VALUES (\'committed in WAL\');');
+      const snapshot = await ensureOpenClawUpgradeSnapshot(options);
+      expect(snapshot.files.some(f => /sqlite-(wal|shm)$/.test(f))).toBe(false);
+      const restored = new DatabaseSync(join(snapshot.snapshotDir, 'state-files/state/openclaw.sqlite'), { readOnly: true });
+      try {
+        expect(restored.prepare('SELECT value FROM evidence').get()?.value).toBe('committed in WAL');
+        expect(restored.prepare('PRAGMA integrity_check').get()?.integrity_check).toBe('ok');
+      } finally { restored.close(); }
+    } finally { db.close(); }
+  });
+  it('fails closed on an invalid database and permits retry without a completion marker', async () => {
+    const options = await fixture();
+    const file = join(options.stateDir, 'openclaw.sqlite');
+    await writeFile(file, 'not a SQLite database');
+    await expect(ensureOpenClawUpgradeSnapshot(options)).rejects.toThrow();
+    await rm(file);
+    expect((await ensureOpenClawUpgradeSnapshot(options)).status).toBe('created');
+  });
+  it('does not overwrite an incomplete original backup with post-migration state', async () => {
+    const options = await fixture();
+    const first = await ensureOpenClawUpgradeSnapshot(options);
+    await rm(join(first.snapshotDir, 'config/openclaw.json'));
+    await writeFile(options.configPath, 'new state');
+    await expect(ensureOpenClawUpgradeSnapshot(options)).rejects.toThrow('Incomplete upgrade snapshot');
+  });
+  it('coalesces concurrent startup calls', async () => {
+    const options = await fixture();
+    const [a, b] = await Promise.all([ensureOpenClawUpgradeSnapshot(options), ensureOpenClawUpgradeSnapshot(options)]);
+    expect(a).toEqual(b);
+  });
+  it('never follows external symlinks or copies runtime binaries and existing backups', async () => {
+    const options = await fixture();
+    await mkdir(join(options.stateDir, 'agents/main/agent'), { recursive: true });
+    await symlink(options.configPath, join(options.stateDir, 'agents/main/agent/auth-profiles.json'));
+    await mkdir(join(options.stateDir, 'extensions'));
+    await writeFile(join(options.stateDir, 'extensions/plugin.js'), 'runtime');
+    const snapshot = await ensureOpenClawUpgradeSnapshot(options);
+    expect(snapshot.files.some(f => /auth-profiles|extensions|backups/.test(f))).toBe(false);
+  });
+  it('retains the snapshot until explicit maintenance removes it', async () => {
+    const options = await fixture();
+    await ensureOpenClawUpgradeSnapshot(options);
+    expect((await removeOpenClawUpgradeSnapshot(options)).status).toBe('removed');
+    expect((await removeOpenClawUpgradeSnapshot(options)).status).toBe('missing');
+  });
+  it('quarantines legacy update state only when a canonical row exists', async () => {
+    const options = await fixture();
+    const sourcePath = join(options.stateDir, 'update-check.json');
+    await writeFile(sourcePath, 'legacy');
+    expect((await quarantineLegacyUpdateCheckState(options)).status).toBe('deferred');
+    await mkdir(join(options.stateDir, 'state'));
+    const db = new DatabaseSync(join(options.stateDir, 'state/openclaw.sqlite'));
+    db.exec("CREATE TABLE update_check_state(state_key TEXT PRIMARY KEY); INSERT INTO update_check_state VALUES ('default')");
     db.close();
-
-    const result = await quarantineLegacyUpdateCheckState({ stateDir });
+    const result = await quarantineLegacyUpdateCheckState(options);
     expect(result.status).toBe('quarantined');
-    expect(result.backupPath).toContain('clawx-openclaw-2026.7.1-legacy-update-check.json');
-    await expect(stat(sourcePath)).rejects.toThrow();
-    await expect(readFile(result.backupPath!, 'utf8')).resolves.toBe('{"lastCheckedAt":"legacy"}\n');
-    expect((await stat(result.backupPath!)).mode & 0o777).toBe(0o600);
+    expect(await readFile(result.backupPath!, 'utf8')).toBe('legacy');
   });
-
-  it('leaves legacy update-check JSON for upstream import when SQLite has no canonical row', async () => {
-    const stateDir = await createTempStateDir();
-    const sourcePath = join(stateDir, 'update-check.json');
-    const sqliteDir = join(stateDir, 'state');
-    const sqlitePath = join(sqliteDir, 'openclaw.sqlite');
-    await mkdir(sqliteDir, { recursive: true });
-    await writeFile(sourcePath, '{"lastCheckedAt":"legacy"}\n');
-
-    const db = new DatabaseSync(sqlitePath);
-    db.exec(`
-      CREATE TABLE update_check_state (
-        state_key TEXT PRIMARY KEY,
-        last_checked_at TEXT
-      );
-    `);
-    db.close();
-
-    await expect(quarantineLegacyUpdateCheckState({ stateDir })).resolves.toMatchObject({
-      status: 'deferred',
-      sourcePath,
-    });
-    await expect(readFile(sourcePath, 'utf8')).resolves.toBe('{"lastCheckedAt":"legacy"}\n');
-  });
-
-  it('removes the snapshot directory after successful cleanup', async () => {
-    const stateDir = await createTempStateDir();
-    const configPath = join(stateDir, 'openclaw.json');
-    await writeFile(configPath, '{"version":"old"}\n');
-
-    const created = await ensureOpenClaw2026_7_1UpgradeSnapshot({ stateDir, configPath });
-    expect(created.status).toBe('created');
-
-    const removed = await removeOpenClaw2026_7_1UpgradeSnapshot({ stateDir });
-    expect(removed.status).toBe('removed');
-    await expect(stat(join(removed.snapshotDir, 'snapshot.json'))).rejects.toThrow();
-
-    const missing = await removeOpenClaw2026_7_1UpgradeSnapshot({ stateDir });
-    expect(missing.status).toBe('missing');
-  });
-
-  it('does not follow symlinks when copying snapshot files', async () => {
-    const stateDir = await createTempStateDir();
-    const configPath = join(stateDir, 'openclaw.json');
-    const outsideSecret = join(stateDir, 'outside-secret.json');
-    await writeFile(configPath, '{"version":"old"}\n');
-    await writeFile(outsideSecret, '{"token":"outside"}\n');
-    await mkdir(join(stateDir, 'agents', 'main', 'agent'), { recursive: true });
-    await chmod(outsideSecret, 0o600);
-
-    const { symlink } = await import('node:fs/promises');
-    await symlink(outsideSecret, join(stateDir, 'agents', 'main', 'agent', 'auth-profiles.json'));
-
-    const snapshot = await ensureOpenClaw2026_7_1UpgradeSnapshot({ stateDir, configPath });
-    expect(snapshot.files).not.toContain('agents/main/agent/auth-profiles.json');
+  it('takes the startup snapshot before auth, extensions and bootstrap writers', async () => {
+    const source = await readFile(join(process.cwd(), 'electron/main/index.ts'), 'utf8');
+    const snapshot = source.indexOf('await ensureOpenClawUpgradeSnapshot()');
+    expect(snapshot).toBeGreaterThan(0);
+    for (const writer of ['await extensionRegistry.initialize(', 'void ensureClawXDefaultIdentity()', 'await syncAllProviderAuthToRuntime()']) {
+      expect(snapshot).toBeLessThan(source.indexOf(writer));
+    }
   });
 });

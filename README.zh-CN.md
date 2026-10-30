@@ -40,7 +40,7 @@
 
 无论是自动化工作流、连接通讯软件，还是调度智能定时任务，ClawX 都能提供高效易用的图形界面，帮助你充分发挥 AI 智能体的能力。
 
-ClawX 预置了最佳实践的模型供应商配置，原生支持 Windows 平台以及多语言设置。上下文压缩预留仅在模型显式配置上下文窗口时按其 25% 计算，缺少该元数据时使用保守的 50000 token 默认值；已完成的回合会通过摘要延续，而不会在压缩后逐字重放。开发者模式会显示实际应用的预留值。当然，你也可以通过 **设置 → 高级 → 开发者模式** 来进行精细的高级配置。
+ClawX 预置了最佳实践的模型供应商配置，原生支持 Windows 平台以及多语言设置。上下文压缩预留由 OpenClaw 自行计算；已完成的回合会通过摘要延续，而不会在压缩后逐字重放。当然，你也可以通过 **设置 → 高级 → 开发者模式** 来进行精细的高级配置。
 
 <p align="center"><strong style="font-size:1.1em; text-decoration: underline;">如需完整的企业版、专属服务支持或面向您业务场景的定制化落地辅导，请联系 <a href="mailto:public@valuecell.ai">public@valuecell.ai</a>。</strong></p>
 
@@ -80,9 +80,9 @@ ClawX 预置了最佳实践的模型供应商配置，原生支持 Windows 平�
 - **🎙️ 语音转文字输入（开发者模式）**：在“设置”中开启**开发者模式**后，可在聊天输入框点击麦克风按钮进行语音口述，录音经自定义的语音转写服务识别后插入光标处。前往 **模型 → 语音转写** 选择 API 类型（OpenAI Audio Transcriptions 或 OpenAI Chat Completions 的 `input_audio` 方式）及对应服务商预设（OpenAI / Groq / 硅基流动 / 阿里云百炼 / 自定义）并配置 API Key。
   - 点击麦克风时会检查权限。若访问被拒绝，对话框提供「打开系统设置」操作；策略限制可能需要管理员处理。macOS 用户请在「隐私与安全性 → 麦克风」中启用 ClawX，然后完全退出并重启。开发环境中权限可能属于启动它的 IDE 或终端，也需要重启。Windows 用户需允许桌面应用访问麦克风。关闭对话框后再次点击麦克风重试，录音不会自动开始。
 - **🤖 Agent 生命周期管理**：可在桌面端创建和管理专用 Agent。删除非默认 Agent 时必须明确确认；此操作会永久删除其由 ClawX 管理的工作空间及所有关联聊天记录，相关会话和已删除的工作空间条目会立即从聊天界面消失且无法恢复。
-- **🧰 导出问题现场**：使用侧边栏快捷入口，或前往“设置 > 支持”查看导出内容，即可在桌面生成包含已脱敏 OpenClaw 配置和可用诊断日志的 ZIP。会话为可选项；如有选择，则一并包含可用的会话 JSONL，完成后 ClawX 会显示保存路径。
+- **🧰 导出问题现场**：使用侧边栏快捷入口，或前往“设置 > 支持”查看导出内容，即可在桌面生成包含已脱敏 OpenClaw 配置和可用诊断日志（ClawX 日志、`~/.openclaw/logs`，以及 OpenClaw 临时目录中最新的运行日志，例如 Windows 上的 `%TEMP%\openclaw`）的 ZIP。会话为可选项；如有选择，则一并包含可用的会话 JSONL，完成后 ClawX 会显示保存路径。
 - **📡 多频道管理**：同时配置和监控多个 AI 频道，每个频道独立运行并支持多账号；内置腾讯官方个人微信渠道插件，以及映射到现有 `dingtalk` 身份的官方钉钉连接器。添加钉钉或升级已有钉钉配置后，ClawX 会配置随包提供的工作台 CLI，并提供可选的钉钉工作台 OAuth，用于日历、文档等 `dws` 技能；跳过授权不影响聊天，之后也可从已配置频道发起或取消授权。组织主管理员需要先在钉钉开发者后台开启“允许成员通过 CLI 访问其个人数据”。
-- **⏰ 定时任务自动化**：可视化定义触发器与时间间隔，让 AI 智能体 7×24 小时自动运行；支持周期（每小时/每天/工作日/每周/自定义 cron）与单次执行，并可将结果自动投递到外部频道。
+- **⏰ 定时任务自动化**：可视化定义触发器与时间间隔，让 AI 智能体 7×24 小时自动运行；支持周期（每小时/每天/工作日/每周/自定义 cron）与单次执行，并可将结果自动投递到外部频道。ClawX 会隐藏 OpenClaw 管理的内部维护作业，并默认关闭记忆梦境功能。
 - **🧩 可扩展技能系统**：本地优先的技能管理，扫描托管与 workspace 技能目录，无需依赖 Gateway 即可启用或停用技能；预装文档处理技能（`pdf`、`xlsx`、`docx`、`pptx`）。
 - **🔐 安全的供应商集成**：支持 OpenAI、Anthropic、Z.AI / GLM 等供应商，凭证经系统原生密钥链安全存储，同时提供自定义 Provider 与兼容网关的降级探测；中文界面的供应商目录还会提供 TokenDance，支持带 PKCE 与 ClawX 请求归因的浏览器 OAuth。在开发者模式下，请前往 **模型 → 图像生成** 配置生图端点；生成完成的图片会直接显示在聊天中，而不会暴露 OpenClaw 的原始 `MEDIA:` 路径。
 - **💻 本机 Computer Use**：在 macOS 13+（Intel 或 Apple 芯片）和 Windows x64 上，Agent 可通过内置的原生 CUA CLI 操作窗口、辅助功能元素、菜单和桌面，并验证结果。主显示器截图和输入能力继续保留。驱动在本机运行，不需要 OpenClaw 节点配对或运行时额外下载组件。
@@ -136,6 +136,14 @@ pnpm dev
 3. **技能包** – 选择适用于常见场景的预配置技能
 4. **验证** – 在进入主界面前测试你的配置
 
+### 升级已有 OpenClaw 数据
+
+ClawX 会在启动写入前，在 OpenClaw 状态目录下保留私有快照 `backups/clawx-openclaw-2026.10.5-pre-migration`。快照包含旧会话文件、认证和媒体，并通过 SQLite 在线备份纳入已提交的 WAL 数据。无法完成快照时停止启动；Gateway 就绪不会自动删除快照。OpenClaw 会先自行处理待完成的 schema 和旧版认证迁移，之后 ClawX 才同步供应商凭据，因此中断后可重试而不会先被 ClawX 改写迁移源文件。请在确认升级正常后再手动删除快照以回收空间。快照包含密钥，请勿分享。运行时二进制、符号链接目标和外部工作区不在快照范围内，手动回退前请另行备份。
+
+OpenClaw 2026.10.5 更换了两个渠道插件，ClawX 会在首次启动 Gateway 前完成迁移。QQ 机器人从 `@openclaw/qqbot` 切换到腾讯 QQBot 2.0（`@tencent-connect/openclaw-qqbot`，插件 id `openclaw-qqbot`），默认账号移到 `channels.qqbot` 顶层，原本开放的私聊保持开放（使用审批标记 `openclaw:approval-disabled`）。带审批、密钥文件或群命令策略的 QQ 机器人配置交给 OpenClaw Doctor 处理。飞书从 `@larksuite/openclaw-lark` 切换到官方 `@openclaw/feishu`，应用凭据保持不变；官方插件提供 14 个飞书工具（原为 39 个），不再提供日历、任务、用户 OAuth、表格和搜索类工具。
+
+OpenClaw 2026.10 要求对非官方安装的插件授权其能力。对于 ClawX 自带且已启用的插件（钉钉、企业微信、飞书、QQ 机器人和 OpenAI 图片中转），ClawX 会在 Gateway 启动前执行 `openclaw plugins enable --accept-capabilities` 完成授权。这只在这些插件安装或升级后发生，当次启动每个插件约多花 10 秒。ClawX 不会启用你关闭的插件，也不会替你自己安装的插件授权。
+
 ### 本机 Computer Use
 
 ClawX 内置 CUA SDK 和 Driver **0.37.0**。在 macOS 和 Windows 上，Main 的嵌入式 daemon 选项和 Gateway 启动的 CLI 环境均设置 `CUA_DRIVER_RS_TELEMETRY_ENABLED=false`，关闭 CUA 产品遥测。SDK 从 0.22.0 起允许此环境变量，取代了 0.21.0 仅关闭 CLI 遥测的临时方案。此设置不会修改系统环境变量、独立 CUA 安装的设置或 ClawX 自身的遥测偏好。
@@ -146,7 +154,7 @@ Windows 的 PE 控制台子系统转 GUI 补丁仍与遥测关闭设置一起保
 
 Computer Use 是可选功能，**默认关闭**，包括尚未明确选择的已有安装。请先在设置中开启**开发者模式**，再从侧边栏进入**操作计算机**页面启用此功能。开关在重启后保留。Electron Main 持有内置驱动服务并管理权限；关闭会停止该服务并删除私有连接描述符。该能力不涉及远程发现或 OpenClaw 节点配对。
 CUA 与 Gateway 独立初始化。Main 在 SDK 就绪握手后发布连接信息，启动预算为 8 秒，停止预算为 2 秒；退出应用会取消正在进行的原生启动。管理页自动刷新状态，显示启动进度和不可用原因，并提供**重试启动**，无需关闭再开启，也不会重新请求权限。
-Gateway 冷启动就绪等待有明确的 120 秒上限；如果自有进程仍存活但一直不提供就绪握手，Main 会先回收该进程，再安排恢复。
+Gateway 冷启动的就绪等待有明确上限，并按 Gateway 的输出计时：连续 180 秒没有输出，或总计超过 10 分钟，即判定启动失败。如果自有进程仍存活但一直不提供就绪握手，Main 会先回收该进程，再安排恢复。就绪超时不会触发 Doctor 修复。
 
 Agent 通过 OpenClaw 现有的 `exec` 工具调用内置原生 CUA CLI，再通过支持图片的 `read` 工具查看截图文件。此路径不再使用 ClawX 的 `computer` 工具、OpenClaw 插件或 MCP 代理。在受支持平台上可使用固定版本 CLI 的完整原生能力，包括窗口、辅助功能元素（AX）、菜单、浏览器操作和 `verify_state`，不再受 ClawX 自定义操作子集限制。主显示器截图、移动、点击、拖动、滚动、文本输入、组合键和有限时长等待继续可用；具体命令仍受平台、应用和系统权限限制。
 
@@ -182,7 +190,8 @@ ClawX 采用 **双进程 + Host API 统一接入架构**：React 渲染进程只
 - **进程模型**：Electron 主进程负责窗口、网关进程监控、系统集成与自动更新；OpenClaw Gateway 作为独立运行时进程提供 AI 编排、频道和技能能力；渲染层不直接访问本地端点。
 - **本机 Computer Use**：Electron Main 保留 `EmbeddedCuaDriverHost`、原生 SDK 加载、权限检查和 daemon 监督。`CLAWX_CUA_CONNECTION_FILE` 指向私有描述符 `{ v: 2, generation, driverVersion, binaryPath, socketPath }`。OpenClaw 现有的 `exec` 使用描述符中的内置程序绝对路径及显式 socket 调用 CLI，`read` 向模型提供截图。整个流程不使用自定义插件、MCP 代理、node host、配对或运行时下载。
 - **配置交付**：Gateway 运行时由 Main 使用 `config.get` / `config.set`，停止或启动中则更新解析后的 JSON5 配置；普通 Provider/Agent/Skill/模型修改不会替换进程，凭据通过 `secrets.reload` 热更新。连续三分钟没有已验证的 Gateway 活动后，ClawX 会验证核心 RPC，并且只重启其自身拥有且不可用的 Gateway 进程；外部管理的 Gateway 保留给用户手动恢复。
-- **ACP Chat**：Chat UI 基于 ACP ([Agent Client Protocol](https://agentclientprotocol.com)) 与 OpenClaw 交互，从而在高速迭代的 OpenClaw 前找到相对稳定的聊天协议面。ACP 走 Main 持有的 stdio bridge，支持配置热重载后的历史回放认证、跨页面持续流式输出，以及由 Main 验证和加载的媒体/附件/文件活动（Changes）展示。通过原生拖拽或文件选择器添加的文件直接引用其规范化源路径，不再创建 ClawX 暂存副本；有路径的图片会继续作为 ACP 资源链接传递，不会再被 OpenClaw 重新写入 `media/inbound`，因此源文件后续发生修改、移动或删除时会影响附件。剪贴板等没有稳定路径的字节附件仍使用受保护的临时暂存和内联图片传输。当 ACP 遗漏资源块时，经 OpenClaw internal-UI message 工具确认交付的生成文件（包括 Excel 工作簿）会恢复为附件卡片。当受保护的 Gateway 重启中断已接收的对话轮次时，补丁后的 OpenClaw 运行时会将恢复 run 显式关联到原 ACP prompt，使后续文本和工具活动继续进入同一个内存轮次；之后的历史回放也会以原生 ACP 更新恢复持久化的工具边界。如果最终答复持久化后再次重启导致终态通知丢失，按 run 和会话范围执行的结算会结束 pending prompt，避免 Chat 一直显示执行中。
+- **ACP Chat**：Chat UI 基于 ACP ([Agent Client Protocol](https://agentclientprotocol.com)) 与 OpenClaw 交互，从而在高速迭代的 OpenClaw 前找到相对稳定的聊天协议面。ACP 走 Main 持有的 stdio bridge，支持配置热重载后的历史回放认证、跨页面持续流式输出，以及由 Main 验证和加载的媒体/附件/文件活动（Changes）展示。通过原生拖拽或文件选择器添加的文件直接引用其规范化源路径，不再创建 ClawX 暂存副本；有路径的图片会继续作为 ACP 资源链接传递，不会再被 OpenClaw 重新写入 `media/inbound`，因此源文件后续发生修改、移动或删除时会影响附件。剪贴板等没有稳定路径的字节附件仍使用受保护的临时暂存和内联图片传输。当 ACP 遗漏资源块时，经 OpenClaw internal-UI message 工具确认交付的生成文件（包括 Excel 工作簿）会恢复为附件卡片。已确认接收的请求最多等待 Main 计算出的 8 分钟重启预算；未确认请求保留 5 秒断线期限。重连时，即使会话列表暂时缺项，界面也会保留正在执行的对话。当受保护的 Gateway 重启中断已接收的对话轮次时，补丁后的 OpenClaw 运行时会将恢复 run 显式关联到原 ACP prompt，使后续文本和工具活动继续进入同一个内存轮次；之后的历史回放也会以原生 ACP 更新恢复持久化的工具边界。如果最终答复持久化后再次重启导致终态通知丢失，按 run 和会话范围执行的结算会结束 pending prompt，避免 Chat 一直显示执行中。 Chat 回复中的显式本地文件链接可在点击后打开受会话校验的文件预览或系统应用，支持工作空间以外的文件；文件不可用时会显示提示。 工具卡片通过本地化名称和图标区分执行代码、执行命令与列出文件。 重新进入对话时，ACP 适配器还会把较新的离线完成消息从原生历史补回自身账本，后续继续聊天或重新加载时仍可显示，并避免重复。 手动和自动上下文压缩也会通过 ACP 展示生命周期，包括当前对话在外部触发的压缩。
+- **对话重连**：Gateway 重启后，新消息会等待 ACP 自身连接恢复，默认最多等待 60 秒，期间可以取消。错误提示会显示经过脱敏的具体原因和协议错误码。
 - **设计原则**：前端调用单一入口、Main 掌控传输策略、优雅恢复（重连/超时/退避）、安全存储与 CORS 安全。
 
 > 完整架构说明（进程图、配置协调、ACP 文件活动语义与 Gateway 排障）请参阅 [docs/zh-CN/architecture.md](docs/zh-CN/architecture.md)。
@@ -191,7 +200,7 @@ ClawX 采用 **双进程 + Host API 统一接入架构**：React 渲染进程只
 
 ### 前置要求
 
-- **Node.js**：22.22.3+ / 24.15.0+（推荐） / 25.9.0+
+- **Node.js**：24.16.0+（Node 24 LTS）或 26.1.0+（推荐 Node 26）；不支持 Node 22 / 23 / 25
 - **包管理器**：pnpm 9+
 - **Linux（Ubuntu/Debian）**：运行 Electron 前需先安装系统库，见 [docs/zh-CN/development.md](docs/zh-CN/development.md)
 

@@ -22,6 +22,7 @@ import {
   CUA_DRIVER_VERSION,
   resolveCuaDriverArtifact,
 } from './cua-driver-artifacts.mjs';
+import { downloadBufferWithRetry } from './download-with-retry.mjs';
 
 const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DEFAULT_OUTPUT_BASE = join(ROOT_DIR, 'resources', 'bin');
@@ -152,13 +153,7 @@ export async function installCuaDriverArtifact(target, options = {}) {
   const artifact = options.artifact ?? resolveCuaDriverArtifact(target);
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   const outputBase = options.outputBase ?? DEFAULT_OUTPUT_BASE;
-  const response = await fetchImpl(artifact.url);
-
-  if (!response.ok) {
-    throw new Error(`Failed to download ${artifact.asset}: ${response.status} ${response.statusText}`);
-  }
-
-  const archive = Buffer.from(await response.arrayBuffer());
+  const archive = await downloadBufferWithRetry(artifact.url, { fetchImpl, label: artifact.asset });
   const actualSha256 = createHash('sha256').update(archive).digest('hex');
   if (actualSha256 !== artifact.sha256) {
     throw new Error(

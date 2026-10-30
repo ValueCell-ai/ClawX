@@ -27,6 +27,7 @@ Standard dev commands are in `package.json` scripts and `README.md`. Key ones:
 
 ### Non-obvious caveats
 
+- **Node.js floor**: OpenClaw 2026.10.5 hard-requires Node `>=24.16.0 <25 || >=26.1.0` (Node 22, 23, and 25 are unsupported). Electron 41 embeds Node 24.18.0 and Windows packaged builds ship Node 24.18.1, so packaged Gateway launches satisfy the floor; a developer shell running `pnpm dev` must also use Node 24.16+ or the embedded Gateway exits during startup.
 - **pnpm version**: The exact pnpm version is pinned via `packageManager` in `package.json`. Use `corepack enable && corepack prepare` to activate the correct version before installing.
 - **Electron on headless Linux**: The dbus errors (`Failed to connect to the bus`) are expected and harmless in a headless/cloud environment. The app still runs fine with `$DISPLAY` set (e.g., `:1` via Xvfb/VNC).
 - **Performance profiling**: `pnpm run perf:chat` writes synthetic Renderer/Main CPU profiles and versioned metrics under ignored Playwright `test-results/`. For live Renderer CDP use `CLAWX_REMOTE_DEBUGGING_PORT=9223 pnpm dev`; for live Main inspection use `pnpm run profile:main` and port 9229.

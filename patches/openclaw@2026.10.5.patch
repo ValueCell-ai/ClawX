@@ -1,0 +1,2174 @@
+diff --git a/dist/agent-core-B94tJ7dr.mjs b/dist/agent-core-B94tJ7dr.mjs
+index 2a53cb90fe7b096afa825c2086dfc4d38b247b57..d6b7c68038521b42e723109358cc29979dd13309 100644
+--- a/dist/agent-core-B94tJ7dr.mjs
++++ b/dist/agent-core-B94tJ7dr.mjs
+@@ -2983,15 +2983,23 @@ function prepareCompaction(pathEntries, settings, requestState, constraints) {
+ 	const triggerUnitScale = !constraints?.budget && totalEstimatedTokens > 0 && Number.isFinite(totalEstimatedTokens) && Number.isFinite(contextUsage.usageTokens) ? Math.min(Math.max(1, settings.keepRecentTokens), Math.max(1, contextUsage.usageTokens / totalEstimatedTokens)) : 1;
+ 	const resetPreludeTokens = resetPreludeMessages.reduce((total, message) => total + estimateTokens(message), 0);
+ 	const keepRecentTokens = Math.min(Number.MAX_SAFE_INTEGER, settings.keepRecentTokens / triggerUnitScale + resetPreludeTokens);
+-	const cutPoint = findCutPoint(effectiveEntries, boundaryStart, boundaryEnd, keepRecentTokens, constraints);
+-	if (cutPoint.firstKeptEntryIndex === boundaryEnd) return err(new CompactionError("summarization_failed", "No complete recent message fits beside the foreground prompt, tools, and summary. Reduce the request or select a larger context window."));
++	// ClawX: keepRecentTokens=0 means "do not retain a recent tail"; summarize the
++	// whole completed turn and keep only its final entry as the new leaf.
++	const dropsCompletedTail = keepRecentTokens === 0;
++	const cutPoint = dropsCompletedTail ? {
++		firstKeptEntryIndex: boundaryEnd - 1,
++		turnStartIndex: -1,
++		isSplitTurn: false
++	} : findCutPoint(effectiveEntries, boundaryStart, boundaryEnd, keepRecentTokens, constraints);
++	if (!dropsCompletedTail && cutPoint.firstKeptEntryIndex === boundaryEnd) return err(new CompactionError("summarization_failed", "No complete recent message fits beside the foreground prompt, tools, and summary. Reduce the request or select a larger context window."));
+ 	const firstKeptEntry = effectiveEntries[cutPoint.firstKeptEntryIndex];
+ 	if (!firstKeptEntry?.id) return err(new CompactionError("invalid_session", "First kept entry has no UUID - session may need migration"));
+ 	const firstKeptEntryId = firstKeptEntry.id;
+-	const historyEnd = cutPoint.isSplitTurn ? cutPoint.turnStartIndex : cutPoint.firstKeptEntryIndex;
++	const historyEnd = dropsCompletedTail ? boundaryEnd : cutPoint.isSplitTurn ? cutPoint.turnStartIndex : cutPoint.firstKeptEntryIndex;
+ 	const messagesToSummarize = [...resetPreludeMessages];
+ 	const turnPrefixMessages = [];
+-	for (let i = boundaryStart; i < cutPoint.firstKeptEntryIndex; i++) {
++	const summarizeEnd = dropsCompletedTail ? historyEnd : cutPoint.firstKeptEntryIndex;
++	for (let i = boundaryStart; i < summarizeEnd; i++) {
+ 		const entry = effectiveEntries.at(i);
+ 		const msg = entry ? getMessageFromEntryForCompaction(entry) : void 0;
+ 		if (msg) (i < historyEnd ? messagesToSummarize : turnPrefixMessages).push(msg);
+diff --git a/dist/agent-events-CCeMHYh0.mjs b/dist/agent-events-CCeMHYh0.mjs
+index bce202b4e7f0d3f9e08104586ad31254f88aa738..b264108d35b99cc88a7f51f4744488de51e651f5 100644
+--- a/dist/agent-events-CCeMHYh0.mjs
++++ b/dist/agent-events-CCeMHYh0.mjs
+@@ -297,6 +297,8 @@ function enrichAgentEvent(state, event, claimId, expectedContext, reservedPublic
+ 	const agentId = event.agentId ?? routing?.agentId;
+ 	const enriched = {
+ 		...event,
++		// Producer-owned recovery admission is the sole source of this field.
++		resumedFromRunId: routing?.resumedFromRunId,
+ 		data,
+ 		sessionKey,
+ 		...sessionId ? { sessionId } : {},
+diff --git a/dist/agent-job-DleplIFW.mjs b/dist/agent-job-DleplIFW.mjs
+index b449c635637822c59a4ec9464986704f81e24731..6161a5d2fe2cbb7bee045f59911ba4a81ac2eb56 100644
+--- a/dist/agent-job-DleplIFW.mjs
++++ b/dist/agent-job-DleplIFW.mjs
+@@ -5,7 +5,7 @@ import { r as getAsyncWorkSignal } from "./async-work-scope-DDiH0P7W.mjs";
+ import { a as asOptionalRecord } from "./record-coerce-TIsquoVR.mjs";
+ import { t as setSafeTimeout } from "./timer-delay-D9eb6vIQ.mjs";
+ import { a as hasExecutionSettlement } from "./agent-run-terminal-outcome-Ccvy5spR.mjs";
+-import { f as getAgentRunLifecycleGeneration } from "./agent-run-registry-zReSioYT.mjs";
++import { h as listLiveAgentRunIds, u as getAgentRunContext, f as getAgentRunLifecycleGeneration } from "./agent-run-registry-zReSioYT.mjs";
+ import { m as onAgentEvent } from "./agent-events-CCeMHYh0.mjs";
+ import { H as normalizeAgentRunTerminalReceipt, L as mergeAgentRunTerminalReplySnapshot, R as normalizeAgentRunTerminalReplySnapshot } from "./subagent-session-read-scope-BxmKFZMd.mjs";
+ import { r as formatErrorMessageForDisplay } from "./error-diagnostics-BHdMc4ot.mjs";
+@@ -102,6 +102,7 @@ function mergeSnapshot(existing, incoming) {
+ 	const terminalReceipt = incoming.terminalReceipt ?? existing.terminalReceipt;
+ 	return {
+ 		...canonical,
++		resumedFromRunId: incoming.resumedFromRunId ?? existing.resumedFromRunId,
+ 		...terminalDelivery ? { terminalDelivery } : {},
+ 		...terminalReceipt ? { terminalReceipt } : {},
+ 		...terminalReply ? { terminalReply } : {},
+@@ -201,6 +202,7 @@ function createSnapshotFromLifecycleEvent(params) {
+ 	const terminalReceipt = normalizedTerminalReceipt?.runId === runId ? normalizedTerminalReceipt : void 0;
+ 	return {
+ 		runId,
++		resumedFromRunId: params.resumedFromRunId,
+ 		source: "lifecycle",
+ 		session: params.session,
+ 		recordedAt: Date.now(),
+@@ -235,6 +237,7 @@ function ensureAgentRunListener() {
+ 			runId: evt.runId,
+ 			phase,
+ 			data: evt.data,
++			resumedFromRunId: evt.resumedFromRunId,
+ 			session: captureAgentJobSession(evt)
+ 		});
+ 		agentRunStarts.delete(evt.runId);
+@@ -372,6 +375,27 @@ function addAgentRunWaiter(runId, waiter) {
+ 		}
+ 	};
+ }
++// ClawX: locate only explicit admitted successors, including already-finished runs.
++function resolveAgentRecoveryWaitTarget(runId, sessionKey) {
++	if (!sessionKey) return runId;
++	pruneAgentRunCache();
++	const candidates = new Map();
++	for (const id of listLiveAgentRunIds()) {
++		const context = getAgentRunContext(id);
++		if (context?.sessionKey === sessionKey && context.resumedFromRunId) candidates.set(id, context.resumedFromRunId);
++	}
++	for (const [id, job] of agentJobs) for (const snapshot of job.snapshotsBySource.values()) {
++		if (snapshot.session?.sessionKey === sessionKey && snapshot.session.lifecycleGeneration === getAgentRunLifecycleGeneration() && snapshot.resumedFromRunId) candidates.set(id, snapshot.resumedFromRunId);
++	}
++	const seen = new Set([runId]);
++	for (let hops = 0; hops < 32; hops++) {
++		const successors = [...candidates].filter(([, source]) => source === runId);
++		if (successors.length !== 1 || seen.has(successors[0][0])) break;
++		runId = successors[0][0];
++		seen.add(runId);
++	}
++	return runId;
++}
+ function projectAgentJobObservation(snapshot) {
+ 	return {
+ 		session: snapshot.session,
+@@ -448,4 +472,4 @@ async function waitForAgentJob(params) {
+ }
+ ensureAgentRunListener();
+ //#endregion
+-export { waitForAgentJob as a, setGatewayDedupeEntry as i, getAgentJobSession as n, projectAgentJobObservation as r, captureAgentJobSession as t };
++export { resolveAgentRecoveryWaitTarget, waitForAgentJob as a, setGatewayDedupeEntry as i, getAgentJobSession as n, projectAgentJobObservation as r, captureAgentJobSession as t };
+diff --git a/dist/agent-run-registry-zReSioYT.mjs b/dist/agent-run-registry-zReSioYT.mjs
+index b2e5a2e78ba9d9d75a909c17e609c612192524f8..66ba81fe69718ecba6a6698ddca3abb299ee4ff7 100644
+--- a/dist/agent-run-registry-zReSioYT.mjs
++++ b/dist/agent-run-registry-zReSioYT.mjs
+@@ -24,6 +24,7 @@ function recordAgentEventRouting(runId, context, predecessor) {
+ 		projectSessionLifecycle: context.projectSessionLifecycle,
+ 		projectSessionMessages: context.projectSessionMessages,
+ 		mainSessionRestartRecovery: context.mainSessionRestartRecovery,
++		resumedFromRunId: context.resumedFromRunId,
+ 		lifecycleStartedAt: context.lifecycleStartedAt,
+ 		lifecycleGeneration: context.lifecycleGeneration,
+ 		isHeartbeat: context.isHeartbeat,
+@@ -353,7 +354,8 @@ function registerAgentRunContext(runId, context, claimId) {
+ 	for (const key of [
+ 		"sessionKey",
+ 		"sessionId",
+-		"agentId"
++		"agentId",
++		"resumedFromRunId"
+ 	]) if (context[key] && existing[key] !== context[key]) existing[key] = context[key];
+ 	if (context.verboseLevel && existing.verboseLevel !== context.verboseLevel) existing.verboseLevel = context.verboseLevel;
+ 	existing.completionSource ??= context.completionSource;
+diff --git a/dist/agent-settings-CZ8x5-4D.mjs b/dist/agent-settings-CZ8x5-4D.mjs
+index 2869acd0aca88e2affbbee97965b9524f6693586..a1d6ab97e24e38e564e86ceb88a8c0379b086978 100644
+--- a/dist/agent-settings-CZ8x5-4D.mjs
++++ b/dist/agent-settings-CZ8x5-4D.mjs
+@@ -8,13 +8,17 @@ function toPositiveInt(value) {
+ 	if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return;
+ 	return Math.floor(value);
+ }
++function toNonNegativeInt(value) {
++	const parsed = typeof value === "number" ? value : parseFloat(value);
++	return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : void 0;
++}
+ /** Applies configured compaction reserve/keep-recent settings to an agent settings manager. */
+ function applyAgentCompactionSettingsFromConfig(params) {
+ 	const currentReserveTokens = params.settingsManager.getCompactionReserveTokens();
+ 	const currentKeepRecentTokens = params.settingsManager.getCompactionKeepRecentTokens();
+ 	const compactionCfg = params.cfg?.agents?.defaults?.compaction;
+ 	const configuredEnabled = compactionCfg?.enabled;
+-	const configuredKeepRecentTokens = toPositiveInt(compactionCfg?.keepRecentTokens);
++	const configuredKeepRecentTokens = toNonNegativeInt(compactionCfg?.keepRecentTokens);
+ 	const contextTokenBudget = toPositiveInt(params.contextTokenBudget);
+ 	const requestedReserveTokens = Math.max(currentReserveTokens, DEFAULT_AGENT_COMPACTION_RESERVE_TOKENS_FLOOR);
+ 	const targetReserveTokens = contextTokenBudget === void 0 ? requestedReserveTokens : resolveEffectiveCompactionReserveTokens({
+diff --git a/dist/agent-turn-service-C_6ZJjkm.mjs b/dist/agent-turn-service-C_6ZJjkm.mjs
+index ea3f85d096ec999230b508b9596f8d5745020166..46cc255e4df802dbc71ac358abecffc009f0100d 100644
+--- a/dist/agent-turn-service-C_6ZJjkm.mjs
++++ b/dist/agent-turn-service-C_6ZJjkm.mjs
+@@ -20,7 +20,7 @@ import { i as resolveProviderIdForAuth } from "./provider-auth-aliases-K2SVB2uU.
+ import "./gateway-request-scope-CiCNcBL9.mjs";
+ import { t as bindGatewayContextResolver } from "./gateway-context-binding-VqB7gkMe.mjs";
+ import { c as normalizeAgentRunTimeoutPhase, i as classifyAgentRunTerminalOutcome, n as AGENT_RUN_RESTART_ABORT_STOP_REASON } from "./agent-run-terminal-outcome-Ccvy5spR.mjs";
+-import { i as claimAgentRunContext, j as validateAgentRunDelegatedAuthority, o as clearAgentRunContext } from "./agent-run-registry-zReSioYT.mjs";
++import { b as registerAgentRunContext, i as claimAgentRunContext, j as validateAgentRunDelegatedAuthority, o as clearAgentRunContext } from "./agent-run-registry-zReSioYT.mjs";
+ import { d as getAgentEventLifecycleGeneration, f as isAgentEventLifecycleGenerationCurrent, t as assertAgentRunLifecycleGenerationCurrent } from "./agent-events-CCeMHYh0.mjs";
+ import { a as composeSessionSourceAssertion } from "./session-source-authority-h1UO3u0I.mjs";
+ import { d as hasGatewayAdminScope, t as ADMIN_SCOPE } from "./operator-scopes-BO7_XQCg.mjs";
+@@ -2083,6 +2083,14 @@ async function admitAgentRestartRecovery(params) {
+ 	if (admission.transition.kind !== "admitted_recovery") throw new Error(`Session "${params.sessionKey}" restart recovery reservation is stale; recovery was skipped.`);
+ 	const sessionKey = admission.sessionKey ?? params.sessionKey;
+ 	const admittedAttempt = admission.transition.admission;
++	// ClawX: expose lineage only after the native reservation/session fence admitted it.
++	const sourceRunId = normalizeOptionalString(admission.entry?.restartRecoveryDeliverySourceRunId);
++	if (admission.entry?.sessionId === params.sessionId && admission.entry?.restartRecoveryDeliveryRunId === params.runId && sourceRunId && sourceRunId !== params.runId) registerAgentRunContext(params.runId, {
++		sessionKey,
++		sessionId: params.sessionId,
++		lifecycleGeneration: params.lifecycleGeneration,
++		resumedFromRunId: sourceRunId
++	});
+ 	let restored = false;
+ 	return async () => {
+ 		if (restored) return;
+diff --git a/dist/builtin-openclaw-CLelpwAr.mjs b/dist/builtin-openclaw-CLelpwAr.mjs
+index 12e2cacc6c8159530178d84bd44765ee8f7babc2..be3c140e975a10a184df7570e0047b58b916bd3c 100644
+--- a/dist/builtin-openclaw-CLelpwAr.mjs
++++ b/dist/builtin-openclaw-CLelpwAr.mjs
+@@ -4892,8 +4892,19 @@ function handleCompactionStart(ctx, evt) {
+ 		reason,
+ 		consoleMessage: `embedded run ${kind} start: runId=${ctx.params.runId} reason=${reason}`
+ 	});
++	// ClawX: a stable compaction identity lets ACP clients project the full
++	// lifecycle as session_info_update metadata.
++	const compactionId = `cmp-${Date.now().toString(36)}-${randomUUID().replace(/-/g, "").slice(0, 16)}`;
++	ctx.state.activeCompactionId = compactionId;
++	const timestamp = new Date().toISOString();
+ 	emitCompactionAgentEvent(ctx, {
+ 		phase: "start",
++		compactionId,
++		source: reason,
++		reason,
++		timestamp,
++		aborted: false,
++		completed: false,
+ 		...evt.itemId ? { itemId: evt.itemId } : {}
+ 	});
+ 	runBestEffortCompactionHook(ctx, "before");
+@@ -4966,9 +4977,15 @@ function handleCompactionEnd(ctx, evt) {
+ 		const benign = outcome.status === "aborted" || outcome.status === "skipped" && (reasonClass === "no_compactable_entries" || reasonClass === "below_threshold" || reasonClass === "already_compacted");
+ 		ctx.log[benign ? "info" : "warn"](`embedded run ${kind} ${outcome.status}`, metadata);
+ 	}
++	const compactionId = ctx.state.activeCompactionId;
++	ctx.state.activeCompactionId = void 0;
+ 	emitCompactionAgentEvent(ctx, {
+ 		phase: "end",
+-		...evt.itemId ? { itemId: evt.itemId } : {},
++		...compactionId ? { compactionId } : {},
++		source: reason,
++		reason: outcomeReason ?? reason,
++		timestamp: new Date().toISOString(),
++		aborted: outcome.status === "aborted",
+ 		completed,
+ 		willRetry,
+ 		outcome: outcome.status,
+diff --git a/dist/embedded-agent-w-EKmRVf.mjs b/dist/embedded-agent-w-EKmRVf.mjs
+index 9b9128c5c8d1c1a3d451a211fd0b4801b149a852..77e724d68f29c9d346e2a6a4a00943db6e2d310d 100644
+--- a/dist/embedded-agent-w-EKmRVf.mjs
++++ b/dist/embedded-agent-w-EKmRVf.mjs
+@@ -259,7 +259,7 @@ import { t as buildEmbeddedRunPayloads } from "./payloads-BUFeh5w2.mjs";
+ import path from "node:path";
+ import { AsyncLocalStorage } from "node:async_hooks";
+ import fs from "node:fs/promises";
+-import { randomBytes } from "node:crypto";
++import { randomBytes, randomUUID } from "node:crypto";
+ import { isContextOverflow } from "@openclaw/ai/internal/runtime";
+ import { CompactionReplayRefreshRequiredError, isCompactionReplayCheckpoint } from "@openclaw/ai/transports";
+ import { isResponsesOutputLimitToolCallError } from "@openclaw/ai/diagnostics";
+@@ -662,7 +662,48 @@ function resolveManualCompactionActiveRunSessionId(params) {
+ * Use this from outside a lane context. If already inside a lane, use
+ * `compactEmbeddedAgentSessionDirect` to avoid deadlocks.
+ */
++// ClawX: report one real operation, including its persistence/acceptance work.
++// The caller retains native run ownership and event authorization.
++async function withCompactionLifecycle(params, operation) {
++ const compactionId = randomUUID();
++ const source = params.source;
++ const publish = (data) => params.emit({
++  compactionId, source, timestamp: new Date().toISOString(), ...data
++ });
++ await publish({ phase: "start", completed: false, aborted: false });
++ let result;
++ let error;
++ try {
++  const outcome = await operation();
++  result = params.resultOf ? params.resultOf(outcome) : outcome;
++  return outcome;
++ } catch (caught) {
++  error = caught;
++  throw caught;
++ } finally {
++  const aborted = params.abortSignal?.aborted === true || error?.name === "AbortError" || result?.aborted === true || /^(?:compaction )?aborted$/i.test(result?.reason ?? "");
++  const completed = !error && !aborted && result?.ok === true && result?.compacted === true;
++  const reason = !completed && !aborted ? String(error?.message ?? error ?? result?.reason ?? "Compaction did not complete").trim().slice(0, 500) : void 0;
++  await publish({
++   phase: "end", completed, aborted,
++   willRetry: completed && params.willRetry === true,
++   ...reason ? { reasonCode: result?.failure?.reason ?? "compaction_failed", failureReason: reason } : {}
++  });
++ }
++}
++
+ async function compactEmbeddedAgentSession(input, options) {
++ // sessions.compact already owns a session.operation lifecycle around this call.
++ if (input.compactionLifecycleManaged) return await compactEmbeddedAgentSessionWithoutLifecycle(input, options);
++ const runId = input.runId ?? `compact-${randomUUID()}`;
++ const lifecycleGeneration = captureAgentRunLifecycleGeneration(runId);
++ return await withCompactionLifecycle({
++  source: input.trigger === "manual" ? "manual" : "preflight",
++  abortSignal: input.abortSignal,
++  emit: (data) => emitAgentEvent({ runId, lifecycleGeneration, sessionKey: input.sessionKey ?? input.sessionTarget?.sessionKey, stream: "compaction", data })
++ }, () => compactEmbeddedAgentSessionWithoutLifecycle(input, options));
++}
++async function compactEmbeddedAgentSessionWithoutLifecycle(input, options) {
+ 	return await runWithAsyncWorkResources(async (onAcquired) => {
+ 		onAcquired({
+ 			release: retainAgentHarnessCompactionSource(options.sourceAuthority),
+@@ -2872,6 +2913,22 @@ async function claimAgentSessionWriter(params) {
+ //#region src/agents/embedded-agent-runner/run/compaction-runtime.ts
+ /** Preserve one prepared owner snapshot throughout context and timeout recovery. */
+ async function compactEmbeddedRunForRecovery(input, recovery) {
++ input.assertRecoveryActive();
++ const params = input.runParams;
++ const lifecycleGeneration = captureAgentRunLifecycleGeneration(params.runId);
++ return await withCompactionLifecycle({
++  source: recovery.trigger === "overflow" ? "overflow" : "preflight",
++  abortSignal: params.abortSignal,
++  willRetry: true,
++  resultOf: (outcome) => outcome.result,
++  emit: async (data) => {
++   const event = { stream: "compaction", data, sessionKey: input.resolvedSessionKey };
++   emitAgentEvent({ runId: params.runId, lifecycleGeneration, ...event });
++   try { await params.onAgentEvent?.(event); } catch (error) { log$3.warn(`compaction callback failed: ${formatErrorMessage(error)}`); }
++  }
++ }, () => compactEmbeddedRunForRecoveryWithoutLifecycle(input, recovery));
++}
++async function compactEmbeddedRunForRecoveryWithoutLifecycle(input, recovery) {
+ 	const { runParams } = input;
+ 	const owner = input.prepareRecoveryOwner();
+ 	const activeSession = owner.session;
+diff --git a/dist/error-coercion-W9BtigRm.mjs b/dist/error-coercion-W9BtigRm.mjs
+index 12fddaf22c215a45b11765098fa42da4d213c478..4fa229fbed16ed248cd742410212f1a3777351df 100644
+--- a/dist/error-coercion-W9BtigRm.mjs
++++ b/dist/error-coercion-W9BtigRm.mjs
+@@ -115,8 +115,19 @@ function formatErrorMessage(value, options) {
+ 		} else if (typeof cause === "string") appendCauseMessage(cause);
+ 		else appendCauseMessage(formatStatusAndCode(cause) ?? stringifyUnknown(cause));
+ 	} else formatted = formatStatusAndCode(value) ?? stringifyUnknown(value);
++	// ClawX: surface documented TokenDance recovery actions from provider headers.
++	const tokenDanceRecoveryAction = extractTokenDanceRecoveryAction(value);
++	if (tokenDanceRecoveryAction) formatted += ` [TokenDance-Recovery-Action:${tokenDanceRecoveryAction}]`;
+ 	return options.redact(formatted);
+ }
++const TOKENDANCE_RECOVERY_ACTIONS = /* @__PURE__ */ new Set(["top_up_balance", "reauthorize_api_key", "api_key_quota"]);
++function extractTokenDanceRecoveryAction(err) {
++	if (!err || typeof err !== "object") return;
++	const headers = err.headers;
++	if (!headers || typeof headers.get !== "function") return;
++	const action = headers.get("TokenDance-Recovery-Action")?.trim();
++	return TOKENDANCE_RECOVERY_ACTIONS.has(action) ? action : void 0;
++}
+ /**
+ * Normalizes an unknown thrown value into an Error. Non-Error objects become
+ * the `cause` and have their enumerable fields copied so structured details
+diff --git a/dist/exec-approval-DbnOAIQO.mjs b/dist/exec-approval-DbnOAIQO.mjs
+index 2f891103a260a63465790be0bb057b809f816372..708a8fb319af11d56beed05b333d646483b5359b 100644
+--- a/dist/exec-approval-DbnOAIQO.mjs
++++ b/dist/exec-approval-DbnOAIQO.mjs
+@@ -27,6 +27,7 @@ import { t as handlePendingApprovalRequestWithDelivery } from "./approval-reques
+ import { t as InvalidApprovalIdError } from "./exec-approval-registration-BaE9pc8t.mjs";
+ import { t as createApprovalRequestAuthority } from "./approval-request-authority-l05pcSPy.mjs";
+ import { t as resolveGrantExpiryDaysConfig } from "./standing-grant-expiry-config-CqUe6ux8.mjs";
++import { u as getAgentRunContext } from "./agent-run-registry-zReSioYT.mjs";
+ //#region src/infra/command-analysis/explain.ts
+ function riskLabel(risk) {
+ 	switch (risk.kind) {
+@@ -299,6 +300,7 @@ function createExecApprovalHandlers(manager, opts) {
+ 				sessionKey: effectiveSessionKey ?? null,
+ 				sessionId: trustedAgentRuntime ? null : normalizeOptionalString(p.sessionId) ?? null,
+ 				runId: requestRunId ?? null,
++				resumedFromRunId: requestRunId ? getAgentRunContext(requestRunId)?.resumedFromRunId : void 0,
+ 				toolCallId: normalizeOptionalString(p.toolCallId) ?? null,
+ 				turnSourceChannel: trustedAgentRuntime ? trustedAgentRuntime.turnSourceChannel ?? null : normalizeOptionalString(p.turnSourceChannel) ?? null,
+ 				turnSourceTo: trustedAgentRuntime ? trustedAgentRuntime.turnSourceTo ?? null : normalizeOptionalString(p.turnSourceTo) ?? null,
+diff --git a/dist/plugin-generation-source-lookup-Dg6DuWgm.mjs b/dist/plugin-generation-source-lookup-Dg6DuWgm.mjs
+index 19956c366dfa4a3c3037e2d2e6b42905e31014a0..478781584ccf12f8faa70a4e1ac21a8da7790dc2 100644
+--- a/dist/plugin-generation-source-lookup-Dg6DuWgm.mjs
++++ b/dist/plugin-generation-source-lookup-Dg6DuWgm.mjs
+@@ -3,7 +3,7 @@ import { k as PluginSourceRecoveryUnavailableError, o as getPluginCache } from "
+ import { a as asOptionalRecord } from "./record-coerce-TIsquoVR.mjs";
+ import { o as openRootFileSync$1 } from "./boundary-file-read-CCth2Hwg.mjs";
+ import { t as hasErrnoCode } from "./errno-FR4CRyya.mjs";
+-import { r as isPathInside } from "./path-guards-CH7noY0Z.mjs";
++import { o as normalizeWindowsPathPreservingCase, r as isPathInside } from "./path-guards-CH7noY0Z.mjs";
+ import { t as escapeRegExp } from "./regexp-BZyMFTlj.mjs";
+ import { t as formatErrorMessage } from "./errors-J9olDZqH.mjs";
+ import { a as createSqliteLifecycleAggregateError } from "./sqlite-lifecycle-errors-DuOygjcn.mjs";
+@@ -1145,6 +1145,17 @@ function createRecoverySourceResolver(rootDir, sourceRoot, sources) {
+ 		return captured;
+ 	};
+ }
++/**
++* Windows captures link directories with junctions, which store absolute targets and
++* need no symlink privilege. fs.cpSync would recreate them as untyped symlinks (EPERM
++* for standard users) still pointing into the source capture, so relink them here.
++*/
++function copyWindowsRecoveryJunction(boundaryRoot, directory, from, to) {
++	if (process.platform !== "win32" || !fs.lstatSync(from).isSymbolicLink() || fs.statSync(from, { throwIfNoEntry: false })?.isFile()) return false;
++	const linked = path.resolve(path.dirname(from), normalizeWindowsPathPreservingCase(fs.readlinkSync(from)));
++	fs.symlinkSync(isPathInside(boundaryRoot, linked) ? path.join(directory, path.relative(boundaryRoot, linked)) : linked, to, "junction");
++	return true;
++}
+ function copyRecoverySource({ rootDir, sourceRoot, capturedRoot, boundaryRoot, sources, native: suppliedNative }) {
+ 	let native = suppliedNative;
+ 	let recovery;
+@@ -1156,7 +1167,7 @@ function copyRecoverySource({ rootDir, sourceRoot, capturedRoot, boundaryRoot, s
+ 			verbatimSymlinks: true,
+ 			filter: (from, to) => {
+ 				const fact = native?.references.get(from);
+-				if (!fact) return true;
++				if (!fact) return !copyWindowsRecoveryJunction(boundaryRoot, recovery.directory, from, to);
+ 				const retained = {
+ 					...fact,
+ 					sourceIdentity: fact.capturedIdentity
+diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
+index 543e336a26fb1b13b08fe2ee745cc6123f95364a..bf6bb662a31310b565bca652079440067dc4650a 100644
+--- a/dist/server-DkfYuk25.mjs
++++ b/dist/server-DkfYuk25.mjs
+@@ -6,6 +6,7 @@ import { a as asOptionalRecord, c as isRecord, o as asRecord } from "./record-co
+ import { r as truncateUtf16Safe } from "./utf16-slice-D_ngcYKd.mjs";
+ import { p as shortenHomePath } from "./utils-CitNzLyF.mjs";
+ import { t as formatErrorMessage } from "./errors-J9olDZqH.mjs";
++import { c as resolveAssistantEventPhase } from "./chat-message-content-C-d0FKNG.mjs";
+ import { t as finalizeActiveDebugProxyCaptures } from "./runtime-cleanup-AyeSBMlV.mjs";
+ import { a as executeSqliteQueryTakeFirstSync, i as executeSqliteQuerySync, l as prepareSqliteQuerySync, n as createSqliteQueryCache, o as getNodeSqliteKysely } from "./kysely-sync-_Jx0TluS.mjs";
+ import { i as routeLogsToStderr } from "./console-Dzm4OzJw.mjs";
+@@ -36,7 +37,7 @@ import path from "node:path";
+ import os from "node:os";
+ import { randomUUID } from "node:crypto";
+ import { Readable, Writable } from "node:stream";
+-import { AGENT_METHODS, AgentSideConnection, PROTOCOL_VERSION, ndJsonStream } from "@agentclientprotocol/sdk";
++import { AGENT_METHODS, AgentSideConnection, PROTOCOL_VERSION, RequestError, ndJsonStream } from "@agentclientprotocol/sdk";
+ //#region src/acp/event-ledger.types.ts
+ const DEFAULT_MAX_SESSIONS = 200;
+ const DEFAULT_MAX_EVENTS_PER_SESSION = 5e3;
+@@ -254,7 +255,7 @@ function appendSqliteUpdate(db, state, params) {
+ 	queries.insertEvent({
+ 		sessionId: params.sessionId,
+ 		seq: nextSeq,
+-		at: now,
++		at: Number.isFinite(params.sourceRecordTimestampMs) ? params.sourceRecordTimestampMs : now,
+ 		sessionKey: params.sessionKey,
+ 		runId: params.runId ?? null,
+ 		updateJson,
+@@ -321,6 +322,20 @@ function createSqliteAcpEventLedger(params = {}) {
+ 				appendSqliteUpdate(db, state, updateParams);
+ 			});
+ 		},
++		async importTranscriptTail(tailParams) {
++			return mutate((db) => {
++				// Read again inside the transaction: another ACP writer may have advanced it.
++				const replay = buildSqliteReplay(db, readSqliteSessionById(db, tailParams.sessionId));
++				if (replay.complete && replay.sessionKey !== tailParams.sessionKey) return;
++				if (!replay.complete) return replay;
++				for (const event of planAcpTranscriptTail(replay.events, tailParams.transcript)) appendSqliteUpdate(db, state, {
++					sessionId: tailParams.sessionId,
++					sessionKey: tailParams.sessionKey,
++					...event
++				});
++				return buildSqliteReplay(db, readSqliteSessionById(db, tailParams.sessionId));
++			});
++		},
+ 		async markIncomplete(markParams) {
+ 			mutate((db) => {
+ 				db.prepare(`UPDATE acp_replay_sessions
+@@ -902,16 +917,56 @@ var AcpTranslatorAgentEvents = class {
+ 			if (approvalEvent) this.startApprovalRelay({
+ 				sessionKey,
+ 				runId,
++				resumedFromRunId: payload.resumedFromRunId,
+ 				approvalEvent
+ 			});
+ 			return;
+ 		}
++		if (stream === "compaction") {
++			const compactionPending = this.findPendingBySessionKey(sessionKey, runId, payload.resumedFromRunId);
++			if (!compactionPending) return;
++			const compactionUpdate = buildAcpCompactionUpdate(data, runId);
++			if (!compactionUpdate) return;
++			await this.sessionUpdates.emit({
++				sessionId: compactionPending.sessionId,
++				sessionKey: compactionPending.sessionKey,
++				...compactionPending.ledgerSessionId ? { ledgerSessionId: compactionPending.ledgerSessionId } : {},
++				runId: compactionPending.idempotencyKey,
++				record: true,
++				update: compactionUpdate
++			});
++			return;
++		}
++		if (stream === "assistant") {
++			if (resolveAssistantEventPhase(data) !== "commentary") return;
++			const commentaryPending = this.findPendingBySessionKey(sessionKey, runId, payload.resumedFromRunId);
++			if (!commentaryPending) return;
++			const fullThought = resolveAcpEventTextSnapshot(commentaryPending.sentThought ?? "", data);
++			const thoughtDelta = resolveAcpTextDelta(commentaryPending.sentThought ?? "", fullThought);
++			if (!thoughtDelta) return;
++			commentaryPending.sentThought = fullThought;
++			await this.sessionUpdates.emit({
++				sessionId: commentaryPending.sessionId,
++				sessionKey: commentaryPending.sessionKey,
++				...commentaryPending.ledgerSessionId ? { ledgerSessionId: commentaryPending.ledgerSessionId } : {},
++				runId: commentaryPending.idempotencyKey,
++				record: true,
++				update: {
++					sessionUpdate: "agent_thought_chunk",
++					content: {
++						type: "text",
++						text: thoughtDelta
++					}
++				}
++			});
++			return;
++		}
+ 		if (stream !== "tool") return;
+ 		const phase = data.phase;
+ 		const name = data.name;
+ 		const toolCallId = data.toolCallId;
+ 		if (!toolCallId) return;
+-		const pending = this.findPendingBySessionKey(sessionKey, runId);
++		const pending = this.findPendingBySessionKey(sessionKey, runId, payload.resumedFromRunId);
+ 		if (!pending) return;
+ 		let update;
+ 		if (phase === "start") {
+@@ -967,6 +1022,8 @@ var AcpTranslatorAgentEvents = class {
+ 		if (!sessionKey) return;
+ 		this.startApprovalRelay({
+ 			sessionKey,
++			runId: normalizeOptionalString(request?.runId),
++			resumedFromRunId: normalizeOptionalString(request?.resumedFromRunId),
+ 			approvalEvent
+ 		});
+ 	}
+@@ -1001,7 +1058,7 @@ var AcpTranslatorAgentEvents = class {
+ 		this.runApprovalRelay(relay, correlatedApprovalEvent);
+ 	}
+ 	findPendingForApproval(params) {
+-		if (params.runId) return this.findPendingBySessionKey(params.sessionKey, params.runId);
++		if (params.runId) return this.findPendingBySessionKey(params.sessionKey, params.runId, params.resumedFromRunId);
+ 		const toolCallId = params.approvalEvent.toolCallId;
+ 		let match;
+ 		for (const pending of this.pendingPrompts.values()) {
+@@ -1078,106 +1135,94 @@ var AcpTranslatorAgentEvents = class {
+ //#endregion
+ //#region src/acp/translator.disconnects.ts
+ const ACP_GATEWAY_DISCONNECT_GRACE_MS = 5e3;
++// Main computes this from its complete managed-restart/readiness budget.
++const ACP_ACCEPTED_PROMPT_RECOVERY_GRACE_MS = (() => {
++	const configured = Number(process.env.OPENCLAW_ACP_ACCEPTED_PROMPT_RECOVERY_GRACE_MS);
++	return Number.isSafeInteger(configured) && configured >= ACP_GATEWAY_DISCONNECT_GRACE_MS && configured <= 36e5 ? configured : 48e4;
++})();
+ var AcpTranslatorDisconnects = class {
+-	constructor(gateway, pendingPrompts, getPendingPrompt, settleRecoveredPrompt, rejectPendingPrompt, log) {
+-		this.gateway = gateway;
+-		this.pendingPrompts = pendingPrompts;
+-		this.getPendingPrompt = getPendingPrompt;
+-		this.settleRecoveredPrompt = settleRecoveredPrompt;
+-		this.rejectPendingPrompt = rejectPendingPrompt;
+-		this.log = log;
++	constructor(gateway, pendingPrompts, getPendingPrompt, settleRecoveredPrompt, rejectPendingPrompt, log, findPendingBySessionKey, retrySubscription) {
++		Object.assign(this, { gateway, pendingPrompts, getPendingPrompt, settleRecoveredPrompt, rejectPendingPrompt, log, findPendingBySessionKey, retrySubscription });
+ 		this.disconnectTimer = null;
+ 		this.activeDisconnectContext = null;
+ 		this.disconnectGeneration = 0;
+ 	}
+-	get activeContext() {
+-		return this.activeDisconnectContext;
+-	}
++	get activeContext() { return this.activeDisconnectContext; }
+ 	shutdown() {
++		this.disconnectGeneration++;
+ 		this.activeDisconnectContext = null;
+ 		this.clearDisconnectTimer();
+ 	}
+ 	handleGatewayReconnect() {
+ 		this.log("gateway reconnected");
+-		const disconnectContext = this.activeDisconnectContext;
+ 		this.activeDisconnectContext = null;
+-		if (!disconnectContext) return;
+-		this.reconcilePendingPrompts(disconnectContext.generation, false);
++		this.armDisconnectTimer();
+ 	}
+ 	handleGatewayDisconnect(reason) {
+ 		this.log(`gateway disconnected: ${reason}`);
+-		const disconnectContext = {
+-			generation: this.disconnectGeneration + 1,
+-			reason
+-		};
+-		this.disconnectGeneration = disconnectContext.generation;
+-		this.activeDisconnectContext = disconnectContext;
+-		if (this.pendingPrompts.size === 0) return;
+-		for (const pending of this.pendingPrompts.values()) pending.disconnectContext = disconnectContext;
+-		this.armDisconnectTimer(disconnectContext);
+-	}
+-	armForActiveContext() {
+-		if (this.activeDisconnectContext && !this.disconnectTimer) this.armDisconnectTimer(this.activeDisconnectContext);
+-	}
+-	clearWhenIdle() {
+-		if (this.pendingPrompts.size === 0) this.clearDisconnectTimer();
+-	}
++		// Failed reconnect handshakes are the same outage, not a fresh grace budget.
++		if (this.activeDisconnectContext) { this.armDisconnectTimer(); return; }
++		const context = { generation: ++this.disconnectGeneration, reason, startedAt: Date.now() };
++		this.activeDisconnectContext = context;
++		for (const pending of this.pendingPrompts.values()) pending.disconnectContext = context;
++		this.armDisconnectTimer();
++	}
++	armForActiveContext() { this.armDisconnectTimer(); }
++	clearWhenIdle() { if (this.pendingPrompts.size === 0) this.clearDisconnectTimer(); }
+ 	clearDisconnectTimer() {
+-		if (!this.disconnectTimer) return;
+ 		clearTimeout(this.disconnectTimer);
+ 		this.disconnectTimer = null;
+ 	}
+-	armDisconnectTimer(disconnectContext) {
++	deadline(pending) {
++		return pending.disconnectContext.startedAt + (pending.sendAccepted ? ACP_ACCEPTED_PROMPT_RECOVERY_GRACE_MS : ACP_GATEWAY_DISCONNECT_GRACE_MS);
++	}
++	armDisconnectTimer() {
+ 		this.clearDisconnectTimer();
+-		this.disconnectTimer = setTimeout(() => {
++		const pending = [...this.pendingPrompts.values()].filter((p) => p.disconnectContext);
++		if (!pending.length) return;
++		const generation = this.disconnectGeneration;
++		const delay = Math.max(1, Math.min(1000, ...pending.map((p) => this.deadline(p) - Date.now())));
++		this.disconnectTimer = setTimeout(async () => {
+ 			this.disconnectTimer = null;
+-			this.reconcilePendingPrompts(disconnectContext.generation, true);
+-		}, ACP_GATEWAY_DISCONNECT_GRACE_MS);
++			try { await this.reconcilePendingPrompts(generation); }
++			catch (err) { this.log(`restart reconciliation failed: ${String(err)}`); }
++			finally { if (generation === this.disconnectGeneration) this.armDisconnectTimer(); }
++		}, delay);
+ 		this.disconnectTimer.unref?.();
+ 	}
+-	async expirePendingPrompt(pending, disconnectContext) {
+-		if (pending.disconnectContext !== disconnectContext) return false;
+-		if (!pending.sendAccepted || this.activeDisconnectContext?.generation === disconnectContext.generation) await this.rejectPendingPrompt(pending, /* @__PURE__ */ new Error(`Gateway disconnected: ${disconnectContext.reason}`), { recordDisconnectNotice: true });
+-		else pending.disconnectContext = void 0;
+-		return false;
+-	}
+-	async reconcilePendingPrompts(observedDisconnectGeneration, deadlineExpired) {
+-		if (this.pendingPrompts.size === 0) {
+-			if (this.disconnectGeneration === observedDisconnectGeneration) this.clearDisconnectTimer();
++	async reconcilePendingPrompts(generation) {
++		for (const [sessionId, pending] of [...this.pendingPrompts]) {
++			if (generation !== this.disconnectGeneration) return;
++			if (this.pendingPrompts.get(sessionId) !== pending || !pending.disconnectContext) continue;
++			await this.reconcilePendingPrompt(sessionId, pending);
++		}
++	}
++	async reconcilePendingPrompt(sessionId, pending) {
++		const context = pending.disconnectContext;
++		const observedRunId = pending.idempotencyKey;
++		const isCurrent = () => this.getPendingPrompt(sessionId, observedRunId) === pending && pending.disconnectContext === context;
++		if (!context) return;
++		// Never leave an accepted prompt hanging indefinitely, even after reconnect.
++		if (Date.now() >= this.deadline(pending)) {
++			if (isCurrent()) await this.rejectPendingPrompt(pending, new Error(`Gateway disconnected: ${context.reason}`), { recordDisconnectNotice: true });
+ 			return;
+ 		}
+-		const pendingEntries = [...this.pendingPrompts.entries()];
+-		let keepDisconnectTimer = false;
+-		for (const [sessionId, pending] of pendingEntries) {
+-			if (this.pendingPrompts.get(sessionId) !== pending) continue;
+-			if (pending.disconnectContext?.generation !== observedDisconnectGeneration) continue;
+-			if (await this.reconcilePendingPrompt(sessionId, pending, deadlineExpired)) keepDisconnectTimer = true;
+-		}
+-		if (!keepDisconnectTimer && this.disconnectGeneration === observedDisconnectGeneration) this.clearDisconnectTimer();
+-	}
+-	async reconcilePendingPrompt(sessionId, pending, deadlineExpired) {
+-		const disconnectContext = pending.disconnectContext;
+-		if (!disconnectContext) return false;
++		if (this.activeDisconnectContext) return;
++		if (pending.sendAccepted) void this.retrySubscription(pending.sessionKey).catch((err) => this.log(`restart subscription retry failed: ${String(err)}`));
+ 		let result;
+ 		try {
+ 			result = await this.gateway.request("agent.wait", {
+-				runId: pending.idempotencyKey,
+-				timeoutMs: 0
+-			}, { timeoutMs: null });
++				runId: observedRunId, sessionKey: pending.sessionKey, timeoutMs: 0
++			}, { timeoutMs: 1000 });
+ 		} catch (err) {
+-			this.log(`agent.wait reconcile failed for ${pending.idempotencyKey}: ${String(err)}`);
+-			if (deadlineExpired) return await this.expirePendingPrompt(pending, disconnectContext);
+-			return true;
++			this.log(`agent.wait reconcile failed for ${observedRunId}: ${String(err)}`);
++			return;
+ 		}
+-		const currentPending = this.getPendingPrompt(sessionId, pending.idempotencyKey);
+-		if (!currentPending) return false;
+-		const hasVisibleReply = result?.terminalReply?.disposition === "visible";
+-		if (result?.status === "ok" || result?.status === "error" || result?.status === "timeout" && hasVisibleReply) {
+-			await this.settleRecoveredPrompt(sessionId, currentPending, result);
+-			return false;
++		if (!isCurrent()) return;
++		if (result?.runId && result.runId !== observedRunId) {
++			if (result.resumedFromRunId !== observedRunId || this.findPendingBySessionKey(pending.sessionKey, result.runId, result.resumedFromRunId) !== pending) return;
+ 		}
+-		if (deadlineExpired) return await this.expirePendingPrompt(currentPending, disconnectContext);
+-		return true;
++		if (result?.status === "ok" || result?.status === "error" || result?.status === "timeout" && result?.terminalReply?.disposition === "visible") await this.settleRecoveredPrompt(sessionId, pending, result);
+ 	}
+ };
+ //#endregion
+@@ -1191,7 +1236,7 @@ function isGatewayCloseError(err) {
+ 	return (err instanceof Error ? err.message : String(err)).startsWith("gateway closed (");
+ }
+ var AcpTranslatorPromptStream = class {
+-	constructor(connection, gateway, opts, sessionStore, sessionUpdates, sessionState, approvalRelays, log) {
++	constructor(connection, gateway, opts, sessionStore, sessionUpdates, sessionState, approvalRelays, log, ambient) {
+ 		this.gateway = gateway;
+ 		this.opts = opts;
+ 		this.sessionStore = sessionStore;
+@@ -1199,16 +1244,19 @@ var AcpTranslatorPromptStream = class {
+ 		this.sessionState = sessionState;
+ 		this.approvalRelays = approvalRelays;
+ 		this.log = log;
++		this.ambient = ambient ?? new AcpTranslatorAmbient(gateway, sessionUpdates, sessionState, log);
++		this.ambient.dispatchEvent = (event) => this.dispatchGatewayEvent(event);
+ 		this.pendingPrompts = /* @__PURE__ */ new Map();
+ 		this.pendingPromptAdmissions = /* @__PURE__ */ new Map();
+ 		this.settlingPromptKeys = /* @__PURE__ */ new Set();
+ 		this.stopped = false;
+-		this.agentEvents = new AcpTranslatorAgentEvents(connection, gateway, sessionUpdates, this.pendingPrompts, this.approvalRelays, (sessionId, runId) => this.getPendingPrompt(sessionId, runId), (sessionKey, runId) => this.findPendingBySessionKey(sessionKey, runId), log);
+-		this.disconnects = new AcpTranslatorDisconnects(gateway, this.pendingPrompts, (sessionId, runId) => this.getPendingPrompt(sessionId, runId), (sessionId, pending, result) => this.settleRecoveredPrompt(sessionId, pending, result), (pending, error, options) => this.rejectPendingPrompt(pending, error, options), log);
++		this.agentEvents = new AcpTranslatorAgentEvents(connection, gateway, sessionUpdates, this.pendingPrompts, this.approvalRelays, (sessionId, runId) => this.getPendingPrompt(sessionId, runId), (sessionKey, runId, sourceRunId) => this.findPendingBySessionKey(sessionKey, runId, sourceRunId), log);
++		this.disconnects = new AcpTranslatorDisconnects(gateway, this.pendingPrompts, (sessionId, runId) => this.getPendingPrompt(sessionId, runId), (sessionId, pending, result) => this.settleRecoveredPrompt(sessionId, pending, result), (pending, error, options) => this.rejectPendingPrompt(pending, error, options), log, (sessionKey, runId, sourceRunId) => this.findPendingBySessionKey(sessionKey, runId, sourceRunId), (sessionKey) => this.ambient.retrySessionMessageSubscription(sessionKey));
+ 	}
+ 	async shutdown() {
+ 		this.stopped = true;
+ 		this.disconnects.shutdown();
++		await this.ambient.deactivate();
+ 		const sessions = /* @__PURE__ */ new Map();
+ 		for (const pending of this.pendingPrompts.values()) sessions.set(pending.sessionId, {
+ 			sessionId: pending.sessionId,
+@@ -1218,14 +1266,24 @@ var AcpTranslatorPromptStream = class {
+ 		for (const admission of this.pendingPromptAdmissions.values()) sessions.set(admission.session.sessionId, admission.session);
+ 		await Promise.all([...sessions.values()].map((session) => this.cancelSessionWork(session, ACP_SHUTDOWN_ABORT_TIMEOUT_MS)));
+ 	}
+-	handleGatewayReconnect() {
++	async handleGatewayReconnect() {
+ 		this.agentEvents.replayApprovalDecisionsOnReconnect();
++		try { await this.ambient.recoverSubscriptions(); }
++		catch (err) { this.log(`restart subscription recovery failed: ${String(err)}`); }
+ 		this.disconnects.handleGatewayReconnect();
+ 	}
+ 	handleGatewayDisconnect(reason) {
+ 		this.disconnects.handleGatewayDisconnect(reason);
+ 	}
+ 	async handleGatewayEvent(evt) {
++		if (this.ambient.isReplayBuffered(evt)) return;
++		await this.dispatchGatewayEvent(evt);
++	}
++	async dispatchGatewayEvent(evt) {
++		if (evt.event === "session.operation" || evt.event === "agent" && evt.payload?.stream === "compaction") {
++			await this.handleSessionOperationEvent(evt);
++			return;
++		}
+ 		if (evt.event === "chat") {
+ 			await this.handleChatEvent(evt);
+ 			return;
+@@ -1234,7 +1292,21 @@ var AcpTranslatorPromptStream = class {
+ 			this.agentEvents.handleExecApprovalRequestEvent(evt);
+ 			return;
+ 		}
+-		if (evt.event === "agent") await this.agentEvents.handleAgentEvent(evt);
++		if (evt.event === "agent" || evt.event === "session.tool") {
++			const payload = evt.payload;
++			const hasPending = payload?.sessionKey ? this.findPendingBySessionKey(payload.sessionKey, payload.runId, payload.resumedFromRunId) : void 0;
++			if (!hasPending && await this.ambient.handleAgentEvent(evt)) return;
++			await this.agentEvents.handleAgentEvent(evt);
++		}
++	}
++	async handleSessionOperationEvent(evt) {
++		const payload = evt.payload;
++		if (!payload || evt.event === "session.operation" && payload.operation !== "compact") return;
++		const sessionKey = normalizeOptionalString(payload.sessionKey);
++		if (!sessionKey) return;
++		const runId = normalizeOptionalString(payload.runId);
++		const pending = runId ? this.findPendingBySessionKey(sessionKey, runId, payload.resumedFromRunId) : this.findUniquePendingBySessionKey(sessionKey);
++		await this.ambient.emitCompactionUpdate(sessionKey, runId, evt.event === "agent" ? payload.data : payload, pending);
+ 	}
+ 	async prompt(params) {
+ 		const session = this.sessionStore.getSession(params.sessionId);
+@@ -1247,7 +1319,13 @@ var AcpTranslatorPromptStream = class {
+ 			settled: createDeferredCore()
+ 		};
+ 		this.pendingPromptAdmissions.set(params.sessionId, admission);
+-		if (admission.previous) admission.previous.closed = true;
++		if (admission.previous) {
++			admission.previous.closed = true;
++			admission.previous.closure.resolve();
++		}
++		const readinessAbort = new AbortController();
++		const readinessDeadline = Date.now() + ACP_GATEWAY_RECONNECT_TIMEOUT_MS;
++		let subscriptionKey;
+ 		try {
+ 			if (!this.ownsPromptAdmission(admission)) return { stopReason: "cancelled" };
+ 			if (session.abortController || this.pendingPrompts.has(params.sessionId)) {
+@@ -1259,8 +1337,24 @@ var AcpTranslatorPromptStream = class {
+ 				if (!this.ownsPromptAdmission(admission)) return { stopReason: "cancelled" };
+ 				admission.previous = void 0;
+ 			}
++			if (this.opts.waitForGatewayReady) await Promise.race([
++				this.opts.waitForGatewayReady(readinessAbort.signal, readinessDeadline), admission.closure.promise
++			]);
++			if (!this.ownsPromptAdmission(admission)) return { stopReason: "cancelled" };
++			try {
++				subscriptionKey = session.sessionKey;
++				await this.ambient.acquireSessionMessageSubscription(subscriptionKey, true);
++			} catch (err) { this.log(`prompt subscription failed: ${String(err)}`); }
++			// Subscription acquisition can itself span another disconnect. Recheck
++			// before creating a run; no already-sent prompt is retried here.
++			if (this.opts.waitForGatewayReady) await Promise.race([
++				this.opts.waitForGatewayReady(readinessAbort.signal, readinessDeadline), admission.closure.promise
++			]);
++			if (!this.ownsPromptAdmission(admission)) return { stopReason: "cancelled" };
+ 			return await Promise.race([this.submitPrompt(params, session), admission.closure.promise.then(() => ({ stopReason: "cancelled" }))]);
+ 		} finally {
++			readinessAbort.abort();
++			if (subscriptionKey) await this.ambient.releaseSessionMessageSubscription(subscriptionKey);
+ 			admission.settled.resolve();
+ 			if (this.pendingPromptAdmissions.get(params.sessionId) === admission) this.pendingPromptAdmissions.delete(params.sessionId);
+ 		}
+@@ -1318,6 +1412,8 @@ var AcpTranslatorPromptStream = class {
+ 					const pending = this.getPendingPrompt(params.sessionId, runId);
+ 					if (!pending) return false;
+ 					pending.sendAccepted = true;
++					// New ACP sessions may not exist in the native catalog until send acceptance.
++					void this.ambient.retrySessionMessageSubscription(pending.sessionKey).catch((err) => this.log(`accepted prompt subscription failed: ${String(err)}`));
+ 					return true;
+ 				};
+ 				const applyTerminalAck = async (ack) => {
+@@ -1432,8 +1528,11 @@ var AcpTranslatorPromptStream = class {
+ 		const state = payload.state;
+ 		const runId = payload.runId;
+ 		if (!sessionKey || !state) return;
+-		const pending = this.findPendingBySessionKey(sessionKey, runId);
+-		if (!pending) return;
++		const pending = this.findPendingBySessionKey(sessionKey, runId, payload.resumedFromRunId);
++		if (!pending) {
++			await this.ambient.handleChatEvent(evt);
++			return;
++		}
+ 		const messageData = state === "delta" ? mergeChatStreamMessage(pending.streamMessage, payload) : payload.message;
+ 		if (isRecord(messageData) && (state === "delta" || state === "final")) {
+ 			pending.streamMessage = messageData;
+@@ -1450,8 +1549,10 @@ var AcpTranslatorPromptStream = class {
+ 			return;
+ 		}
+ 		if (state === "error") {
+-			const stopReason = payload.errorKind === "refusal" ? "refusal" : "end_turn";
+-			this.finishPrompt(pending.sessionId, pending, stopReason);
++			// ClawX: settle a true provider error with the Gateway error instead of
++			// reporting a normal end_turn.
++			const errorMessage = typeof payload.errorMessage === "string" && payload.errorMessage.trim() ? payload.errorMessage : "Agent run failed";
++			await this.rejectPendingPrompt(pending, new Error(errorMessage));
+ 		}
+ 	}
+ 	async handleDeltaEvent(pending, messageData) {
+@@ -1470,10 +1571,12 @@ var AcpTranslatorPromptStream = class {
+ 			"agent_message_chunk"
+ 		]]) {
+ 			const fullText = content?.filter((block) => block?.type === blockType).map((block) => block[field] ?? "").join("\n").trimEnd();
+-			const sentSoFar = pending[sentField]?.length ?? 0;
+-			if (!fullText || fullText.length <= sentSoFar) continue;
+-			pending[sentField] = fullText;
+-			await this.emitPromptChunk(pending, kind, fullText.slice(sentSoFar));
++			const previousText = pending[sentField] ?? "";
++			const nextText = resolveAcpEventTextSnapshot(previousText, { text: fullText });
++			const delta = resolveAcpTextDelta(previousText, nextText);
++			if (!delta) continue;
++			pending[sentField] = nextText;
++			await this.emitPromptChunk(pending, kind, delta);
+ 			if (this.getPendingPrompt(sessionId, pending.idempotencyKey) !== pending) return false;
+ 		}
+ 		return true;
+@@ -1521,6 +1624,7 @@ var AcpTranslatorPromptStream = class {
+ 		});
+ 	}
+ 	async settleRecoveredPrompt(sessionId, pending, result) {
++		const observedRunId = pending.idempotencyKey;
+ 		const signal = this.sessionStore.getSession(sessionId)?.abortController?.signal ?? new AbortController().signal;
+ 		const reply = await recoverTerminalReply({
+ 			runId: pending.idempotencyKey,
+@@ -1532,7 +1636,7 @@ var AcpTranslatorPromptStream = class {
+ 			outputText: void 0,
+ 			unavailable: "recovery-cancelled"
+ 		}));
+-		if (!this.claimPendingPrompt(pending)) return;
++		if (this.getPendingPrompt(sessionId, observedRunId) !== pending || !this.claimPendingPrompt(pending)) return;
+ 		const sentText = pending.sentText ?? "";
+ 		const outputText = reply.outputText;
+ 		const unavailable = reply.unavailable ?? (outputText?.startsWith(sentText) === false ? "reply-rewritten" : void 0);
+@@ -1552,7 +1656,27 @@ var AcpTranslatorPromptStream = class {
+ 		await this.emitPromptChunk(pending, "agent_message_chunk", `[OpenClaw interruption] ${message}`, false);
+ 		await this.rejectPendingPrompt(pending, new Error(message), { claimed: true });
+ 	}
+-	findPendingBySessionKey(sessionKey, runId) {
++	findPendingBySessionKey(sessionKey, runId, resumedFromRunId) {
++		if (runId && resumedFromRunId && runId !== resumedFromRunId) {
++			for (const pending of this.pendingPrompts.values()) {
++				if (!pending.sendAccepted || pending.sessionKey !== sessionKey || pending.idempotencyKey !== resumedFromRunId) continue;
++				this.agentEvents.clearApprovalRelaysForPrompt(pending.sessionId, pending.idempotencyKey);
++				for (const toolCallId of pending.toolCalls?.keys() ?? []) void this.sessionUpdates.emit({
++					sessionId: pending.sessionId, sessionKey, ledgerSessionId: pending.ledgerSessionId,
++					runId: resumedFromRunId, record: true, waitForDelivery: false,
++					update: { sessionUpdate: "tool_call_update", toolCallId, status: "failed" }
++				});
++				pending.toolCalls?.clear();
++				pending.idempotencyKey = runId;
++				pending.sentText = "";
++				pending.sentThought = "";
++				pending.streamMessage = void 0;
++				const session = this.sessionStore.getSession(pending.sessionId);
++				if (session) this.sessionStore.setActiveRun(pending.sessionId, runId, session.abortController);
++				this.log(`restart recovery adopted: ${resumedFromRunId} -> ${runId}`);
++				return pending;
++			}
++		}
+ 		for (const pending of this.pendingPrompts.values()) {
+ 			if (pending.sessionKey !== sessionKey) continue;
+ 			if (runId && pending.idempotencyKey !== runId) continue;
+@@ -1564,6 +1688,16 @@ var AcpTranslatorPromptStream = class {
+ 			return pending;
+ 		}
+ 	}
++	/** ClawX: resolve an operation event without a run id only when unambiguous. */
++	findUniquePendingBySessionKey(sessionKey) {
++		let found;
++		for (const pending of this.pendingPrompts.values()) {
++			if (pending.sessionKey !== sessionKey) continue;
++			if (found && found !== pending) return;
++			found = pending;
++		}
++		return found;
++	}
+ 	reconcilePendingSessionKey(pending, sessionKey) {
+ 		if (pending.sessionKey === sessionKey) return;
+ 		this.log(`session key reconciled: ${pending.sessionKey} -> ${sessionKey}`);
+@@ -1590,8 +1724,89 @@ var AcpTranslatorPromptStream = class {
+ };
+ //#endregion
+ //#region src/acp/translator.replay.ts
++// ClawX: snapshot-aware deltas. Provider snapshots may be cumulative, may
++// repeat a stale prefix, or may rewrite a shorter tail after a retry.
++function resolveAcpEventTextSnapshot(previousText, data) {
++	const nextText = typeof data?.text === "string" ? data.text : "";
++	const nextDelta = typeof data?.delta === "string" ? data.delta : "";
++	if (nextText && previousText) {
++		if (nextText.startsWith(previousText) && nextText.length > previousText.length) return nextText;
++		if (previousText.startsWith(nextText) && !nextDelta) return previousText;
++	}
++	if (nextDelta) return previousText + nextDelta;
++	if (nextText) return nextText;
++	return previousText;
++}
++function resolveAcpTextDelta(previousText, nextText) {
++	if (!nextText || nextText === previousText) return "";
++	if (!previousText) return nextText;
++	if (nextText.startsWith(previousText)) return nextText.slice(previousText.length);
++	if (previousText.startsWith(nextText)) return "";
++	return nextText;
++}
++// ClawX: replay tool results so a loaded ACP session shows completed tools.
++function extractToolResultReplay(message) {
++	const toolCallId = normalizeOptionalString(message.toolCallId);
++	if (!toolCallId) return [];
++	const rawOutput = {
++		content: message.content,
++		...message.details === void 0 ? {} : { details: message.details }
++	};
++	return [{
++		sessionUpdate: "tool_call_update",
++		toolCallId,
++		status: message.isError === true ? "failed" : "completed",
++		rawOutput,
++		content: extractToolCallContent(message.content) ?? extractToolCallContent(rawOutput),
++		locations: extractToolCallLocations(rawOutput)
++	}];
++}
++const ACP_COMPACTION_SOURCES = /* @__PURE__ */ new Set([
++	"threshold",
++	"overflow",
++	"preflight",
++	"manual"
++]);
++const MAX_ACP_COMPACTION_REASON_CODE_CHARS = 100;
++const MAX_ACP_COMPACTION_REASON_CHARS = 500;
++function buildAcpCompactionUpdate(data, runId) {
++	const phase = data.phase;
++	const compactionId = normalizeOptionalString(data.compactionId);
++	const source = normalizeOptionalString(data.source) ?? normalizeOptionalString(data.reason);
++	if ((phase !== "start" && phase !== "end") || !compactionId || !source || !ACP_COMPACTION_SOURCES.has(source)) return;
++	const timestamp = normalizeOptionalString(data.timestamp) ?? timestampMsToIsoString(data.ts);
++	const status = phase === "start" ? "in_progress" : data.aborted === true ? "cancelled" : data.completed === true ? "completed" : "failed";
++	const reasonCode = status === "failed" ? normalizeOptionalString(data.reasonCode)?.slice(0, MAX_ACP_COMPACTION_REASON_CODE_CHARS) : void 0;
++	const reason = status === "failed" ? normalizeOptionalString(data.failureReason)?.slice(0, MAX_ACP_COMPACTION_REASON_CHARS) : void 0;
++	return {
++		sessionUpdate: "session_info_update",
++		_meta: { "openclaw.ai/compaction": {
++			version: 1,
++			compactionId,
++			status,
++			source,
++			...normalizeOptionalString(runId) ? { runId: normalizeOptionalString(runId) } : {},
++			...typeof data.willRetry === "boolean" ? { willRetry: data.willRetry } : {},
++			...timestamp ? { timestamp } : {},
++			...reasonCode ? { reasonCode } : {},
++			...reason ? { reason } : {}
++		} }
++	};
++}
+ function extractReplayChunks(message) {
++	const compaction = message.__openclaw;
++	if (compaction?.kind === "compaction" && typeof compaction.id === "string" && compaction.id.trim()) return [{
++		sessionUpdate: "session_info_update",
++		_meta: { "openclaw.ai/compaction": {
++			version: 1,
++			compactionId: compaction.id,
++			status: "completed",
++			source: "transcript",
++			...timestampMsToIsoString(message.timestamp) ? { timestamp: timestampMsToIsoString(message.timestamp) } : {}
++		} }
++	}];
+ 	const role = typeof message.role === "string" ? message.role : "";
++	if (role === "toolResult") return extractToolResultReplay(message);
+ 	if (role !== "user" && role !== "assistant") return [];
+ 	if (typeof message.content === "string") return message.content.length > 0 ? [{
+ 		sessionUpdate: role === "user" ? "user_message_chunk" : "agent_message_chunk",
+@@ -1613,10 +1828,119 @@ function extractReplayChunks(message) {
+ 			sessionUpdate: "agent_thought_chunk",
+ 			text: typedBlock.thinking
+ 		});
++		if (role === "assistant" && typedBlock.type === "toolCall") {
++			const toolCallId = normalizeOptionalString(typedBlock.id);
++			const name = normalizeOptionalString(typedBlock.name);
++			if (!toolCallId) continue;
++			const args = asOptionalRecord(typedBlock.arguments);
++			replayChunks.push({
++				sessionUpdate: "tool_call",
++				toolCallId,
++				title: formatToolTitle(name, args),
++				status: "in_progress",
++				rawInput: args,
++				kind: inferToolKind(name),
++				locations: extractToolCallLocations(args)
++			});
++		}
+ 	}
+ 	return replayChunks;
+ }
+ //#endregion
++//#region src/acp/translator.transcript-tail.ts
++const ACP_TRANSCRIPT_REPLAY_META = "openclaw.ai/transcript-replay";
++function readAcpTranscriptIdentity(message) {
++	const meta = asOptionalRecord(message.__openclaw);
++	const position = asOptionalRecord(meta?.transcriptPosition);
++	const source = normalizeOptionalString(position?.source);
++	if (source && Number.isSafeInteger(position.rawSeq) && position.rawSeq >= 0) return JSON.stringify([source, position.rawSeq]);
++	const id = normalizeOptionalString(meta?.id);
++	return id ? JSON.stringify(["record", id]) : void 0;
++}
++function planAcpTranscriptTail(ledgerEvents, transcript) {
++	let highWater = -Infinity;
++	let assistantText = false;
++	const seen = new Set();
++	const knownRuns = new Map();
++	const newRun = () => ({ text: "", thought: "", startedTools: new Set(), completedTools: new Set() });
++	for (const event of ledgerEvents) {
++		if (Number.isFinite(event.at)) highWater = Math.max(highWater, event.at);
++		const update = event.update;
++		const marker = update?._meta?.[ACP_TRANSCRIPT_REPLAY_META];
++		if (typeof marker?.id === "string") seen.add(marker.id);
++		if (update?.sessionUpdate === "user_message_chunk") assistantText = false;
++		if (update?.sessionUpdate === "agent_message_chunk" && update.content?.text) assistantText = true;
++		if (!event.runId) continue;
++		let run = knownRuns.get(event.runId);
++		if (!run) knownRuns.set(event.runId, run = newRun());
++		const text = typeof update?.content?.text === "string" ? update.content.text : "";
++		if (update?.sessionUpdate === "agent_message_chunk") run.text += marker?.textPrefix ? text.slice(2) : text;
++		if (update?.sessionUpdate === "agent_thought_chunk") run.thought += text;
++		if (update?.sessionUpdate === "tool_call") run.startedTools.add(update.toolCallId);
++		if (update?.sessionUpdate === "tool_call_update" && (update.status === "completed" || update.status === "failed")) run.completedTools.add(update.toolCallId);
++	}
++	const nativeRuns = new Map();
++	const nativeIds = new Set();
++	const records = transcript.flatMap((message) => {
++		if (!isRecord(message)) return [];
++		const meta = asOptionalRecord(message.__openclaw);
++		const id = readAcpTranscriptIdentity(message);
++		if (id && nativeIds.has(id)) return [];
++		if (id) nativeIds.add(id);
++		const runId = normalizeOptionalString(meta?.runId);
++		const provenance = asOptionalRecord(message.provenance ?? message.inputProvenance);
++		const chunks = message.role === "user" && (provenance?.kind === "internal_system" || provenance?.kind === "inter_session") ? [] : extractReplayChunks(message);
++		const offsets = [];
++		let run = runId && nativeRuns.get(runId);
++		if (runId && !run) nativeRuns.set(runId, run = { text: "", thought: "" });
++		for (const chunk of chunks) {
++			const field = chunk.sessionUpdate === "agent_message_chunk" ? "text" : chunk.sessionUpdate === "agent_thought_chunk" ? "thought" : void 0;
++			offsets.push(field && run ? run[field].length : 0);
++			if (field && run) run[field] += chunk.text ?? "";
++		}
++		return [{ message, runId, chunks, offsets, id, timestamp: meta?.recordTimestampMs ?? message.timestamp }];
++	});
++	const planned = [];
++	for (const { message, runId, chunks, offsets, id, timestamp } of records) {
++		if (!id || seen.has(id) || !Number.isFinite(timestamp) || timestamp <= highWater) continue;
++		seen.add(id);
++		const known = runId && knownRuns.get(runId);
++		let firstText = true;
++		for (let index = 0; index < chunks.length; index++) {
++			let chunk = chunks[index];
++			const field = chunk.sessionUpdate === "agent_message_chunk" ? "text" : chunk.sessionUpdate === "agent_thought_chunk" ? "thought" : void 0;
++			if (field && known?.[field]) {
++				// A bounded legacy-prefix check may append a proven suffix; it never
++				// rewrites ledger content or repairs a hole inside covered history.
++				if (transcript.length >= ACP_LOAD_SESSION_REPLAY_LIMIT || !nativeRuns.get(runId)[field].startsWith(known[field])) continue;
++				const covered = Math.max(0, known[field].length - offsets[index]);
++				if (covered >= chunk.text.length) continue;
++				chunk = { ...chunk, text: chunk.text.slice(covered) };
++			}
++			if (chunk.sessionUpdate === "tool_call" && known?.startedTools.has(chunk.toolCallId)) continue;
++			if (chunk.sessionUpdate === "tool_call_update" && known?.completedTools.has(chunk.toolCallId)) continue;
++			let update = toAcpReplayUpdate(chunk);
++			const textPrefix = update.sessionUpdate === "agent_message_chunk" && firstText && assistantText && !known;
++			if (textPrefix) update = { ...update, content: { ...update.content, text: "\n\n" + update.content.text } };
++			if (update.sessionUpdate === "agent_message_chunk") { firstText = false; assistantText = true; }
++			if (update.sessionUpdate === "user_message_chunk") assistantText = false;
++			planned.push({
++				sourceRecordTimestampMs: timestamp,
++				...runId ? { runId } : {},
++				update: { ...update, _meta: {
++					...update._meta,
++					[ACP_TRANSCRIPT_REPLAY_META]: {
++						version: 1, id,
++						...textPrefix ? { textPrefix: true } : {},
++						...index === chunks.length - 1 && message.role === "assistant" && message.stopReason && message.stopReason !== "toolUse" ? { terminal: true } : {}
++					}
++				} }
++			});
++		}
++	}
++	return planned;
++}
++//#endregion
+ //#region src/acp/translator.session-list.ts
+ const ACP_LIST_SESSIONS_DEFAULT_PAGE_SIZE = 100;
+ const ACP_LIST_SESSIONS_MAX_PAGE_SIZE = 100;
+@@ -1660,10 +1984,497 @@ function resolveListSessionsPageSize(meta) {
+ 	return Math.min(ACP_LIST_SESSIONS_MAX_PAGE_SIZE, Math.max(1, Math.floor(requested)));
+ }
+ //#endregion
++//#region src/acp/translator.ambient.ts
++/** ClawX: replay baseline so a loaded session does not duplicate replayed text. */
++function resolveAmbientReplayBaseline(ledgerEvents, transcript) {
++	let sentText = "";
++	let sentThought = "";
++	const replayedRuns = new Map();
++	const compactions = new Map();
++	const applyUpdate = (update) => {
++		const sessionUpdate = update?.sessionUpdate;
++		const compaction = update?._meta?.["openclaw.ai/compaction"];
++		if (compaction?.version === 1 && typeof compaction.compactionId === "string") {
++			compactions.set(compaction.compactionId, compaction.status);
++			if (compactions.size > 256) compactions.delete(compactions.keys().next().value);
++		}
++		if (sessionUpdate === "user_message_chunk") { sentText = ""; sentThought = ""; return; }
++		const text = typeof update?.text === "string" ? update.text : typeof update?.content?.text === "string" ? update.content.text : "";
++		if (sessionUpdate === "agent_message") sentText = text;
++		else if (sessionUpdate === "agent_message_chunk") sentText += text;
++		else if (sessionUpdate === "agent_thought_chunk") sentThought += text;
++	};
++	const applyRunUpdate = (runId, update, terminal = false) => {
++		if (!runId) return;
++		let run = replayedRuns.get(runId);
++		if (!run) {
++			if (replayedRuns.size >= 100) replayedRuns.delete(replayedRuns.keys().next().value);
++			replayedRuns.set(runId, run = { settled: false, toolCalls: new Map(), completedToolCalls: new Set() });
++		}
++		const marker = update?._meta?.[ACP_TRANSCRIPT_REPLAY_META];
++		let text = typeof update?.content?.text === "string" ? update.content.text : "";
++		if (marker?.textPrefix) text = text.slice(2);
++		if (update?.sessionUpdate === "agent_message") run.sentText = text;
++		if (update?.sessionUpdate === "agent_message_chunk") run.sentText = (run.sentText ?? "") + text;
++		if (update?.sessionUpdate === "agent_thought_chunk") run.sentThought = (run.sentThought ?? "") + text;
++		if (update?.sessionUpdate === "tool_call") run.toolCalls.set(update.toolCallId, { title: update.title, kind: update.kind, locations: update.locations });
++		if (update?.sessionUpdate === "tool_call_update" && (update.status === "completed" || update.status === "failed")) {
++			run.toolCalls.delete(update.toolCallId);
++			run.completedToolCalls.add(update.toolCallId);
++		}
++		if (terminal || marker?.terminal || update?.sessionUpdate === "session_info_update" && typeof update._meta?.sessionKey === "string") run.settled = true;
++	};
++	for (const event of ledgerEvents) { applyUpdate(event?.update); applyRunUpdate(event?.runId, event?.update); }
++	for (const message of transcript) {
++		const chunks = extractReplayChunks(message);
++		const runId = normalizeOptionalString(message.__openclaw?.runId);
++		for (let index = 0; index < chunks.length; index++) {
++			applyUpdate(chunks[index]);
++			applyRunUpdate(runId, toAcpReplayUpdate(chunks[index]), index === chunks.length - 1 && message.role === "assistant" && message.stopReason && message.stopReason !== "toolUse");
++		}
++	}
++	return {
++		...sentText ? { sentText } : {},
++		...sentThought ? { sentThought } : {},
++		...replayedRuns.size ? { replayedRuns } : {},
++		...compactions.size ? { compactions } : {}
++	};
++}
++/** ClawX: keep text replay chunks in the ACP content shape and pass others through. */
++function toAcpReplayUpdate(chunk) {
++	if (chunk.sessionUpdate === "agent_message_chunk" || chunk.sessionUpdate === "agent_thought_chunk" || chunk.sessionUpdate === "user_message_chunk") return {
++		sessionUpdate: chunk.sessionUpdate,
++		content: {
++			type: "text",
++			text: chunk.text ?? ""
++		}
++	};
++	return chunk;
++}
++/** ClawX: keep a loaded ACP session streaming subagent/ambient runs without a pending prompt. */
++var AcpTranslatorAmbient = class {
++	constructor(gateway, sessionUpdates, sessionState, log) {
++		this.gateway = gateway;
++		this.sessionUpdates = sessionUpdates;
++		this.sessionState = sessionState;
++		this.log = log;
++		this.ambientSession = void 0;
++		this.ambientChatRuns = /* @__PURE__ */ new Map();
++		this.compactionStates = new Map();
++		this.sessionMessageSubscriptions = /* @__PURE__ */ new Map();
++		this.dispatchEvent = void 0;
++	}
++	async ensureSessionMessageSubscription(sessionKey, entry) {
++		if (entry.subscribed || entry.acquirePromise) return await entry.acquirePromise;
++		entry.acquirePromise = (async () => {
++			let finalError;
++			for (let attempt = 1; attempt <= 2; attempt++) try {
++				await this.gateway.request("sessions.messages.subscribe", { key: sessionKey });
++				if (this.sessionMessageSubscriptions.get(sessionKey) === entry && entry.refCount > 0) entry.subscribed = true;
++				else await this.gateway.request("sessions.messages.unsubscribe", { key: sessionKey }).catch((err) => {
++					this.log(`stale session message unsubscribe failed for ${sessionKey}: ${String(err)}`);
++				});
++				return;
++			} catch (err) {
++				finalError = err;
++				this.log(`session message subscription attempt ${attempt} failed for ${sessionKey}: ${String(err)}`);
++			}
++			throw finalError;
++		})();
++		try {
++			await entry.acquirePromise;
++		} finally {
++			entry.acquirePromise = void 0;
++		}
++	}
++	async retrySessionMessageSubscription(sessionKey) {
++		const entry = this.sessionMessageSubscriptions.get(sessionKey);
++		if (entry?.refCount > 0) await this.ensureSessionMessageSubscription(sessionKey, entry);
++	}
++	async acquireSessionMessageSubscription(sessionKey, retainOnFailure = false) {
++		let entry = this.sessionMessageSubscriptions.get(sessionKey);
++		if (!entry) {
++			entry = {
++				refCount: 0,
++				subscribed: false,
++				acquirePromise: void 0
++			};
++			this.sessionMessageSubscriptions.set(sessionKey, entry);
++		}
++		entry.refCount += 1;
++		try {
++			await this.ensureSessionMessageSubscription(sessionKey, entry);
++		} catch (err) {
++			if (retainOnFailure) throw err;
++			entry.refCount = Math.max(0, entry.refCount - 1);
++			if (entry.refCount === 0 && this.sessionMessageSubscriptions.get(sessionKey) === entry) this.sessionMessageSubscriptions.delete(sessionKey);
++			throw err;
++		}
++	}
++	async releaseSessionMessageSubscription(sessionKey) {
++		const entry = this.sessionMessageSubscriptions.get(sessionKey);
++		if (!entry) return;
++		entry.refCount = Math.max(0, entry.refCount - 1);
++		if (entry.refCount > 0) return;
++		this.sessionMessageSubscriptions.delete(sessionKey);
++		if (entry.acquirePromise) try {
++			await entry.acquirePromise;
++		} catch (err) {
++			this.log(`session message subscription cleanup failed for ${sessionKey}: ${String(err)}`);
++		}
++		if (!entry.subscribed) return;
++		entry.subscribed = false;
++		await this.gateway.request("sessions.messages.unsubscribe", { key: sessionKey }).catch((err) => {
++			this.log(`session message unsubscribe failed for ${sessionKey}: ${String(err)}`);
++		});
++	}
++	async activateSession(session) {
++		// Ambient streaming is best-effort: a Gateway that does not expose
++		// sessions.messages.subscribe must not fail session load/resume.
++		try {
++			await this.activateAmbientSession(session);
++		} catch (err) {
++			this.log(`ambient session activation failed for ${session.sessionId}: ${String(err)}`);
++		}
++	}
++	async beginReplay(session) {
++		try {
++			await this.activateAmbientSession(session, void 0, { replayPending: true });
++		} catch (err) {
++			this.log(`ambient session replay activation failed for ${session.sessionId}: ${String(err)}`);
++		}
++	}
++	async activateAmbientSession(session, replayBaseline, opts = {}) {
++		const currentSession = this.ambientSession;
++		const nextSession = {
++			sessionId: session.sessionId,
++			sessionKey: session.sessionKey,
++			...session.ledgerSessionId ? { ledgerSessionId: session.ledgerSessionId } : {},
++			...replayBaseline,
++			...opts.replayPending ? {
++				replayPending: true,
++				pendingEvents: [],
++				previousAmbientSession: currentSession,
++				replaySubscriptionAcquired: false
++			} : {}
++		};
++		if (currentSession?.sessionId === nextSession.sessionId && currentSession.sessionKey === nextSession.sessionKey) {
++			this.ambientSession = nextSession;
++			if (opts.replayPending) this.ambientChatRuns.clear();
++			return;
++		}
++		this.ambientSession = nextSession;
++		this.ambientChatRuns.clear();
++		try {
++			await this.acquireSessionMessageSubscription(nextSession.sessionKey);
++			if (opts.replayPending) nextSession.replaySubscriptionAcquired = true;
++		} catch (err) {
++			if (this.ambientSession === nextSession) this.ambientSession = currentSession;
++			throw err;
++		}
++		if (this.ambientSession !== nextSession) {
++			await this.releaseSessionMessageSubscription(nextSession.sessionKey);
++			return;
++		}
++		if (currentSession && !opts.replayPending) await this.releaseSessionMessageSubscription(currentSession.sessionKey);
++	}
++	async completeReplay(session, replayBaseline) {
++		const currentSession = this.ambientSession;
++		if (!currentSession || currentSession.sessionId !== session.sessionId || currentSession.sessionKey !== session.sessionKey || !currentSession.replayPending) return;
++		delete currentSession.sentText;
++		delete currentSession.sentThought;
++		const { replayedRuns, compactions, ...textBaseline } = replayBaseline;
++		for (const [id, status] of compactions ?? []) {
++			this.compactionStates.set(JSON.stringify([currentSession.ledgerSessionId ?? currentSession.sessionKey, id]), status);
++			if (this.compactionStates.size > 256) this.compactionStates.delete(this.compactionStates.keys().next().value);
++		}
++		Object.assign(currentSession, textBaseline);
++		for (const [runId, run] of replayedRuns ?? []) this.ambientChatRuns.set(runId, run);
++		const pendingEvents = currentSession.pendingEvents ?? [];
++		while (this.ambientSession === currentSession && pendingEvents.length > 0) {
++			const event = pendingEvents.shift();
++			if (event) await this.dispatchEvent?.(event);
++		}
++		if (this.ambientSession !== currentSession) return;
++		currentSession.replayPending = false;
++		delete currentSession.pendingEvents;
++		const previousSession = currentSession.previousAmbientSession;
++		const releasePrevious = Boolean(previousSession && currentSession.replaySubscriptionAcquired);
++		delete currentSession.previousAmbientSession;
++		delete currentSession.replaySubscriptionAcquired;
++		if (releasePrevious) await this.releaseSessionMessageSubscription(previousSession.sessionKey);
++	}
++	async rollbackReplay(session) {
++		const currentSession = this.ambientSession;
++		if (!currentSession || currentSession.sessionId !== session.sessionId || currentSession.sessionKey !== session.sessionKey || !currentSession.replayPending) return;
++		this.ambientSession = currentSession.previousAmbientSession;
++		this.ambientChatRuns.clear();
++		if (currentSession.replaySubscriptionAcquired) await this.releaseSessionMessageSubscription(currentSession.sessionKey);
++	}
++	async deactivate(sessionId) {
++		const currentSession = this.ambientSession;
++		if (!currentSession || sessionId && currentSession.sessionId !== sessionId) return;
++		this.ambientSession = void 0;
++		this.ambientChatRuns.clear();
++		await this.releaseSessionMessageSubscription(currentSession.sessionKey);
++		if (currentSession.replaySubscriptionAcquired && currentSession.previousAmbientSession) await this.releaseSessionMessageSubscription(currentSession.previousAmbientSession.sessionKey);
++	}
++	async recoverSubscriptions() {
++		await Promise.all([...this.sessionMessageSubscriptions].map(async ([sessionKey, entry]) => {
++			if (entry.acquirePromise) try {
++				await entry.acquirePromise;
++			} catch (err) {
++				this.log(`session message subscription recovery failed for ${sessionKey}: ${String(err)}`);
++			}
++			entry.acquirePromise = void 0;
++			if (this.sessionMessageSubscriptions.get(sessionKey) !== entry || entry.refCount === 0) return;
++			entry.subscribed = false;
++			try {
++				await this.ensureSessionMessageSubscription(sessionKey, entry);
++			} catch (err) {
++				this.log(`session message subscription recovery failed for ${sessionKey}: ${String(err)}`);
++			}
++		}));
++	}
++	isReplayBuffered(evt) {
++		const ambientSession = this.ambientSession;
++		const isAmbientEvent = evt.event === "chat" || evt.event === "agent" || evt.event === "session.tool" || evt.event === "session.operation";
++		if (!ambientSession?.replayPending || !isAmbientEvent || evt.payload?.sessionKey !== ambientSession.sessionKey) return false;
++		ambientSession.pendingEvents?.push(evt);
++		return true;
++	}
++	async emitCompactionUpdate(sessionKey, runId, data, pending) {
++		const loaded = this.ambientSession;
++		const target = pending ?? (loaded?.sessionKey === sessionKey ? loaded : void 0);
++		if (!target) return;
++		const update = buildAcpCompactionUpdate(data, runId);
++		if (!update) return;
++		const meta = update._meta["openclaw.ai/compaction"];
++		const key = JSON.stringify([target.ledgerSessionId ?? target.sessionKey, meta.compactionId]);
++		const previous = this.compactionStates.get(key);
++		if (previous && (previous !== "in_progress" || meta.status === previous)) return;
++		this.compactionStates.set(key, meta.status);
++		if (this.compactionStates.size > 256) this.compactionStates.delete(this.compactionStates.keys().next().value);
++		try {
++			await this.sessionUpdates.emit({
++				sessionId: target.sessionId, sessionKey: target.sessionKey,
++				...target.ledgerSessionId ? { ledgerSessionId: target.ledgerSessionId } : {},
++				runId: pending?.idempotencyKey ?? runId ?? `compact:${meta.compactionId}`,
++				record: true, update
++			});
++		} catch (err) {
++			if (this.compactionStates.get(key) === meta.status) {
++				if (previous) this.compactionStates.set(key, previous);
++				else this.compactionStates.delete(key);
++			}
++			throw err;
++		}
++	}
++	findAmbientSession(sessionKey, runId) {
++		const ambientSession = this.ambientSession;
++		const sessionKeyParts = typeof sessionKey === "string" ? sessionKey.split(":") : [];
++		const isNativeSubagentSession = sessionKeyParts.length === 4 && sessionKeyParts[0] === "agent" && Boolean(sessionKeyParts[1]) && sessionKeyParts[2] === "subagent" && Boolean(sessionKeyParts[3]);
++		const normalizedRunId = normalizeOptionalString(runId);
++		const isAmbientRun = Boolean(normalizedRunId) && (normalizedRunId.startsWith("announce:v1:") || isNativeSubagentSession);
++		if (!ambientSession || ambientSession.sessionKey !== sessionKey || !isAmbientRun) return;
++		return ambientSession;
++	}
++	getOrCreateAmbientChatRun(session, runId) {
++		let ambientRun = this.ambientChatRuns.get(runId);
++		if (ambientRun?.settled) return;
++		if (!ambientRun) {
++			if (this.ambientChatRuns.size >= 100) {
++				let evictionKey;
++				for (const [candidateKey, candidate] of this.ambientChatRuns) {
++					evictionKey ??= candidateKey;
++					if (candidate.settled) {
++						evictionKey = candidateKey;
++						break;
++					}
++				}
++				if (evictionKey) this.ambientChatRuns.delete(evictionKey);
++			}
++			const useReplayBaseline = !runId.startsWith("announce:v1:");
++			ambientRun = {
++				settled: false,
++				...useReplayBaseline && session.sentText ? { sentText: session.sentText } : {},
++				...useReplayBaseline && session.sentThought ? { sentThought: session.sentThought } : {}
++			};
++			if (useReplayBaseline) {
++				delete session.sentText;
++				delete session.sentThought;
++			}
++			this.ambientChatRuns.set(runId, ambientRun);
++		}
++		return ambientRun;
++	}
++	async handleChatEvent(evt) {
++		const payload = evt.payload;
++		if (!payload) return;
++		const ambientSession = this.findAmbientSession(payload.sessionKey, payload.runId);
++		if (!ambientSession) return;
++		await this.handleAmbientChatEvent(ambientSession, payload.runId, payload.state, payload.message);
++	}
++	async handleAgentEvent(evt) {
++		const payload = evt.payload;
++		if (!payload) return false;
++		const stream = payload.stream;
++		const runId = payload.runId;
++		const data = payload.data;
++		const sessionKey = payload.sessionKey;
++		if (!stream || !data || !sessionKey) return false;
++		const ambientSession = this.findAmbientSession(sessionKey, runId);
++		if (!ambientSession) return false;
++		if (stream === "assistant") {
++			if (resolveAssistantEventPhase(data) !== "commentary") return false;
++			const ambientRun = this.getOrCreateAmbientChatRun(ambientSession, runId);
++			if (!ambientRun) return false;
++			const fullThought = resolveAcpEventTextSnapshot(ambientRun.sentThought ?? "", data);
++			const delta = resolveAcpTextDelta(ambientRun.sentThought ?? "", fullThought);
++			if (!delta) return true;
++			ambientRun.sentThought = fullThought;
++			await this.sessionUpdates.emit({
++				sessionId: ambientSession.sessionId,
++				sessionKey: ambientSession.sessionKey,
++				...ambientSession.ledgerSessionId ? { ledgerSessionId: ambientSession.ledgerSessionId } : {},
++				runId,
++				record: true,
++				update: {
++					sessionUpdate: "agent_thought_chunk",
++					content: {
++						type: "text",
++						text: delta
++					}
++				}
++			});
++			return true;
++		}
++		if (stream !== "tool") return false;
++		const phase = data.phase;
++		const toolCallId = data.toolCallId;
++		if (!toolCallId) return false;
++		const ambientRun = this.getOrCreateAmbientChatRun(ambientSession, runId);
++		if (!ambientRun) return false;
++		const toolCalls = ambientRun.toolCalls ??= /* @__PURE__ */ new Map();
++		const completedToolCalls = ambientRun.completedToolCalls ??= new Set();
++		if (completedToolCalls.has(toolCallId)) return true;
++		if (phase === "start") {
++			if (toolCalls.has(toolCallId)) return true;
++			const args = data.args;
++			const title = formatToolTitle(data.name, args);
++			const kind = inferToolKind(data.name);
++			const locations = extractToolCallLocations(args);
++			toolCalls.set(toolCallId, {
++				title,
++				kind,
++				locations
++			});
++			await this.sessionUpdates.emit({
++				sessionId: ambientSession.sessionId,
++				sessionKey: ambientSession.sessionKey,
++				...ambientSession.ledgerSessionId ? { ledgerSessionId: ambientSession.ledgerSessionId } : {},
++				runId,
++				record: true,
++				update: {
++					sessionUpdate: "tool_call",
++					toolCallId,
++					title,
++					status: "in_progress",
++					rawInput: args,
++					kind,
++					locations
++				}
++			});
++			return true;
++		}
++		if (phase === "update" || phase === "result") {
++			const toolState = toolCalls.get(toolCallId);
++			const result = phase === "update" ? data.partialResult : data.result;
++			if (phase === "result") { toolCalls.delete(toolCallId); completedToolCalls.add(toolCallId); }
++			await this.sessionUpdates.emit({
++				sessionId: ambientSession.sessionId,
++				sessionKey: ambientSession.sessionKey,
++				...ambientSession.ledgerSessionId ? { ledgerSessionId: ambientSession.ledgerSessionId } : {},
++				runId,
++				record: true,
++				update: {
++					sessionUpdate: "tool_call_update",
++					toolCallId,
++					status: phase === "update" ? "in_progress" : data.isError ? "failed" : "completed",
++					rawOutput: result,
++					content: extractToolCallContent(result),
++					locations: extractToolCallLocations(toolState?.locations, result)
++				}
++			});
++			return true;
++		}
++		return false;
++	}
++	async handleAmbientChatEvent(session, runId, state, messageData) {
++		if (state !== "delta" && state !== "final" && state !== "aborted" && state !== "error") return;
++		const ambientRun = this.getOrCreateAmbientChatRun(session, runId);
++		if (!ambientRun) return;
++		const content = messageData?.content;
++		const fullThought = content?.filter((block) => block?.type === "thinking").map((block) => block.thinking ?? "").join("\n").trimEnd();
++		const newThought = resolveAcpTextDelta(ambientRun.sentThought ?? "", fullThought);
++		if (newThought) {
++			ambientRun.sentThought = fullThought;
++			await this.sessionUpdates.emit({
++				sessionId: session.sessionId,
++				sessionKey: session.sessionKey,
++				...session.ledgerSessionId ? { ledgerSessionId: session.ledgerSessionId } : {},
++				runId,
++				record: true,
++				update: {
++					sessionUpdate: "agent_thought_chunk",
++					content: {
++						type: "text",
++						text: newThought
++					}
++				}
++			});
++		}
++		const fullText = content?.filter((block) => block?.type === "text").map((block) => block.text ?? "").join("\n").trimEnd();
++		const newText = resolveAcpTextDelta(ambientRun.sentText ?? "", fullText);
++		if (newText) {
++			ambientRun.sentText = fullText;
++			await this.sessionUpdates.emit({
++				sessionId: session.sessionId,
++				sessionKey: session.sessionKey,
++				...session.ledgerSessionId ? { ledgerSessionId: session.ledgerSessionId } : {},
++				runId,
++				record: true,
++				update: {
++					sessionUpdate: "agent_message_chunk",
++					content: {
++						type: "text",
++						text: newText
++					}
++				}
++			});
++		}
++		if (state === "delta") return;
++		ambientRun.settled = true;
++		this.ambientChatRuns.delete(runId);
++		this.ambientChatRuns.set(runId, ambientRun);
++		try {
++			if (!this.sessionState) return;
++			const sessionSnapshot = await this.sessionState.getSnapshot(session.sessionKey);
++			await this.sessionState.sendSnapshotUpdate(session, sessionSnapshot, {
++				includeControls: false,
++				record: true,
++				runId
++			});
++		} catch (err) {
++			this.log(`ambient session snapshot update failed for ${session.sessionId}: ${String(err)}`);
++		}
++	}
++};
++//#endregion
+ //#region src/acp/translator.session-lifecycle.ts
+ const ACP_LOAD_SESSION_REPLAY_LIMIT = 1e6;
+ var AcpTranslatorSessionLifecycle = class {
+-	constructor(gateway, opts, sessionStore, sessionUpdates, sessionState, sessionCreateRateLimiter, cancelSessionWork, log) {
++	constructor(gateway, opts, sessionStore, sessionUpdates, sessionState, sessionCreateRateLimiter, cancelSessionWork, log, ambient) {
+ 		this.gateway = gateway;
+ 		this.opts = opts;
+ 		this.sessionStore = sessionStore;
+@@ -1672,9 +2483,11 @@ var AcpTranslatorSessionLifecycle = class {
+ 		this.sessionCreateRateLimiter = sessionCreateRateLimiter;
+ 		this.cancelSessionWork = cancelSessionWork;
+ 		this.log = log;
++		this.ambient = ambient;
+ 	}
+ 	async newSession(params) {
+ 		this.assertSupportedSessionSetup(params.mcpServers);
++		await this.opts.waitForGatewayReady?.();
+ 		this.enforceSessionCreateRateLimit("newSession");
+ 		const sessionId = randomUUID();
+ 		const meta = parseSessionMeta(params["_meta"]);
+@@ -1701,6 +2514,7 @@ var AcpTranslatorSessionLifecycle = class {
+ 	}
+ 	async loadSession(params) {
+ 		this.assertSupportedSessionSetup(params.mcpServers);
++		await this.opts.waitForGatewayReady?.();
+ 		if (!this.sessionStore.hasSession(params.sessionId)) this.enforceSessionCreateRateLimit("loadSession");
+ 		const meta = parseSessionMeta(params["_meta"]);
+ 		const hasExplicitRouting = Boolean(meta.sessionKey || meta.sessionLabel || this.opts.defaultSessionKey || this.opts.defaultSessionLabel);
+@@ -1717,7 +2531,7 @@ var AcpTranslatorSessionLifecycle = class {
+ 			meta,
+ 			fallbackKey: routedLedgerReplay.sessionKey ?? params.sessionId
+ 		});
+-		const ledgerReplay = exactLedgerReplay.complete && exactLedgerReplay.sessionKey === sessionKey ? exactLedgerReplay : listedLedgerReplay.complete && listedLedgerReplay.sessionKey === sessionKey ? listedLedgerReplay : await this.sessionUpdates.readLedgerReplay({
++		let ledgerReplay = exactLedgerReplay.complete && exactLedgerReplay.sessionKey === sessionKey ? exactLedgerReplay : listedLedgerReplay.complete && listedLedgerReplay.sessionKey === sessionKey ? listedLedgerReplay : await this.sessionUpdates.readLedgerReplay({
+ 			sessionId: params.sessionId,
+ 			sessionKey
+ 		});
+@@ -1729,29 +2543,35 @@ var AcpTranslatorSessionLifecycle = class {
+ 		});
+ 		await this.sessionUpdates.startLedgerSession(session, { complete: ledgerReplay.complete });
+ 		this.log(`loadSession: ${session.sessionId} -> ${session.sessionKey}`);
+-		const [sessionSnapshot, transcript] = await Promise.all([this.sessionState.getSnapshot(session.sessionKey), ledgerReplay.complete ? Promise.resolve([]) : this.getSessionTranscript(session.sessionKey).catch((err) => {
+-			this.log(`session transcript fallback for ${session.sessionKey}: ${String(err)}`);
+-			return [];
+-		})]);
+-		const replaySessionId = session.sessionId;
+-		if (ledgerReplay.complete) for (const event of ledgerReplay.events) await this.sessionUpdates.emit({
+-			sessionId: replaySessionId,
+-			update: event.update,
+-			record: false
+-		});
+-		else for (const message of transcript) for (const chunk of extractReplayChunks(message)) await this.sessionUpdates.emit({
+-			sessionId: replaySessionId,
+-			update: {
+-				sessionUpdate: chunk.sessionUpdate,
+-				content: {
+-					type: "text",
+-					text: chunk.text
+-				}
+-			}
+-		});
+-		return await this.publishSessionSnapshot(session, sessionSnapshot, false);
++		await this.ambient?.beginReplay(session);
++		try {
++			const [sessionSnapshot, transcript] = await Promise.all([this.sessionState.getSnapshot(session.sessionKey), this.getSessionTranscript(session.sessionKey).catch((err) => {
++				this.log(`session transcript fallback for ${session.sessionKey}: ${String(err)}`);
++				return [];
++			})]);
++			if (ledgerReplay.complete && transcript.length > 0) ledgerReplay = await this.sessionUpdates.importTranscriptTail(session, transcript) ?? ledgerReplay;
++			const replaySessionId = session.sessionId;
++			if (ledgerReplay.complete) for (const event of ledgerReplay.events) await this.sessionUpdates.emit({
++				sessionId: replaySessionId,
++				update: event.update,
++				record: false
++			});
++			else for (const message of transcript) for (const chunk of extractReplayChunks(message)) await this.sessionUpdates.emit({
++				sessionId: replaySessionId,
++				update: toAcpReplayUpdate(chunk),
++				record: false
++			});
++			const replayBaseline = resolveAmbientReplayBaseline(ledgerReplay.complete ? ledgerReplay.events : [], ledgerReplay.complete ? [] : transcript);
++			const result = await this.publishSessionSnapshot(session, sessionSnapshot, false);
++			await this.ambient?.completeReplay(session, replayBaseline);
++			return result;
++		} catch (err) {
++			await this.ambient?.rollbackReplay(session);
++			throw err;
++		}
+ 	}
+ 	async listSessions(params) {
++		await this.opts.waitForGatewayReady?.();
+ 		const requestedCwd = normalizeOptionalString(params.cwd);
+ 		if (requestedCwd) assertAbsoluteCwd(requestedCwd, "session/list");
+ 		const fallbackCwd = requestedCwd ?? process.cwd();
+@@ -1785,6 +2605,7 @@ var AcpTranslatorSessionLifecycle = class {
+ 	}
+ 	async resumeSession(params) {
+ 		this.assertSupportedSessionSetup(params.mcpServers ?? []);
++		await this.opts.waitForGatewayReady?.();
+ 		assertAbsoluteCwd(params.cwd, "session/resume");
+ 		const existingSession = this.sessionStore.getSession(params.sessionId);
+ 		if (!existingSession) this.enforceSessionCreateRateLimit("resumeSession");
+@@ -1801,11 +2622,13 @@ var AcpTranslatorSessionLifecycle = class {
+ 			cwd: params.cwd
+ 		});
+ 		await this.sessionUpdates.startLedgerSession(session, { complete: false });
++		await this.ambient?.activateSession(session);
+ 		this.log(`resumeSession: ${session.sessionId} -> ${session.sessionKey}`);
+ 		return await this.publishSessionSnapshot(session, sessionSnapshot, false);
+ 	}
+ 	async closeSession(params) {
+ 		const session = this.requireSession(params.sessionId);
++		await this.ambient?.deactivate(params.sessionId);
+ 		await this.cancelSessionWork(session);
+ 		this.sessionStore.deleteSession(params.sessionId);
+ 		this.log(`closeSession: ${params.sessionId}`);
+@@ -2309,6 +3132,16 @@ var AcpTranslatorSessionUpdates = class {
+ 			this.options.log(`event ledger session start failed for ${session.sessionId}: ${String(err)}`);
+ 		}
+ 	}
++	async importTranscriptTail(session, transcript) {
++		if (!this.options.eventLedger.importTranscriptTail) return;
++		let replay;
++		await this.recordLedgerMutation(session, "transcript tail", async () => {
++			replay = await this.options.eventLedger.importTranscriptTail({
++				sessionId: resolveLedgerSessionId(session), sessionKey: session.sessionKey, transcript
++			});
++		});
++		return replay;
++	}
+ 	readLedgerReplay(params) {
+ 		return this.readReplay(() => this.options.eventLedger.readReplay(params), `replay fallback for ${params.sessionId}`);
+ 	}
+@@ -2426,12 +3259,13 @@ var AcpGatewayAgent = class {
+ 			log: this.log
+ 		});
+ 		const sessionState = new AcpTranslatorSessionState(gateway, this.sessionUpdates, this.log);
+-		this.promptStream = new AcpTranslatorPromptStream(connection, gateway, opts, sessionStore, this.sessionUpdates, sessionState, this.approvalRelays, this.log);
++		const ambient = new AcpTranslatorAmbient(gateway, this.sessionUpdates, sessionState, this.log);
++		this.promptStream = new AcpTranslatorPromptStream(connection, gateway, opts, sessionStore, this.sessionUpdates, sessionState, this.approvalRelays, this.log, ambient);
+ 		const sessionCreateRateLimiter = createFixedWindowBudget({
+ 			maxRequests: resolveIntegerOption(opts.sessionCreateRateLimit?.maxRequests, SESSION_CREATE_RATE_LIMIT_DEFAULT_MAX_REQUESTS, { min: 1 }),
+ 			windowMs: resolveIntegerOption(opts.sessionCreateRateLimit?.windowMs, SESSION_CREATE_RATE_LIMIT_DEFAULT_WINDOW_MS, { min: 1e3 })
+ 		});
+-		const sessionLifecycle = new AcpTranslatorSessionLifecycle(gateway, opts, sessionStore, this.sessionUpdates, sessionState, sessionCreateRateLimiter, (session) => this.promptStream.cancelSessionWork(session), this.log);
++		const sessionLifecycle = new AcpTranslatorSessionLifecycle(gateway, opts, sessionStore, this.sessionUpdates, sessionState, sessionCreateRateLimiter, (session) => this.promptStream.cancelSessionWork(session), this.log, ambient);
+ 		this.newSession = sessionLifecycle.newSession.bind(sessionLifecycle);
+ 		this.loadSession = sessionLifecycle.loadSession.bind(sessionLifecycle);
+ 		this.listSessions = sessionLifecycle.listSessions.bind(sessionLifecycle);
+@@ -2455,7 +3289,7 @@ var AcpGatewayAgent = class {
+ 		}
+ 	}
+ 	handleGatewayReconnect() {
+-		this.promptStream.handleGatewayReconnect();
++		return this.promptStream.handleGatewayReconnect();
+ 	}
+ 	handleGatewayDisconnect(reason) {
+ 		this.promptStream.handleGatewayDisconnect(reason);
+@@ -2490,6 +3324,67 @@ var AcpGatewayAgent = class {
+ };
+ //#endregion
+ //#region src/acp/server.ts
++const ACP_GATEWAY_RECONNECT_TIMEOUT_MS = (() => {
++	const value = Number(process.env.OPENCLAW_ACP_GATEWAY_RECONNECT_TIMEOUT_MS);
++	return Number.isSafeInteger(value) && value >= 1000 && value <= 300000 ? value : 60000;
++})();
++// Readiness belongs to this ACP client's authenticated connection, not Main's
++// independent Gateway connection. Each reconnect recovery owns one generation.
++function createAcpGatewayReadiness(timeoutMs = ACP_GATEWAY_RECONNECT_TIMEOUT_MS) {
++	let generation = 0;
++	let ready = false;
++	let stopped = false;
++	let reason;
++	const waiters = new Set();
++	return {
++		invalidate(detail) {
++			ready = false;
++			if (detail) reason = String(detail).slice(0, 500);
++			generation++;
++		},
++		async recover(recovery) {
++			const observed = ++generation;
++			ready = false;
++			try {
++				await recovery();
++			} catch (err) {
++				if (!stopped && observed === generation) reason = formatErrorMessage(err).slice(0, 500);
++				return;
++			}
++			if (stopped || observed !== generation) return;
++			ready = true;
++			reason = void 0;
++			for (const finish of [...waiters]) finish();
++		},
++		wait(signal, deadline = Date.now() + timeoutMs) {
++			if (stopped) return Promise.reject(new Error("ACP Gateway connection is closed"));
++			if (signal?.aborted) return Promise.reject(new Error("ACP Gateway connection wait cancelled"));
++			if (ready) return Promise.resolve();
++			return new Promise((resolve, reject) => {
++				const finish = (error) => {
++					clearTimeout(timer);
++					signal?.removeEventListener("abort", abort);
++					waiters.delete(finish);
++					error ? reject(error) : resolve();
++				};
++				const abort = () => finish(new Error("ACP Gateway connection wait cancelled"));
++				const timer = setTimeout(() => finish(new RequestError(-32000,
++					`ACP did not reconnect to Gateway within ${timeoutMs / 1000}s`,
++					{ code: "ACP_GATEWAY_RECONNECT_TIMEOUT", ...reason ? { details: reason } : {} }
++				)), Math.max(0, deadline - Date.now()));
++				timer.unref?.();
++				waiters.add(finish);
++				signal?.addEventListener("abort", abort, { once: true });
++			});
++		},
++		stop() {
++			stopped = true;
++			ready = false;
++			generation++;
++			for (const finish of [...waiters]) finish(new Error("ACP Gateway connection is closed"));
++		}
++	};
++}
+ const MAX_STARTUP_ACP_BUFFER_BYTES = 1048576;
+ function createStartupInputMonitor(input) {
+ 	const [monitor, readable] = input.tee();
+@@ -2552,6 +3447,7 @@ async function serveAcpGateway(opts = {}) {
+ 	const startupAbortController = new AbortController();
+ 	let stopped = false;
+ 	let gatewayConnected = false;
++	const connectionReadiness = createAcpGatewayReadiness();
+ 	const { promise: gatewayReady, resolve: resolveGatewayReady, reject: rejectReady } = createDeferredCore();
+ 	const rejectGatewayReady = (err) => {
+ 		rejectReady(err instanceof Error ? err : new Error(String(err)));
+@@ -2595,13 +3491,15 @@ async function serveAcpGateway(opts = {}) {
+ 		onHelloOk: () => {
+ 			gatewayConnected = true;
+ 			resolveGatewayReady();
+-			agent?.handleGatewayReconnect();
++			void connectionReadiness.recover(() => agent?.handleGatewayReconnect());
+ 		},
+ 		onConnectError: (err) => {
++			connectionReadiness.invalidate(formatErrorMessage(err));
+ 			rejectGatewayReady(err);
+ 		},
+ 		onClose: (code, reason) => {
+ 			if (stopped) return;
++			connectionReadiness.invalidate(`${code}: ${reason}`);
+ 			rejectGatewayReady(/* @__PURE__ */ new Error(`gateway closed before ready (${code}): ${reason}`));
+ 			agent?.handleGatewayDisconnect(`${code}: ${reason}`);
+ 		}
+@@ -2614,6 +3512,7 @@ async function serveAcpGateway(opts = {}) {
+ 		shuttingDown = (async () => {
+ 			if (!stopped) {
+ 				stopped = true;
++				connectionReadiness.stop();
+ 				startupAbortController.abort();
+ 				startupInput.dispose();
+ 				process.stdin.pause();
+@@ -2676,6 +3575,10 @@ async function serveAcpGateway(opts = {}) {
+ 	new AgentSideConnection((conn) => {
+ 		agent = new AcpGatewayAgent(conn, gateway, {
+ 			...opts,
++			waitForGatewayReady: (signal, deadline) => {
++				if (!gateway.connected) connectionReadiness.invalidate("gateway not connected");
++				return connectionReadiness.wait(signal, deadline);
++			},
+ 			eventLedger,
+ 			sessionStore: sessionStore ?? void 0
+ 		});
+diff --git a/dist/server-chat-M7FtQZJ3.mjs b/dist/server-chat-M7FtQZJ3.mjs
+index c15a706d139ffaae89c5742a5d8c6d9090926a95..c6fe14c6c995faea3850bf57c9171c1ee8292eff 100644
+--- a/dist/server-chat-M7FtQZJ3.mjs
++++ b/dist/server-chat-M7FtQZJ3.mjs
+@@ -742,6 +742,7 @@ function createAgentEventHandler({ broadcast, broadcastToConnIds, nodeSendToSess
+ 		sendLivePayload("chat", sessionKey, payload, {
+ 			agentId,
+ 			controlUiVisible: delivery.controlUiVisible ?? true,
++			resumedFromRunId: delivery.resumedFromRunId,
+ 			dropIfSlow: true,
+ 			liveText: liveTextDelivery(chatRunState, clientRunId, broadcastDelta.replace ? void 0 : {
+ 				key: deliveryKey,
+@@ -805,6 +806,8 @@ function createAgentEventHandler({ broadcast, broadcastToConnIds, nodeSendToSess
+ 		})
+ 	});
+ 	const sendLivePayload = (event, sessionKey, payload, opts) => {
++		const resumedFromRunId = opts?.resumedFromRunId ?? getAgentRunContext(opts?.sourceRunId ?? payload.runId)?.resumedFromRunId;
++		if (resumedFromRunId) payload = { ...payload, resumedFromRunId };
+ 		if (event === "chat" && "state" in payload && (payload.state === "final" || payload.state === "error" || payload.state === "aborted") && transcriptPublication.holdTerminal(payload.runId, () => sendLivePayload(event, sessionKey, payload, opts))) return;
+ 		const visible = opts?.controlUiVisible ?? true;
+ 		const deliverySessionKeys = sessionKey ? resolveSessionDeliveryKeys(sessionKey, opts?.agentId) : void 0;
+@@ -1041,6 +1044,7 @@ function createAgentEventHandler({ broadcast, broadcastToConnIds, nodeSendToSess
+ 			agentId: sessionAgentId,
+ 			clientRunId,
+ 			sourceRunId: evt.runId,
++			resumedFromRunId: evt.resumedFromRunId,
+ 			seq: evt.seq,
+ 			controlUiVisible: isControlUiVisible
+ 		} : void 0;
+@@ -1192,6 +1196,20 @@ function createAgentEventHandler({ broadcast, broadcastToConnIds, nodeSendToSess
+ 					dropIfSlow: true,
+ 					liveText: liveTextDelivery(chatRunState, clientRunId)
+ 				});
++				const deliveryKeys = resolveSessionDeliveryKeys(sessionKey, sessionAgentId);
++				const scopedSubscribers = new Set();
++				for (const key of deliveryKeys) for (const connId of sessionMessageSubscribers.get(key)) {
++					if (!sessionSubscribers.has(connId) && !runToolRecipients?.has(connId)) scopedSubscribers.add(connId);
++				}
++				if (scopedSubscribers.size > 0) broadcastToConnIds("session.tool", {
++					...agentPayload,
++					...buildSessionEventSnapshot(sessionKey, void 0, sessionAgentId)
++				}, scopedSubscribers, {
++					dropIfSlow: true,
++					sessionKeys: deliveryKeys,
++					sessionSubscriptionVerified: true,
++					liveText: liveTextDelivery(chatRunState, clientRunId)
++				});
+ 			}
+ 		} else {
+ 			const itemPhase = isItemEvent && typeof evt.data?.phase === "string" ? evt.data.phase : "";
+@@ -1202,7 +1220,7 @@ function createAgentEventHandler({ broadcast, broadcastToConnIds, nodeSendToSess
+ 				});
+ 				flushBufferedAgentDeltaIfNeeded(clientRunId);
+ 			}
+-			if (publishLifecycle && (isControlUiVisible || sessionKey && hasSessionMessageSubscribers && (isItemEvent || evt.stream === "thinking" || evt.stream === "approval" || evt.stream === "lifecycle" || !isAborted && evt.stream === "assistant" && shouldMirrorAssistantEventToHiddenSessionMessages(evt.data)))) sendOrBufferAgentTextEvent(clientRunId, {
++			if (publishLifecycle && (isControlUiVisible || sessionKey && hasSessionMessageSubscribers && (isItemEvent || evt.stream === "compaction" || evt.stream === "thinking" || evt.stream === "approval" || evt.stream === "lifecycle" || !isAborted && evt.stream === "assistant" && shouldMirrorAssistantEventToHiddenSessionMessages(evt.data)))) sendOrBufferAgentTextEvent(clientRunId, {
+ 				sessionKey,
+ 				agentId: sessionAgentId,
+ 				controlUiVisible: isControlUiVisible,
+diff --git a/dist/server-request-context-DMwOlR6u.mjs b/dist/server-request-context-DMwOlR6u.mjs
+index aa0619947a03845ba844a68548bb47f92a758ac1..99fde47a8410a4f49365fa3d3a21266180808ded 100644
+--- a/dist/server-request-context-DMwOlR6u.mjs
++++ b/dist/server-request-context-DMwOlR6u.mjs
+@@ -403,6 +403,7 @@ function createGatewayRequestContext(params) {
+ 			runtimeState.sessionViewerPresence?.unsubscribe(connId);
+ 		},
+ 		getSessionEventSubscriberConnIds: sessionEventSubscribers.getAll,
++		getSessionMessageSubscriberConnIds: (sessionKey) => sessionMessageSubscribers.get(sessionKey),
+ 		registerToolEventRecipient: runtime.toolEventRecipients.add,
+ 		dedupe: runtime.dedupe,
+ 		wizardSessions: runtime.wizardSessions,
+diff --git a/dist/session-request-targets-BAGtAj-T.mjs b/dist/session-request-targets-BAGtAj-T.mjs
+index 91d059287a8e37e382d0be7510868a7885aaba12..cc17db8fad643cc1d0742ecd286b4020e1ec2604 100644
+--- a/dist/session-request-targets-BAGtAj-T.mjs
++++ b/dist/session-request-targets-BAGtAj-T.mjs
+@@ -5,11 +5,30 @@ import { d as getAgentEventLifecycleGeneration } from "./agent-events-CCeMHYh0.m
+ import { r as validateAgentWaitParams } from "./src-yRoHchex.mjs";
+ import { r as isDirectSessionReadMethod } from "./session-method-policy-B7o-3I76.mjs";
+ import { d as resolveTalkSessionTargetInput, l as resolveDirectSessionTargets, u as resolveSessionMutationTargets } from "./session-sharing-target-read-xGVQqwEk.mjs";
+-import { a as waitForAgentJob, n as getAgentJobSession, r as projectAgentJobObservation, t as captureAgentJobSession } from "./agent-job-DleplIFW.mjs";
++import { resolveAgentRecoveryWaitTarget, a as waitForAgentJob, n as getAgentJobSession, r as projectAgentJobObservation, t as captureAgentJobSession } from "./agent-job-DleplIFW.mjs";
+ import { c as resolveAgentWaitSource } from "./agent-dedupe-BdNZwCMG.mjs";
++import { _ as resolveSessionSharingTarget } from "./session-sharing-policy-CMWQKtE0.mjs";
+ //#region src/gateway/agent-turn/agent-wait.ts
++// ClawX: after another process restart, only the durable terminal owner can
++// vouch for the requested run. Never settle from session-wide status alone.
++function readAcpTerminalOwner(context, runId, sessionKey) {
++	if (!sessionKey) return;
++	const target = resolveSessionSharingTarget({ cfg: context.getRuntimeConfig(), sessionKey });
++	const entry = target?.entry;
++	if (!entry || entry.lastRunId !== runId || entry.lifecycleRunId || !Number.isFinite(entry.endedAt) || !["done", "error", "aborted"].includes(entry.status)) return;
++	return {
++		session: { sessionKey: target.storeKey, sessionId: entry.sessionId, agentId: target.agentId, lifecycleGeneration: getAgentEventLifecycleGeneration() },
++		status: entry.status === "done" ? "ok" : "error",
++		startedAt: entry.startedAt,
++		endedAt: entry.endedAt,
++		error: entry.status === "done" ? void 0 : entry.lastRunError ?? `Agent run ${entry.status}`,
++		terminalReply: { disposition: "visible" },
++		terminalReceipt: { runId, sessionId: entry.sessionId }
++	};
++}
+ function prepareAgentWaitForTurn(context, params) {
+-	const runId = params.runId.trim();
++	const requestedRunId = params.runId.trim();
++	const runId = resolveAgentRecoveryWaitTarget(requestedRunId, normalizeOptionalString(params.sessionKey));
+ 	const timeoutMs = params.timeoutMs ?? 3e4;
+ 	const source = resolveAgentWaitSource(context, runId);
+ 	const lifecycleGeneration = getAgentEventLifecycleGeneration();
+@@ -30,11 +49,11 @@ function prepareAgentWaitForTurn(context, params) {
+ 	};
+ 	const queuedBeforeWait = queuedResult();
+ 	const runContext = getAgentRunContext(runId);
+-	const initialSession = queuedBeforeWait?.session ?? getAgentJobSession(runId, source === "chat" ? "chat" : void 0) ?? captureAgentJobSession(runContext);
++	const initialSession = queuedBeforeWait?.session ?? getAgentJobSession(runId, source === "chat" ? "chat" : void 0) ?? captureAgentJobSession(runContext) ?? readAcpTerminalOwner(context, runId, normalizeOptionalString(params.sessionKey))?.session;
+ 	const wait = async () => {
+ 		if (queuedBeforeWait) return queuedBeforeWait;
+ 		let queuedDuringWait;
+-		const snapshot = await waitForAgentJob({
++		const snapshot = readAcpTerminalOwner(context, runId, normalizeOptionalString(params.sessionKey)) ?? await waitForAgentJob({
+ 			runId,
+ 			timeoutMs,
+ 			source,
+@@ -48,6 +67,7 @@ function prepareAgentWaitForTurn(context, params) {
+ 		if (!snapshot) return {
+ 			result: {
+ 				runId,
++				...runId !== requestedRunId ? { resumedFromRunId: requestedRunId } : {},
+ 				status: "timeout"
+ 			},
+ 			session: captureAgentJobSession(runContext) ?? initialSession
+@@ -57,7 +77,8 @@ function prepareAgentWaitForTurn(context, params) {
+ 			session,
+ 			result: {
+ 				runId,
+-				...result
++				...result,
++				...runId !== requestedRunId ? { resumedFromRunId: requestedRunId } : {}
+ 			}
+ 		};
+ 	};
+diff --git a/dist/sessions-compact-BHqjQkq-.mjs b/dist/sessions-compact-BHqjQkq-.mjs
+index 8ea14aae3da0f6480841ce7108e83b94733ceedc..9f0d69d8677a04d359a25494dd6cced9d4519454 100644
+--- a/dist/sessions-compact-BHqjQkq-.mjs
++++ b/dist/sessions-compact-BHqjQkq-.mjs
+@@ -45,6 +45,7 @@ import { t as assertValidParams } from "./validation-CX4u4B7f.mjs";
+ import { o as requireSessionKey, t as emitSessionOperation } from "./sessions-shared-Dr0eLQJX.mjs";
+ import { t as waitForTerminalSessionRunSettlement } from "./session-run-settlement-Bkcbqzad.mjs";
+ import { randomUUID } from "node:crypto";
++import { i as classifyCompactionReason } from "./request-error-facts-3oWuPbKO.mjs";
+ //#region src/gateway/server-methods/sessions-compaction-runner.ts
+ /** Returns only definitive legacy-runtime no-op verdicts; other runtimes decide for themselves. */
+ async function preflightGatewaySessionCompaction(params) {
+@@ -96,6 +97,7 @@ async function runGatewaySessionCompaction(params, host) {
+ 	const primaryConversation = await resolveCurrentSessionPrimaryConversation(transcriptTarget);
+ 	params.abortSignal?.throwIfAborted();
+ 	return await compactEmbeddedAgentSession({
++		compactionLifecycleManaged: true,
+ 		abortSignal: params.abortSignal,
+ 		contextEngineAgentId: params.agentId,
+ 		runId: params.runId,
+@@ -354,22 +356,45 @@ const sessionCompactHandlers = { "sessions.compact": async (options) => {
+ 					respondNotCompacted({ reason: "no transcript" });
+ 					return;
+ 				}
++				// ClawX: carry a stable compaction identity and outcome metadata so ACP
++				// clients can project the full compaction lifecycle.
++				const compactionId = randomUUID();
+ 				emitSessionOperation(context, {
+ 					operationId,
++					compactionId,
+ 					operation: "compact",
+ 					phase: "start",
+ 					sessionKey: target.canonicalKey,
+-					agentId: target.agentId
+-				});
+-				const emitCompactionEnd = (completed, reason) => emitSessionOperation(context, {
+-					operationId,
+-					operation: "compact",
+-					phase: "end",
+-					sessionKey: target.canonicalKey,
+ 					agentId: target.agentId,
+-					completed,
+-					reason
++					source: "manual",
++					reason: "manual",
++					timestamp: new Date().toISOString(),
++					aborted: false,
++					completed: false
+ 				});
++				const emitCompactionEnd = (completed, detail) => {
++					const detailText = detail == null ? void 0 : formatErrorMessage(detail);
++					const aborted = !completed && (detail instanceof Error && detail.name === "AbortError" || detailText?.toLowerCase() === "aborted" || detailText?.toLowerCase() === "operation aborted");
++					emitSessionOperation(context, {
++						operationId,
++						compactionId,
++						operation: "compact",
++						phase: "end",
++						sessionKey: target.canonicalKey,
++						agentId: target.agentId,
++						source: "manual",
++						reason: "manual",
++						timestamp: new Date().toISOString(),
++						aborted,
++						completed: completed && !aborted,
++						willRetry: false,
++						...!completed && !aborted && detailText ? {
++							reasonCode: classifyCompactionReason(detailText),
++							failureReason: detailText
++						} : {},
++						detail: detailText
++					});
++				};
+ 				let result;
+ 				let persisted = false;
+ 				let expectedEntry = latestEntry;
+@@ -420,7 +445,7 @@ const sessionCompactHandlers = { "sessions.compact": async (options) => {
+ 						}
+ 					})).ok;
+ 				} catch (err) {
+-					emitCompactionEnd(false, formatErrorMessage(err));
++					emitCompactionEnd(false, err);
+ 					throw err;
+ 				}
+ 				if (result.ok && result.compacted) {
+diff --git a/dist/sessions-shared-Dr0eLQJX.mjs b/dist/sessions-shared-Dr0eLQJX.mjs
+index 44fe0dfa5f272229fae9e14e79a6965fba93f939..7d5f4e59a0b20b17a24d4de16d9927e7d7228fb8 100644
+--- a/dist/sessions-shared-Dr0eLQJX.mjs
++++ b/dist/sessions-shared-Dr0eLQJX.mjs
+@@ -67,12 +67,13 @@ function loadAccessorSessionEntryForGatewayTarget(params) {
+ 	};
+ }
+ function emitSessionOperation(context, payload) {
+-	const connIds = context.getSessionEventSubscriberConnIds();
++	const connIds = new Set(context.getSessionEventSubscriberConnIds());
++	if (payload.operation === "compact" && payload.sessionKey) for (const connId of context.getSessionMessageSubscriberConnIds?.(payload.sessionKey) ?? []) connIds.add(connId);
+ 	if (connIds.size === 0) return;
+ 	context.broadcastToConnIds("session.operation", {
+ 		...payload,
+ 		ts: Date.now()
+-	}, connIds, { dropIfSlow: true });
++	}, connIds, { dropIfSlow: true, sessionKeys: payload.sessionKey ? [payload.sessionKey] : void 0, agentId: payload.agentId });
+ }
+ function isWorkerDispatchInputError(error) {
+ 	if (typeof error !== "object" || error === null || !("code" in error)) return false;
+diff --git a/dist/src-yRoHchex.mjs b/dist/src-yRoHchex.mjs
+index e0465d9952603588ad8e666f2361c6d545cd0eca..95edf06fe3b153296dc38add5ebd0ba9a2c6d42c 100644
+--- a/dist/src-yRoHchex.mjs
++++ b/dist/src-yRoHchex.mjs
+@@ -2486,6 +2486,7 @@ const AgentInternalEventSchema = closedObject({
+ /** Stream event emitted by the agent runtime over the gateway protocol. */
+ const AgentEventSchema = closedObject({
+ 	runId: NonEmptyString,
++	resumedFromRunId: Type.Optional(NonEmptyString),
+ 	seq: Type.Integer({ minimum: 0 }),
+ 	stream: NonEmptyString,
+ 	ts: Type.Integer({ minimum: 0 }),
+@@ -2790,6 +2791,7 @@ const AgentIdentityResultSchema = closedObject({
+ /** Waits for a submitted agent run to complete or time out. */
+ const AgentWaitParamsSchema = closedObject({
+ 	runId: NonEmptyString,
++	sessionKey: Type.Optional(NonEmptyString),
+ 	timeoutMs: Type.Optional(Type.Integer({ minimum: 0 }))
+ });
+ /** Wake request from external schedulers or devices into an agent session. */
+diff --git a/dist/zod-schema-BVpLKnmq.mjs b/dist/zod-schema-BVpLKnmq.mjs
+index 65b5da005ee3290812423c1d898ba88c4db1d6f0..05ed281c3774a8389b67166d8cda3a3064145272 100644
+--- a/dist/zod-schema-BVpLKnmq.mjs
++++ b/dist/zod-schema-BVpLKnmq.mjs
+@@ -135,7 +135,7 @@ const AgentDefaultsSchema = strictObject({
+ 		/** Thinking level for embedded OpenClaw compaction summaries. Default: low. */
+ 		thinkingLevel: union([AgentThinkingLevelSchema, literal("inherit")]).optional(),
+ 		/** Embedded OpenClaw keepRecentTokens budget used for cut-point selection. */
+-		keepRecentTokens: number().int().positive().optional(),
++		keepRecentTokens: number().int().min(0).optional(),
+ 		/** Identifier-preservation instruction policy for compaction summaries. */
+ 		identifierPolicy: union([literal("strict"), literal("off")]).optional(),
+ 		/** Preserve this many most-recent user/assistant turns verbatim in compaction summary context. */

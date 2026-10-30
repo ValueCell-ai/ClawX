@@ -38,8 +38,8 @@ ownedPaths:
   - tests/e2e/chat-sidebar-session-attention.spec.ts
   - tests/unit/session-key-utils.test.ts
   - tests/unit/openclaw-acp-stream-patch.test.ts
-  - patches/openclaw@2026.7.1-2.patch
-  - patches/@wecom__wecom-openclaw-plugin@2026.8.17.patch
+  - patches/openclaw@2026.10.5.patch
+  - patches/@wecom__wecom-openclaw-plugin@2026.9.15.patch
   - pnpm-lock.yaml
   - shared/web-browser.ts
   - electron/main/web-browser-policy.ts
@@ -63,6 +63,9 @@ conditionalProfiles:
       - Voice dictation microphone permission detection or system-settings guidance changes
 requiredRules:
   - openclaw-config-delivery
+  - openclaw-upgrade-persistence
+  - openclaw-runtime-child-processes
+  - clawx-system-automations
   - renderer-main-boundary
   - backend-communication-boundary
   - api-client-transport-policy
@@ -115,9 +118,13 @@ Channel/plugin migration behavior is also part of this scenario when ClawX rewri
 
 ClawX's prelaunch config sanitizer also owns desktop tool policy. It must keep `web_search` in both the agent-level and Gateway-level deny lists without replacing existing deny entries or disabling managed browser automation and `web_fetch`. It must also deny the agent-facing `gateway`, `nodes`, `create_goal`, `get_goal`, and `update_goal` tools at both layers while preserving application-owned Gateway RPCs. Messaging, session orchestration, and agent discovery tools remain available unless another explicit policy denies them.
 
+ClawX disables memory-core dreaming during prelaunch config synchronization while preserving memory search and existing memory data. Main excludes system-owned heartbeat and managed dreaming jobs from the user scheduled-task list before repairs and projection; same-name user jobs remain visible. Heartbeat execution is not disabled. See `harness/specs/rules/clawx-system-automations.md`.
+
 Scheduled-task history is Main-owned backend data. Current OpenClaw versions must be queried through the Gateway `cron.runs` RPC; direct run-log file reads are allowed only as a compatibility fallback for older file-backed runtimes. When a run's bounded summary ends with OpenClaw's truncation ellipsis, Main may recover the complete final assistant reply from the run transcript identified by that `cron.runs` entry, but only when the transcript reply is longer and shares the entire summary prefix. When a cron base session has no ACP replay, Renderer may project that typed host result into a generation-scoped, in-memory historical ACP timeline, but must not replace or duplicate non-empty ACP replay.
 
 The local HTML Preview privileged bridge is also Main-owned: Renderer may load a validated local HTML file or open that current file externally through the typed Host API. The guest is an implementation detail of the existing `preview` tab; there is no `web-browser` artifact tab or general address navigation. The durable guest contract is `harness/reference/web-browser.md`.
+
+Electron communication fixtures wait for Main initialization before replacing IPC handlers, explicitly model ACP session loading for provider-free composer flows, and retain production service transformations under test. Restart catalogs recover after their transient incomplete snapshot. See [E2E parallelism](../../reference/e2e-parallelism.md) and [full-suite repair](../tasks/stabilize-openclaw-upgrade-e2e.md) for fixture boundaries, failure diagnostics and validation evidence.
 
 Local Computer Use is also Main-owned and defaults off. Its Developer Mode-gated sidebar page retains typed host-api management for persistent opt-in and read-only macOS permission status. Only an explicit enabled permission action may prompt; startup and activation never prompt. Main retains `EmbeddedCuaDriverHost`, native SDK/ASAR loading, serialized lifecycle changes, and embedded daemon supervision. It atomically publishes the private `{ v: 2, generation, driverVersion, binaryPath, socketPath }` descriptor at `CLAWX_CUA_CONNECTION_FILE`; disabling stops the daemon and removes the descriptor, without plugin-policy reconciliation. Model operations use existing OpenClaw `exec` with the descriptor's absolute bundled binary and explicit socket, and image-capable `read` for workspace-scoped screenshot files. There is no custom `computer` tool, OpenClaw plugin, MCP proxy, CLI action wrapper, node host, pairing, or `node.invoke`. Native window/AX/menu/verification and other pinned CLI capabilities are available on supported hosts, alongside primary-display capture/input, rather than a ClawX action subset. See `harness/specs/tasks/cua-037-upgrade.md` for current upgrade acceptance; the earlier `cua-driver-cli` task superseded MCP requirements and retains historical 0.21.0 evidence.
 

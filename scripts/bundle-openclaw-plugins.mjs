@@ -8,19 +8,24 @@
  *   - @dingtalk-real-ai/dingtalk-connector -> build/openclaw-plugins/dingtalk
  *   - @wecom/wecom-openclaw-plugin -> build/openclaw-plugins/wecom
  *   - @openclaw/discord -> build/openclaw-plugins/discord
- *   - @openclaw/qqbot -> build/openclaw-plugins/qqbot
+ *   - @tencent-connect/openclaw-qqbot -> build/openclaw-plugins/qqbot
  *   - @openclaw/whatsapp -> build/openclaw-plugins/whatsapp
  *   - @tencent-weixin/openclaw-weixin -> build/openclaw-plugins/openclaw-weixin
  *
  * The output plugin directory contains:
  *   - plugin source files (index.ts, openclaw.plugin.json, package.json, ...)
  *   - plugin runtime node_modules/ (flattened direct + transitive deps)
+ *
+ * Plugins with a PLUGIN_COMPACT_POLICIES entry are then shrunk by
+ * openclaw-plugin-compact.mjs because OpenClaw copies every plugin file into a
+ * source capture per start.
  */
 
 import 'zx/globals';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { compactPluginMirror, PLUGIN_COMPACT_POLICIES } from './openclaw-plugin-compact.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -41,9 +46,11 @@ function normWin(p) {
 const PLUGINS = [
   { npmName: '@dingtalk-real-ai/dingtalk-connector', pluginId: 'dingtalk' },
   { npmName: '@wecom/wecom-openclaw-plugin', pluginId: 'wecom' },
-  { npmName: '@larksuite/openclaw-lark', pluginId: 'feishu-openclaw-plugin' },
+  // Official successor to @larksuite/openclaw-lark for OpenClaw >=2026.10.5.
+  { npmName: '@openclaw/feishu', pluginId: 'feishu-openclaw-plugin' },
   { npmName: '@openclaw/discord', pluginId: 'discord' },
-  { npmName: '@openclaw/qqbot', pluginId: 'qqbot' },
+  // OpenClaw 2026.10.5 serves the qqbot channel from Tencent QQBot 2.0.
+  { npmName: '@tencent-connect/openclaw-qqbot', pluginId: 'qqbot' },
   { npmName: '@openclaw/whatsapp', pluginId: 'whatsapp' },
   { npmName: '@tencent-weixin/openclaw-weixin', pluginId: 'openclaw-weixin' },
 ];
@@ -88,7 +95,7 @@ function listPackages(nodeModulesDir) {
   return result;
 }
 
-function bundleOnePlugin({ npmName, pluginId }) {
+async function bundleOnePlugin({ npmName, pluginId }) {
   const pkgPath = path.join(NODE_MODULES, ...npmName.split('/'));
   if (!fs.existsSync(pkgPath)) {
     throw new Error(`Missing dependency "${npmName}". Run pnpm install first.`);
@@ -117,12 +124,15 @@ function bundleOnePlugin({ npmName, pluginId }) {
   queue.push({ nodeModulesDir: rootVirtualNM, skipPkg: npmName });
 
   // Skip peerDependencies — they're provided by the host openclaw gateway.
+  // A peer that is also a runtime dependency (Tencent QQBot's connector) must
+  // still ship with the plugin.
   const SKIP_PACKAGES = new Set(['typescript', '@playwright/test']);
   const SKIP_SCOPES = ['@types/'];
   try {
     const pluginPkg = JSON.parse(fs.readFileSync(path.join(outputDir, 'package.json'), 'utf8'));
+    const runtimeDeps = new Set(Object.keys(pluginPkg.dependencies || {}));
     for (const peer of Object.keys(pluginPkg.peerDependencies || {})) {
-      SKIP_PACKAGES.add(peer);
+      if (!runtimeDeps.has(peer)) SKIP_PACKAGES.add(peer);
     }
   } catch { /* ignore */ }
 
@@ -184,6 +194,16 @@ function bundleOnePlugin({ npmName, pluginId }) {
   patchPluginId(outputDir, pluginId);
 
   echo`   ✅ ${pluginId}: copied ${copiedCount} deps (skipped dupes: ${skippedDupes})`;
+
+  const compact = PLUGIN_COMPACT_POLICIES[pluginId];
+  if (compact) {
+    const result = await compactPluginMirror(outputDir, compact);
+    const bundled = result.bundledPackages ? `, bundled ${result.bundledPackages.size} deps` : '';
+    echo`   🗜️  ${pluginId}: ${result.before} -> ${result.after} files${bundled}`;
+    if (result.unresolved?.size) {
+      echo`   ⚠️  ${pluginId}: left unshipped optional imports external: ${[...result.unresolved].join(', ')}`;
+    }
+  }
 }
 
 /**
@@ -244,7 +264,7 @@ echo`📦 Bundling OpenClaw plugin mirrors...`;
 fs.mkdirSync(OUTPUT_ROOT, { recursive: true });
 
 for (const plugin of PLUGINS) {
-  bundleOnePlugin(plugin);
+  await bundleOnePlugin(plugin);
 }
 
 echo`✅ Plugin mirrors ready: ${OUTPUT_ROOT}`;

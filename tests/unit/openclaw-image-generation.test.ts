@@ -80,7 +80,7 @@ describe('openclaw-image-generation helpers', () => {
     expect(isValidImageModelRef('no-slash')).toBe(false);
   });
 
-  it('reads and writes agents.defaults.imageGenerationModel', async () => {
+  it('reads and writes agents.defaults.mediaModels.image', async () => {
     await writeOpenClawJson({
       agents: {
         defaults: {
@@ -108,12 +108,15 @@ describe('openclaw-image-generation helpers', () => {
 
     const saved = await readOpenClawJson();
     const defaults = (saved.agents as Record<string, unknown>).defaults as Record<string, unknown>;
-    expect(defaults.imageGenerationModel).toEqual({
-      primary: 'openai/gpt-image-2',
-      fallbacks: ['google/gemini-3.1-flash-image-preview'],
-      timeoutMs: 120_000,
+    expect(defaults.mediaModels).toEqual({
+      image: {
+        primary: 'openai/gpt-image-2',
+        fallbacks: ['google/gemini-3.1-flash-image-preview'],
+        timeoutMs: 120_000,
+      },
     });
-    expect(defaults.mediaGenerationAutoProviderFallback).toBe(false);
+    expect(defaults).not.toHaveProperty('imageGenerationModel');
+    expect(defaults).not.toHaveProperty('mediaGenerationAutoProviderFallback');
 
     expect(await readImageGenerationConfig()).toEqual({
       primary: 'openai/gpt-image-2',
@@ -122,7 +125,7 @@ describe('openclaw-image-generation helpers', () => {
     });
   });
 
-  it('preserves non-UI image model fields when updating image generation settings', async () => {
+  it('migrates a legacy imageGenerationModel and preserves non-UI image model fields', async () => {
     await writeOpenClawJson({
       agents: {
         defaults: {
@@ -131,6 +134,7 @@ describe('openclaw-image-generation helpers', () => {
             timeoutMs: 30_000,
             maxPixels: 4_194_304,
           },
+          mediaGenerationAutoProviderFallback: false,
         },
       },
     });
@@ -143,10 +147,13 @@ describe('openclaw-image-generation helpers', () => {
     });
 
     const saved = await readOpenClawJson();
-    const defaults = (saved.agents as Record<string, unknown>).defaults as Record<string, unknown>;
-    expect(defaults.imageGenerationModel).toEqual({
-      primary: 'openai/gpt-image-2',
-      maxPixels: 4_194_304,
+    expect((saved.agents as Record<string, unknown>).defaults).toEqual({
+      mediaModels: {
+        image: {
+          primary: 'openai/gpt-image-2',
+          maxPixels: 4_194_304,
+        },
+      },
     });
   });
 
@@ -187,8 +194,7 @@ describe('openclaw-image-generation helpers', () => {
       agents: {
         defaults: {
           model: { primary: 'openai/gpt-4o' },
-          imageGenerationModel: { primary: 'openai/gpt-image-2' },
-          mediaGenerationAutoProviderFallback: false,
+          mediaModels: { image: { primary: 'openai/gpt-image-2' } },
         },
       },
     });
@@ -198,8 +204,8 @@ describe('openclaw-image-generation helpers', () => {
   it('builds the image settings view from one authoritative config snapshot', async () => {
     const runningConfig = {
       agents: {
-        defaults: { imageGenerationModel: { primary: 'openai/gpt-image-2' } },
-        list: [{ id: 'main', name: 'Main', default: true }],
+        defaults: { mediaModels: { image: { primary: 'openai/gpt-image-2' } } },
+        entries: { main: { name: 'Main' } },
       },
     };
     const manager = {
@@ -218,6 +224,7 @@ describe('openclaw-image-generation helpers', () => {
     const snapshot = await getImageGenerationSettingsSnapshot();
 
     expect(snapshot.config.primary).toBe('openai/gpt-image-2');
+    expect(snapshot.autoProviderFallback).toBe(false);
     expect(snapshot.defaultAgentId).toBe('main');
     expect(manager.rpc).toHaveBeenCalledOnce();
     expect(manager.rpc).toHaveBeenCalledWith('config.get', {});

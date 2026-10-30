@@ -34,9 +34,8 @@ export function createAgentsApi(_ctx: AgentsApiContext): CompleteHostServiceRegi
       const name = requireString(payload, 'name');
       const inheritWorkspace = isRecord(payload) ? payload.inheritWorkspace === true : undefined;
       const snapshot = await createAgent(name, { inheritWorkspace });
-      syncAllProviderAuthToRuntime().catch((err) => {
-        console.warn('[agents] Failed to sync provider auth after agent creation:', err);
-      });
+      // Do not report a usable Agent while credentials are still being copied.
+      await syncAllProviderAuthToRuntime();
       void ensureClawXContext({ waitForAllConfiguredWorkspaces: true }).catch((err) => {
         console.warn('[agents] Failed to ensure ClawX context after agent creation:', err);
       });

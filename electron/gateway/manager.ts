@@ -26,7 +26,6 @@ import {
   getReconnectSkipReason,
   isOpenClawFatalConfigExitCode,
 } from './process-policy';
-import { removeOpenClaw2026_7_1UpgradeSnapshot } from '../utils/openclaw-upgrade-snapshot';
 import {
   clearPendingGatewayRequests,
   rejectPendingGatewayRequest,
@@ -63,6 +62,7 @@ import {
   recordGatewayStartupStderrLine,
 } from './startup-stderr';
 import { runGatewayStartupSequence } from './startup-orchestrator';
+import { recordGatewayReadyForCapabilityConsent } from '../utils/plugin-capability-consent';
 import {
   hasFatalRuntimeFailureSignal,
   hasInvalidConfigFailureSignal,
@@ -90,7 +90,10 @@ import {
   GATEWAY_HEARTBEAT_TIMEOUT_MS,
   GATEWAY_CONTROL_PROBE_TIMEOUT_MS,
   GATEWAY_READY_FALLBACK_PROBE_DELAYS_MS,
+  GATEWAY_AGENT_DATABASE_ADMISSION_POLL_MS,
+  GATEWAY_AGENT_DATABASE_ADMISSION_WAIT_MS,
 } from './recovery-budget';
+import { probePendingAgentDatabaseAdmissions } from './agent-database-admission';
 
 export interface GatewayStatus {
   state: GatewayLifecycleState;
@@ -196,6 +199,7 @@ export class GatewayManager extends EventEmitter {
   private startLock = false;
   private lastSpawnSummary: string | null = null;
   private recentStartupStderrLines: string[] = [];
+  private lastProcessOutputAt = 0;
   private readonly startupTraceCollector = new GatewayStartupTraceCollector();
   private pendingRequests: Map<string, PendingGatewayRequest> = new Map();
   private deviceIdentity: DeviceIdentity | null = null;
@@ -210,7 +214,6 @@ export class GatewayManager extends EventEmitter {
   private deadlineEscalationPending = false;
   private deadlineProbeInFlight = false;
   private deferredDeadlineProbeLivenessAt: number | undefined;
-  private upgradeSnapshotCleanupAttempted = false;
   private externalShutdownSupported: boolean | null = null;
   private reconnectAttemptsTotal = 0;
   private reconnectSuccessTotal = 0;
@@ -220,6 +223,12 @@ export class GatewayManager extends EventEmitter {
   private isAutoReconnectStart = false;
   private gatewayReadyFallbackTimer: NodeJS.Timeout | null = null;
   private gatewayReadyFallbackAttempt = 0;
+  private gatewayReadyAdmissionGate: {
+    connectedAt: number | undefined;
+    startedAt: number;
+    pendingLogged: boolean;
+  } | null = null;
+  private gatewayReadyAdmissionTimer: NodeJS.Timeout | null = null;
   private readonly capabilityMonitor = new GatewayCapabilityMonitor();
   private diagnostics: GatewayDiagnosticsSnapshot = {
     consecutiveHeartbeatMisses: 0,
@@ -270,9 +279,8 @@ export class GatewayManager extends EventEmitter {
       this.resetGatewayReadyFallback();
       if (this.status.state === 'running' && !this.status.gatewayReady) {
         logger.info('Gateway subsystems ready (event received)');
-        this.setStatus({ gatewayReady: true });
+        this.markGatewayReady();
       }
-      void this.cleanupOpenClawUpgradeSnapshot();
     });
     this.on('gateway:health', (payload) => {
       this.capabilityMonitor.recordOpenClawHealth(payload);
@@ -397,6 +405,7 @@ export class GatewayManager extends EventEmitter {
           this.recentStartupStderrLines = [];
         },
         getStartupStderrLines: () => this.recentStartupStderrLines,
+        getProcessExitCode: () => this.processExitCode,
         assertLifecycle: (phase) => {
           this.lifecycleController.assert(startEpoch, phase);
         },
@@ -449,9 +458,11 @@ export class GatewayManager extends EventEmitter {
               getProcessExitCode: () => this.processExitCode,
               // A code-1012 in-process reload normally returns within seconds.
               // Use a smaller bounded retry budget for an owned process that
-              // stopped serving WS, while cold startup uses the explicit
-              // readiness deadline in waitForGatewayReady.
-              ...(recoveringOwnedProcess ? { retries: 50 } : {}),
+              // stopped serving WS, while a cold start waits as long as the
+              // new process keeps writing output.
+              ...(recoveringOwnedProcess
+                ? { retries: 50 }
+                : { getLastProgressAt: () => this.lastProcessOutputAt }),
             });
           } catch (error) {
             // A process that remains alive but never emits a challenge is
@@ -476,6 +487,7 @@ export class GatewayManager extends EventEmitter {
         },
         onConnectedToManagedGateway: () => {
           this.startHealthCheck();
+          recordGatewayReadyForCapabilityConsent();
           const tConnected = Date.now();
           const spawnToReadyMs = tReady && tSpawned ? tReady - tSpawned : undefined;
           const startupTrace = this.startupTraceCollector.getSummary();
@@ -514,6 +526,7 @@ export class GatewayManager extends EventEmitter {
       );
       this.setStatus({ state: 'error', error: String(error) });
       const fatalStartupFailure = isOpenClawFatalConfigExitCode(this.processExitCode)
+        || this.processExitCode === 1
         || hasFatalRuntimeFailureSignal(error, this.recentStartupStderrLines)
         || hasStartupMigrationLockSignal(error, this.recentStartupStderrLines)
         || hasInvalidConfigFailureSignal(error, this.recentStartupStderrLines);
@@ -743,6 +756,75 @@ export class GatewayManager extends EventEmitter {
     this.cancelDeadlineRecovery();
     this.restartController.clearDebounceTimer();
     this.resetGatewayReadyFallback();
+    this.clearGatewayReadyAdmission();
+  }
+
+  private clearGatewayReadyAdmission(): void {
+    if (this.gatewayReadyAdmissionTimer) {
+      clearTimeout(this.gatewayReadyAdmissionTimer);
+      this.gatewayReadyAdmissionTimer = null;
+    }
+    this.gatewayReadyAdmissionGate = null;
+  }
+
+  /**
+   * Publishes gatewayReady only once OpenClaw has admitted every agent
+   * database. Renderer session hydration keys off gatewayReady, and a
+   * pending admission answers sessions.list with an empty catalog.
+   */
+  private markGatewayReady(): void {
+    if (this.status.state !== 'running' || this.status.gatewayReady) {
+      return;
+    }
+    if (this.gatewayReadyAdmissionGate?.connectedAt === this.status.connectedAt) {
+      return;
+    }
+    this.clearGatewayReadyAdmission();
+    this.gatewayReadyAdmissionGate = {
+      connectedAt: this.status.connectedAt,
+      startedAt: Date.now(),
+      pendingLogged: false,
+    };
+    void this.checkGatewayReadyAdmission();
+  }
+
+  private async checkGatewayReadyAdmission(): Promise<void> {
+    const gate = this.gatewayReadyAdmissionGate;
+    const isCurrent = () => this.gatewayReadyAdmissionGate === gate
+      && this.status.state === 'running'
+      && !this.status.gatewayReady
+      && this.status.connectedAt === gate?.connectedAt;
+    if (!gate || !isCurrent()) {
+      return;
+    }
+
+    const pendingAgents = await probePendingAgentDatabaseAdmissions(this.status.port);
+    if (!isCurrent()) {
+      return;
+    }
+
+    const waitedMs = Date.now() - gate.startedAt;
+    if (pendingAgents && pendingAgents.length > 0) {
+      if (waitedMs < GATEWAY_AGENT_DATABASE_ADMISSION_WAIT_MS) {
+        if (!gate.pendingLogged) {
+          gate.pendingLogged = true;
+          logger.info(`Gateway ready deferred: agent database admission pending (agents=${pendingAgents.join(',')})`);
+        }
+        this.gatewayReadyAdmissionTimer = setTimeout(() => {
+          this.gatewayReadyAdmissionTimer = null;
+          void this.checkGatewayReadyAdmission();
+        }, GATEWAY_AGENT_DATABASE_ADMISSION_POLL_MS);
+        return;
+      }
+      logger.warn(
+        `Gateway agent database admission still pending after ${waitedMs}ms (agents=${pendingAgents.join(',')}); marking ready anyway`,
+      );
+    } else if (gate.pendingLogged) {
+      logger.info(`Gateway agent database admission completed after ${waitedMs}ms`);
+    }
+
+    this.clearGatewayReadyAdmission();
+    this.setStatus({ gatewayReady: true });
   }
 
   private clearGatewayReadyFallbackTimer(): void {
@@ -794,11 +876,7 @@ export class GatewayManager extends EventEmitter {
       if (this.status.state === 'running' && !this.status.gatewayReady) {
         logger.info('Gateway ready fallback RPC router probe succeeded');
         this.resetGatewayReadyFallback();
-        this.setStatus({ gatewayReady: true });
-        // A fast Gateway can emit gateway.ready before the WebSocket client is
-        // attached. A successful router probe is equivalent readiness, so it
-        // must also complete the one-time migration snapshot lifecycle.
-        void this.cleanupOpenClawUpgradeSnapshot();
+        this.markGatewayReady();
       }
     } catch (error) {
       this.capabilityMonitor.recordCoreProbe({
@@ -1006,6 +1084,7 @@ export class GatewayManager extends EventEmitter {
       getCurrentState: () => this.status.state,
       getShouldReconnect: () => this.shouldReconnect,
       onStderrLine: (line) => {
+        this.lastProcessOutputAt = Date.now();
         this.compactionActivity.recordStderrLine(line);
         recordGatewayStartupStderrLine(this.recentStartupStderrLines, line);
         const traceStage = this.startupTraceCollector.record(line);
@@ -1062,6 +1141,7 @@ export class GatewayManager extends EventEmitter {
         }
 
         const orchestratedStartupFailure = isOpenClawFatalConfigExitCode(code)
+          || (this.status.state === 'starting' && code === 1)
           || hasFatalRuntimeFailureSignal(undefined, this.recentStartupStderrLines)
           || hasStartupMigrationLockSignal(undefined, this.recentStartupStderrLines)
           || hasInvalidConfigFailureSignal(undefined, this.recentStartupStderrLines);
@@ -1315,20 +1395,6 @@ export class GatewayManager extends EventEmitter {
   private cancelDeadlineRecovery(): void {
     this.clearDeadlineEscalation();
     this.recoveryController.stop();
-  }
-
-  private async cleanupOpenClawUpgradeSnapshot(): Promise<void> {
-    if (this.upgradeSnapshotCleanupAttempted) return;
-    this.upgradeSnapshotCleanupAttempted = true;
-
-    try {
-      const result = await removeOpenClaw2026_7_1UpgradeSnapshot();
-      if (result.status === 'removed') {
-        logger.info(`[upgrade] Removed OpenClaw 2026.7.1 pre-migration snapshot: ${result.snapshotDir}`);
-      }
-    } catch (error) {
-      logger.warn('[upgrade] Failed to remove OpenClaw 2026.7.1 pre-migration snapshot:', error);
-    }
   }
 
   /**

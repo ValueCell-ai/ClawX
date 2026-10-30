@@ -335,6 +335,7 @@ async function installAcpPromptFailureMock(
   app: ElectronApplication,
   error: string,
   partialReply?: string,
+  errorCode?: string,
 ) {
   await app.evaluate(async ({ app: _app }, input) => {
     const { BrowserWindow, ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
@@ -367,11 +368,11 @@ async function installAcpPromptFailureMock(
           }
           await new Promise((resolve) => setTimeout(resolve, 50));
         }
-        return { id: request.id, ok: true, data: { success: false, error: input.error } };
+        return { id: request.id, ok: true, data: { success: false, error: input.error, ...(input.errorCode ? { errorCode: input.errorCode } : {}) } };
       }
       return originalHostInvoke?.(event, request) ?? { id: request?.id, ok: true, data: {} };
     });
-  }, { error, partialReply });
+  }, { error, partialReply, errorCode });
 }
 
 async function installSettledAcpHydrationMock(
@@ -389,7 +390,7 @@ async function installSettledAcpHydrationMock(
     type IpcInvokeHandler = (event: unknown, request: HostInvokeRequest) => Promise<unknown>;
     const handlers = (ipcMain as unknown as { _invokeHandlers?: Map<string, IpcInvokeHandler> })._invokeHandlers;
     const originalHostInvoke = handlers?.get('host:invoke');
-    let loadCount = 0;
+    let promptCompleted = false;
     const envelope = (generation: number, update: Record<string, unknown>) => ({
       sessionKey: payload.sessionKey,
       generation,
@@ -400,8 +401,7 @@ async function installSettledAcpHydrationMock(
     ipcMain.removeHandler('host:invoke');
     ipcMain.handle('host:invoke', async (event: unknown, request: HostInvokeRequest) => {
       if (request.module === 'chat' && request.action === 'loadAcpSession') {
-        loadCount += 1;
-        if (loadCount === 1) {
+        if (!promptCompleted) {
           return { id: request.id, ok: true, data: { success: true, generation: 1 } };
         }
         await new Promise((resolve) => setTimeout(resolve, 500));
@@ -441,6 +441,7 @@ async function installSettledAcpHydrationMock(
             },
           });
         }
+        promptCompleted = true;
         return { id: request.id, ok: true, data: { success: true, generation: 1 } };
       }
       return originalHostInvoke?.(event, request) ?? { id: request.id, ok: true, data: {} };
@@ -612,6 +613,119 @@ async function openChat(app: ElectronApplication) {
 }
 
 test.describe('ClawX ACP inline timeline', () => {
+  test('restores an offline completion from ACP replay after switching conversations and reloading', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    const awayKey = 'agent:main:session-offline-away';
+    const baseline: AcpSessionUpdate[] = [
+      { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'Start a background task' } },
+      { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Background task started.' } },
+    ];
+    const repaired: AcpSessionUpdate[] = [...baseline, {
+      sessionUpdate: 'agent_message_chunk',
+      content: { type: 'text', text: '\n\nThe task completed while this conversation was offline.' },
+      _meta: { 'openclaw.ai/transcript-replay': { version: 1, id: '["native-window",13]', textPrefix: true, terminal: true } },
+    }];
+    try {
+      await installAcpChatMocks(app, { success: true, generation: 1 }, [
+        { key: MAIN_SESSION_KEY, displayName: 'main', workspacePath: MAIN_WORKSPACE },
+        { key: awayKey, displayName: 'Other conversation', workspacePath: MAIN_WORKSPACE },
+      ]);
+      await installAcpLoadReplayBySessionMock(app, { [MAIN_SESSION_KEY]: [baseline, repaired, repaired, repaired, repaired], [awayKey]: [[], [], []] });
+      const page = await openChat(app);
+      await expect(page.getByTestId('acp-assistant-message')).toContainText('Background task started.');
+      await expect(page.getByTestId('acp-chat-timeline')).not.toContainText('The task completed while');
+
+      await page.getByTestId(`sidebar-session-${awayKey}`).click();
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();
+      await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
+      const completion = page.getByText('The task completed while this conversation was offline.', { exact: true });
+      await expect(completion).toHaveCount(1);
+      await expect(completion).toBeVisible();
+
+      await page.getByTestId(`sidebar-session-${awayKey}`).click();
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();
+      await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
+      await expect(completion).toHaveCount(1);
+      await page.reload();
+      await expect(completion).toHaveCount(1);
+      await expect(completion).toBeVisible();
+    } finally { await closeElectronApp(app); }
+  });
+
+  test('keeps the live turn visible through Gateway restart and shows recovered tools and completion', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    const otherSessionKey = 'agent:main:session-restart-catalog';
+    try {
+      await installAcpChatMocks(app);
+      await installAcpPromptDeferredMock(app);
+      const page = await openChat(app);
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();
+      await page.getByTestId('chat-composer-input').fill('Continue through Gateway restart');
+      await page.getByTestId('chat-composer-send').click();
+      await expect.poll(() => app.evaluate(() => (
+        typeof (globalThis as unknown as { __resolveAcpPrompt?: unknown }).__resolveAcpPrompt
+      ))).toBe('function');
+      await emitAcpSessionUpdates(app, [{ sessionUpdate: 'tool_call', toolCallId: 'interrupted-tool', title: 'Before restart', kind: 'execute', status: 'in_progress' }]);
+      await app.evaluate(async () => {
+        const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+        for (const window of BrowserWindow.getAllWindows()) window.webContents.send('gateway:status-changed', { state: 'starting', port: 18789, gatewayReady: false });
+      });
+      // One incomplete reconnect snapshot, followed by the recovered catalog.
+      // Keeping every later response incomplete would also model deletion after
+      // the prompt settles, rather than the transient restart gap under test.
+      await app.evaluate(({ ipcMain }, payload) => {
+        type Request = { id?: string; module?: string; action?: string; payload?: { method?: string } };
+        const handlers = (ipcMain as unknown as {
+          _invokeHandlers: Map<string, (event: unknown, request: Request) => unknown>;
+        })._invokeHandlers;
+        const previous = handlers.get('host:invoke')!;
+        const state = { reads: 0 };
+        (globalThis as unknown as { __restartCatalog: typeof state }).__restartCatalog = state;
+        ipcMain.removeHandler('host:invoke');
+        ipcMain.handle('host:invoke', (event, request: Request) => {
+          if (request.module === 'gateway' && request.action === 'rpc' && request.payload?.method === 'sessions.list') {
+            state.reads++;
+            return {
+              id: request.id, ok: true,
+              data: {
+                ts: Date.now(),
+                sessions: state.reads === 1 ? [payload.other] : [payload.main, payload.other],
+              },
+            };
+          }
+          return previous(event, request);
+        });
+      }, {
+        main: { key: MAIN_SESSION_KEY, displayName: 'main', workspacePath: MAIN_WORKSPACE },
+        other: { key: otherSessionKey, displayName: 'Other conversation', workspacePath: MAIN_WORKSPACE },
+      });
+      await app.evaluate(async () => {
+        const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+        for (const window of BrowserWindow.getAllWindows()) window.webContents.send('gateway:status-changed', { state: 'running', port: 18789, gatewayReady: true, connectedAt: Date.now(), pid: 54321 });
+      });
+      await expect.poll(() => app.evaluate(() => (
+        (globalThis as unknown as { __restartCatalog: { reads: number } }).__restartCatalog.reads
+      ))).toBeGreaterThan(0);
+      await expect(page.getByTestId(`sidebar-session-${otherSessionKey}`)).toBeVisible();
+      await expect(page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`)).toBeVisible();
+      await expect(page.getByTestId('chat-composer-send')).toHaveAttribute('title', 'Stop');
+      await emitAcpSessionUpdates(app, [
+        { sessionUpdate: 'tool_call_update', toolCallId: 'interrupted-tool', status: 'failed' },
+        { sessionUpdate: 'tool_call', toolCallId: 'recovered-tool', title: 'Recovered execution', kind: 'execute', status: 'in_progress' },
+        { sessionUpdate: 'tool_call_update', toolCallId: 'recovered-tool', status: 'completed' },
+        { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Gateway restarted; the task continued and completed.' } },
+      ]);
+      await expect(page.getByTestId('acp-assistant-message')).toContainText('Gateway restarted; the task continued and completed.');
+      await resolveDeferredAcpPrompt(app);
+      await expect(page.getByTestId('chat-composer-send')).toHaveAttribute('title', 'Send');
+      await expect(page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`)).toBeVisible();
+      await expect(page.getByTestId('acp-chat-timeline')).not.toContainText('[OpenClaw interruption]');
+    } finally {
+      await resolveDeferredAcpPrompt(app);
+      await closeElectronApp(app);
+    }
+  });
+
   test('does not use legacy history on startup or current-session clicks', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
@@ -1607,6 +1721,24 @@ test.describe('ClawX ACP inline timeline', () => {
           locations: [],
         },
         {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'history-tool-code',
+          title: 'exec: code: return 1 + 1',
+          rawInput: { code: 'const total = 1 + 1;\nreturn total;' },
+          status: 'completed',
+          content: [{ type: 'content', content: { type: 'text', text: '2' } }],
+          locations: [],
+        },
+        {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'history-tool-list',
+          title: 'ls: path: /workspace',
+          rawInput: { path: '/workspace' },
+          status: 'completed',
+          content: [{ type: 'content', content: { type: 'text', text: 'weather.md' } }],
+          locations: [],
+        },
+        {
           sessionUpdate: 'agent_message',
           messageId: 'history-assistant',
           content: [{ type: 'text', text: 'Hangzhou is cloudy today.' }],
@@ -1627,7 +1759,7 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(0);
 
       await expandAcpToolCallsGroup(page);
-      await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(9);
+      await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(11);
       await expect(page.getByText('Update plan: plan: [{"step":"Check weather"}]', { exact: true })).toBeVisible();
       await expect(page.getByText('Read web page: url: https://example.com/weather', { exact: true })).toBeVisible();
       await expect(page.getByText('Control browser: action: navigate', { exact: true })).toBeVisible();
@@ -1637,6 +1769,8 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(page.getByText('Spawn subagent: task: Check weather', { exact: true })).toBeVisible();
       await expect(page.getByText('Search memory: query: weather history', { exact: true })).toBeVisible();
       await expect(page.getByText('Control computer: action: screenshot', { exact: true })).toBeVisible();
+      await expect(page.getByText('Run code: code: return 1 + 1', { exact: true })).toBeVisible();
+      await expect(page.getByText('List files: path: /workspace', { exact: true })).toBeVisible();
       await expect(page.getByTestId('acp-tool-icon-list-checks')).toBeVisible();
       await expect(page.getByTestId('acp-tool-icon-globe')).toBeVisible();
       await expect(page.getByTestId('acp-tool-icon-square-mouse-pointer')).toBeVisible();
@@ -1646,6 +1780,12 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(page.getByTestId('acp-tool-icon-bot')).toBeVisible();
       await expect(page.getByTestId('acp-tool-icon-database')).toBeVisible();
       await expect(page.getByTestId('acp-tool-icon-mouse-pointer-click')).toBeVisible();
+      await expect(page.getByTestId('acp-tool-icon-code-xml')).toBeVisible();
+      await expect(page.getByTestId('acp-tool-icon-list-tree')).toBeVisible();
+      const codeCard = page.getByTestId('acp-tool-call-card').filter({ hasText: 'Run code: code: return 1 + 1' });
+      await expect(codeCard).toHaveAttribute('data-expanded', 'false');
+      await codeCard.getByTestId('acp-tool-toggle').click();
+      await expect(codeCard.getByTestId('acp-tool-input-pre')).toContainText('const total = 1 + 1;');
       await expect(page.getByTestId('acp-assistant-turn')).toContainText('Hangzhou is cloudy today.');
     } finally {
       await closeElectronApp(app);
@@ -2026,7 +2166,7 @@ test.describe('ClawX ACP inline timeline', () => {
 
   test('keeps partial output and places a provider prompt failure after the interrupted turn', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
-    const error = 'Provider finish_reason: content_filter';
+    const error = 'Internal error (-32603): Provider finish_reason: content_filter';
     const partialReply = 'The provider returned this partial result before filtering.';
 
     try {
@@ -2104,6 +2244,26 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(errorBanner).toContainText('Failed to send prompt');
       await expect(errorBanner).toContainText(error);
       await expect(page.locator('[data-testid="acp-chat-timeline"] + [data-testid="acp-error-banner"]')).toBeVisible();
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('explains an ACP reconnect timeout and displays its concrete protocol detail', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    const detail = 'ACP did not reconnect to Gateway within 60s (-32000): authentication unavailable';
+    try {
+      await installAcpChatMocks(app);
+      await installAcpPromptFailureMock(app, detail, undefined, 'ACP_GATEWAY_RECONNECT_TIMEOUT');
+      const page = await openChat(app);
+      await page.getByTestId('chat-composer-input').fill('Send immediately after Gateway restart');
+      await page.getByTestId('chat-composer-send').click();
+      const error = page.getByTestId('acp-error-banner');
+      await expect(error).toBeVisible();
+      await expect(error).toContainText('Timed out waiting for the conversation connection to recover. Please try again.');
+      await expect(error).toContainText(detail);
+      await expect(page.getByTestId('chat-composer-send')).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }

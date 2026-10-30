@@ -54,6 +54,8 @@
             "browser": "Control browser",
             "computer": "Control computer",
             "execCommand": "Run command",
+            "execCode": "Run code",
+            "listFiles": "List files",
             "read": "Read",
             "write": "Write",
             "spawnSubagent": "Spawn subagent",
@@ -123,7 +125,8 @@
             "open": "Open {{name}}",
             "preview": "Preview {{name}}",
             "openFailed": "Could not open attachment"
-        }
+        },
+        "gatewayReconnectTimeout": "Timed out waiting for the conversation connection to recover. Please try again."
     },
     "artifactPanel": {
         "tabs": {

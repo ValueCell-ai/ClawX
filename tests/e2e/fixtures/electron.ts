@@ -1,7 +1,7 @@
 import electronBinaryPath from 'electron';
 import { _electron as electron, expect, test as base, type ElectronApplication, type Page } from '@playwright/test';
 import { build as buildWithEsbuild } from 'esbuild';
-import { access, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -13,6 +13,7 @@ export type LaunchElectronOptions = {
 };
 
 type IpcMockConfig = {
+  emptyAcpSessions?: string[];
   gatewayStatus?: Record<string, unknown>;
   gatewayRpc?: Record<string, unknown>;
   hostApi?: Record<string, unknown>;
@@ -241,7 +242,7 @@ async function launchClawXElectron(
       DISPLAY: process.env.DISPLAY || ':1',
     }
     : {};
-  return await electron.launch({
+  const app = await electron.launch({
     executablePath: electronBinaryPath,
     args: ['--lang=en-US', ...(options.additionalArgs ?? []), electronEntry],
     env: {
@@ -263,6 +264,15 @@ async function launchClawXElectron(
     },
     timeout: 90_000,
   });
+  try {
+    // The debugger can connect while initialize() is still awaiting settings.
+    // Let Main register its real IPC handlers before a test replaces them.
+    await getStableWindow(app);
+    return app;
+  } catch (error) {
+    await closeElectronApp(app);
+    throw error;
+  }
 }
 
 export const test = base.extend<ElectronFixtures>({
@@ -278,11 +288,20 @@ export const test = base.extend<ElectronFixtures>({
     }
   },
 
-  userDataDir: async ({ browserName: _browserName }, provideUserDataDir) => {
+  userDataDir: async ({ browserName: _browserName }, provideUserDataDir, testInfo) => {
     const userDataDir = await mkdtemp(join(tmpdir(), 'clawx-e2e-user-data-'));
     try {
       await provideUserDataDir(userDataDir);
     } finally {
+      if (testInfo.status !== testInfo.expectedStatus) {
+        const logsDir = join(userDataDir, 'logs');
+        for (const name of await readdir(logsDir).catch(() => [])) {
+          if (!name.endsWith('.log')) continue;
+          await testInfo.attach(`electron-main-${name}`, {
+            path: join(logsDir, name), contentType: 'text/plain',
+          });
+        }
+      }
       await rm(userDataDir, { recursive: true, force: true });
     }
   },
@@ -557,7 +576,7 @@ export async function installIpcMocks(
         return null;
       };
 
-      if (mockConfig.gatewayRpc || mockConfig.hostApi || mockConfig.hostApiErrors || mockConfig.gatewayStatus) {
+      if (mockConfig.gatewayRpc || mockConfig.hostApi || mockConfig.hostApiErrors || mockConfig.gatewayStatus || mockConfig.emptyAcpSessions) {
         ipcMain.removeHandler('host:invoke');
         ipcMain.handle('host:invoke', async (event: unknown, request: {
           id?: string;
@@ -622,6 +641,12 @@ export async function installIpcMocks(
                 return respond(request.id, unwrapLegacyResponse(mockConfig.hostApi[key]));
               }
             }
+          }
+
+          if (request?.module === 'chat' && request.action === 'loadAcpSession'
+            && typeof request.payload?.sessionKey === 'string'
+            && mockConfig.emptyAcpSessions?.includes(request.payload.sessionKey)) {
+            return respond(request.id, { success: true, generation: 1, sessionUpdates: [] });
           }
 
           // Never consult host OS microphone state or launch privacy settings in E2E.

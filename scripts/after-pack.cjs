@@ -23,6 +23,7 @@ const { cpSync, existsSync, readdirSync, rmSync, statSync, mkdirSync, realpathSy
 const { execFileSync } = require('child_process');
 const { join, dirname, basename, relative } = require('path');
 const { ELECTRON_MAIN_RUNTIME_PACKAGES } = require('./openclaw-bundle-config.mjs');
+const { compactPluginMirror, PLUGIN_COMPACT_POLICIES } = require('./openclaw-plugin-compact.mjs');
 const { patchNsisExtractTemplate } = require('./patch-nsis-extract.mjs');
 const { patchNsisInstallSectionTemplate } = require('./patch-nsis-install-section.mjs');
 const { patchNsisUninstallTemplate } = require('./patch-nsis-uninstall.mjs');
@@ -241,6 +242,7 @@ const PLATFORM_NATIVE_SCOPES = {
   '@node-llama-cpp': /^(mac|linux|win)-(arm64|x64|armv7l)(-metal|-cuda|-cuda-ext|-vulkan)?$/,
   '@esbuild': /^(darwin|linux|win32|android|freebsd|netbsd|openbsd|sunos|aix|openharmony)-(x64|arm64|arm|ia32|loong64|mips64el|ppc64|riscv64|s390x)/,
   '@openai': /^codex-(darwin|linux|win32)-(x64|arm64)$/,
+  '@openclaw': /^fs-safe-(darwin|linux|win32)-(x64|arm64)/,
 };
 
 // Unscoped packages that follow a <name>-<platform>-<arch> convention.
@@ -425,6 +427,7 @@ exports.__test = {
   assertCuaPackagedRuntime,
   cleanupNativePlatformPackages,
   cleanupNodeModulesRuntimeJunk,
+  packageBundledPlugin,
 };
 
 // ── Broken module patcher ─────────────────────────────────────────────────────
@@ -711,8 +714,11 @@ function bundlePlugin(nodeModulesRoot, npmName, destDir) {
     const pluginPkg = JSON.parse(
       require('fs').readFileSync(join(destDir, 'package.json'), 'utf8')
     );
+    // A peer that is also a runtime dependency (Tencent QQBot's connector)
+    // must still ship with the plugin.
+    const runtimeDeps = new Set(Object.keys(pluginPkg.dependencies || {}));
     for (const peer of Object.keys(pluginPkg.peerDependencies || {})) {
-      SKIP_PACKAGES.add(peer);
+      if (!runtimeDeps.has(peer)) SKIP_PACKAGES.add(peer);
     }
   } catch { /* ignore */ }
 
@@ -751,6 +757,29 @@ function bundlePlugin(nodeModulesRoot, npmName, destDir) {
   }
   console.log(`[after-pack] ✅ Plugin ${npmName}: copied ${count} deps to ${destDir}`);
   return true;
+}
+
+async function packageBundledPlugin(nodeModulesRoot, npmName, pluginId, pluginDestDir, platform, arch) {
+  console.log(`[after-pack] Bundling plugin ${npmName} -> ${pluginDestDir}`);
+  if (!bundlePlugin(nodeModulesRoot, npmName, pluginDestDir)) return;
+  const pluginNM = join(pluginDestDir, 'node_modules');
+  cleanupUnnecessaryFiles(pluginDestDir);
+  if (existsSync(pluginNM)) {
+    const pluginJunkRemoved = cleanupKnownRuntimeJunk(pluginDestDir, platform, arch);
+    if (pluginJunkRemoved > 0) {
+      console.log(`[after-pack] ✅ ${pluginId}: removed ${pluginJunkRemoved} known runtime junk files/directories.`);
+    }
+    cleanupKoffi(pluginNM, platform, arch);
+    cleanupNativePlatformPackages(pluginNM, platform, arch);
+  }
+  // Fix hardcoded plugin ID mismatches in compiled JS
+  patchPluginIds(pluginDestDir, pluginId);
+  // OpenClaw copies every plugin file into a source capture on each Gateway start.
+  const compactPolicy = PLUGIN_COMPACT_POLICIES[pluginId];
+  if (compactPolicy) {
+    const result = await compactPluginMirror(pluginDestDir, compactPolicy);
+    console.log(`[after-pack] 🗜️  ${pluginId}: compacted ${result.before} -> ${result.after} files.`);
+  }
 }
 
 // ── Main hook ────────────────────────────────────────────────────────────────
@@ -814,32 +843,16 @@ exports.default = async function afterPack(context) {
   const BUNDLED_PLUGINS = [
     { npmName: '@dingtalk-real-ai/dingtalk-connector', pluginId: 'dingtalk' },
     { npmName: '@wecom/wecom-openclaw-plugin', pluginId: 'wecom' },
-    { npmName: '@larksuite/openclaw-lark', pluginId: 'feishu-openclaw-plugin' },
+    { npmName: '@openclaw/feishu', pluginId: 'feishu-openclaw-plugin' },
     { npmName: '@openclaw/discord', pluginId: 'discord' },
-    { npmName: '@openclaw/qqbot', pluginId: 'qqbot' },
+    { npmName: '@tencent-connect/openclaw-qqbot', pluginId: 'qqbot' },
     { npmName: '@openclaw/whatsapp', pluginId: 'whatsapp' },
     { npmName: '@tencent-weixin/openclaw-weixin', pluginId: 'openclaw-weixin' },
   ];
 
   mkdirSync(pluginsDestRoot, { recursive: true });
   for (const { npmName, pluginId } of BUNDLED_PLUGINS) {
-    const pluginDestDir = join(pluginsDestRoot, pluginId);
-    console.log(`[after-pack] Bundling plugin ${npmName} -> ${pluginDestDir}`);
-    const ok = bundlePlugin(nodeModulesRoot, npmName, pluginDestDir);
-    if (ok) {
-      const pluginNM = join(pluginDestDir, 'node_modules');
-      cleanupUnnecessaryFiles(pluginDestDir);
-      if (existsSync(pluginNM)) {
-        const pluginJunkRemoved = cleanupKnownRuntimeJunk(pluginDestDir, platform, arch);
-        if (pluginJunkRemoved > 0) {
-          console.log(`[after-pack] ✅ ${pluginId}: removed ${pluginJunkRemoved} known runtime junk files/directories.`);
-        }
-        cleanupKoffi(pluginNM, platform, arch);
-        cleanupNativePlatformPackages(pluginNM, platform, arch);
-      }
-      // Fix hardcoded plugin ID mismatches in compiled JS
-      patchPluginIds(pluginDestDir, pluginId);
-    }
+    await packageBundledPlugin(nodeModulesRoot, npmName, pluginId, join(pluginsDestRoot, pluginId), platform, arch);
   }
 
   // 1.1b Bundle the official DingTalk workspace CLI (`dws`) so calendar/doc
@@ -869,7 +882,7 @@ exports.default = async function afterPack(context) {
   //     the top-level node_modules/ as well.
   const buildExtDir = join(__dirname, '..', 'build', 'openclaw', 'dist', 'extensions');
   const packExtDir = join(openclawRoot, 'dist', 'extensions');
-  // ClawX always uses the official @larksuite/openclaw-lark plugin for Feishu.
+  // ClawX always uses the official @openclaw/feishu plugin for Feishu.
   // The built-in openclaw dist/extensions/feishu tree is redundant, and on macOS
   // its mirrored runtime deps significantly increase codesign file pressure.
   rmSync(join(packExtDir, 'feishu'), { recursive: true, force: true });

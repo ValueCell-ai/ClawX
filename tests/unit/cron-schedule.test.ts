@@ -77,6 +77,40 @@ describe('cron schedule normalization', () => {
   });
 });
 
+describe('cron list system jobs', () => {
+  it('hides managed jobs before repair but keeps same-name user jobs and authored legacy payloads', async () => {
+    const base = makeGatewayJob({ kind: 'cron', expr: '0 3 * * *' });
+    const jobs = [
+      { ...base, id: 'heartbeat', declarationKey: 'heartbeat:main', payload: { kind: 'heartbeat' } },
+      { ...base, id: 'managed', declarationKey: 'memory-core:memory-dreaming-promotion', enabled: false,
+        sessionTarget: 'isolated', delivery: { mode: 'announce' } },
+      { ...base, id: 'legacy', name: 'Memory Dreaming Promotion', payload: {
+        kind: 'agentTurn', message: '__openclaw_memory_core_short_term_promotion_dream__',
+      } },
+      { ...base, id: 'renamed-legacy', description: '[managed-by=memory-core.short-term-promotion]', payload: {
+        kind: 'agentTurn', message: '__openclaw_memory_core_short_term_promotion_dream__',
+      } },
+      { ...base, id: 'light', name: 'Memory Light Dreaming', payload: {
+        kind: 'systemEvent', text: '__openclaw_memory_core_light_sleep__',
+      } },
+      { ...base, id: 'rem', description: '[managed-by=memory-core.dreaming.rem]', payload: {
+        kind: 'systemEvent', text: '__openclaw_memory_core_rem_sleep__',
+      } },
+      { ...base, id: 'user', name: 'Memory Dreaming Promotion' },
+      { ...base, id: 'user-heartbeat', name: 'heartbeat-main' },
+      { ...base, id: 'ambiguous', description: '[managed-by=memory-core.short-term-promotion]' },
+      { ...base, id: 'declared-user', declarationKey: 'my-recurring-task' },
+    ];
+    const rpc = vi.fn(async () => ({ jobs }));
+    const api = createCronApi({ gatewayManager: { rpc } as unknown as GatewayManager });
+    const result = await api.list();
+    expect(result.map((job) => job.id)).toEqual(['user', 'user-heartbeat', 'ambiguous', 'declared-user']);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith('cron.list', { includeDisabled: true }, 8000);
+    expect(jobs[1].delivery).toEqual({ mode: 'announce' });
+  });
+});
+
 describe('cron session history', () => {
   beforeEach(() => {
     sessionMocks.loadSessionTranscriptByKey.mockReset();

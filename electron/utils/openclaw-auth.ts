@@ -1,8 +1,9 @@
 /**
  * OpenClaw Auth Profiles Utility
- * Writes API keys to OpenClaw agent auth storage (SQLite primary since 2026.6+,
- * with auth-profiles.json kept for migration compatibility) so the Gateway can
- * load them for AI provider calls.
+ * Writes API keys to OpenClaw agent auth storage (SQLite since 2026.6+; main's
+ * credentials move to shared state once OpenClaw 2026.10 relocates them, and
+ * auth-profiles.json is written only while a schema migration is pending) so
+ * the Gateway can load them for AI provider calls.
  *
  * All file I/O is asynchronous (fs/promises) to avoid blocking the
  * Electron main thread.  On Windows + NTFS + Defender the synchronous
@@ -13,7 +14,7 @@ import { access, mkdir, readFile, readdir, writeFile } from 'fs/promises';
 import { constants, readdirSync, readFileSync, existsSync } from 'fs';
 import { dirname, join } from 'path';
 import { homedir } from 'os';
-import { listConfiguredAgentIds } from './agent-config';
+import { listConfiguredAgentIds, migrateLegacyAgentRosterInConfig } from './agent-config';
 import { getOpenClawResolvedDir } from './paths';
 import {
   getProviderEnvVar,
@@ -36,6 +37,7 @@ import {
 import {
   ensureMemorySearchFtsDefault,
   hasUserMemorySearchConfig,
+  migrateLegacyMemorySearchConfig,
   MEMORY_SEARCH_FTS_MIGRATION_VERSION,
 } from './openclaw-memory-search';
 import { PORTS } from './config';
@@ -49,16 +51,19 @@ import {
   inferKnownModelContextWindow,
 } from '../shared/providers/model-capabilities';
 import {
-  applyModelAwareCompactionReserveTokensFloor,
-  DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR,
-} from './openclaw-compaction';
-import {
   CLAWX_OPENAI_IMAGE_DEFAULT_MODEL,
   CLAWX_OPENAI_IMAGE_PROVIDER_KEY,
 } from './openclaw-image-relay-constants';
 import {
+  readImageGenerationModelValue,
+  writeImageGenerationModelValue,
+} from './openclaw-media-models';
+import { listOpenClawAgentEntryRecords } from './openclaw-agent-roster';
+import {
   migrateAuthProfilesJsonToSqliteIfNeeded,
+  OpenClawAgentSchemaMigrationPendingError,
   readAuthProfilesFromSqlite,
+  repairOpenClawOwnedAgentSchema,
   readAuthProfilesJson,
   writeAuthProfilesToSqlite,
   type PersistedAuthProfilesStore,
@@ -69,6 +74,12 @@ import {
   migrateDingTalkChannelSection,
   migrateDingTalkPluginRegistrations,
 } from './dingtalk-plugin-compat';
+import {
+  QQBOT_CHANNEL_ID,
+  QQBOT_PLUGIN_ID,
+  migrateQQBotChannelSection,
+  migrateQQBotPluginRegistrations,
+} from './qqbot-plugin-compat';
 
 const AUTH_STORE_VERSION = 1;
 const AUTH_PROFILE_FILENAME = 'auth-profiles.json';
@@ -480,7 +491,19 @@ async function readAuthProfiles(agentId = 'main'): Promise<AuthProfilesStore> {
 }
 
 async function writeAuthProfiles(store: AuthProfilesStore, agentId = 'main'): Promise<void> {
-  writeAuthProfilesToSqlite(store, agentId);
+  try {
+    writeAuthProfilesToSqlite(store, agentId);
+    // OpenClaw 2026.10 treats auth-profiles.json as an unmigrated source and
+    // can refuse its providers, so the file is only Doctor's import input.
+    return;
+  } catch (error) {
+    // Do not write into a v1/v16 database before OpenClaw doctor owns the
+    // migration. Keeping the legacy JSON source intact lets doctor import it
+    // and verify the resulting SQLite target. Future schemas remain hard
+    // failures and are never shadowed by a compatibility write.
+    if (!(error instanceof OpenClawAgentSchemaMigrationPendingError)) throw error;
+    console.warn(`[auth-sync] Deferred SQLite auth write for agent "${agentId}" until OpenClaw schema migration completes`);
+  }
   try {
     await writeJsonFile(getAuthProfilesPath(agentId), store);
   } catch (error) {
@@ -494,6 +517,7 @@ export async function migrateAllAgentAuthProfilesToSqlite(): Promise<void> {
   let migrated = false;
   for (const agentId of agentIds) {
     try {
+      repairOpenClawOwnedAgentSchema(agentId);
       migrated = await migrateAuthProfilesJsonToSqliteIfNeeded(agentId) || migrated;
     } catch (error) {
       console.warn(`Failed to migrate auth profiles to SQLite for agent "${agentId}":`, error);
@@ -569,9 +593,16 @@ async function discoverAgentIds(): Promise<string[]> {
 
 // ── OpenClaw Config Helpers ──────────────────────────────────────
 
-const FEISHU_PLUGIN_ID_CANDIDATES = ['openclaw-lark', 'feishu-openclaw-plugin'] as const;
+// OpenClaw 2026.10.5 replaced @larksuite/openclaw-lark with the official
+// @openclaw/feishu plugin, whose manifest id is `feishu`. Legacy ids remain
+// only for allow/entry cleanup and migration.
+const FEISHU_PLUGIN_DIR_CANDIDATES = ['feishu-openclaw-plugin', 'openclaw-lark'] as const;
+const FEISHU_PLUGIN_ID_CANDIDATES = ['feishu', 'openclaw-lark', 'feishu-openclaw-plugin'] as const;
+const DEFAULT_FEISHU_PLUGIN_ID = 'feishu';
 const VALID_COMPACTION_MODES = new Set(['default', 'safeguard']);
-const CLAWX_COMPACTION_IDENTIFIER_INSTRUCTIONS = 'Preserve only identifiers referenced by unresolved asks, active constraints, modified files, or pending next steps.';
+// OpenClaw 2026.10 rejects these compaction keys that earlier ClawX releases
+// seeded; built-in defaults replace them.
+const RETIRED_CLAWX_COMPACTION_KEYS = ['identifierInstructions', 'reserveTokensFloor'] as const;
 const CLAWX_COMPACTION_KEEP_RECENT_TOKENS = 0;
 const CLAWX_COMPACTION_RECENT_TURNS_PRESERVE = 0;
 // OpenClaw 2026.7.1 bundles these channel extensions. Discord, WhatsApp,
@@ -773,16 +804,211 @@ async function readOpenClawJson(): Promise<Record<string, unknown>> {
   return (await readOpenClawConfigSnapshot()).config;
 }
 
-async function resolveInstalledFeishuPluginId(): Promise<string | null> {
+type InstalledFeishuPlugin = { id: string; channelSchema: unknown };
+
+async function resolveInstalledFeishuPlugin(): Promise<InstalledFeishuPlugin | null> {
   const extensionRoot = join(homedir(), '.openclaw', 'extensions');
-  for (const dirName of FEISHU_PLUGIN_ID_CANDIDATES) {
+  for (const dirName of FEISHU_PLUGIN_DIR_CANDIDATES) {
     const manifestPath = join(extensionRoot, dirName, 'openclaw.plugin.json');
-    const manifest = await readJsonFile<{ id?: unknown }>(manifestPath);
+    const manifest = await readJsonFile<{
+      id?: unknown;
+      channelConfigs?: { feishu?: { schema?: unknown } };
+    }>(manifestPath);
     if (typeof manifest?.id === 'string' && manifest.id.trim()) {
-      return manifest.id.trim();
+      return { id: manifest.id.trim(), channelSchema: manifest.channelConfigs?.feishu?.schema };
     }
   }
   return null;
+}
+
+// The official plugin's Doctor contract carries these openclaw-lark era
+// aliases into the nested shape, so they are left for `doctor --fix`.
+const FEISHU_DOCTOR_MIGRATED_KEYS = new Set([
+  'streamMode',
+  'chunkMode',
+  'blockStreaming',
+  'blockStreamingCoalesce',
+  'webhookHost',
+  'webhookPort',
+  'tools.base',
+]);
+
+function pruneRecordToSchema(
+  value: Record<string, unknown>,
+  schema: unknown,
+  relativePath: string,
+  pathPrefix: string,
+  removed: string[],
+): void {
+  if (!isPlainRecord(schema) || !isPlainRecord(schema.properties)) return;
+  const properties = schema.properties;
+  for (const key of Object.keys(value)) {
+    const keyPath = relativePath ? `${relativePath}.${key}` : key;
+    if (Object.hasOwn(properties, key)) {
+      const child = value[key];
+      if (isPlainRecord(child)) pruneRecordToSchema(child, properties[key], keyPath, pathPrefix, removed);
+      continue;
+    }
+    if (schema.additionalProperties === false && !FEISHU_DOCTOR_MIGRATED_KEYS.has(keyPath)) {
+      delete value[key];
+      removed.push(`${pathPrefix}.${keyPath}`);
+    }
+  }
+}
+
+function migrateFeishuEntryToSchema(
+  entry: Record<string, unknown>,
+  schema: unknown,
+  pathPrefix: string,
+  removed: string[],
+): void {
+  // Same mapping as Doctor's alias migration, which lets streamMode win.
+  if (typeof entry.streaming === 'boolean' && entry.streamMode === undefined) {
+    entry.streaming = { mode: entry.streaming ? 'partial' : 'off' };
+    console.log(`[plugin] Moved ${pathPrefix}.streaming (boolean) to ${pathPrefix}.streaming.mode`);
+  }
+  pruneRecordToSchema(entry, schema, '', pathPrefix, removed);
+}
+
+/**
+ * Drop openclaw-lark settings that the official Feishu channel schema
+ * rejects. The schema forbids unknown keys, so a single leftover key would
+ * make the whole openclaw.json invalid and keep the Gateway from starting.
+ */
+function migrateLegacyFeishuChannelConfig(config: Record<string, unknown>, channelSchema: unknown): boolean {
+  const channels = isPlainRecord(config.channels) ? config.channels : null;
+  const section = channels && isPlainRecord(channels.feishu) ? channels.feishu : null;
+  if (!section || !isPlainRecord(channelSchema) || !isPlainRecord(channelSchema.properties)) return false;
+
+  const before = JSON.stringify(section);
+  const removed: string[] = [];
+  migrateFeishuEntryToSchema(section, channelSchema, 'channels.feishu', removed);
+  const accountsSchema = channelSchema.properties.accounts;
+  const accountSchema = isPlainRecord(accountsSchema) ? accountsSchema.additionalProperties : undefined;
+  if (isPlainRecord(section.accounts) && isPlainRecord(accountSchema)) {
+    for (const [accountId, account] of Object.entries(section.accounts)) {
+      if (!isPlainRecord(account)) continue;
+      migrateFeishuEntryToSchema(account, accountSchema, `channels.feishu.accounts.${accountId}`, removed);
+    }
+  }
+  if (removed.length > 0) {
+    console.log(`[plugin] Removed openclaw-lark settings unsupported by the official Feishu plugin: ${removed.join(', ')}`);
+  }
+  return JSON.stringify(section) !== before;
+}
+
+/**
+ * Point Feishu plugin activation at `installedFeishuId` when the Feishu
+ * channel is configured, or remove every Feishu plugin id otherwise. When
+ * activation moves off a legacy openclaw-lark id onto the installed official
+ * plugin, its channel config is migrated against `installedChannelSchema`.
+ */
+function normalizeFeishuPluginRegistration(
+  config: Record<string, unknown>,
+  installedFeishuId: string | null,
+  installedChannelSchema?: unknown,
+): { modified: boolean; canonicalFeishuId: string; isFeishuConfigured: boolean } {
+  const pluginsObj = isPlainRecord(config.plugins) ? config.plugins : {};
+  const pEntries = (isPlainRecord(pluginsObj.entries) ? pluginsObj.entries : {}) as Record<string, Record<string, unknown>>;
+  const allowArr = Array.isArray(pluginsObj.allow) ? pluginsObj.allow as string[] : [];
+  const isFeishuPluginId = (id: string) => (FEISHU_PLUGIN_ID_CANDIDATES as readonly string[]).includes(id);
+  let modified = false;
+
+  const configuredFeishuId =
+    FEISHU_PLUGIN_ID_CANDIDATES.find((id) => allowArr.includes(id))
+    || FEISHU_PLUGIN_ID_CANDIDATES.find((id) => Boolean(pEntries[id]));
+  const canonicalFeishuId = installedFeishuId || configuredFeishuId || DEFAULT_FEISHU_PLUGIN_ID;
+
+  // Only add feishu plugin to plugins.allow and plugins.entries when the
+  // feishu channel is actually configured.  If not configured, remove all
+  // feishu-related entries so they don't linger in the config.
+  const feishuChannelSection = (config.channels as Record<string, Record<string, unknown>> | undefined)?.feishu;
+  const isFeishuConfigured = Boolean(
+    feishuChannelSection
+    && typeof feishuChannelSection === 'object'
+    && feishuChannelSection.enabled !== false
+    && Object.keys(feishuChannelSection).length > 0,
+  );
+
+  if (isFeishuConfigured) {
+    const existingFeishuId = FEISHU_PLUGIN_ID_CANDIDATES.find((id) => Boolean(pEntries[id]));
+    let inheritedEntry = existingFeishuId ? pEntries[existingFeishuId] : undefined;
+    if (existingFeishuId !== canonicalFeishuId && inheritedEntry && 'config' in inheritedEntry) {
+      // Plugin config is validated against the owning plugin's configSchema;
+      // another Feishu plugin's settings would make the entry invalid.
+      inheritedEntry = { ...inheritedEntry };
+      delete inheritedEntry.config;
+      console.log(`[sanitize] Dropped plugins.entries.${existingFeishuId}.config while moving to ${canonicalFeishuId}`);
+    }
+    const migratesToInstalledPlugin = Boolean(installedFeishuId)
+      && canonicalFeishuId === installedFeishuId
+      && FEISHU_PLUGIN_ID_CANDIDATES.some((id) => (
+        id !== canonicalFeishuId && (allowArr.includes(id) || Boolean(pEntries[id]))
+      ));
+
+    const normalizedAllow = allowArr.filter((id) => !isFeishuPluginId(id));
+    normalizedAllow.push(canonicalFeishuId);
+    if (JSON.stringify(normalizedAllow) !== JSON.stringify(allowArr)) {
+      pluginsObj.allow = normalizedAllow;
+      modified = true;
+      console.log(`[sanitize] Normalized plugins.allow for feishu -> ${canonicalFeishuId}`);
+    }
+
+    const nextEntry = {
+      ...(inheritedEntry || {}),
+      ...(pEntries[canonicalFeishuId] || {}),
+      enabled: true,
+    };
+    if (JSON.stringify(nextEntry) !== JSON.stringify(pEntries[canonicalFeishuId])) {
+      pEntries[canonicalFeishuId] = nextEntry;
+      pluginsObj.entries = pEntries;
+      modified = true;
+    }
+    for (const id of FEISHU_PLUGIN_ID_CANDIDATES) {
+      if (id !== canonicalFeishuId && pEntries[id]) {
+        delete pEntries[id];
+        modified = true;
+      }
+    }
+    if (migratesToInstalledPlugin && canonicalFeishuId === DEFAULT_FEISHU_PLUGIN_ID
+      && migrateLegacyFeishuChannelConfig(config, installedChannelSchema)) {
+      modified = true;
+    }
+  } else {
+    // Feishu channel not configured — remove all feishu plugin entries
+    const normalizedAllow = allowArr.filter((id) => !isFeishuPluginId(id));
+    if (normalizedAllow.length !== allowArr.length) {
+      pluginsObj.allow = normalizedAllow;
+      modified = true;
+      console.log('[sanitize] Removed unconfigured feishu plugin from plugins.allow');
+    }
+    for (const id of FEISHU_PLUGIN_ID_CANDIDATES) {
+      if (pEntries[id]) {
+        delete pEntries[id];
+        modified = true;
+        console.log(`[sanitize] Removed unconfigured feishu plugin entry: ${id}`);
+      }
+    }
+  }
+  return { modified, canonicalFeishuId, isFeishuConfigured };
+}
+
+/**
+ * Re-point Feishu plugin activation at the manifest ClawX just mirrored.
+ * Sanitize runs before the prelaunch plugin upgrade, so an in-place upgrade
+ * from the lark plugin still reads `openclaw-lark` from the old mirror.
+ * A failed upgrade leaves that manifest installed and the config unchanged.
+ */
+export async function syncFeishuPluginRegistrationWithInstalledPlugin(): Promise<void> {
+  const installed = await resolveInstalledFeishuPlugin();
+  if (!installed) return;
+  await mutateOpenClawConfig((config) => {
+    const configured = config as Record<string, unknown>;
+    if (!isPlainRecord(configured.plugins)) return;
+    if (normalizeFeishuPluginRegistration(configured, installed.id, installed.channelSchema).modified) {
+      console.log(`[plugin] Re-pointed Feishu plugin activation at installed plugin: ${installed.id}`);
+    }
+  });
 }
 
 async function discoverInstalledExtensionPluginIds(): Promise<Set<string>> {
@@ -890,8 +1116,7 @@ function normalizeAgentsDefaultsCompactionMode(config: Record<string, unknown>):
 /**
  * Seed `agents.defaults.compaction.mode = "safeguard"` when the user has no
  * compaction config at all, so long sessions are compacted before they hit the
- * provider's context limit. The reserve floor is applied separately from
- * explicit model context metadata or the conservative 50000-token fallback.
+ * provider's context limit.
  */
 function ensureCompactionSafeguardDefault(config: Record<string, unknown>): boolean {
   const agents = (config.agents && typeof config.agents === 'object'
@@ -907,9 +1132,6 @@ function ensureCompactionSafeguardDefault(config: Record<string, unknown>): bool
     qualityGuard: { enabled: false },
     keepRecentTokens: CLAWX_COMPACTION_KEEP_RECENT_TOKENS,
     recentTurnsPreserve: CLAWX_COMPACTION_RECENT_TURNS_PRESERVE,
-    identifierPolicy: 'custom',
-    identifierInstructions: CLAWX_COMPACTION_IDENTIFIER_INSTRUCTIONS,
-    reserveTokensFloor: DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR,
     midTurnPrecheck: { enabled: true },
   };
   agents.defaults = defaults;
@@ -919,8 +1141,8 @@ function ensureCompactionSafeguardDefault(config: Record<string, unknown>): bool
 
 /**
  * Enforce ClawX's compaction quality policy and backfill missing safety fields.
- * Explicit keepRecentTokens, recentTurnsPreserve, reserveTokensFloor, and
- * midTurnPrecheck.enabled choices are preserved.
+ * Explicit keepRecentTokens, recentTurnsPreserve, and midTurnPrecheck.enabled
+ * choices are preserved.
  */
 function syncCompactionSafetyDefaults(config: Record<string, unknown>): boolean {
   const agents = (config.agents && typeof config.agents === 'object'
@@ -955,18 +1177,16 @@ function syncCompactionSafetyDefaults(config: Record<string, unknown>): boolean 
     compaction.keepRecentTokens = CLAWX_COMPACTION_KEEP_RECENT_TOKENS;
     changed = true;
   }
-  if (compaction.identifierPolicy !== 'custom') {
-    compaction.identifierPolicy = 'custom';
+  // OpenClaw 2026.10 only accepts "strict" or "off".
+  if (compaction.identifierPolicy === 'custom') {
+    compaction.identifierPolicy = 'strict';
     changed = true;
   }
-  if (compaction.identifierInstructions !== CLAWX_COMPACTION_IDENTIFIER_INSTRUCTIONS) {
-    compaction.identifierInstructions = CLAWX_COMPACTION_IDENTIFIER_INSTRUCTIONS;
-    changed = true;
-  }
-
-  if (compaction.reserveTokensFloor === undefined) {
-    compaction.reserveTokensFloor = DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR;
-    changed = true;
+  for (const key of RETIRED_CLAWX_COMPACTION_KEYS) {
+    if (Object.hasOwn(compaction, key)) {
+      delete compaction[key];
+      changed = true;
+    }
   }
 
   if (compaction.midTurnPrecheck === undefined) {
@@ -985,22 +1205,6 @@ function syncCompactionSafetyDefaults(config: Record<string, unknown>): boolean 
   agents.defaults = defaults;
   config.agents = agents;
   return true;
-}
-
-function getDefaultModelRef(config: Record<string, unknown>): string | undefined {
-  const agents = config.agents;
-  const defaults = agents && typeof agents === 'object'
-    ? (agents as Record<string, unknown>).defaults
-    : undefined;
-  const model = defaults && typeof defaults === 'object'
-    ? (defaults as Record<string, unknown>).model
-    : undefined;
-  if (typeof model === 'string' && model.trim()) return model.trim();
-  if (model && typeof model === 'object') {
-    const primary = (model as Record<string, unknown>).primary;
-    if (typeof primary === 'string' && primary.trim()) return primary.trim();
-  }
-  return undefined;
 }
 
 // ── Exported Functions (all async) ───────────────────────────────
@@ -1217,11 +1421,9 @@ function removeProviderEntriesFromAgentModelCatalogs(
     && removeProviderEntriesFromModelCatalog(agents.defaults, providerKeys)) {
     modified = true;
   }
-  if (Array.isArray(agents.list)) {
-    for (const entry of agents.list) {
-      if (isPlainRecord(entry) && removeProviderEntriesFromModelCatalog(entry, providerKeys)) {
-        modified = true;
-      }
+  for (const entry of listOpenClawAgentEntryRecords(agents)) {
+    if (removeProviderEntriesFromModelCatalog(entry, providerKeys)) {
+      modified = true;
     }
   }
   return modified;
@@ -1291,13 +1493,11 @@ export async function pruneStaleRuntimeAgentModelRefs(
     }
   }
 
-  if (Array.isArray(agents.list)) {
-    for (const entry of agents.list) {
-      if (!isPlainRecord(entry) || !isPlainRecord(entry.model)) continue;
-      if (pruneStaleRuntimeModelConfig(entry.model, activeProviders)) {
-        deleteModelConfigIfEmpty(entry);
-        modified = true;
-      }
+  for (const entry of listOpenClawAgentEntryRecords(agents)) {
+    if (!isPlainRecord(entry.model)) continue;
+    if (pruneStaleRuntimeModelConfig(entry.model, activeProviders)) {
+      deleteModelConfigIfEmpty(entry);
+      modified = true;
     }
   }
 
@@ -1367,14 +1567,11 @@ export async function removeProviderFromOpenClaw(provider: string): Promise<void
         }
       }
 
-      const agentList = agents?.list;
-      if (Array.isArray(agentList)) {
-        for (const entry of agentList) {
-          if (!isPlainRecord(entry) || !isPlainRecord(entry.model)) continue;
-          if (removeProviderPrefixFromModelConfig(entry.model, providerPrefix)) {
-            deleteModelConfigIfEmpty(entry);
-            modified = true;
-          }
+      for (const entry of listOpenClawAgentEntryRecords(agents)) {
+        if (!isPlainRecord(entry.model)) continue;
+        if (removeProviderPrefixFromModelConfig(entry.model, providerPrefix)) {
+          deleteModelConfigIfEmpty(entry);
+          modified = true;
         }
       }
 
@@ -1716,7 +1913,6 @@ export async function setOpenClawDefaultModel(
     if (!gateway.mode) gateway.mode = 'local';
     config.gateway = gateway;
 
-    applyModelAwareCompactionReserveTokensFloor(config, getDefaultModelRef(config));
     normalizeAgentsDefaultsCompactionMode(config);
     console.log(`Set OpenClaw default model to "${model}" for provider "${provider}"`);
   });
@@ -2404,8 +2600,9 @@ export async function syncOpenAiCompatibleImageRelay(params: {
       }
       const agents = isPlainRecord(config.agents) ? config.agents : null;
       const defaults = agents && isPlainRecord(agents.defaults) ? agents.defaults : null;
-      const imageGenerationModel = defaults && isPlainRecord(defaults.imageGenerationModel)
-        ? defaults.imageGenerationModel
+      const storedImageGenerationModel = readImageGenerationModelValue(defaults);
+      const imageGenerationModel = isPlainRecord(storedImageGenerationModel)
+        ? { ...storedImageGenerationModel }
         : null;
       const primary = typeof imageGenerationModel?.primary === 'string'
         ? imageGenerationModel.primary.trim().toLowerCase()
@@ -2425,6 +2622,7 @@ export async function syncOpenAiCompatibleImageRelay(params: {
         if (Array.isArray(imageGenerationModel.fallbacks)) {
           imageGenerationModel.fallbacks = remainingFallbacks;
         }
+        writeImageGenerationModelValue(defaults, imageGenerationModel);
       }
       removePluginRegistrations(config, [CLAWX_OPENAI_IMAGE_PROVIDER_KEY]);
       normalizeAgentsDefaultsCompactionMode(config);
@@ -2543,7 +2741,6 @@ export async function setOpenClawDefaultModelWithOverride(
       ensureOAuthPluginEnabled(config, provider);
     }
 
-    applyModelAwareCompactionReserveTokensFloor(config, getDefaultModelRef(config));
     normalizeAgentsDefaultsCompactionMode(config);
     console.log(
       `Set OpenClaw default model to "${model}" for provider "${provider}" (runtime override)`
@@ -2771,19 +2968,41 @@ export async function syncBrowserConfigToOpenClaw(): Promise<void> {
   });
 }
 
+const DEFAULT_SESSION_IDLE_MINUTES = 10_080; // 7 days
+
+/**
+ * OpenClaw 2026.10 moved `session.idleMinutes` to `session.reset.idleMinutes`.
+ * Carry a legacy value forward, otherwise seed ClawX's idle-only reset unless
+ * the user already manages session lifecycle through reset / resetByType /
+ * resetByChannel.
+ */
+function ensureSessionIdleResetDefault(session: Record<string, unknown>): boolean {
+  if (Object.hasOwn(session, 'idleMinutes')) {
+    const reset: Record<string, unknown> = isPlainRecord(session.reset)
+      ? { ...session.reset }
+      : { mode: 'idle' };
+    if (reset.idleMinutes === undefined) reset.idleMinutes = session.idleMinutes;
+    session.reset = reset;
+    delete session.idleMinutes;
+    return true;
+  }
+  if (session.reset !== undefined
+    || session.resetByType !== undefined
+    || session.resetByChannel !== undefined) return false;
+  session.reset = { mode: 'idle', idleMinutes: DEFAULT_SESSION_IDLE_MINUTES };
+  return true;
+}
+
 /**
  * Ensure session idle-reset is configured in ~/.openclaw/openclaw.json.
  *
  * By default OpenClaw resets the "main" session daily at 04:00 local time,
  * which means conversations disappear after roughly one day.  ClawX sets
- * `session.idleMinutes` to 10 080 (7 days) so that conversations are
- * preserved for a week unless the user has explicitly configured their own
- * value.  When `idleMinutes` is set without `session.reset` /
- * `session.resetByType`, OpenClaw stays in idle-only mode (no daily reset).
+ * `session.reset` to idle mode with 10 080 minutes (7 days) so that
+ * conversations are preserved for a week unless the user has explicitly
+ * configured their own session lifecycle.
  */
 export async function syncSessionIdleMinutesToOpenClaw(): Promise<void> {
-  const DEFAULT_IDLE_MINUTES = 10_080; // 7 days
-
   await mutateOpenClawConfig((config) => {
     const session = (
       config.session && typeof config.session === 'object'
@@ -2791,20 +3010,11 @@ export async function syncSessionIdleMinutesToOpenClaw(): Promise<void> {
         : {}
     ) as Record<string, unknown>;
 
-    // Only set idleMinutes if the user has not configured it yet.
-    if (session.idleMinutes !== undefined) return;
-
-    // If the user has explicit reset / resetByType / resetByChannel config,
-    // they are actively managing session lifecycle — don't interfere.
-    if (session.reset !== undefined
-      || session.resetByType !== undefined
-      || session.resetByChannel !== undefined) return;
-
-    session.idleMinutes = DEFAULT_IDLE_MINUTES;
+    if (!ensureSessionIdleResetDefault(session)) return;
     config.session = session;
 
     normalizeAgentsDefaultsCompactionMode(config);
-    console.log(`Synced session.idleMinutes=${DEFAULT_IDLE_MINUTES} (7d) to openclaw.json`);
+    console.log(`Synced session.reset idle mode (${DEFAULT_SESSION_IDLE_MINUTES} min) to openclaw.json`);
   });
 }
 
@@ -2814,7 +3024,6 @@ export async function syncSessionIdleMinutesToOpenClaw(): Promise<void> {
  * during pre-launch sync.
  */
 export async function batchSyncConfigFields(token: string): Promise<void> {
-  const DEFAULT_IDLE_MINUTES = 10_080; // 7 days
   const gatewayPort = (await getSetting('gatewayPort')) || PORTS.OPENCLAW_GATEWAY;
   const memorySearchMigrationVersion = Number(
     await getSetting('memorySearchFtsMigrationVersion'),
@@ -2904,12 +3113,7 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
         ? { ...(config.session as Record<string, unknown>) }
         : {}
     ) as Record<string, unknown>;
-    const hasExplicitSessionConfig = session.idleMinutes !== undefined
-      || session.reset !== undefined
-      || session.resetByType !== undefined
-      || session.resetByChannel !== undefined;
-    if (!hasExplicitSessionConfig) {
-      session.idleMinutes = DEFAULT_IDLE_MINUTES;
+    if (ensureSessionIdleResetDefault(session)) {
       config.session = session;
       modified = true;
     }
@@ -2917,20 +3121,30 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
     // ── Compaction safeguard default ──
     if (ensureCompactionSafeguardDefault(config)) {
       modified = true;
-      compactionLog = `[batch-sync] Seeded agents.defaults.compaction.mode=safeguard qualityGuard.enabled=false keepRecentTokens=${CLAWX_COMPACTION_KEEP_RECENT_TOKENS} recentTurnsPreserve=${CLAWX_COMPACTION_RECENT_TURNS_PRESERVE} identifierPolicy=custom reserveTokensFloor=${DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR} midTurnPrecheck.enabled=true`;
+      compactionLog = `[batch-sync] Seeded agents.defaults.compaction.mode=safeguard qualityGuard.enabled=false keepRecentTokens=${CLAWX_COMPACTION_KEEP_RECENT_TOKENS} recentTurnsPreserve=${CLAWX_COMPACTION_RECENT_TURNS_PRESERVE} midTurnPrecheck.enabled=true`;
     } else if (syncCompactionSafetyDefaults(config)) {
       modified = true;
       compactionLog = '[batch-sync] Synchronized ClawX-managed agents.defaults.compaction settings';
     }
-    if (applyModelAwareCompactionReserveTokensFloor(config, getDefaultModelRef(config))) {
-      modified = true;
-      compactionLog = '[batch-sync] Applied agents.defaults.compaction.reserveTokensFloor from explicit model context metadata or the 50000-token fallback';
-    }
+
+    // ── ClawX policy: no background dreaming ──
+    // Keep memory search and existing memory files intact. The bundled runtime
+    // reconciles/removes its managed dreaming job when this switch is false.
+    const plugins = isPlainRecord(config.plugins) ? config.plugins : {};
+    const entries = isPlainRecord(plugins.entries) ? plugins.entries : {};
+    const memoryCore = isPlainRecord(entries['memory-core']) ? entries['memory-core'] : {};
+    const memoryConfig = isPlainRecord(memoryCore.config) ? memoryCore.config : {};
+    const dreaming = isPlainRecord(memoryConfig.dreaming) ? memoryConfig.dreaming : {};
+    memoryConfig.dreaming = { ...dreaming, enabled: false };
+    memoryCore.config = memoryConfig;
+    entries['memory-core'] = memoryCore;
+    plugins.entries = entries;
+    config.plugins = plugins;
 
     // ── Memory search default ──
-    // OpenClaw 2026.7.1 supports provider=none as an explicit FTS-only mode.
+    // OpenClaw supports provider=none as an explicit FTS-only mode.
     // Migrate ClawX's exact legacy disabled default once, and otherwise seed
-    // FTS only when the user has no memorySearch config or OpenAI embedding key.
+    // FTS only when the user has no memory search config or OpenAI embedding key.
     memorySearchDefaultResult = shouldMigrateLegacyMemorySearch
       && hasUserMemorySearchConfig(config)
       ? ensureMemorySearchFtsDefault(config, true)
@@ -2959,7 +3173,7 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
   if (memorySearchDefaultResult !== 'unchanged') {
     console.log(
       `[batch-sync] ${memorySearchDefaultResult === 'migrated' ? 'Migrated' : 'Seeded'} `
-      + 'agents.defaults.memorySearch to FTS-only mode',
+      + 'memory.search to FTS-only mode',
     );
   }
   if (changed) {
@@ -3149,6 +3363,40 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
   await mutateOpenClawConfig(async (config) => {
     let modified = false;
 
+    // OpenClaw 2026.10 rejects the legacy 2026.7 `agents.list` roster before
+    // the Gateway can emit a detailed validation error. Migrate this exact
+    // known shape locally so old ClawX users do not enter a generic exit=1
+    // restart loop. Malformed rosters remain for OpenClaw Doctor to repair.
+    if (migrateLegacyAgentRosterInConfig(config)) {
+      modified = true;
+      console.log('[sanitize] Migrated legacy "agents.list" to keyed "agents.entries"');
+    }
+
+    if (migrateLegacyMemorySearchConfig(config)) {
+      modified = true;
+      console.log('[sanitize] Migrated legacy memory-search keys to OpenClaw 2026.10 locations');
+    }
+
+    // OpenClaw 2026.10 no longer accepts the timestamp ClawX 0.6.x wrote
+    // under config.meta. Preserve the supported version marker, if present.
+    if (isPlainRecord(config.meta) && Object.hasOwn(config.meta, 'lastTouchedAt')) {
+      delete config.meta.lastTouchedAt;
+      if (Object.keys(config.meta).length === 0) delete config.meta;
+      modified = true;
+      console.log('[sanitize] Removed retired config metadata "meta.lastTouchedAt"');
+    }
+
+    // OpenClaw 2026.10 owns media-provider fallback selection and rejects the
+    // legacy ClawX flag. Removing it keeps the new runtime default intact.
+    const agentDefaults = isPlainRecord(config.agents) && isPlainRecord(config.agents.defaults)
+      ? config.agents.defaults
+      : null;
+    if (agentDefaults && Object.hasOwn(agentDefaults, 'mediaGenerationAutoProviderFallback')) {
+      delete agentDefaults.mediaGenerationAutoProviderFallback;
+      modified = true;
+      console.log('[sanitize] Removed retired config key "agents.defaults.mediaGenerationAutoProviderFallback"');
+    }
+
     // ── skills section ──────────────────────────────────────────────
     // OpenClaw's Zod schema uses .strict() on the skills object, accepting
     // only: allowBundled, load, install, limits, entries.
@@ -3188,10 +3436,13 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
         return isPlainRecord(section) && section.enabled !== false && Object.keys(section).length > 0;
       });
       if (externalChannelIds.length > 0) {
+        const externalPluginIds = externalChannelIds.map((channelId) => (
+          channelId === QQBOT_CHANNEL_ID ? QQBOT_PLUGIN_ID : channelId
+        ));
         plugins = {
           enabled: true,
-          allow: externalChannelIds,
-          entries: Object.fromEntries(externalChannelIds.map((channelId) => [channelId, { enabled: true }])),
+          allow: externalPluginIds,
+          entries: Object.fromEntries(externalPluginIds.map((pluginId) => [pluginId, { enabled: true }])),
         };
         config.plugins = plugins;
         modified = true;
@@ -3396,19 +3647,21 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       toolsModified = true;
     }
 
-    // ── tools.exec approvals (OpenClaw 3.28+) ──────────────────────
+    // ── tools.exec approvals ───────────────────────────────────────
     // ClawX is a local desktop app where the user is the trusted operator.
     // Exec approval prompts add unnecessary friction in this context, so we
-    // set security="full" (allow all commands) and ask="off" (never prompt).
-    // If a user has manually configured a stricter ~/.openclaw/exec-approvals.json,
-    // OpenClaw's minSecurity/maxAsk merge will still respect their intent.
+    // set mode="full" (allow all commands, never prompt). OpenClaw 2026.10
+    // replaced the security/ask pair with tools.exec.mode. If a user has
+    // manually configured a stricter ~/.openclaw/exec-approvals.json,
+    // OpenClaw's approval merge will still respect their intent.
     const execConfig = (toolsConfig.exec as Record<string, unknown> | undefined) || {};
-    if (execConfig.security !== 'full' || execConfig.ask !== 'off') {
-      execConfig.security = 'full';
-      execConfig.ask = 'off';
+    if (execConfig.mode !== 'full' || 'security' in execConfig || 'ask' in execConfig) {
+      execConfig.mode = 'full';
+      delete execConfig.security;
+      delete execConfig.ask;
       toolsConfig.exec = execConfig;
       toolsModified = true;
-      console.log('[sanitize] Set tools.exec.security="full" and tools.exec.ask="off" to disable exec approvals for ClawX desktop');
+      console.log('[sanitize] Set tools.exec.mode="full" to disable exec approvals for ClawX desktop');
     }
 
     if (toolsModified) {
@@ -3512,8 +3765,10 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
         ? { ...(workshop.autonomous as Record<string, unknown>) }
         : {}
     ) as Record<string, unknown>;
-    if (autonomous.enabled !== false) {
-      autonomous.enabled = false;
+    // OpenClaw 2026.10 retired autonomous.enabled in favor of autonomous.mode.
+    if (autonomous.mode !== 'off' || 'enabled' in autonomous) {
+      autonomous.mode = 'off';
+      delete autonomous.enabled;
       workshop.autonomous = autonomous;
       skillsObj.workshop = workshop;
       skillsModified = true;
@@ -3542,9 +3797,10 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     }
 
     // ── plugins.entries.feishu cleanup ──────────────────────────────
-    // Normalize feishu plugin ids dynamically based on installed manifest.
-    // Different environments may report either "openclaw-lark" or
-    // "feishu-openclaw-plugin" as the runtime plugin id.
+    // Normalize feishu plugin ids dynamically based on the installed manifest.
+    // OpenClaw 2026.10.5 uses the official @openclaw/feishu plugin (id
+    // "feishu"); legacy installs may still report "openclaw-lark" or
+    // "feishu-openclaw-plugin".
     if (typeof plugins === 'object' && !Array.isArray(plugins)) {
       const pluginsObj = plugins as Record<string, unknown>;
       const pEntries = (
@@ -3634,68 +3890,13 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
         }
       }
 
-      const installedFeishuId = await resolveInstalledFeishuPluginId();
-      const configuredFeishuId =
-        FEISHU_PLUGIN_ID_CANDIDATES.find((id) => allowArr.includes(id))
-        || FEISHU_PLUGIN_ID_CANDIDATES.find((id) => Boolean(pEntries[id]));
-      const canonicalFeishuId = installedFeishuId || configuredFeishuId || FEISHU_PLUGIN_ID_CANDIDATES[0];
-
-      // Only add feishu plugin to plugins.allow and plugins.entries when the
-      // feishu channel is actually configured.  If not configured, remove all
-      // feishu-related entries so they don't linger in the config.
-      const feishuChannelSection = (config.channels as Record<string, Record<string, unknown>> | undefined)?.feishu;
-      const isFeishuConfigured = feishuChannelSection
-        && typeof feishuChannelSection === 'object'
-        && feishuChannelSection.enabled !== false
-        && Object.keys(feishuChannelSection).length > 0;
-
-      if (isFeishuConfigured) {
-        const existingFeishuEntry =
-          FEISHU_PLUGIN_ID_CANDIDATES.map((id) => pEntries[id]).find(Boolean)
-          || pEntries.feishu;
-
-        const normalizedAllow = allowArr.filter(
-          (id) => id !== 'feishu' && !FEISHU_PLUGIN_ID_CANDIDATES.includes(id as typeof FEISHU_PLUGIN_ID_CANDIDATES[number]),
-        );
-        normalizedAllow.push(canonicalFeishuId);
-        if (JSON.stringify(normalizedAllow) !== JSON.stringify(allowArr)) {
-          pluginsObj.allow = normalizedAllow;
-          modified = true;
-          console.log(`[sanitize] Normalized plugins.allow for feishu -> ${canonicalFeishuId}`);
-        }
-
-        if (existingFeishuEntry || !pEntries[canonicalFeishuId]) {
-          pEntries[canonicalFeishuId] = {
-            ...(existingFeishuEntry || {}),
-            ...(pEntries[canonicalFeishuId] || {}),
-            enabled: true,
-          };
-          modified = true;
-        }
-        for (const id of FEISHU_PLUGIN_ID_CANDIDATES) {
-          if (id !== canonicalFeishuId && pEntries[id]) {
-            delete pEntries[id];
-            modified = true;
-          }
-        }
-      } else {
-        // Feishu channel not configured — remove all feishu plugin entries
-        const normalizedAllow = allowArr.filter(
-          (id) => id !== 'feishu' && !FEISHU_PLUGIN_ID_CANDIDATES.includes(id as typeof FEISHU_PLUGIN_ID_CANDIDATES[number]),
-        );
-        if (normalizedAllow.length !== allowArr.length) {
-          pluginsObj.allow = normalizedAllow;
-          modified = true;
-          console.log('[sanitize] Removed unconfigured feishu plugin from plugins.allow');
-        }
-        for (const id of [...FEISHU_PLUGIN_ID_CANDIDATES, 'feishu'] as const) {
-          if (pEntries[id]) {
-            delete pEntries[id];
-            modified = true;
-            console.log(`[sanitize] Removed unconfigured feishu plugin entry: ${id}`);
-          }
-        }
-      }
+      const installedFeishu = await resolveInstalledFeishuPlugin();
+      const {
+        modified: feishuModified,
+        canonicalFeishuId,
+        isFeishuConfigured,
+      } = normalizeFeishuPluginRegistration(config, installedFeishu?.id ?? null, installedFeishu?.channelSchema);
+      if (feishuModified) modified = true;
 
       // ── wecom-openclaw-plugin → wecom migration ────────────────
       const LEGACY_WECOM_ID = 'wecom-openclaw-plugin';
@@ -3827,31 +4028,26 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
         }
       }
 
-      // QQBot is an external @openclaw/qqbot plugin in OpenClaw 2026.7.1.
-      // Migrate the legacy manifest id and keep one canonical active entry.
-      const legacyQQBotId = 'openclaw-qqbot';
-      const legacyQQBotAllowIndex = allowArr.indexOf(legacyQQBotId);
-      if (legacyQQBotAllowIndex !== -1) {
-        allowArr.splice(legacyQQBotAllowIndex, 1);
+      // OpenClaw 2026.10.5 serves the `qqbot` channel from Tencent QQBot 2.0
+      // (plugin id `openclaw-qqbot`); 2026.7.1 used @openclaw/qqbot (`qqbot`).
+      if (migrateQQBotPluginRegistrations(config)) {
         modified = true;
+        console.log(`[sanitize] Migrated QQBot plugin activation onto ${QQBOT_PLUGIN_ID}`);
       }
-      if (pEntries[legacyQQBotId]) {
-        delete pEntries[legacyQQBotId];
-        modified = true;
-      }
-      const qqbotChannel = (config.channels as Record<string, Record<string, unknown>> | undefined)?.qqbot;
+      const qqbotChannel = (config.channels as Record<string, Record<string, unknown>> | undefined)?.[QQBOT_CHANNEL_ID];
       const isQQBotConfigured = Boolean(
         qqbotChannel
         && qqbotChannel.enabled !== false
         && Object.keys(qqbotChannel).length > 0
       );
       if (isQQBotConfigured) {
-        if (!allowArr.includes('qqbot')) {
-          allowArr.push('qqbot');
+        const qqbotAllow = Array.isArray(pluginsObj.allow) ? pluginsObj.allow as string[] : [];
+        if (!qqbotAllow.includes(QQBOT_PLUGIN_ID)) {
+          pluginsObj.allow = [...qqbotAllow, QQBOT_PLUGIN_ID];
           modified = true;
         }
-        if (!pEntries.qqbot || pEntries.qqbot.enabled !== true) {
-          pEntries.qqbot = { ...(pEntries.qqbot || {}), enabled: true };
+        if (!pEntries[QQBOT_PLUGIN_ID] || pEntries[QQBOT_PLUGIN_ID].enabled !== true) {
+          pEntries[QQBOT_PLUGIN_ID] = { ...(pEntries[QQBOT_PLUGIN_ID] || {}), enabled: true };
           modified = true;
         }
       }
@@ -3895,11 +4091,10 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
 
 
       // ── Remove legacy built-in 'feishu' registration ───────────────
-      // ClawX bundles Feishu via the official @larksuite/openclaw-lark
-      // plugin and removes the old built-in dist/extensions/feishu tree.
-      // Keeping plugins.entries.feishu={enabled:false} looks harmless, but
-      // OpenClaw's channel startup planner treats it as an explicit blocker
-      // for the feishu channel owner and skips openclaw-lark at runtime.
+      // ClawX bundles Feishu via the official @openclaw/feishu plugin. On
+      // hosts that still resolve the legacy @larksuite/openclaw-lark id, a
+      // bare plugins.entries.feishu={enabled:false} record would block the
+      // feishu channel owner, so drop it in favor of the resolved plugin id.
       const allowArr2 = Array.isArray(pluginsObj.allow) ? pluginsObj.allow as string[] : [];
       if (isFeishuConfigured) {
         const hasCanonicalFeishu = allowArr2.includes(canonicalFeishuId) || !!pEntries[canonicalFeishuId];
@@ -3907,12 +4102,12 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
           const bareFeishuIdx = allowArr2.indexOf('feishu');
           if (bareFeishuIdx !== -1) {
             allowArr2.splice(bareFeishuIdx, 1);
-            console.log('[sanitize] Removed bare "feishu" from plugins.allow (openclaw-lark plugin is configured)');
+            console.log('[sanitize] Removed bare "feishu" from plugins.allow (legacy Lark plugin is configured)');
             modified = true;
           }
           if (pEntries.feishu) {
             delete pEntries.feishu;
-            console.log('[sanitize] Removed legacy plugins.entries.feishu (openclaw-lark plugin is configured)');
+            console.log('[sanitize] Removed legacy plugins.entries.feishu (legacy Lark plugin is configured)');
             modified = true;
           }
         }
@@ -4119,6 +4314,14 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
           }
         }
       }
+    }
+
+    // OpenClaw 2026.10.5 validates channels.qqbot against the Tencent QQBot
+    // 2.0 schema. Migrate the account shape ClawX 0.6.x wrote; approval and
+    // secret-file policies remain for OpenClaw Doctor.
+    if (migrateQQBotChannelSection(config)) {
+      modified = true;
+      console.log('[sanitize] Migrated channels.qqbot to the Tencent QQBot 2.0 account shape');
     }
 
     const migratedApiProtocols = repairLegacyApiProtocolEntriesInConfig(config);

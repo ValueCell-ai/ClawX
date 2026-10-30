@@ -1,58 +1,37 @@
 /**
- * OpenClaw 2026.6+ persists agent auth in openclaw-agent.sqlite.
+ * OpenClaw 2026.6+ persists agent auth in openclaw-agent.sqlite, and 2026.10
+ * relocates main's shared credentials into state/openclaw.sqlite.
  * ClawX historically wrote auth-profiles.json only; gateway runtime reads SQLite.
  */
-import { chmodSync, existsSync, mkdirSync } from 'fs';
+import { chmodSync, existsSync, linkSync, mkdirSync, renameSync, rmSync } from 'fs';
+import { randomUUID } from 'node:crypto';
 import { access, readFile } from 'fs/promises';
 import { constants } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { DatabaseSync } from 'node:sqlite';
+import * as persistenceRuntime from './openclaw-persistence-runtime';
 
 const AUTH_PROFILE_FILENAME = 'auth-profiles.json';
 const AUTH_SQLITE_FILENAME = 'openclaw-agent.sqlite';
 const PRIMARY_ROW_KEY = 'primary';
-const SCHEMA_VERSION = 1;
+// OpenClaw 2026.10 Doctor relocates main's shared credentials into
+// state/openclaw.sqlite and records the new owner under this key. Once it
+// says "state-db", the runtime ignores main's agent-database auth rows.
+const SHARED_AUTH_AGENT_ID = 'main';
+const SHARED_AUTH_STORE_STATE_KEY = 'auth.sharedStore';
+const SHARED_AUTH_STORE_CELL_KEY = 'authProfiles.store';
+const SHARED_AUTH_STATE_CELL_KEY = 'authProfiles.state';
+const STATE_BUSY_TIMEOUT_MS = 5_000;
+// Admission ceiling, never a substitute for migrating a database's structure.
+const OPENCLAW_OWNED_AGENT_SCHEMA_VERSION = 25;
 
-const OPENCLAW_AGENT_SCHEMA_SQL = `CREATE TABLE IF NOT EXISTS schema_meta (
-  meta_key TEXT NOT NULL PRIMARY KEY,
-  role TEXT NOT NULL,
-  schema_version INTEGER NOT NULL,
-  agent_id TEXT,
-  app_version TEXT,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS cache_entries (
-  scope TEXT NOT NULL,
-  key TEXT NOT NULL,
-  value_json TEXT,
-  blob BLOB,
-  expires_at INTEGER,
-  updated_at INTEGER NOT NULL,
-  PRIMARY KEY (scope, key)
-);
-
-CREATE INDEX IF NOT EXISTS idx_agent_cache_expiry
-  ON cache_entries(scope, expires_at, key)
-  WHERE expires_at IS NOT NULL;
-
-CREATE INDEX IF NOT EXISTS idx_agent_cache_updated
-  ON cache_entries(scope, updated_at DESC, key);
-
-CREATE TABLE IF NOT EXISTS auth_profile_store (
-  store_key TEXT NOT NULL PRIMARY KEY,
-  store_json TEXT NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS auth_profile_state (
-  state_key TEXT NOT NULL PRIMARY KEY,
-  state_json TEXT NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-`;
+export class OpenClawAgentSchemaMigrationPendingError extends Error {
+  constructor(version: number) {
+    super(`OpenClaw agent schema migration is pending (current schema ${version}); refusing auth write`);
+    this.name = 'OpenClawAgentSchemaMigrationPendingError';
+  }
+}
 
 export interface PersistedAuthProfileCredential {
   type: string;
@@ -86,25 +65,94 @@ export function getAuthProfilesSqlitePath(agentId: string): string {
   return join(getAgentAuthDir(agentId), AUTH_SQLITE_FILENAME);
 }
 
+export function getOpenClawStateSqlitePath(): string {
+  return join(homedir(), '.openclaw', 'state', 'openclaw.sqlite');
+}
+
 function ensureAgentAuthDir(agentId: string): void {
   const dir = getAgentAuthDir(agentId);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
 }
 
-function ensureDatabaseSchema(db: DatabaseSync, agentId: string): void {
-  db.exec(OPENCLAW_AGENT_SCHEMA_SQL);
-  db.exec(`PRAGMA user_version = ${SCHEMA_VERSION};`);
-  const now = Date.now();
-  db.prepare(`
-    INSERT INTO schema_meta (
-      meta_key, role, schema_version, agent_id, app_version, created_at, updated_at
-    ) VALUES (?, 'agent', ?, ?, NULL, ?, ?)
-    ON CONFLICT(meta_key) DO UPDATE SET
-      role = excluded.role,
-      schema_version = excluded.schema_version,
-      agent_id = excluded.agent_id,
-      updated_at = excluded.updated_at
-  `).run(PRIMARY_ROW_KEY, SCHEMA_VERSION, agentId, now, now);
+function readUserVersion(db: DatabaseSync): number {
+  const row = db.prepare('PRAGMA user_version').get() as { user_version?: number } | undefined;
+  return typeof row?.user_version === 'number' ? row.user_version : 0;
+}
+
+function readSchemaMetadata(db: DatabaseSync): { app_version?: string; schema_version?: number; agent_id?: string } | undefined {
+  return db.prepare('SELECT app_version, schema_version, agent_id FROM schema_meta WHERE meta_key = ?')
+    .get(PRIMARY_ROW_KEY) as { app_version?: string; schema_version?: number; agent_id?: string } | undefined;
+}
+
+function assertAuthWriteVersion(db: DatabaseSync, agentId: string, sqlitePath: string): void {
+  const version = readUserVersion(db);
+  const meta = readSchemaMetadata(db);
+  if (version > OPENCLAW_OWNED_AGENT_SCHEMA_VERSION || (meta?.schema_version ?? 0) > OPENCLAW_OWNED_AGENT_SCHEMA_VERSION) {
+    throw new Error(`Refusing auth write to newer OpenClaw agent schema (${version})`);
+  }
+  if (meta?.agent_id && meta.agent_id !== agentId) throw new Error('OpenClaw agent schema owner mismatch');
+  if (version !== OPENCLAW_OWNED_AGENT_SCHEMA_VERSION || meta?.schema_version !== OPENCLAW_OWNED_AGENT_SCHEMA_VERSION) {
+    throw new OpenClawAgentSchemaMigrationPendingError(version);
+  }
+  persistenceRuntime.assertBundledAgentStructure(db, sqlitePath, OPENCLAW_OWNED_AGENT_SCHEMA_VERSION);
+}
+
+function repairKnownClobberedSchema(db: DatabaseSync, agentId: string, sqlitePath: string): void {
+  // Only ClawX's known 25 -> 1 bug is repairable here. Genuine v1/v16 and
+  // future schemas remain entirely owned by the upstream offline migration.
+  if (readUserVersion(db) !== 1) return;
+  const meta = readSchemaMetadata(db);
+  if (meta?.app_version !== '2026.10.5' || meta.schema_version !== 1 || meta.agent_id !== agentId) return;
+  try {
+    persistenceRuntime.assertBundledAgentStructure(db, sqlitePath, OPENCLAW_OWNED_AGENT_SCHEMA_VERSION);
+  } catch {
+    return; // Not a fully migrated v25 structure: never pretend otherwise.
+  }
+  const backupPath = `${sqlitePath}.clawx-before-schema-repair`;
+  if (!existsSync(backupPath)) {
+    // VACUUM INTO makes a standalone, WAL-inclusive copy before changing markers.
+    db.prepare('VACUUM INTO ?').run(backupPath);
+    tightenDatabasePermissions(backupPath);
+  }
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const current = readSchemaMetadata(db);
+    if (readUserVersion(db) !== 1 || current?.schema_version !== 1 || current.app_version !== '2026.10.5') {
+      throw new Error('Agent schema changed during repair');
+    }
+    persistenceRuntime.assertBundledAgentStructure(db, sqlitePath, OPENCLAW_OWNED_AGENT_SCHEMA_VERSION);
+    db.exec(`PRAGMA user_version = ${OPENCLAW_OWNED_AGENT_SCHEMA_VERSION}`);
+    db.prepare('UPDATE schema_meta SET schema_version = ? WHERE meta_key = ?')
+      .run(OPENCLAW_OWNED_AGENT_SCHEMA_VERSION, PRIMARY_ROW_KEY);
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+/** Publish a complete runtime-owned schema atomically, never a skeletal v1 DB. */
+export function initializeAgentAuthDatabase(agentId: string): void {
+  const sqlitePath = getAuthProfilesSqlitePath(agentId);
+  if (existsSync(sqlitePath)) return;
+  ensureAgentAuthDir(agentId);
+  const staged = `${sqlitePath}.init-${randomUUID()}.sqlite`;
+  try {
+    const db = new DatabaseSync(staged);
+    try {
+      persistenceRuntime.initializeBundledAgentDatabase(db, staged, agentId);
+    } finally {
+      db.close(); // checkpoint WAL before publishing the standalone file
+    }
+    tightenDatabasePermissions(staged);
+    try {
+      linkSync(staged, sqlitePath); // exclusive publication; do not replace a runtime-created DB
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    }
+  } finally {
+    for (const suffix of ['', '-wal', '-shm']) rmSync(`${staged}${suffix}`, { force: true });
+  }
 }
 
 function tightenDatabasePermissions(sqlitePath: string): void {
@@ -196,17 +244,106 @@ function hasPersistedProfiles(store: PersistedAuthProfilesStore | null | undefin
   return !!store && Object.keys(store.profiles).length > 0;
 }
 
+function readConfigMachineStateCell(db: DatabaseSync, stateKey: string): string | undefined {
+  const table = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'config_machine_state'").get();
+  if (!table) return undefined;
+  const row = db.prepare('SELECT value_json FROM config_machine_state WHERE state_key = ?')
+    .get(stateKey) as { value_json?: string } | undefined;
+  return row?.value_json;
+}
+
+function readsSharedStateAuthStore(db: DatabaseSync, sqlitePath: string): boolean {
+  const raw = readConfigMachineStateCell(db, SHARED_AUTH_STORE_STATE_KEY);
+  if (raw === undefined) return false;
+  const ownership = parseJsonCell(raw);
+  if (ownership?.location === 'state-db') return true;
+  if (ownership?.location === 'legacy-main') return false;
+  throw new Error(`Invalid ${SHARED_AUTH_STORE_STATE_KEY} owner in ${sqlitePath}; run OpenClaw Doctor to repair it`);
+}
+
+/** Whether OpenClaw serves this agent's credentials from the shared state database. */
+export function usesSharedStateAuthStore(agentId: string): boolean {
+  if (agentId !== SHARED_AUTH_AGENT_ID) return false;
+  const sqlitePath = getOpenClawStateSqlitePath();
+  if (!existsSync(sqlitePath)) return false;
+  const db = new DatabaseSync(sqlitePath, { readOnly: true });
+  try {
+    return readsSharedStateAuthStore(db, sqlitePath);
+  } finally {
+    db.close();
+  }
+}
+
+function readSharedStateAuthProfiles(): PersistedAuthProfilesStore | null {
+  const sqlitePath = getOpenClawStateSqlitePath();
+  const db = new DatabaseSync(sqlitePath, { readOnly: true });
+  try {
+    return mergeStoreAndState(
+      parseJsonCell(readConfigMachineStateCell(db, SHARED_AUTH_STORE_CELL_KEY)),
+      parseJsonCell(readConfigMachineStateCell(db, SHARED_AUTH_STATE_CELL_KEY)),
+    );
+  } finally {
+    db.close();
+  }
+}
+
+function writeSharedStateAuthProfiles(store: PersistedAuthProfilesStore): void {
+  const sqlitePath = getOpenClawStateSqlitePath();
+  const db = new DatabaseSync(sqlitePath);
+  db.exec(`PRAGMA busy_timeout = ${STATE_BUSY_TIMEOUT_MS};`);
+  let committed = false;
+  try {
+    db.exec('BEGIN IMMEDIATE');
+    if (!readsSharedStateAuthStore(db, sqlitePath)) {
+      throw new Error(`OpenClaw shared auth store moved out of ${sqlitePath} during write; retry the auth update`);
+    }
+    const upsert = db.prepare(`
+      INSERT INTO config_machine_state (state_key, value_json, updated_at_ms)
+      VALUES (?, ?, ?)
+      ON CONFLICT(state_key) DO UPDATE SET
+        value_json = excluded.value_json,
+        updated_at_ms = excluded.updated_at_ms
+    `);
+    const now = Date.now();
+    upsert.run(SHARED_AUTH_STORE_CELL_KEY, JSON.stringify(buildSecretsPayload(store)), now);
+    const statePayload = buildStatePayload(store);
+    if (statePayload) {
+      upsert.run(SHARED_AUTH_STATE_CELL_KEY, JSON.stringify(statePayload), now);
+    } else {
+      db.prepare('DELETE FROM config_machine_state WHERE state_key = ?').run(SHARED_AUTH_STATE_CELL_KEY);
+    }
+    db.exec('COMMIT');
+    committed = true;
+  } finally {
+    if (!committed && db.isTransaction) db.exec('ROLLBACK');
+    db.close();
+  }
+}
+
 function openAgentDatabase(agentId: string, sqlitePath: string): DatabaseSync {
-  ensureAgentAuthDir(agentId);
+  initializeAgentAuthDatabase(agentId);
   const db = new DatabaseSync(sqlitePath);
   db.exec('PRAGMA synchronous = NORMAL;');
   db.exec('PRAGMA busy_timeout = 5000;');
   db.exec('PRAGMA foreign_keys = ON;');
-  ensureDatabaseSchema(db, agentId);
-  return db;
+  try {
+    repairKnownClobberedSchema(db, agentId, sqlitePath);
+    assertAuthWriteVersion(db, agentId, sqlitePath);
+    return db;
+  } catch (error) {
+    db.close();
+    throw error;
+  }
 }
 
 export function readAuthProfilesFromSqlite(agentId: string): PersistedAuthProfilesStore | null {
+  try {
+    if (usesSharedStateAuthStore(agentId)) return readSharedStateAuthProfiles();
+  } catch (error) {
+    console.warn(`Failed to read shared auth profiles from SQLite (${getOpenClawStateSqlitePath()}):`, error);
+    return null;
+  }
+
   const sqlitePath = getAuthProfilesSqlitePath(agentId);
   if (!existsSync(sqlitePath)) {
     return null;
@@ -236,9 +373,17 @@ export function writeAuthProfilesToSqlite(
   store: PersistedAuthProfilesStore,
   agentId: string,
 ): void {
+  if (usesSharedStateAuthStore(agentId)) {
+    writeSharedStateAuthProfiles(store);
+    retireAuthProfilesJson(agentId);
+    return;
+  }
+
   const sqlitePath = getAuthProfilesSqlitePath(agentId);
   const db = openAgentDatabase(agentId, sqlitePath);
   try {
+    db.exec('BEGIN IMMEDIATE');
+    assertAuthWriteVersion(db, agentId, sqlitePath);
     const now = Date.now();
     const secretsPayload = JSON.stringify(buildSecretsPayload(store));
     db.prepare(`
@@ -261,10 +406,15 @@ export function writeAuthProfilesToSqlite(
     } else {
       db.prepare('DELETE FROM auth_profile_state WHERE state_key = ?').run(PRIMARY_ROW_KEY);
     }
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
   } finally {
     db.close();
     tightenDatabasePermissions(sqlitePath);
   }
+  retireAuthProfilesJson(agentId);
 }
 
 export async function readAuthProfilesJson(agentId: string): Promise<PersistedAuthProfilesStore | null> {
@@ -278,7 +428,88 @@ export async function readAuthProfilesJson(agentId: string): Promise<PersistedAu
   }
 }
 
+/** Repair only the structurally verified, known ClawX marker corruption. */
+export function repairOpenClawOwnedAgentSchema(agentId: string): void {
+  const sqlitePath = getAuthProfilesSqlitePath(agentId);
+  if (!existsSync(sqlitePath)) return;
+  const db = new DatabaseSync(sqlitePath);
+  try {
+    db.exec('PRAGMA busy_timeout = 5000');
+    repairKnownClobberedSchema(db, agentId, sqlitePath);
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Once SQLite holds the credentials, auth-profiles.json is a stale copy:
+ * ClawX would resurrect deleted keys from it, and OpenClaw blocks every
+ * provider listed in main's file once credentials live in shared state.
+ * The suffix avoids OpenClaw's `.migrated-` / `.sqlite-import.` archive names.
+ */
+function retireAuthProfilesJson(agentId: string): void {
+  const jsonPath = getAuthProfilesJsonPath(agentId);
+  if (!existsSync(jsonPath)) return;
+  renameSync(jsonPath, `${jsonPath}.clawx-retired-${Date.now()}`);
+}
+
+function mergeMissingProfiles(
+  target: PersistedAuthProfilesStore,
+  source: PersistedAuthProfilesStore,
+): boolean {
+  let changed = false;
+  for (const [profileId, credential] of Object.entries(source.profiles)) {
+    if (Object.hasOwn(target.profiles, profileId)) continue;
+    target.profiles[profileId] = credential;
+    changed = true;
+  }
+  for (const field of ['order', 'lastGood'] as const) {
+    for (const [provider, value] of Object.entries(source[field] ?? {})) {
+      if (target[field] && Object.hasOwn(target[field], provider)) continue;
+      target[field] = { ...target[field], [provider]: value } as never;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+async function migrateSharedAuthProfilesJson(): Promise<boolean> {
+  const jsonStore = await readAuthProfilesJson(SHARED_AUTH_AGENT_ID);
+  if (!jsonStore) {
+    retireAuthProfilesJson(SHARED_AUTH_AGENT_ID);
+    return false;
+  }
+  const sharedStore = readSharedStateAuthProfiles() ?? { version: jsonStore.version, profiles: {} };
+  const changed = mergeMissingProfiles(sharedStore, jsonStore);
+  if (changed) writeSharedStateAuthProfiles(sharedStore);
+  retireAuthProfilesJson(SHARED_AUTH_AGENT_ID);
+  if (changed) {
+    console.log('[auth-sync] Imported retired auth-profiles.json into OpenClaw shared auth state');
+  }
+  return changed;
+}
+
 export async function migrateAuthProfilesJsonToSqliteIfNeeded(agentId: string): Promise<boolean> {
+  if (usesSharedStateAuthStore(agentId)) {
+    return migrateSharedAuthProfilesJson();
+  }
+
+  const sqlitePath = getAuthProfilesSqlitePath(agentId);
+  if (existsSync(sqlitePath)) {
+    try {
+      repairOpenClawOwnedAgentSchema(agentId);
+      const db = new DatabaseSync(sqlitePath, { readOnly: true });
+      try {
+        assertAuthWriteVersion(db, agentId, sqlitePath);
+      } finally {
+        db.close();
+      }
+    } catch (error) {
+      if (error instanceof OpenClawAgentSchemaMigrationPendingError) return false;
+      throw error;
+    }
+  }
+
   const sqliteStore = readAuthProfilesFromSqlite(agentId);
   if (hasPersistedProfiles(sqliteStore)) {
     return false;

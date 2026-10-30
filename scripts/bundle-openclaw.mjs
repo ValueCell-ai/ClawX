@@ -17,6 +17,7 @@
  */
 
 import 'zx/globals';
+import { spawnSync } from 'node:child_process';
 import { ELECTRON_MAIN_RUNTIME_PACKAGES, EXTRA_BUNDLED_PACKAGES } from './openclaw-bundle-config.mjs';
 import { patchExtensionOpenClawSelfImports } from './openclaw-self-import-patch.mjs';
 
@@ -679,10 +680,11 @@ function cleanupBundle(outputDir) {
     'node_modules/pdfjs-dist/legacy',
     'node_modules/pdfjs-dist/types',
     'node_modules/node-llama-cpp/llama',
-    'node_modules/koffi/src',
+    // koffi 3.x loads its JS entry from koffi/src/koffi/index.cjs, so only
+    // the vendored headers and docs are safe to drop.
     'node_modules/koffi/vendor',
     'node_modules/koffi/doc',
-    'dist/extensions/feishu', // Removed in favor of official @larksuite/openclaw-lark plugin
+    'dist/extensions/feishu', // Removed in favor of the external @openclaw/feishu plugin
   ];
   for (const rel of LARGE_REMOVALS) {
     if (rmSafe(path.join(outputDir, rel))) removedCount++;
@@ -898,38 +900,39 @@ function patchBundledRuntime(outputDir) {
     echo`   🩹 Patched ${count} bundled runtime spawn site(s)`;
   }
 
+  // OpenClaw 2026.10 ships ESM chunks (.mjs); 2026.7 shipped CJS (.js).
   const ptyTargets = findFilesByName(
     path.join(outputDir, 'dist'),
-    /^(supervisor|bash-tools)-.*\.js$/,
+    /^(supervisor|bash-tools|terminal-pty)-.*\.(?:js|mjs)$/,
   );
   const ptyPatches = [
     {
       label: 'pty launcher windowsHide',
-      search: `\tconst pty = spawn(preparedSpawn.command, preparedSpawn.args, {
-\t\tcwd: params.cwd,
-\t\tenv: preparedSpawn.env ? toStringEnv(preparedSpawn.env) : void 0,
-\t\tname: params.name ?? process.env.TERM ?? "xterm-256color",
-\t\tcols: params.cols ?? 120,
-\t\trows: params.rows ?? 30
-\t});`,
-      replace: `\tconst pty = spawn(preparedSpawn.command, preparedSpawn.args, {
-\t\tcwd: params.cwd,
-\t\tenv: preparedSpawn.env ? toStringEnv(preparedSpawn.env) : void 0,
-\t\tname: params.name ?? process.env.TERM ?? "xterm-256color",
-\t\tcols: params.cols ?? 120,
-\t\trows: params.rows ?? 30,
-\t\twindowsHide: true
-\t});`,
+      search: `\t\tconst pty = spawn(invocation.file, invocation.args, {
+\t\t\tname: terminalName,
+\t\t\tcols: params.cols,
+\t\t\trows: params.rows,
+\t\t\tcwd: params.cwd,
+\t\t\tenv
+\t\t});`,
+      replace: `\t\tconst pty = spawn(invocation.file, invocation.args, {
+\t\t\tname: terminalName,
+\t\t\tcols: params.cols,
+\t\t\trows: params.rows,
+\t\t\tcwd: params.cwd,
+\t\t\tenv,
+\t\t\twindowsHide: true
+\t\t});`,
     },
     {
       label: 'disable pty on windows',
-      search: `\t\t\tconst usePty = params.pty === true && !sandbox;`,
-      replace: `\t\t\tconst usePty = params.pty === true && !sandbox && process.platform !== "win32";`,
+      search: `\t\t\t\tconst usePty = params.pty === true && !sandbox;`,
+      replace: `\t\t\t\tconst usePty = params.pty === true && !sandbox && process.platform !== "win32";`,
     },
     {
       label: 'disable approval pty on windows',
-      search: `\t\t\t\t\tpty: params.pty === true && !sandbox,`,
-      replace: `\t\t\t\t\tpty: params.pty === true && !sandbox && process.platform !== "win32",`,
+      search: `\t\t\t\t\t\tpty: params.pty === true && !sandbox,`,
+      replace: `\t\t\t\t\t\tpty: params.pty === true && !sandbox && process.platform !== "win32",`,
     },
   ];
 
@@ -971,7 +974,8 @@ function patchBundledRuntime(outputDir) {
   let hintCount = 0;
   if (fs.existsSync(distDir)) {
     for (const file of fs.readdirSync(distDir)) {
-      if (!file.endsWith('.js')) continue;
+      // 2026.10 emits ESM chunks; keep .js for older bundled layouts.
+      if (!file.endsWith('.js') && !file.endsWith('.mjs')) continue;
       const filePath = path.join(distDir, file);
       try {
         const content = fs.readFileSync(filePath, 'utf8');
@@ -1030,4 +1034,20 @@ if (missingRuntimePackages.length > 0) {
     echo`   - ${pkgName}`;
   }
   process.exit(1);
+}
+
+// OpenClaw's Windows state-database snapshot staging loads koffi; a pruned
+// koffi makes Gateway startup and Doctor fail with an opaque AggregateError.
+// The bundle is built on the target platform, so the host can load it.
+const koffiDir = path.join(outputNodeModules, 'koffi');
+if (fs.existsSync(path.join(koffiDir, 'package.json'))) {
+  const koffiLoad = spawnSync(process.execPath, ['-e', 'require(process.argv[1]).sizeof("int")', koffiDir], {
+    encoding: 'utf8',
+  });
+  if (koffiLoad.status !== 0) {
+    echo`❌ Bundle verification failed: bundled koffi cannot be loaded:`;
+    echo`${(koffiLoad.stderr || koffiLoad.stdout || String(koffiLoad.error ?? '')).trim()}`;
+    process.exit(1);
+  }
+  echo`   koffi: ✓`;
 }

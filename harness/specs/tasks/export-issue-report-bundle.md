@@ -35,7 +35,7 @@ expectedUserBehavior:
   - Activating either entry opens the same localized dialog that lists transcripts, sanitized OpenClaw configuration, diagnostic logs, and the manifest as bundle contents.
   - The user can select individual conversations or select all available conversations, but conversation selection is optional.
   - Export remains available when no conversations exist or none are selected.
-  - Export creates a ZIP on the operating system Desktop directory containing every selected JSONL transcript, if any, a sanitized OpenClaw JSON configuration when available, logs, and a manifest.
+  - Export creates a ZIP on the operating system Desktop directory containing every selected conversation as JSONL, whether the transcript still lives in a session JSONL file or in the agent SQLite transcript store, plus a sanitized OpenClaw JSON configuration when available, logs, and a manifest.
   - After success, the dialog displays the full ZIP path and offers a Show in Folder action.
   - Stale selections with missing transcripts are skipped and reported; the diagnostics-only export still succeeds if no selected transcript is available, while an unsafe selected path fails the export.
 requiredProfiles:
@@ -58,7 +58,7 @@ requiredTests:
   - tests/e2e/settings-issue-report.spec.ts
 acceptance:
   - Renderer invokes diagnostics.exportIssueReport only through src/lib/host-api.ts.
-  - Main accepts an empty session-key list and resolves every available selected transcript under its matching agent sessions directory without following an escaping symlink.
+  - Main accepts an empty session-key list and resolves every available selected transcript from the agent SQLite transcript store, or from a JSONL file under its matching agent sessions directory, without following an escaping symlink.
   - The ZIP contains every available selected transcript, a recursively redacted OpenClaw config when present, available ClawX and OpenClaw log files with common credential forms redacted, and a manifest that reports stale selections.
   - Archive entry names do not expose source absolute paths.
   - Export writes a uniquely named ZIP atomically to the Desktop directory on macOS and Windows and returns its absolute path.

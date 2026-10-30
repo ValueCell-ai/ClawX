@@ -291,6 +291,32 @@ export function remapDingTalkOfficialManifest(manifest: Record<string, unknown>)
   return modified;
 }
 
+/**
+ * OpenClaw 2026.10 captures each plugin dependency as a symlink into an
+ * isolated `package-N` directory. `dingtalk-stream` imports `ws`, and that
+ * package is linked beside the real `dingtalk-stream` directory. The plugin
+ * loader then evaluates `dingtalk-stream` through the symlink URL, so Node
+ * looks for `ws` under the plugin package and does not see the isolated copy.
+ * Declaring `ws` on the connector makes the capture link it into the plugin
+ * `node_modules`, which that walk can resolve.
+ */
+export function ensureDingTalkWsDirectDependency(
+  pkg: Record<string, unknown>,
+  wsVersion: string,
+): boolean {
+  if (pkg.name !== DINGTALK_OFFICIAL_NPM) return false;
+  const version = wsVersion.trim();
+  if (!version) return false;
+
+  if (!isPlainRecord(pkg.dependencies)) {
+    pkg.dependencies = {};
+  }
+  const dependencies = pkg.dependencies as Record<string, unknown>;
+  if (typeof dependencies.ws === 'string' && dependencies.ws.trim()) return false;
+  dependencies.ws = version;
+  return true;
+}
+
 export function remapDingTalkOfficialPackageJson(pkg: Record<string, unknown>): boolean {
   let modified = false;
   const openclaw = isPlainRecord(pkg.openclaw) ? pkg.openclaw : null;

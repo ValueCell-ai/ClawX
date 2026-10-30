@@ -54,6 +54,8 @@
             "browser": "ブラウザーを操作",
             "computer": "コンピューターを操作",
             "execCommand": "コマンドを実行",
+            "execCode": "コードを実行",
+            "listFiles": "ファイル一覧",
             "read": "読み取り",
             "write": "書き込み",
             "spawnSubagent": "サブエージェントを起動",
@@ -123,7 +125,8 @@
             "open": "{{name}} を開く",
             "preview": "{{name}} をプレビュー",
             "openFailed": "添付ファイルを開けませんでした"
-        }
+        },
+        "gatewayReconnectTimeout": "会話の接続の復旧を待機中にタイムアウトしました。もう一度お試しください。"
     },
     "artifactPanel": {
         "tabs": {

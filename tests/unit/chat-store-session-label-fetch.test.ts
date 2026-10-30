@@ -10,6 +10,10 @@ const { gatewayRpcMock, hostApiFetchMock } = vi.hoisted(() => ({
   gatewayRpcMock: vi.fn(),
   hostApiFetchMock: vi.fn(),
 }));
+const acpState = vi.hoisted(() => ({ activeSessionKey: null as string | null, sending: false }));
+vi.mock('@/stores/acp-chat-session', () => ({
+  useAcpChatSessionStore: { getState: () => acpState },
+}));
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -55,12 +59,38 @@ describe('chat store session label summary hydration', () => {
     window.localStorage.clear();
     gatewayRpcMock.mockReset();
     hostApiFetchMock.mockReset();
+    acpState.activeSessionKey = null;
+    acpState.sending = false;
     hostApiFetchMock.mockImplementation(async (path: string) => {
       if (path === '/api/chat/sessions' || path === '/api/chat/history') {
         throw new Error('No route for mocked chat host API');
       }
       return { success: true, summaries: [] };
     });
+  });
+
+  it('keeps a live ACP conversation selected when the restart catalog temporarily omits it', async () => {
+    const key = 'agent:main:session-restarting';
+    const other = 'agent:coder1:main';
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: key,
+      currentAgentId: 'main',
+      sessions: [{ key, displayName: 'Restarting', workspacePath: '/workspace' }],
+      sessionLabels: {},
+      sessionLastActivity: {},
+    });
+    acpState.activeSessionKey = key;
+    acpState.sending = true;
+    gatewayRpcMock.mockResolvedValue({ sessions: [{ key: other, displayName: 'Other', workspacePath: '/coder' }] });
+
+    await useChatStore.getState().loadSessions({ force: true });
+    expect(useChatStore.getState().currentSessionKey).toBe(key);
+    expect(useChatStore.getState().sessions.map((session) => session.key)).toContain(key);
+
+    acpState.sending = false;
+    await useChatStore.getState().loadSessions({ force: true });
+    expect(useChatStore.getState().currentSessionKey).toBe(other);
   });
 
   afterEach(() => {

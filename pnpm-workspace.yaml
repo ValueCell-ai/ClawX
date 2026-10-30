@@ -29,5 +29,5 @@ supportedArchitectures:
     - arm64
 
 patchedDependencies:
-  '@wecom/wecom-openclaw-plugin@2026.8.17': patches/@wecom__wecom-openclaw-plugin@2026.8.17.patch
-  openclaw@2026.7.1-2: patches/openclaw@2026.7.1-2.patch
+  '@wecom/wecom-openclaw-plugin@2026.9.15': patches/@wecom__wecom-openclaw-plugin@2026.9.15.patch
+  openclaw@2026.10.5: patches/openclaw@2026.10.5.patch
