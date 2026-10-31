@@ -16,6 +16,7 @@ import {
   MoreHorizontal,
   CircleAlert,
   Puzzle,
+  Bot,
   Clock,
   Settings as SettingsIcon,
   PanelLeftClose,
@@ -73,28 +74,22 @@ interface NavItemProps {
   collapsed?: boolean;
   onClick?: () => void;
   testId?: string;
-  activePaths?: string[];
 }
 
-function NavItem({ to, icon, label, badge, collapsed, onClick, testId, activePaths }: NavItemProps) {
-  const { pathname } = useLocation();
-  const matchesGroup = activePaths?.includes(pathname) ?? false;
+function NavItem({ to, icon, label, badge, collapsed, onClick, testId }: NavItemProps) {
   return (
     <NavLink
-      to={matchesGroup ? pathname : to}
+      to={to}
       onClick={onClick}
-      aria-current={matchesGroup ? 'page' : undefined}
       title={collapsed ? label : undefined}
       aria-label={label}
       data-testid={testId}
-      className={({ isActive }) =>
-        cn(
-          'sidebar-nav-text flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors',
-          'hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80',
-          isActive || matchesGroup ? 'bg-black/5 dark:bg-white/10 text-foreground' : '',
-          collapsed && 'justify-center px-0',
-        )
-      }
+      className={({ isActive }) => cn(
+        'sidebar-nav-text flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors',
+        'hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80',
+        isActive ? 'bg-black/5 dark:bg-white/10 text-foreground' : '',
+        collapsed && 'justify-center px-0',
+      )}
     >
       <>
         <div className="flex shrink-0 items-center justify-center text-current [&_svg]:size-4">{icon}</div>
@@ -644,9 +639,14 @@ export function Sidebar() {
     {
       to: '/skills',
       icon: <Puzzle className="h-4 w-4" strokeWidth={2} />,
-      label: t('sidebar.capabilities'),
-      testId: 'sidebar-nav-capabilities',
-      activePaths: ['/agents', '/skills'],
+      label: t('sidebar.skills'),
+      testId: 'sidebar-nav-skills',
+    },
+    {
+      to: '/agents',
+      icon: <Bot className="h-4 w-4" strokeWidth={2} />,
+      label: t('sidebar.agents'),
+      testId: 'sidebar-nav-agents',
     },
     { to: '/models', icon: <Cpu className="h-4 w-4" strokeWidth={2} />, label: t('sidebar.models'), testId: 'sidebar-nav-models' },
     { to: '/channels', icon: <MessageCircle className="h-4 w-4" strokeWidth={2} />, label: t('sidebar.channels'), testId: 'sidebar-nav-channels' },

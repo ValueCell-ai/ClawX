@@ -20,9 +20,9 @@ All links are inert:
 
 ## Renderer flow
 
-HTML entry points build a scope-specific `FilePreviewTarget`. Conversation entries call `useArtifactPanel.openPreview`; workspace navigation changes the shared focused file without changing the tab. `FilePreviewBody` renders one active HTML anchor in either Workspace or Preview. The route-stable host in `MainLayout` overlays one webview on that anchor and asks `hostApi.webBrowser.navigate` to load the selected file.
+HTML entry points build a scope-specific `FilePreviewTarget`. Conversation entries call `useArtifactPanel.openPreview`; workspace navigation changes the shared focused file without changing the tab. `FilePreviewBody` registers its HTML file, anchor and active state with the reader-owned HTML registry. Workspace and skill readers share this pipeline without changing conversation selection. The anchor owns a `WebBrowserHost` that portals the single selected guest into its reader and asks `hostApi.webBrowser.navigate` to load the selected file.
 
-The host has no browser chrome. It exists only for an HTML `focusedFile`, remains hidden and inert when the shared preview anchor is not visible, and can recover a crashed guest without restoring browsing state. Because the guest is route-stable and positioned over a Renderer anchor, it raises its stacking level above the narrow-window drawer when that anchor is inside the drawer.
+The host has no browser chrome. It exists only for a registered HTML reader, remains mounted but hidden and inert when that reader switches to Source or becomes inactive, and releases its guest when the reader unmounts. A dialog reader takes precedence over a background reader; removing an obsolete owner cannot clear another reader. The guest belongs to the same DOM and React modal context as its anchor, preserving dialog dismissal and focus boundaries in narrow drawers and skill dialogs. Crash recovery does not restore browsing state.
 
 ## Main boundary
 

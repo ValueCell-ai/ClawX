@@ -1,5 +1,4 @@
 import { Select, SelectItem } from '@/components/ui/select';
-import { CapabilitiesNavigation } from '@/components/layout/CapabilitiesNavigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Bot, Check, Plus, RefreshCw, Settings2, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -105,7 +104,6 @@ export function Agents() {
       <div data-testid="agents-page" className="flex flex-col -m-6 dark:bg-background h-[calc(100%+3rem)] overflow-hidden">
         <div className="mx-auto flex h-full w-full max-w-6xl flex-col p-6 md:p-8">
           <h1 className="mb-6 font-sans text-2xl font-medium tracking-normal">{t('title')}</h1>
-          <CapabilitiesNavigation />
           <div className="flex flex-1 items-center justify-center"><LoadingSpinner size="lg" /></div>
         </div>
       </div>
@@ -118,14 +116,12 @@ export function Agents() {
       className="flex flex-col -m-6 dark:bg-background h-[calc(100%+3rem)] overflow-hidden"
     >
       <div className="w-full max-w-6xl mx-auto flex flex-col h-full p-6 md:p-8">
-        <div className="flex flex-col md:flex-row md:items-start justify-between mb-6 shrink-0 gap-4">
+        <div className="mb-6 flex shrink-0 flex-col justify-between gap-4 md:flex-row md:items-start">
           <div>
-            <h1 className="text-2xl font-sans text-foreground mb-1 font-medium tracking-normal">
-              {t('title')}
-            </h1>
+            <h1 className="mb-1 font-sans text-2xl font-medium tracking-normal text-foreground">{t('title')}</h1>
             <p className="text-sm text-muted-foreground">{t('subtitle')}</p>
           </div>
-          <div className="flex items-center gap-3 md:mt-2">
+          <div className="flex flex-wrap items-center gap-3 md:mt-2">
             <Button
               variant="outline"
               onClick={handleRefresh}
@@ -144,8 +140,6 @@ export function Agents() {
             </Button>
           </div>
         </div>
-
-        <CapabilitiesNavigation />
 
         <div className="flex-1 overflow-y-auto pr-2 min-h-0 -mr-2">
           {error && (

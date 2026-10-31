@@ -20,7 +20,7 @@ import { formatFileSize } from './format';
 
 export interface SkillFileSectionsProps {
   baseDir: string;
-  onOpen: (file: SkillFile) => void;
+  onOpen: (file: SkillFile, trigger: HTMLButtonElement) => void;
   className?: string;
 }
 
@@ -117,7 +117,7 @@ interface SkillFileSectionProps {
   title: string;
   description: string;
   files: SkillFile[];
-  onOpen: (file: SkillFile) => void;
+  onOpen: (file: SkillFile, trigger: HTMLButtonElement) => void;
 }
 
 function SkillFileSection({ title, description, files, onOpen }: SkillFileSectionProps) {
@@ -136,7 +136,7 @@ function SkillFileSection({ title, description, files, onOpen }: SkillFileSectio
           <button
             key={file.filePath}
             type="button"
-            onClick={() => onOpen(file)}
+            onClick={(event) => onOpen(file, event.currentTarget)}
             className={cn(
               'flex items-center gap-2 rounded-xl border border-black/5 bg-transparent px-3 py-2 text-left transition-colors',
               'hover:border-primary/40 hover:bg-primary/5',

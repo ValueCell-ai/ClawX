@@ -18,6 +18,7 @@ import type { AgentSummary } from '@/types/agent';
 import { MaterialFileIcon } from './MaterialFileIcon';
 import { buildWorkspacePreviewTarget } from './build-preview-target';
 import { FilePreviewSurface } from './FilePreviewSurface';
+import { getFilePreviewTargetIdentity } from './types';
 
 const TREE_INDENT_PX = 12;
 
@@ -165,7 +166,9 @@ export function WorkspaceBrowserBody({ agent, workspacePath, workspaceLabel, run
             window.addEventListener('pointermove', move); window.addEventListener('pointerup', stop); document.body.style.cursor = 'col-resize'; document.body.style.userSelect = 'none'; dragCleanup.current = stop;
           }} />}
         <section className={cn('min-h-0 min-w-0 flex-1', !showPreview && 'hidden')}>
-          <FilePreviewSurface file={file} revision={refreshTick + (refreshSignal ?? 0)} active={active && showPreview} onBrowse={browse} backToFiles={narrow && !previewOnly} />
+          <FilePreviewSurface file={file} revision={refreshTick + (refreshSignal ?? 0)} active={active && showPreview} onBrowse={browse} backToFiles={narrow && !previewOnly}
+            initialPptxSlideIndex={file ? useArtifactPanel.getState().previewSlidePositions[getFilePreviewTargetIdentity(file)] ?? 0 : 0}
+            onPptxSlideIndexChange={index => { if (file) useArtifactPanel.getState().rememberPreviewSlide(getFilePreviewTargetIdentity(file), index); }} />
         </section>
       </div>
     </div>

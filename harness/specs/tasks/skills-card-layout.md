@@ -6,15 +6,24 @@ taskType: ui
 intent: Improve skill browsing and details without replacing skill names or descriptions or adding chat actions.
 touchedAreas:
   - src/pages/Skills/index.tsx
+  - src/pages/Agents/index.tsx
+  - src/components/layout/**
   - shared/i18n/locales/*/skills.json
   - tests/e2e/skills-gateway-readiness.spec.ts
+  - tests/e2e/**
   - tests/unit/skills-page-gateway-readiness.test.tsx
   - src/styles/globals.css
+  - harness/**
+  - README.md
+  - README.zh-CN.md
+  - README.ja-JP.md
 expectedUserBehavior:
   - Original skill names and descriptions appear in responsive cards.
-  - My skills and Discover skills separate management and existing marketplace search.
+  - Skills and Assistants have independent sidebar entries and standard management page headers without duplicate in-page navigation; search and status filters form the only Skills toolbar.
+  - Cards show original names, descriptions and compact source badges with independent switches; version metadata remains in details.
+  - Add skills opens existing marketplace search in a dismissible dialog without replacing the local list or its filters.
   - Discovery and Add skills are hidden for unsupported capability without searching.
-  - Keyboard-accessible details preserve file previews and paths in an always-visible read-only section without management actions.
+  - Centered details use the shared Dialog, bounded internal scrolling and focus return to the opening card; skill files open in a right drawer reusing the Workspace reader and return focus to the selected file when closed.
 requiredProfiles:
   - fast
   - e2e

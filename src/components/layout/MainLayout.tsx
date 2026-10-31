@@ -7,7 +7,6 @@ import { Sidebar } from './Sidebar';
 import { TitleBar } from './TitleBar';
 import { MAC_SIDEBAR_CHROME_HEIGHT } from '@shared/sidebar-layout';
 import { cn } from '@/lib/utils';
-import { WebBrowserHost } from '@/components/web-browser/WebBrowserHost';
 
 export function MainLayout() {
   const platform = window.electron?.platform;
@@ -45,7 +44,6 @@ export function MainLayout() {
           )}
           <Outlet />
         </main>
-        <WebBrowserHost />
       </div>
     </div>
   );

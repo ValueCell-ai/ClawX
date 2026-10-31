@@ -78,7 +78,8 @@
         "clear": "清空"
     },
     "markdown": {
-        "copyCode": "复制代码"
+        "copyCode": "复制代码",
+        "metadata": "元信息"
     },
     "status": {
         "running": "运行中",

@@ -1,5 +1,7 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ChevronRight } from 'lucide-react';
+import type { Root } from 'mdast';
 import remarkFrontmatter from 'remark-frontmatter';
 import {
   defaultRemarkPlugins,
@@ -21,12 +23,44 @@ export interface MarkdownPreviewProps {
   className?: string;
 }
 
+/** Expose parser-recognized frontmatter as literal text, never as Markdown/HTML. */
+function remarkPreviewFrontmatter() {
+  return (tree: Root) => {
+    tree.children = tree.children.map(node => {
+      const format: string = node.type;
+      if ((format !== 'yaml' && format !== 'toml') || !('value' in node)) return node;
+      return {
+        type: 'paragraph' as const,
+        position: node.position,
+        children: [],
+        // Bypass paragraph text normalization, which would strip YAML indentation.
+        data: { hName: 'details', hChildren: [{ type: 'text', value: node.value }] },
+      };
+    });
+  };
+}
+
 const previewRemarkPlugins: NonNullable<StreamdownProps['remarkPlugins']> = [
   ...Object.values(defaultRemarkPlugins),
   [remarkFrontmatter, ['yaml', 'toml']],
+  remarkPreviewFrontmatter,
 ];
 
+function FrontmatterDetails({ children }: { children?: React.ReactNode }) {
+  const { t } = useTranslation('common');
+  return (
+    <details open className="group mb-4 rounded-lg bg-surface-input px-3" data-testid="markdown-frontmatter">
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-md py-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border [&::-webkit-details-marker]:hidden">
+        <ChevronRight className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-90 motion-reduce:transition-none" aria-hidden="true" />
+        {t('markdown.metadata')}
+      </summary>
+      <pre className="whitespace-pre-wrap break-words pb-3 font-mono text-xs leading-relaxed text-muted-foreground" data-testid="markdown-frontmatter-content"><code>{children}</code></pre>
+    </details>
+  );
+}
+
 const previewComponents: Components = {
+  details: ({ children }) => <FrontmatterDetails>{children}</FrontmatterDetails>,
   h1: ({ children }) => (
     <h1 className="mb-3 mt-4 text-2xl font-semibold text-foreground first:mt-0" data-streamdown="heading-1">
       {children}

@@ -6,6 +6,7 @@ import {
   WEB_BROWSER_USER_AGENT,
 } from '@shared/web-browser';
 import { WebBrowserHost } from '@/components/web-browser/WebBrowserHost';
+import { useHtmlPreview } from '@/stores/html-preview';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 
 const { navigate, toastError } = vi.hoisted(() => ({
@@ -25,15 +26,6 @@ vi.mock('react-i18next', () => ({
 
 interface MockWebview extends HTMLElement {
   isLoading: ReturnType<typeof vi.fn>;
-}
-
-class TestResizeObserver implements ResizeObserver {
-  constructor(private readonly callback: ResizeObserverCallback) {}
-  observe() {
-    this.callback([], this);
-  }
-  unobserve() {}
-  disconnect() {}
 }
 
 function htmlFile() {
@@ -73,7 +65,6 @@ function webview(): MockWebview {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.stubGlobal('ResizeObserver', TestResizeObserver);
   vi.spyOn(document, 'createElement').mockImplementation((tagName, options) => {
     const element = Document.prototype.createElement.call(document, tagName, options);
     if (tagName.toLowerCase() === 'webview') {
@@ -81,12 +72,7 @@ beforeEach(() => {
     }
     return element;
   });
-  useArtifactPanel.setState({
-    open: false,
-    tab: 'changes',
-    focusedFile: null,
-    htmlPreviewAnchor: null,
-  });
+  useHtmlPreview.setState({ bindings: [], current: null });
 });
 
 afterEach(() => {
@@ -97,12 +83,7 @@ afterEach(() => {
 
 describe('HTML preview host', () => {
   it('does not create a guest for non-HTML files', () => {
-    useArtifactPanel.setState({
-      open: true,
-      tab: 'preview',
-      focusedFile: { ...htmlFile(), fileName: 'notes.md', filePath: '/workspace/notes.md', ext: '.md' },
-      htmlPreviewAnchor: makeAnchor(),
-    });
+    useHtmlPreview.getState().register({ owner: Symbol(), file: { ...htmlFile(), fileName: 'notes.md', filePath: '/workspace/notes.md', ext: '.md' }, anchor: makeAnchor(), active: true });
 
     render(<WebBrowserHost />);
 
@@ -110,12 +91,7 @@ describe('HTML preview host', () => {
   });
 
   it('creates a chrome-free guest and loads only the selected local HTML through Host API', async () => {
-    useArtifactPanel.setState({
-      open: true,
-      tab: 'preview',
-      focusedFile: htmlFile(),
-      htmlPreviewAnchor: makeAnchor(),
-    });
+    useHtmlPreview.getState().register({ owner: Symbol(), file: htmlFile(), anchor: makeAnchor(), active: true });
     render(<WebBrowserHost />);
 
     const guest = webview();
@@ -132,12 +108,7 @@ describe('HTML preview host', () => {
   });
 
   it('loads the selected local HTML when the guest becomes DOM-ready', async () => {
-    useArtifactPanel.setState({
-      open: true,
-      tab: 'preview',
-      focusedFile: htmlFile(),
-      htmlPreviewAnchor: makeAnchor(),
-    });
+    useHtmlPreview.getState().register({ owner: Symbol(), file: htmlFile(), anchor: makeAnchor(), active: true });
     render(<WebBrowserHost />);
 
     fireEvent(webview(), new Event('dom-ready'));
@@ -147,16 +118,12 @@ describe('HTML preview host', () => {
   });
 
   it('keeps the guest mounted but inert when Preview is hidden', () => {
-    useArtifactPanel.setState({
-      open: true,
-      tab: 'preview',
-      focusedFile: htmlFile(),
-      htmlPreviewAnchor: makeAnchor(),
-    });
+    useHtmlPreview.getState().register({ owner: Symbol(), file: htmlFile(), anchor: makeAnchor(), active: true });
     render(<WebBrowserHost />);
 
     const guest = webview();
-    act(() => useArtifactPanel.getState().setTab('changes'));
+    const binding = useHtmlPreview.getState().current!;
+    act(() => useHtmlPreview.getState().register({ ...binding, active: false }));
 
     expect(webview()).toBe(guest);
     expect(screen.getByTestId('html-preview-host')).toHaveAttribute('aria-hidden', 'true');
@@ -168,20 +135,16 @@ describe('HTML preview host', () => {
     document.body.append(drawer);
     const anchor = makeAnchor();
     drawer.append(anchor);
-    useArtifactPanel.setState({ open: true, tab: 'browser', focusedFile: htmlFile(), htmlPreviewAnchor: anchor });
+    useHtmlPreview.getState().register({ owner: Symbol(), file: htmlFile(), anchor, active: true });
     render(<WebBrowserHost />);
     expect(screen.getByTestId('html-preview-host')).toHaveAttribute('aria-hidden', 'false');
-    expect(screen.getByTestId('html-preview-host')).toHaveStyle({ zIndex: '70' });
+    expect(drawer).toContainElement(screen.getByTestId('html-preview-host'));
+    expect(anchor).toContainElement(webview());
     drawer.remove();
   });
 
   it('recreates a crashed guest without adding browser controls', () => {
-    useArtifactPanel.setState({
-      open: true,
-      tab: 'preview',
-      focusedFile: htmlFile(),
-      htmlPreviewAnchor: makeAnchor(),
-    });
+    useHtmlPreview.getState().register({ owner: Symbol(), file: htmlFile(), anchor: makeAnchor(), active: true });
     render(<WebBrowserHost />);
 
     const failedGuest = webview();
@@ -192,4 +155,28 @@ describe('HTML preview host', () => {
     expect(webview()).not.toBe(failedGuest);
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
   });
+  it('gives a dialog reader ownership without changing conversation selection, then restores the underlying reader', () => {
+    const workspaceOwner = Symbol('workspace');
+    const skillOwner = Symbol('skill');
+    const workspaceAnchor = makeAnchor();
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    document.body.append(dialog);
+    const skillAnchor = makeAnchor(dialog);
+    const conversationFile = htmlFile();
+    useArtifactPanel.setState({ focusedFile: conversationFile });
+    useHtmlPreview.getState().register({ owner: workspaceOwner, file: conversationFile, anchor: workspaceAnchor, active: true });
+    render(<WebBrowserHost />);
+    act(() => useHtmlPreview.getState().register({ owner: skillOwner, file: { ...htmlFile(), filePath: '/skills/demo.html' }, anchor: skillAnchor, active: true }));
+    expect(skillAnchor).toContainElement(webview());
+    expect(screen.getAllByTestId('html-preview-webview')).toHaveLength(1);
+    expect(useArtifactPanel.getState().focusedFile).toBe(conversationFile);
+    act(() => useHtmlPreview.getState().unregister(Symbol('stale')));
+    expect(skillAnchor).toContainElement(webview());
+    act(() => useHtmlPreview.getState().unregister(skillOwner));
+    expect(workspaceAnchor).toContainElement(webview());
+    act(() => useHtmlPreview.getState().unregister(workspaceOwner));
+    expect(screen.queryByTestId('html-preview-host')).not.toBeInTheDocument();
+  });
+
 });

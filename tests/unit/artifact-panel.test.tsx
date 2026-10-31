@@ -110,7 +110,6 @@ afterEach(() => {
       focusedFile: null,
       focusedChange: null,
       widthPct: ARTIFACT_PANEL_DEFAULT_WIDTH,
-      htmlPreviewAnchor: null,
     });
   });
 });
@@ -195,25 +194,6 @@ describe('ArtifactPanel', () => {
     expect(filePreviewBodyProps.at(-1)).toMatchObject({ compact: true });
     expect(screen.queryByTestId('file-preview-fullscreen-toggle')).not.toBeInTheDocument();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-  });
-
-  it('preserves the viewer-reported PowerPoint position for each preview target', () => {
-    const first = {
-      filePath: '/tmp/first.pptx', fileName: 'first.pptx', ext: '.pptx',
-      mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', contentType: 'document' as const,
-    };
-    const second = { ...first, filePath: '/tmp/second.pptx', fileName: 'second.pptx' };
-    useArtifactPanel.setState({ open: true, tab: 'preview', focusedFile: first });
-    render(<ArtifactPanel fileGroups={[]} uniqueFileCount={0} agent={null} />);
-
-    expect(filePreviewBodyProps.at(-1)).toMatchObject({ initialPptxSlideIndex: 0 });
-    (filePreviewBodyProps.at(-1)?.onPptxSlideIndexChange as ((index: number) => void) | undefined)?.(2);
-
-    act(() => useArtifactPanel.setState({ focusedFile: second }));
-    expect(filePreviewBodyProps.at(-1)).toMatchObject({ initialPptxSlideIndex: 0 });
-
-    act(() => useArtifactPanel.setState({ focusedFile: first }));
-    expect(filePreviewBodyProps.at(-1)).toMatchObject({ initialPptxSlideIndex: 2 });
   });
 
   it('always keeps Changes available for rich preview files', () => {

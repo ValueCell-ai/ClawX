@@ -3,7 +3,7 @@ id: settings-navigation
 title: Task-oriented navigation and categorized settings
 scenario: chat-workspace-and-navigation
 taskType: ui-refactor
-intent: Put configuration in categorized settings, combine assistant and skill discovery, and replace internal terminology in user-facing navigation while preserving existing capabilities and deep links.
+intent: Keep categorized settings and separate assistant and skill pages consistent with management navigation while preserving existing capabilities and deep links.
 touchedAreas:
   - src/App.tsx
   - src/pages/Settings/**
@@ -12,8 +12,7 @@ touchedAreas:
   - src/pages/ComputerUse/index.tsx
   - src/pages/Agents/index.tsx
   - src/pages/Skills/index.tsx
-  - src/components/layout/Sidebar.tsx
-  - src/components/layout/CapabilitiesNavigation.tsx
+  - src/components/layout/**
   - src/pages/Chat/ChatInput.tsx
   - shared/i18n/locales/**
   - tests/e2e/**
@@ -22,7 +21,8 @@ touchedAreas:
   - README.zh-CN.md
   - README.ja-JP.md
 expectedUserBehavior:
-  - The sidebar offers new tasks, assistants and skills, AI models, messaging remote control, scheduled tasks, computer operation, conversations, and settings.
+  - The sidebar offers new tasks, separate Skills and Assistants entries, AI models, messaging remote control, scheduled tasks, computer operation, conversations, and settings.
+  - Skills and Assistants each have a standard title, subtitle and page actions without duplicate in-page navigation.
   - App settings separates general preferences, advanced tools, and help/about; capability configuration is accessed directly in the sidebar.
   - Legacy model/channel/computer routes and developer section links remain usable, including model tab query parameters.
   - Developer-only controls stay gated; moving a control never grants permissions or enables it.

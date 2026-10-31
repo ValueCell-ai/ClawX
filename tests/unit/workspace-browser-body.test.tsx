@@ -39,7 +39,7 @@ beforeEach(() => {
   previewProps.length = 0;
   loadWorkspaceTree.mockResolvedValue({ root, truncated: false });
   useWorkspaceBrowser.setState({ scopes: {} });
-  useArtifactPanel.setState({ focusedFile: null, open: true, tab: 'browser' });
+  useArtifactPanel.setState({ focusedFile: null, open: true, tab: 'browser', previewSlidePositions: {} });
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(800);
   vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(500);
 });
@@ -119,6 +119,16 @@ describe('WorkspaceBrowserBody', () => {
     expect(screen.getByTestId('workspace-tree-divider')).toHaveAttribute('aria-valuenow', '236');
     fireEvent.click(screen.getByTestId('workspace-collapse-all'));
     expect(screen.queryByTitle('docs/summary.md')).not.toBeInTheDocument();
+  });
+
+  it('restores the workspace-owned slide position after selecting another file', async () => {
+    render(<WorkspaceBrowserBody agent={agent} />); await ready();
+    fireEvent.click(screen.getByTitle('slides.pptx'));
+    expect(previewProps.at(-1)).toMatchObject({ initialPptxSlideIndex: 0 });
+    act(() => (previewProps.at(-1)?.onPptxSlideIndexChange as (index: number) => void)(3));
+    fireEvent.click(screen.getByTitle('readme.txt'));
+    fireEvent.click(screen.getByTitle('slides.pptx'));
+    expect(previewProps.at(-1)).toMatchObject({ initialPptxSlideIndex: 3 });
   });
 
   it('keeps one preview surface mounted when only the preview tab changes', async () => {

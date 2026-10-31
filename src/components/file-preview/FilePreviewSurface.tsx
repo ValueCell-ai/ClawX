@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import * as DropdownMenu from '@/components/ui/dropdown-menu';
-import { useArtifactPanel } from '@/stores/artifact-panel';
 import { hostApi } from '@/lib/host-api';
 import { isHtmlPreviewExt } from '@/lib/generated-files';
 import { htmlPreviewFileUrl } from '@/lib/local-html-browser';
@@ -11,12 +10,16 @@ import { FilePreviewBody } from './FilePreviewBody';
 import { previewDisplayPath } from './build-preview-target';
 import { getFilePreviewTargetIdentity, type FilePreviewTarget } from './types';
 
-export function FilePreviewSurface({ file, active, onBrowse, backToFiles, revision = 0 }: {
+export function FilePreviewSurface({ file, active, onBrowse, backToFiles, revision = 0, leadingHeader, trailingHeader, initialPptxSlideIndex = 0, onPptxSlideIndexChange }: {
   file: FilePreviewTarget | null;
   active: boolean;
   onBrowse?: () => void;
   backToFiles?: boolean;
   revision?: number;
+  leadingHeader?: React.ReactNode;
+  trailingHeader?: React.ReactNode;
+  initialPptxSlideIndex?: number;
+  onPptxSlideIndexChange?: (index: number) => void;
 }) {
   const { t } = useTranslation('chat');
   if (!file) return (
@@ -48,9 +51,9 @@ export function FilePreviewSurface({ file, active, onBrowse, backToFiles, revisi
       singleLineHeader
       mode="preview"
       active={active}
-      initialPptxSlideIndex={useArtifactPanel.getState().previewSlidePositions[identity] ?? 0}
-      onPptxSlideIndexChange={index => useArtifactPanel.getState().rememberPreviewSlide(identity, index)}
-      leadingHeader={backToFiles && <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={onBrowse} title={t('workspace.browseFiles')} aria-label={t('workspace.browseFiles')} data-testid="workspace-back-to-files"><ArrowLeft className="h-4 w-4" /></Button>}
+      initialPptxSlideIndex={initialPptxSlideIndex}
+      onPptxSlideIndexChange={onPptxSlideIndexChange}
+      leadingHeader={leadingHeader ?? (backToFiles && <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={onBrowse} title={t('workspace.browseFiles')} aria-label={t('workspace.browseFiles')} data-testid="workspace-back-to-files"><ArrowLeft className="h-4 w-4" /></Button>)}
       trailingHeader={<>
         {external && <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" aria-label={t('filePreview.actions.openHtmlExternally')} title={t('filePreview.actions.openHtmlExternally')} data-testid="html-preview-open-external" onClick={() => {
           hostApi.webBrowser.openExternal(external).catch(() => toast.error(t('filePreview.errors.openHtmlExternallyFailed')));
@@ -64,6 +67,7 @@ export function FilePreviewSurface({ file, active, onBrowse, backToFiles, revisi
             <DropdownMenu.Item className="clawx-menu-item flex items-center gap-2 text-xs" onSelect={() => void reveal()}><FolderOpen className="h-3.5 w-3.5" />{t('filePreview.actions.openInFinder')}</DropdownMenu.Item>
           </DropdownMenu.Content></DropdownMenu.Portal>
         </DropdownMenu.Root>
+        {trailingHeader}
       </>}
     />
   );

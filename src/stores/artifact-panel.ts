@@ -44,7 +44,6 @@ interface ArtifactPanelState {
   focusedFile: FilePreviewTarget | null;
   focusedChange: ArtifactChangeNavigation | null;
   changeNavigationId: number;
-  htmlPreviewAnchor: HTMLElement | null;
   /** Persisted panel width as a % of the chat container (clamped on read). */
   widthPct: number;
   previewSlidePositions: Record<string, number>;
@@ -57,7 +56,6 @@ interface ArtifactPanelState {
   openPreview: (file?: FilePreviewTarget | null) => void;
   /** Open the workspace browser tab. */
   openBrowser: () => void;
-  setHtmlPreviewAnchor: (anchor: HTMLElement | null) => void;
   toggle: () => void;
   close: () => void;
   /** Update the panel width (clamped). */
@@ -79,7 +77,6 @@ export const useArtifactPanel = create<ArtifactPanelState>()(
       focusedFile: null,
       focusedChange: null,
       changeNavigationId: 0,
-      htmlPreviewAnchor: null,
       widthPct: ARTIFACT_PANEL_DEFAULT_WIDTH,
       previewSlidePositions: {},
       rememberPreviewSlide: (identity, index) => set(state => {
@@ -106,7 +103,6 @@ export const useArtifactPanel = create<ArtifactPanelState>()(
       }),
       openPreview: (file = null) => set({ open: true, tab: 'preview', focusedFile: file ?? null }),
       openBrowser: () => set({ open: true, tab: 'browser', focusedFile: get().focusedFile }),
-      setHtmlPreviewAnchor: (htmlPreviewAnchor) => set({ htmlPreviewAnchor }),
       toggle: () => set((s) => ({ open: !s.open })),
       close: () => set({ open: false, focusedFile: null, focusedChange: null, previewSlidePositions: {} }),
       setWidthPct: (pct) => set({ widthPct: clampWidth(pct) }),

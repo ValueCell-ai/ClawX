@@ -11,6 +11,7 @@ import { WorkspaceBrowserBody } from './WorkspaceBrowserBody';
 import { FilePreviewSurface } from './FilePreviewSurface';
 import { WORKSPACE_BROWSER_ENABLED } from './workspace-browser-config';
 import { AcpSessionChangesView } from './AcpSessionChangesView';
+import { getFilePreviewTargetIdentity } from './types';
 
 export interface ArtifactPanelProps {
   fileGroups: AcpSessionFileGroup[];
@@ -48,7 +49,9 @@ export function ArtifactPanel({ fileGroups, uniqueFileCount, agent, workspacePat
             <WorkspaceBrowserBody agent={agent} workspacePath={workspacePath} workspaceLabel={workspaceLabel} runStartedAt={runStartedAt} refreshSignal={refreshSignal} active={visibleTab !== 'changes'} previewOnly={visibleTab === 'preview'} compact />
           </div>
         ) : (
-          <div className={cn('h-full min-h-0', visibleTab !== 'preview' && 'hidden')}><FilePreviewSurface file={focusedFile} active={visibleTab === 'preview'} /></div>
+          <div className={cn('h-full min-h-0', visibleTab !== 'preview' && 'hidden')}><FilePreviewSurface file={focusedFile} active={visibleTab === 'preview'}
+            initialPptxSlideIndex={focusedFile ? useArtifactPanel.getState().previewSlidePositions[getFilePreviewTargetIdentity(focusedFile)] ?? 0 : 0}
+            onPptxSlideIndexChange={index => { if (focusedFile) useArtifactPanel.getState().rememberPreviewSlide(getFilePreviewTargetIdentity(focusedFile), index); }} /></div>
         )}
         <div id="artifact-changes-panel" role="tabpanel" aria-labelledby="artifact-tab-changes" hidden={visibleTab !== 'changes'} className="m-0 h-full">
           <AcpSessionChangesView fileGroups={fileGroups} uniqueFileCount={uniqueFileCount} focus={focusedChange} />

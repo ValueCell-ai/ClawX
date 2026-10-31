@@ -1,6 +1,6 @@
 /**
  * Build a `FilePreviewTarget` from a raw filesystem path, applying
- * mime / content-type defaults.  Lives outside `FilePreviewOverlay.tsx`
+ * mime / content-type defaults.  Lives outside the reader UI
  * so importing the helper doesn't bring in the Sheet/Monaco component
  * graph (and so React Fast Refresh stays happy).
  */

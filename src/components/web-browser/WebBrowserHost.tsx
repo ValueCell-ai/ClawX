@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { ComponentType, CSSProperties, HTMLAttributes, RefAttributes } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { ComponentType, HTMLAttributes, RefAttributes } from 'react';
 import { useTranslation } from 'react-i18next';
+import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 import {
   WEB_BROWSER_INITIAL_URL,
@@ -10,21 +11,13 @@ import {
 import { Button } from '@/components/ui/button';
 import { hostApi } from '@/lib/host-api';
 import { htmlPreviewFileUrl } from '@/lib/local-html-browser';
-import { useArtifactPanel } from '@/stores/artifact-panel';
+import { useHtmlPreview } from '@/stores/html-preview';
 import type { WebBrowserWebviewElement } from '@/types/web-browser';
 
 interface WebviewElementProps extends HTMLAttributes<HTMLElement>, RefAttributes<WebBrowserWebviewElement> {
   partition: string;
   src: string;
   useragent: string;
-}
-
-interface HostGeometry {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-  overlay: boolean;
 }
 
 interface DidFailLoadEvent extends Event {
@@ -34,35 +27,21 @@ interface DidFailLoadEvent extends Event {
 
 const WebviewElement = 'webview' as unknown as ComponentType<WebviewElementProps>;
 
-function readGeometry(anchor: HTMLElement): HostGeometry | null {
-  if (!anchor.isConnected) return null;
-  const bounds = anchor.getBoundingClientRect();
-  if (bounds.width <= 0 || bounds.height <= 0) return null;
-  return {
-    left: bounds.left,
-    top: bounds.top,
-    width: bounds.width,
-    height: bounds.height,
-    overlay: anchor.closest('[role="dialog"]') !== null,
-  };
-}
-
 /**
- * Route-stable host for the local HTML preview webview.
+ * Reader-owned host for the local HTML preview webview.
  *
  * The guest has no browser chrome and is visible only over the shared file
- * preview's HTML anchor. Main owns URL validation and blocks every navigation
+ * preview's HTML anchor; the guest is portaled inside that reader so modal focus
+ * and dismissal boundaries include the HTML content. Main owns URL validation and blocks every navigation
  * initiated by the loaded document.
  */
-export function WebBrowserHost(): React.ReactElement | null {
+export function WebBrowserHost({ owner }: { owner?: symbol } = {}): React.ReactElement | null {
   const { t } = useTranslation('chat');
-  const panelOpen = useArtifactPanel((state) => state.open);
-  const activeTab = useArtifactPanel((state) => state.tab);
-  const focusedFile = useArtifactPanel((state) => state.focusedFile);
-  const anchor = useArtifactPanel((state) => state.htmlPreviewAnchor);
-  const previewUrl = focusedFile ? htmlPreviewFileUrl(focusedFile) : null;
+  const current = useHtmlPreview((state) => state.current);
+  const reader = !owner || current?.owner === owner ? current : null;
+  const anchor = reader?.anchor ?? null;
+  const previewUrl = reader ? htmlPreviewFileUrl(reader.file) : null;
   const previewUrlRef = useRef(previewUrl);
-  const [geometry, setGeometry] = useState<HostGeometry | null>(null);
   const [loading, setLoading] = useState(false);
   const [crashed, setCrashed] = useState(false);
   const [generation, setGeneration] = useState(0);
@@ -90,41 +69,6 @@ export function WebBrowserHost(): React.ReactElement | null {
   useEffect(() => {
     void navigateToPreview();
   }, [navigateToPreview, previewUrl]);
-
-  useLayoutEffect(() => {
-    if (!anchor) {
-      return;
-    }
-
-    let animationFrame: number | null = null;
-    const measure = () => setGeometry(readGeometry(anchor));
-    const scheduleMeasure = () => {
-      if (animationFrame !== null) return;
-      animationFrame = window.requestAnimationFrame(() => {
-        animationFrame = null;
-        measure();
-      });
-    };
-    const observer = new ResizeObserver(scheduleMeasure);
-
-    measure();
-    observer.observe(anchor);
-    window.addEventListener('resize', scheduleMeasure);
-    window.addEventListener('scroll', scheduleMeasure, true);
-    document.addEventListener('animationend', scheduleMeasure, true);
-    document.addEventListener('transitionend', scheduleMeasure, true);
-    window.visualViewport?.addEventListener('resize', scheduleMeasure);
-
-    return () => {
-      observer.disconnect();
-      window.removeEventListener('resize', scheduleMeasure);
-      window.removeEventListener('scroll', scheduleMeasure, true);
-      document.removeEventListener('animationend', scheduleMeasure, true);
-      document.removeEventListener('transitionend', scheduleMeasure, true);
-      window.visualViewport?.removeEventListener('resize', scheduleMeasure);
-      if (animationFrame !== null) window.cancelAnimationFrame(animationFrame);
-    };
-  }, [anchor]);
 
   const setWebviewRef = useCallback((node: WebBrowserWebviewElement | null) => {
     removeListenersRef.current();
@@ -176,28 +120,17 @@ export function WebBrowserHost(): React.ReactElement | null {
 
   useEffect(() => () => removeListenersRef.current(), []);
 
-  if (!previewUrl) return null;
+  if (!previewUrl || !anchor) return null;
 
-  const visible = panelOpen && (activeTab === 'preview' || activeTab === 'browser') && anchor !== null && geometry !== null;
-  const style: CSSProperties = {
-    position: 'fixed',
-    left: geometry?.left ?? 0,
-    top: geometry?.top ?? 0,
-    width: geometry?.width ?? 0,
-    height: geometry?.height ?? 0,
-    zIndex: geometry?.overlay ? 70 : 20,
-    visibility: visible ? 'visible' : 'hidden',
-    pointerEvents: visible ? 'auto' : 'none',
-  };
-
-  return (
+  const visible = !!reader?.active;
+  return createPortal(
     <div
       data-testid="html-preview-host"
       aria-busy={loading}
       aria-hidden={!visible}
       inert={!visible}
-      className="flex min-h-0 flex-col overflow-hidden bg-white"
-      style={style}
+      className="absolute inset-0 flex min-h-0 flex-col overflow-hidden bg-white"
+      style={{ visibility: visible ? 'visible' : 'hidden', pointerEvents: visible ? 'auto' : 'none' }}
     >
       {crashed ? (
         <div role="alert" className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
@@ -227,6 +160,7 @@ export function WebBrowserHost(): React.ReactElement | null {
           className="min-h-0 flex-1"
         />
       )}
-    </div>
+    </div>,
+    anchor,
   );
 }

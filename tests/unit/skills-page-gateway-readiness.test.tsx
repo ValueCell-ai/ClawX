@@ -175,7 +175,7 @@ describe('Skills page gateway readiness', () => {
     expect(screen.getByText('XLSX')).toBeInTheDocument();
   });
 
-  it('shows manifest versions but still hides slug badges and hash-only preinstalled versions', async () => {
+  it('keeps version metadata in details without slug badges or hash-only preinstalled versions', async () => {
     gatewayState.status = { state: 'stopped', port: 18789 };
     skillsState.skills = [
       {
@@ -226,8 +226,15 @@ describe('Skills page gateway readiness', () => {
     });
 
     expect(screen.queryByText('self-improvement-agent')).not.toBeInTheDocument();
-    expect(screen.getByText('v1.0.0')).toBeInTheDocument();
-    expect(screen.getByText('v0.1.3')).toBeInTheDocument();
+    expect(screen.queryByText('v1.0.0')).not.toBeInTheDocument();
+    expect(screen.queryByText('v0.1.3')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('custom-skill'));
+    expect(screen.getByRole('dialog')).toHaveTextContent('v0.1.3');
+    fireEvent.click(screen.getByRole('button', { name: 'detail.close' }));
+    fireEvent.click(screen.getByText('pdf'));
+    expect(screen.getByRole('dialog')).toHaveTextContent('v1.0.0');
+    fireEvent.click(screen.getByRole('button', { name: 'detail.close' }));
 
     fireEvent.click(screen.getByText('docx'));
     expect(screen.queryByText(/^v[a-f0-9]{40}$/i)).not.toBeInTheDocument();

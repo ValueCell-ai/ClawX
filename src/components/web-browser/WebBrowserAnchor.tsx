@@ -1,16 +1,22 @@
-import { useCallback } from 'react';
-import { useArtifactPanel } from '@/stores/artifact-panel';
+import { useLayoutEffect, useRef, useState } from 'react';
+import { useHtmlPreview } from '@/stores/html-preview';
+import type { FilePreviewTarget } from '@/components/file-preview/types';
+import { WebBrowserHost } from './WebBrowserHost';
 
-export function HtmlPreviewAnchor() {
-  const registerAnchor = useCallback((anchor: HTMLDivElement | null) => {
-    useArtifactPanel.getState().setHtmlPreviewAnchor(anchor);
-  }, []);
+export function HtmlPreviewAnchor({ file, active }: { file: FilePreviewTarget; active: boolean }) {
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const [owner] = useState(() => Symbol('html-reader'));
+  useLayoutEffect(() => {
+    if (!anchorRef.current) return;
+    useHtmlPreview.getState().register({ owner, file, anchor: anchorRef.current, active });
+    return () => useHtmlPreview.getState().unregister(owner);
+  }, [file, active, owner]);
 
   return (
     <div
-      ref={registerAnchor}
+      ref={anchorRef}
       data-testid="html-preview-anchor"
-      className="h-full min-h-0 w-full"
-    />
+      className="relative h-full min-h-0 w-full"
+    ><WebBrowserHost owner={owner} /></div>
   );
 }

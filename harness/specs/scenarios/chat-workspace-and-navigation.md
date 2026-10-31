@@ -13,7 +13,6 @@ ownedPaths:
   - src/pages/ComputerUse/index.tsx
   - src/pages/Agents/index.tsx
   - src/pages/Skills/index.tsx
-  - src/components/layout/CapabilitiesNavigation.tsx
   - shared/i18n/locales/*/common.json
   - shared/i18n/locales/*/settings.json
   - tests/e2e/settings-navigation.spec.ts
@@ -57,6 +56,7 @@ ownedPaths:
   - src/components/web-browser/**
   - src/components/markdown/**
   - src/stores/artifact-panel.ts
+  - src/stores/html-preview.ts
   - src/components/layout/MainLayout.tsx
   - src/pages/Chat/ChatInput.tsx
   - src/pages/Chat/ChatToolbar.tsx
@@ -108,6 +108,7 @@ conditionalProfiles:
     - workspace selection, binding, sidebar, browser, or question navigation changes
     - Markdown file-preview rendering or syntax highlighting changes
 requiredRules:
+  - shared-file-reader
   - task-sidebar-search-and-pins
   - settings-navigation
   - single-window-new-chat
@@ -136,7 +137,7 @@ DOCX and PPTX files are accepted as read-only inline previews only at or below t
 
 Empty ordinary chats center the heading, installed skill shortcuts and composer. Six shortcuts (docx, xlsx, pptx, pdf, computer-use and skill-creator) render immediately, remaining disabled until availability is known. A short-lived context-scoped cache avoids repeated new-chat requests and invalidates on skill changes. Shortcuts use the existing enabled quick-access catalog and insert skill tokens without replacing drafts or sending. The computer-use shortcut only inserts its token; it does not enable computer operation or grant permissions. Workspace and connection state share an attached footer, and the model picker precedes dictation/send. Existing timelines retain the bottom composer. Verify localized, narrow-window and first-send behavior in `tests/e2e/chat-home-composer.spec.ts`.
 
-Skills management uses responsive cards with original names and descriptions, separate My skills / Discover views, named enable switches, keyboard-operable detail entry, and always-visible read-only files/path metadata. Unavailable marketplace capability hides discovery and Add skills without a marketplace request. Verify in `tests/e2e/skills-gateway-readiness.spec.ts`.
+Skills management uses responsive cards with original names and descriptions, a single search/status toolbar, compact source badges and named enable switches, keyboard-operable centered detail dialogs with bounded internal scrolling and focus return, and always-visible read-only files/path/source/version metadata in details. Skill files open in a right drawer that directly wraps the shared Workspace reader and file actions; closing it preserves detail scroll and restores file-entry focus. Markdown previews in Skills and Workspace share a default-expanded, collapsible Metadata disclosure for parsed YAML/TOML frontmatter, retaining literal content, indentation and multiline values with keyboard/pointer access. Reader-owned HTML registration and per-caller slide positions preserve conversation selection. Add skills opens marketplace discovery in a dismissible dialog while preserving the local list state; unavailable capability hides the action without a marketplace request. Verify in `tests/e2e/skills-gateway-readiness.spec.ts`.
 
 Management page visual consistency is covered by `tests/e2e/management-page-style.spec.ts`: compact system-font headings, shared page padding and width, and contained scroll regions across Skills, Models, Agents, Channels, Cron, Settings and Computer Use in desktop and narrow dark layouts. Business controls remain unchanged.
 
@@ -146,7 +147,7 @@ Model configuration tabs use consistent compact headings, icons and forms. Token
 
 Setup wizard, channel configuration and issue-report dialog headings use the same sans-serif medium-weight typography as management pages. Validate with app-smoke, channels-account-id-validation and settings-issue-report Electron specs.
 
-Primary navigation exposes tasks, assistants and skills, AI models, messaging remote control, schedules, computer operation, and conversations. App settings uses URL-addressable General / Advanced / About & help categories. Old settings capability URLs redirect to the standalone sidebar pages. Legacy configuration routes retain queries, developer links retain focus, and developer-only controls remain gated. Skill names and descriptions and technical protocol identifiers are preserved. Validate with `tests/e2e/settings-navigation.spec.ts` and `tests/e2e/management-page-style.spec.ts`.
+Primary navigation exposes tasks, separate Skills and Assistants entries, AI models, messaging remote control, schedules, computer operation, and conversations. Skills and Assistants use standard management page headers without duplicate page tabs. App settings uses URL-addressable General / Advanced / About & help categories. Old settings capability URLs redirect to the standalone sidebar pages. Legacy configuration routes retain queries, developer links retain focus, and developer-only controls remain gated. Skill names and descriptions and technical protocol identifiers are preserved. Validate with `tests/e2e/settings-navigation.spec.ts` and `tests/e2e/management-page-style.spec.ts`.
 
 Task catalog search filters eligible rows before pagination/collapse and matches display titles, assistants and workspaces. Pins are exact session keys persisted through existing Main-owned settings; pinned rows render once, missing catalog rows do not prune pins, and successful exact/bulk/assistant deletion removes their pins. Task menus retain keyboard access; canonical busy/unread projections retain priority, with failure status displayed from terminal Gateway catalog state. Validate through `tests/e2e/task-sidebar-search-and-pins.spec.ts` and the session-attention and home-composer specs.
 

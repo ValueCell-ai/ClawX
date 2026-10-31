@@ -43,7 +43,7 @@ Streamdown does not expand the authority of generated content:
 - ACP Markdown images continue through `isSafeAcpImageSource`; an unapproved source does not become an image request.
 - Table, Mermaid, code download, and line-number controls are disabled. Fenced code alone exposes Streamdown's copy control with its label supplied through `react-i18next`; the control remains disabled while a response is streaming.
 
-Static preview keeps `remark-frontmatter` for YAML (`---`) and TOML (`+++`) frontmatter. Parsed frontmatter is omitted from visible output. There is no custom frontmatter splitter, metadata card, or metadata `<pre>`.
+Static preview keeps `remark-frontmatter` for YAML (`---`) and TOML (`+++`) frontmatter. A static-only remark transform exposes recognized frontmatter as literal text in a native, keyboard-operable Metadata disclosure above the body, expanded by default with manual collapse. It does not parse metadata values into Markdown or HTML or use a custom splitter. The transform supplies literal HAST text rather than paragraph text normalization to preserve YAML indentation, multiline values and original line endings; the shared HTML safety pipeline remains unchanged. Skills and Workspace use the same disclosure through MarkdownPreview. Files without a complete frontmatter block have no disclosure.
 
 ## Streaming And Animation
 

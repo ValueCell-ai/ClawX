@@ -12,7 +12,7 @@ const MAIN_SESSION_KEY = 'agent:main:main';
 const FILE_NAME = 'streamdown-preview.md';
 const MARKDOWN_FIXTURE = [
   '---',
-  'title: Hidden preview metadata',
+  'title: Preview metadata',
   '---',
   '',
   '# Static Streamdown Preview',
@@ -96,7 +96,15 @@ test.describe('Markdown file preview', { tag: E2E_EXCLUSIVE_TAG }, () => {
       await expect(preview).toBeVisible();
       await expect(preview.getByRole('heading', { name: 'Static Streamdown Preview' })).toBeVisible();
       await expect(preview.getByText('Visible Markdown body.')).toBeVisible();
-      await expect(preview).not.toContainText('Hidden preview metadata');
+      const metadata = preview.getByTestId('markdown-frontmatter');
+      const metadataContent = metadata.getByTestId('markdown-frontmatter-content');
+      await expect(metadata).toHaveAttribute('open', '');
+      await expect(metadataContent).toBeVisible();
+      await metadata.locator('summary').click();
+      await expect(metadataContent).toBeHidden();
+      await expect(metadataContent).toHaveText('title: Preview metadata');
+      await metadata.locator('summary').click();
+      await expect(metadataContent).toBeVisible();
       await expect(preview.locator('.katex')).toBeVisible();
 
       for (const level of [1, 2, 3, 4, 5, 6]) {
@@ -105,8 +113,7 @@ test.describe('Markdown file preview', { tag: E2E_EXCLUSIVE_TAG }, () => {
           const style = window.getComputedStyle(element);
           return [Number.parseFloat(style.marginTop), Number.parseFloat(style.marginBottom)];
         });
-        if (level === 1) expect(margins[0], 'first h1 top margin').toBe(0);
-        else expect(margins[0], `h${level} top margin`).toBeGreaterThan(0);
+        expect(margins[0], `h${level} top margin`).toBeGreaterThan(0);
         expect(margins[1], `h${level} bottom margin`).toBeGreaterThan(0);
       }
 

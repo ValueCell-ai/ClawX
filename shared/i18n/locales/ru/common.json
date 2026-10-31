@@ -78,7 +78,8 @@
         "clear": "Очистить"
     },
     "markdown": {
-        "copyCode": "Копировать код"
+        "copyCode": "Копировать код",
+        "metadata": "Метаданные"
     },
     "status": {
         "running": "Запущен",

@@ -8,8 +8,7 @@
  * The `mode` prop lets callers force a read-only preview surface.
  *
  * Used by:
- *   - `FilePreviewOverlay` for the Skills detail Sheet (read-only).
- *   - `ArtifactPanel`'s PreviewTab.
+ *   - The shared `FilePreviewSurface` inside skill details and Workspace.
  *
  * All sandbox / read-only / large-file / binary edge cases are handled
  * here so callers only pass a `FilePreviewTarget` and a `readOnly` flag.
@@ -517,7 +516,7 @@ export function FilePreviewBody({
             </TabsContent>
           )}
           {tabs.includes('preview') && (
-            <TabsContent value="preview" className="m-0 h-full overflow-auto">
+            <TabsContent value="preview" forceMount={isHtmlPreviewExt(file.ext) ? true : undefined} className={cn('m-0 h-full overflow-auto', isHtmlPreviewExt(file.ext) && tab !== 'preview' && 'hidden')}>
               {richPreview === 'image' ? (
                 <ImageViewer
                   filePath={file.filePath}
@@ -595,7 +594,7 @@ export function FilePreviewBody({
                 ) : null
               ) : file.contentType === 'document' ? (
                 isHtmlPreviewExt(file.ext) ? (
-                  <HtmlPreviewAnchor />
+                  <HtmlPreviewAnchor file={file} active={active && tab === 'preview'} />
                 ) : (
                   <MarkdownPreview source={draft ?? state.content} />
                 )

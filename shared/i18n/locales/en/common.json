@@ -78,7 +78,8 @@
         "clear": "Clear"
     },
     "markdown": {
-        "copyCode": "Copy code"
+        "copyCode": "Copy code",
+        "metadata": "Metadata"
     },
     "status": {
         "running": "Running",

@@ -78,7 +78,8 @@
         "clear": "クリア"
     },
     "markdown": {
-        "copyCode": "コードをコピー"
+        "copyCode": "コードをコピー",
+        "metadata": "メタデータ"
     },
     "status": {
         "running": "実行中",

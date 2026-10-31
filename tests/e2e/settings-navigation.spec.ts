@@ -1,20 +1,53 @@
 import { completeSetup, expect, test } from './fixtures/electron';
 import { navigateToSection } from './fixtures/navigation';
 
+test('opens skills and assistants through independent sidebar entries', async ({ page }, testInfo) => {
+  await completeSetup(page);
+  const skillsEntry = page.getByTestId('sidebar-nav-skills');
+  const agentsEntry = page.getByTestId('sidebar-nav-agents');
+  await expect(page.getByTestId('sidebar-nav-capabilities')).toHaveCount(0);
+
+  await skillsEntry.click();
+  await expect(page).toHaveURL(/#\/skills$/);
+  await expect(page.getByTestId('skills-page')).toBeVisible();
+  await expect(skillsEntry).toHaveAttribute('aria-current', 'page');
+  await expect(agentsEntry).not.toHaveAttribute('aria-current', 'page');
+  await expect(page.getByTestId('skills-page').getByRole('heading', { level: 1, name: 'Skills', exact: true })).toBeVisible();
+  await expect(page.getByText('Browse and manage AI capabilities', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('capabilities-tab-agents')).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('skills-standalone.png'), animations: 'disabled' });
+
+  await agentsEntry.click();
+  await expect(page.getByTestId('agents-page')).toBeVisible();
+  await expect(page).toHaveURL(/#\/agents$/);
+  await expect(agentsEntry).toHaveAttribute('aria-current', 'page');
+  await expect(skillsEntry).not.toHaveAttribute('aria-current', 'page');
+  await expect(page.getByTestId('agents-page').getByRole('heading', { level: 1, name: 'Assistants', exact: true })).toBeVisible();
+  await expect(page.getByTestId('capabilities-tab-skills')).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('agents-standalone.png'), animations: 'disabled' });
+  await skillsEntry.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('skills-page')).toBeVisible();
+  await expect(skillsEntry).toHaveAttribute('aria-current', 'page');
+
+  await navigateToSection(page, 'general');
+  await skillsEntry.click();
+  await expect(page.getByTestId('skills-page')).toBeVisible();
+});
+
 test('exposes core capabilities in the sidebar and separates app preferences', async ({ page }, testInfo) => {
   await completeSetup(page);
   const sidebar = page.getByTestId('sidebar');
-  await expect(sidebar.getByTestId('sidebar-nav-capabilities')).toBeVisible();
-  for (const name of ['models', 'channels', 'computer-use']) {
+  await expect(sidebar.getByTestId('sidebar-nav-capabilities')).toHaveCount(0);
+  for (const name of ['skills', 'agents', 'models', 'channels', 'computer-use']) {
     await expect(sidebar.getByTestId(`sidebar-nav-${name}`)).toBeVisible();
   }
-  for (const name of ['agents', 'skills']) await expect(sidebar.getByTestId(`sidebar-nav-${name}`)).toHaveCount(0);
   await expect(sidebar.getByTestId('sidebar-open-dev-console')).toHaveCount(0);
 
   await navigateToSection(page, 'agents');
   await expect(page.getByTestId('agents-page')).toBeVisible();
-  await expect(page.getByTestId('sidebar-nav-capabilities')).toHaveAttribute('aria-current', 'page');
-  await page.getByTestId('capabilities-tab-skills').click();
+  await expect(page.getByTestId('sidebar-nav-agents')).toHaveAttribute('aria-current', 'page');
+  await page.getByTestId('sidebar-nav-skills').click();
   await expect(page.getByTestId('skills-page')).toBeVisible();
 
   await navigateToSection(page, 'general');
