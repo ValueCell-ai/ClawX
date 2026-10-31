@@ -4,9 +4,27 @@ Status: current workspace reference, reviewed 2026-09-01.
 
 Related scenario: `chat-workspace-and-navigation`
 
-Related rules: `session-workspace-authority`, `sidebar-session-attention-authority`, `ui-i18n-design-tokens`, `office-preview-safety`, `web-browser-security-and-lifecycle`
+Related rules: `session-workspace-authority`, `sidebar-session-attention-authority`, `single-window-new-chat`, `ui-i18n-design-tokens`, `office-preview-safety`, `web-browser-security-and-lifecycle`
 
-Related tasks: `chat-workspace-context`, `fix-default-main-cwd-title`, `sidebar-session-attention`, `office-document-preview`, `web-browser`, `embed-subagent-sessions-in-parent-chat`
+Related tasks: `chat-workspace-context`, `fix-default-main-cwd-title`, `fix-new-chat-shortcut`, `sidebar-session-attention`, `office-document-preview`, `web-browser`, `embed-subagent-sessions-in-parent-chat`
+
+## New Chat Shortcut
+
+File New Chat and Main's CmdOrCtrl+N `before-input-event` handler share one action
+that resolves the live main-window singleton, restores/shows/focuses it, and sends
+the existing `new-chat` event. Renderer `hostEvents.onNewChat` reuses the sidebar's
+`useNewChatAction` for session creation and navigation.
+
+Electron `webContents.sendInputEvent` forwards keyboard input through Chromium;
+on macOS it does not reliably enter AppKit's NSMenu accelerator path. The input
+handler calls `preventDefault` before explicitly invoking the shared action.
+Prevention also cancels menu accelerators ([Electron #19279](https://github.com/electron/electron/issues/19279)),
+so relying on the menu after prevention would swallow the shortcut.
+
+Playwright CDP keyboard dispatch can bypass Electron's input handling. Keyboard
+E2E uses OS input where available or Electron keydown/keyup pairs, independently
+of menu-click coverage. The input-handler regression case ignores menu shortcuts
+to prove delivery without menu acceleration. OS input requires exclusive execution.
 
 ## Workspace Authority
 
