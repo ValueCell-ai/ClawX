@@ -1,4 +1,4 @@
-import { copyFile, lstat, mkdir, readdir, rm } from 'fs/promises';
+import { copyFile, lstat, mkdir, readdir, rm, writeFile } from 'fs/promises';
 import { join, normalize } from 'path';
 import { isDeepStrictEqual } from 'node:util';
 import { mutateOpenClawConfig } from '../gateway/config-delivery';
@@ -420,7 +420,7 @@ async function copyRuntimeFiles(sourceAgentDir: string, targetAgentDir: string):
 async function provisionAgentFilesystem(
   config: AgentConfigDocument,
   agent: AgentListEntry,
-  options?: { inheritWorkspace?: boolean },
+  options?: { inheritWorkspace?: boolean; instructions?: string },
 ): Promise<void> {
   const { entries } = normalizeAgentsConfig(config);
   const mainEntry = entries.find((entry) => entry.id === MAIN_AGENT_ID) ?? createImplicitMainEntry(config);
@@ -433,6 +433,14 @@ async function provisionAgentFilesystem(
   await ensureDir(targetWorkspace);
   await ensureDir(targetAgentDir);
   await ensureDir(targetSessionsDir);
+
+  const instructions = options?.instructions?.trim();
+  if (instructions) {
+    if (instructions.length > 4000) throw new Error('Agent instructions exceed 4000 characters');
+    // Seed only a new regular file. Existing files/symlinks are never overwritten.
+    if ((await lstat(targetWorkspace)).isSymbolicLink()) throw new Error('Agent workspace is a symlink');
+    await writeFile(join(targetWorkspace, 'SOUL.md'), `${instructions}\n`, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+  }
 
   // When inheritWorkspace is true, copy the main agent's workspace bootstrap
   // files (SOUL.md, AGENTS.md, etc.) so the new agent inherits the same
@@ -609,7 +617,7 @@ export async function resolveAgentIdFromChannel(channel: string, accountId?: str
 
 export async function createAgent(
   name: string,
-  options?: { inheritWorkspace?: boolean },
+  options?: { inheritWorkspace?: boolean; instructions?: string },
 ): Promise<AgentsSnapshot> {
   let snapshot: AgentsSnapshot | undefined;
   let createdAgentId = '';
@@ -657,7 +665,7 @@ export async function createAgent(
   const runtimeDirectory = join(getOpenClawConfigDir(), 'agents', createdAgent.id);
   const runtimeDirectoryExisted = await fileExists(runtimeDirectory);
   try {
-    await provisionAgentFilesystem(provisioningConfig!, createdAgent, { inheritWorkspace: options?.inheritWorkspace });
+    await provisionAgentFilesystem(provisioningConfig!, createdAgent, options);
   } catch (provisioningError) {
     let rollbackError: unknown;
     try {

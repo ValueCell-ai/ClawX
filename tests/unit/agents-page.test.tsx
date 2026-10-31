@@ -10,6 +10,11 @@ const fetchAgentsMock = vi.fn();
 const updateAgentMock = vi.fn();
 const updateAgentModelMock = vi.fn();
 const refreshProviderSnapshotMock = vi.fn();
+const loadWorkspaceMock = vi.fn();
+const readTextMock = vi.fn();
+const writeTextMock = vi.fn();
+const newSessionMock = vi.fn();
+const setWorkspaceMock = vi.fn();
 
 const { gatewayState, agentsState, providersState } = vi.hoisted(() => ({
   gatewayState: {
@@ -67,10 +72,27 @@ vi.mock('@/stores/providers', () => ({
 
 vi.mock('@/lib/host-api', () => ({
   hostApi: {
+    files: {
+      readText: (...args: unknown[]) => readTextMock(...args),
+      writeText: (...args: unknown[]) => writeTextMock(...args),
+    },
     channels: {
       accounts: (...args: unknown[]) => channelsAccountsMock(...args),
     },
   },
+}));
+
+vi.mock('@/lib/agent-workspace', async importOriginal => ({
+  ...await importOriginal<typeof import('@/lib/agent-workspace')>(),
+  loadAgentWorkspace: (...args: unknown[]) => loadWorkspaceMock(...args),
+}));
+vi.mock('@/stores/chat', () => ({
+  useChatStore: Object.assign((selector: (state: { sessions: [] }) => unknown) => selector({ sessions: [] }), {
+    getState: () => ({ newSession: newSessionMock }),
+  }),
+}));
+vi.mock('@/stores/settings', () => ({
+  useSettingsStore: { getState: () => ({ setChatWorkspacePath: setWorkspaceMock }) },
 }));
 
 vi.mock('@/lib/host-events', () => ({
@@ -82,6 +104,7 @@ vi.mock('@/lib/host-events', () => ({
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => key,
+    i18n: { language: 'en' },
   }),
 }));
 
@@ -107,6 +130,14 @@ describe('Agents page status refresh', () => {
     updateAgentMock.mockResolvedValue(undefined);
     updateAgentModelMock.mockResolvedValue(undefined);
     refreshProviderSnapshotMock.mockResolvedValue(undefined);
+    loadWorkspaceMock.mockImplementation(async (workspace: string) => ({
+      workspace, instructions: 'Use primary sources.\n\nPreserve all existing rules.', readOnly: false, error: null,
+      files: [
+        { filePath: `${workspace}/SOUL.md`, fileName: 'SOUL.md', ext: '.md', mimeType: 'text/markdown', contentType: 'document' },
+      ],
+    }));
+    readTextMock.mockResolvedValue({ ok: true, content: 'Use primary sources.\n\nPreserve all existing rules.', readOnly: false });
+    writeTextMock.mockResolvedValue({ ok: true });
     channelsAccountsMock.mockResolvedValue({
       success: true,
       channels: [],
@@ -171,65 +202,61 @@ describe('Agents page status refresh', () => {
     expect(screen.queryByText('gatewayWarning')).not.toBeInTheDocument();
   });
 
-  it('uses "Use default model" as form fill only and disables it when already default', async () => {
-    agentsState.agents = [
-      {
-        id: 'main',
-        name: 'Main',
-        isDefault: true,
-        modelDisplay: 'claude-opus-4.6',
-        modelRef: 'openrouter/anthropic/claude-opus-4.6',
-        overrideModelRef: null,
-        inheritedModel: true,
-        workspace: '~/.openclaw/workspace',
-        agentDir: '~/.openclaw/agents/main/agent',
-        mainSessionKey: 'agent:main:desk',
-        channelTypes: [],
-      },
-    ];
-    agentsState.defaultModelRef = 'openrouter/anthropic/claude-opus-4.6';
-    providersState.accounts = [
-      {
-        id: 'openrouter-default',
-        label: 'OpenRouter',
-        vendorId: 'openrouter',
-        authMode: 'api_key',
-        model: 'openrouter/anthropic/claude-opus-4.6',
-        enabled: true,
-        createdAt: '2026-03-24T00:00:00.000Z',
-        updatedAt: '2026-03-24T00:00:00.000Z',
-      },
-    ];
-    providersState.statuses = [{ id: 'openrouter-default', hasKey: true }];
-    providersState.vendors = [
-      { id: 'openrouter', name: 'OpenRouter', modelIdPlaceholder: 'anthropic/claude-opus-4.6' },
-    ];
-    providersState.defaultAccountId = 'openrouter-default';
+  const mainAgent = {
+    id: 'main', name: 'Main', isDefault: true, modelDisplay: 'model-a',
+    modelRef: 'custom-12345678/model-a', overrideModelRef: null,
+    inheritedModel: true, workspace: '/workspace', agentDir: '/agent',
+    mainSessionKey: 'agent:main:main', channelTypes: [],
+  };
 
+  it('selects a configured model in the same dialog without another modal', async () => {
+    agentsState.agents = [mainAgent];
+    agentsState.defaultModelRef = 'custom-12345678/model-a';
+    providersState.accounts = [{ id: 'custom-12345678', label: 'Research Lab', vendorId: 'custom', authMode: 'local', enabled: true, model: 'model-a', metadata: { customModels: ['model-a', 'model-b'] }, updatedAt: '2026-10-31' }];
     render(<AgentsWithRouter />);
+    fireEvent.click(screen.getByTestId('agent-manage-main'));
+    const trigger = screen.getByRole('combobox', { name: 'settingsDialog.modelLabel' });
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    fireEvent.keyDown(await screen.findByRole('option', { name: 'model-b' }), { key: 'Enter' });
+    await waitFor(() => expect(updateAgentModelMock).toHaveBeenCalledWith('main', 'custom-12345678/model-b'));
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+  });
 
-    await waitFor(() => {
-      expect(fetchAgentsMock).toHaveBeenCalledTimes(1);
-    });
+  it('edits the full native SOUL.md and keeps the default assistant name editable', async () => {
+    agentsState.agents = [mainAgent];
+    render(<AgentsWithRouter />);
+    fireEvent.click(screen.getByTestId('agent-manage-main'));
+    expect(screen.getByLabelText('settingsDialog.nameLabel')).not.toHaveAttribute('readonly');
+    fireEvent.click(await screen.findByRole('button', { name: 'profile.editStyle' }));
+    const editor = screen.getByTestId('agent-style-editor');
+    expect(editor).toHaveValue('Use primary sources.\n\nPreserve all existing rules.');
+    fireEvent.change(editor, { target: { value: 'New role.\n\nPreserve all existing rules.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'profile.saveStyle' }));
+    await waitFor(() => expect(writeTextMock).toHaveBeenCalledWith('/workspace/SOUL.md', 'New role.\n\nPreserve all existing rules.'));
+  });
 
-    fireEvent.click(screen.getByTitle('settings'));
-    fireEvent.click(screen.getByText('settingsDialog.modelLabel').closest('button') as HTMLButtonElement);
+  it('preserves a conflicting instruction draft and offers an explicit reload', async () => {
+    agentsState.agents = [mainAgent];
+    render(<AgentsWithRouter />);
+    fireEvent.click(screen.getByTestId('agent-manage-main'));
+    fireEvent.click(await screen.findByRole('button', { name: 'profile.editStyle' }));
+    fireEvent.change(screen.getByTestId('agent-style-editor'), { target: { value: 'My draft' } });
+    readTextMock.mockResolvedValue({ ok: true, content: 'External update', readOnly: false });
+    fireEvent.click(screen.getByRole('button', { name: 'profile.saveStyle' }));
+    await screen.findByRole('button', { name: 'profile.reloadStyle' });
+    expect(writeTextMock).not.toHaveBeenCalled();
+    expect(screen.getByTestId('agent-style-editor')).toHaveValue('My draft');
+    fireEvent.click(screen.getByRole('button', { name: 'profile.reloadStyle' }));
+    expect(screen.getByTestId('agent-style-editor')).toHaveValue('External update');
+  });
 
-    const useDefaultButton = await screen.findByRole('button', { name: 'settingsDialog.useDefaultModel' });
-    const modelIdInput = screen.getByLabelText('settingsDialog.modelIdLabel');
-    const saveButton = screen.getByRole('button', { name: 'common:actions.save' });
-
-    expect(useDefaultButton).toBeDisabled();
-
-    fireEvent.change(modelIdInput, { target: { value: 'anthropic/claude-sonnet-4.5' } });
-    expect(useDefaultButton).toBeEnabled();
-    expect(saveButton).toBeEnabled();
-
-    fireEvent.click(useDefaultButton);
-
-    expect(updateAgentModelMock).not.toHaveBeenCalled();
-    expect((modelIdInput as HTMLInputElement).value).toBe('anthropic/claude-opus-4.6');
-    expect(useDefaultButton).toBeDisabled();
+  it('does not offer editing when Main marks the instruction file read-only', async () => {
+    agentsState.agents = [mainAgent];
+    loadWorkspaceMock.mockResolvedValue({ workspace: '/workspace', instructions: 'Read-only style', readOnly: true, files: [{ fileName: 'SOUL.md', filePath: '/workspace/SOUL.md' }], error: null });
+    render(<AgentsWithRouter />);
+    fireEvent.click(screen.getByTestId('agent-manage-main'));
+    await screen.findByText('profile.readOnlyStyle');
+    expect(screen.queryByRole('button', { name: 'profile.editStyle' })).not.toBeInTheDocument();
   });
 
   it('keeps the last agent snapshot visible while a refresh is in flight', async () => {

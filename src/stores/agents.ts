@@ -15,7 +15,7 @@ interface AgentsState {
   loading: boolean;
   error: string | null;
   fetchAgents: () => Promise<void>;
-  createAgent: (name: string, options?: { inheritWorkspace?: boolean }) => Promise<void>;
+  createAgent: (name: string, options?: { inheritWorkspace?: boolean; instructions?: string }) => Promise<void>;
   updateAgent: (agentId: string, name: string) => Promise<void>;
   updateAgentModel: (agentId: string, modelRef: string | null) => Promise<void>;
   deleteAgent: (agentId: string) => Promise<void>;
@@ -94,12 +94,13 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
     }
   },
 
-  createAgent: async (name: string, options?: { inheritWorkspace?: boolean }) => {
+  createAgent: async (name: string, options?: { inheritWorkspace?: boolean; instructions?: string }) => {
     set({ error: null });
     try {
       const snapshot = await hostApi.agents.create({
         name,
         inheritWorkspace: options?.inheritWorkspace,
+        ...(options?.instructions ? { instructions: options.instructions } : {}),
       });
       commitMutationSnapshot(set, snapshot);
     } catch (error) {

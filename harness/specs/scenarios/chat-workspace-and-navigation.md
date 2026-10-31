@@ -11,7 +11,11 @@ ownedPaths:
   - src/pages/Models/index.tsx
   - src/pages/Channels/index.tsx
   - src/pages/ComputerUse/index.tsx
-  - src/pages/Agents/index.tsx
+  - src/pages/Agents/**
+  - src/lib/agent-workspace.ts
+  - src/types/attachment.ts
+  - tests/unit/agent-workspace.test.ts
+  - tests/e2e/agents-workspace-experience.spec.ts
   - src/pages/Skills/index.tsx
   - shared/i18n/locales/*/common.json
   - shared/i18n/locales/*/settings.json
@@ -139,7 +143,9 @@ Empty ordinary chats center the heading, installed skill shortcuts and composer.
 
 Skills management uses responsive cards with original names and descriptions, a single search/status toolbar, compact source badges and named enable switches, keyboard-operable centered detail dialogs with bounded internal scrolling and focus return, and always-visible read-only files/path/source/version metadata in details. Skill files open in a right drawer that directly wraps the shared Workspace reader and file actions; closing it preserves detail scroll and restores file-entry focus. Markdown previews in Skills and Workspace share a default-expanded, collapsible Metadata disclosure for parsed YAML/TOML frontmatter, retaining literal content, indentation and multiline values with keyboard/pointer access. Reader-owned HTML registration and per-caller slide positions preserve conversation selection. Add skills opens marketplace discovery in a dismissible dialog while preserving the local list state; unavailable capability hides the action without a marketplace request. Verify in `tests/e2e/skills-gateway-readiness.spec.ts`.
 
-Management page visual consistency is covered by `tests/e2e/management-page-style.spec.ts`: compact system-font headings, shared page padding and width, and contained scroll regions across Skills, Models, Agents, Channels, Cron, Settings and Computer Use in desktop and narrow dark layouts. Business controls remain unchanged.
+Assistant cards represent persistent configured OpenClaw agents, showing native SOUL.md excerpts, workspace directories and real session activity. Start task preserves the current draft and targets the exact agent/workspace without sending. One centered detail dialog provides editable names, full native instructions with external-change protection, inline configured/custom models and messaging entry points. Rules, long-term memory and the latest dated note use the shared Workspace reader in a right drawer, with preserved scroll and return focus. Creation may seed SOUL.md and copy initial main-agent settings once, without copying history or memory. Unavailable or read-only files remain explicit and respect existing Host API authority. Validate with `tests/e2e/agents-workspace-experience.spec.ts`, `tests/e2e/chat-execution-agent.spec.ts` and `tests/e2e/agent-deletion.spec.ts`.
+
+Management page visual consistency is covered by `tests/e2e/management-page-style.spec.ts`: compact system-font headings, shared page padding and width, and contained scroll regions across Skills, Models, Agents, Channels, Cron, Settings and Computer Use in desktop and narrow dark layouts.
 
 Provider configuration UI separates model and authentication metadata, keeps Set default visible, and puts editing and deletion in a keyboard-operable menu. Direct provider selection and the fixed add footer are covered by `tests/e2e/provider-lifecycle.spec.ts`; no changes to validation or credential storage are implied.
 
@@ -151,7 +157,7 @@ Primary navigation exposes tasks, separate Skills and Assistants entries, AI mod
 
 Task catalog search filters eligible rows before pagination/collapse and matches display titles, assistants and workspaces. Pins are exact session keys persisted through existing Main-owned settings; pinned rows render once, missing catalog rows do not prune pins, and successful exact/bulk/assistant deletion removes their pins. Task menus retain keyboard access; canonical busy/unread projections retain priority, with failure status displayed from terminal Gateway catalog state. Validate through `tests/e2e/task-sidebar-search-and-pins.spec.ts` and the session-attention and home-composer specs.
 
-Execution-agent selection in the composer opens a fresh task for another agent before submission and synchronizes the model, skills and workspace while carrying unsent content. Existing conversations open from the sidebar. The Agent picker shows only selection rows with labeled default models, without a footer notice or main-conversation continuation action. Sidebar rows identify non-default agents by name within workspace groups and keep default-agent rows unbadged using configured defaultAgentId; hover titles retain every owner; session ownership and history do not move when the user changes execution agents. Validate this flow with `tests/e2e/chat-execution-agent.spec.ts`.
+Execution-agent selection in the composer or Start task on an assistant card opens a fresh task for another agent before submission and synchronizes the model, skills and workspace while carrying unsent content. Attachment drafts remain in memory by session across route changes; staging completions update retained uploads after a switch, and clearing/deleting a draft removes its attachment references. Existing conversations open from the sidebar. The Agent picker shows only selection rows with labeled default models, without a footer notice or main-conversation continuation action. Sidebar rows identify non-default agents by name within workspace groups and keep default-agent rows unbadged using configured defaultAgentId; hover titles retain every owner; session ownership and history do not move when the user changes execution agents. Validate this flow with `tests/e2e/chat-execution-agent.spec.ts`.
 
 Dropdown, select and rich picker interactions use shared Radix wrappers with centralized entrance/exit motion, reduced-motion support, focus restoration and viewport collision handling. Form selections preserve empty and disabled values; search-based skill insertion preserves drafts and caret positions.
 

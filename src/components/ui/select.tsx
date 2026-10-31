@@ -9,6 +9,13 @@ import { cn } from '@/lib/utils';
 const EMPTY_VALUE = '__clawx_select_empty__';
 const encodeValue = (value: string) => value === '' ? EMPTY_VALUE : value;
 
+export function SelectGroup(props: React.ComponentPropsWithoutRef<typeof Primitive.Group>) {
+  return <Primitive.Group {...props} />;
+}
+export function SelectLabel(props: React.ComponentPropsWithoutRef<typeof Primitive.Label>) {
+  return <Primitive.Label {...props} />;
+}
+
 export interface SelectProps extends Omit<React.ComponentPropsWithoutRef<typeof Primitive.Trigger>, 'children' | 'value' | 'defaultValue' | 'onChange'> {
   children: React.ReactNode;
   value?: string;

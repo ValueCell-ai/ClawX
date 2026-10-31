@@ -1246,6 +1246,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   newSession: (options) => {
     const { currentSessionKey, sessions } = get();
     const draft = options?.preserveDraft ? useComposerDraftStore.getState().drafts[currentSessionKey] : undefined;
+    const attachments = options?.preserveDraft ? useComposerDraftStore.getState().attachments[currentSessionKey] : undefined;
     const prefix = options?.agentId
       ? `agent:${options.agentId}`
       : getCanonicalPrefixFromSessionKey(currentSessionKey)
@@ -1268,6 +1269,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       { createdLocally: true },
     ));
     if (draft) useComposerDraftStore.getState().setDraft(sessionKey, draft);
+    if (attachments?.length) useComposerDraftStore.getState().setAttachments(sessionKey, attachments);
   },
 
   acknowledgeAcpSessionCreated: (key, workspacePath, initialPrompt) => {
@@ -1411,6 +1413,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       ...Object.keys(state.sessionLabels),
       ...Object.keys(state.sessionLastActivity),
       ...Object.keys(composerDrafts),
+      ...Object.keys(useComposerDraftStore.getState().attachments),
       ...attentionKeys,
       ...useSettingsStore.getState().pinnedSessionKeys,
       ...localDraftSessionKeys,

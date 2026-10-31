@@ -33,7 +33,11 @@ export function createAgentsApi(_ctx: AgentsApiContext): CompleteHostServiceRegi
     create: async (payload) => {
       const name = requireString(payload, 'name');
       const inheritWorkspace = isRecord(payload) ? payload.inheritWorkspace === true : undefined;
-      const snapshot = await createAgent(name, { inheritWorkspace });
+      const instructions = isRecord(payload) ? payload.instructions : undefined;
+      if (instructions !== undefined && (typeof instructions !== 'string' || instructions.length > 4000)) {
+        throw new Error('instructions must be text of at most 4000 characters');
+      }
+      const snapshot = await createAgent(name, { inheritWorkspace, instructions });
       syncAllProviderAuthToRuntime().catch((err) => {
         console.warn('[agents] Failed to sync provider auth after agent creation:', err);
       });

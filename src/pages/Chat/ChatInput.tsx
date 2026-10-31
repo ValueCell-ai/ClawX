@@ -27,6 +27,9 @@ import { useGatewayStore } from '@/stores/gateway';
 import { useSettingsStore } from '@/stores/settings';
 import { useAgentsStore } from '@/stores/agents';
 import { useChatStore } from '@/stores/chat';
+import { EMPTY_DRAFT_ATTACHMENTS, useComposerDraftStore } from '@/stores/composer-drafts';
+import type { FileAttachment } from '@/types/attachment';
+export type { FileAttachment } from '@/types/attachment';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import { buildPreviewTarget } from '@/components/file-preview/build-preview-target';
 import { useProviderStore } from '@/stores/providers';
@@ -50,18 +53,6 @@ import { AcpSessionPlan } from './AcpSessionPlan';
 import { AcpSubagentSessions, type AcpSubagentSession } from './AcpSubagentSessions';
 
 // ── Types ────────────────────────────────────────────────────────
-
-export interface FileAttachment {
-  id: string;
-  fileName: string;
-  mimeType: string;
-  fileSize: number;
-  stagedPath: string;        // Host-authorized source or buffer-staging path included in ACP prompt media
-  sourceKind: 'path' | 'buffer';
-  preview: string | null;    // data URL for images, null for others
-  status: 'staging' | 'ready' | 'error';
-  error?: string;
-}
 
 export interface ChatWorkspaceOption {
   path: string;
@@ -344,7 +335,17 @@ export function ChatInput({
     if (onDraftChange) onDraftChange(update);
     else setUncontrolledInput(update);
   }, [onDraftChange]);
-  const [attachments, setAttachments] = useState<FileAttachment[]>([]);
+  const [localAttachments, setLocalAttachments] = useState<FileAttachment[]>([]);
+  const draftAttachments = useComposerDraftStore(state => draftKey ? state.attachments[draftKey] ?? EMPTY_DRAFT_ATTACHMENTS : EMPTY_DRAFT_ATTACHMENTS);
+  const attachments = draftKey ? draftAttachments : localAttachments;
+  const setAttachments = useCallback((update: SetStateAction<FileAttachment[]>) => {
+    if (draftKey) useComposerDraftStore.getState().setAttachments(draftKey, update);
+    else setLocalAttachments(update);
+  }, [draftKey]);
+  const updateAttachment = useCallback((id: string, update: Partial<FileAttachment>) => {
+    if (draftKey) useComposerDraftStore.getState().updateAttachment(id, update);
+    else setLocalAttachments(items => items.map(item => item.id === id ? { ...item, ...update, id } : item));
+  }, [draftKey]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [skillPickerOpen, setSkillPickerOpen] = useState(false);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
@@ -802,37 +803,21 @@ export function ChatInput({
       const staged = await hostApi.files.stagePaths({ filePaths });
       console.log('[stagePathFiles] Stage result:', staged?.map(s => ({ id: s?.id, fileName: s?.fileName, mimeType: s?.mimeType, fileSize: s?.fileSize, stagedPath: s?.stagedPath, hasPreview: !!s?.preview })));
 
-      setAttachments(prev => {
-        let updated = [...prev];
-        for (let i = 0; i < tempIds.length; i++) {
-          const tempId = tempIds[i];
-          const data = staged[i];
-          if (data) {
-            updated = updated.map(a =>
-              a.id === tempId
-                ? { ...data, status: 'ready' as const }
-                : a,
-            );
-          } else {
-            console.warn(`[stagePathFiles] No staged data for tempId=${tempId} at index ${i}`);
-            updated = updated.map(a =>
-              a.id === tempId
-                ? { ...a, status: 'error' as const, error: 'Staging failed' }
-                : a,
-            );
-          }
+      for (let i = 0; i < tempIds.length; i++) {
+        const tempId = tempIds[i];
+        const data = staged[i];
+        if (data) {
+          updateAttachment(tempId, { ...data, status: 'ready' });
+        } else {
+          console.warn(`[stagePathFiles] No staged data for tempId=${tempId} at index ${i}`);
+          updateAttachment(tempId, { status: 'error', error: 'Staging failed' });
         }
-        return updated;
-      });
+      }
     } catch (err) {
       console.error('[stagePathFiles] Failed to stage files:', err);
-      setAttachments(prev => prev.map(a =>
-        a.status === 'staging'
-          ? { ...a, status: 'error' as const, error: String(err) }
-          : a,
-      ));
+      for (const id of tempIds) updateAttachment(id, { status: 'error', error: String(err) });
     }
-  }, [attachmentsLocked]);
+  }, [attachmentsLocked, setAttachments, updateAttachment]);
 
   const pickFiles = useCallback(async () => {
     if (attachmentsLocked) return;
@@ -851,10 +836,9 @@ export function ChatInput({
 
   const stageBufferFiles = useCallback(async (files: globalThis.File[]) => {
     if (attachmentsLocked) return;
-    for (const file of files) {
-      const tempId = crypto.randomUUID();
-      setAttachments(prev => [...prev, {
-        id: tempId,
+    const pending = files.map(file => ({ file, id: crypto.randomUUID() }));
+    setAttachments(prev => [...prev, ...pending.map<FileAttachment>(({ file, id }) => ({
+        id,
         fileName: file.name,
         mimeType: file.type || 'application/octet-stream',
         fileSize: file.size,
@@ -862,8 +846,8 @@ export function ChatInput({
         sourceKind: 'buffer',
         preview: null,
         status: 'staging' as const,
-      }]);
-
+      }))]);
+    for (const { file, id: tempId } of pending) {
       try {
         console.log(`[stageBuffer] Reading file: ${file.name} (${file.type}, ${file.size} bytes)`);
         const base64 = await readFileAsBase64(file);
@@ -874,26 +858,20 @@ export function ChatInput({
           mimeType: file.type || 'application/octet-stream',
         });
         console.log(`[stageBuffer] Staged: id=${staged?.id}, path=${staged?.stagedPath}, size=${staged?.fileSize}`);
-        setAttachments(prev => prev.map(a =>
-          a.id === tempId ? { ...staged, status: 'ready' as const } : a,
-        ));
+        updateAttachment(tempId, { ...staged, status: 'ready' });
       } catch (err) {
         console.error(`[stageBuffer] Error staging ${file.name}:`, err);
-        setAttachments(prev => prev.map(a =>
-          a.id === tempId
-            ? { ...a, status: 'error' as const, error: String(err) }
-            : a,
-        ));
+        updateAttachment(tempId, { status: 'error', error: String(err) });
       }
     }
-  }, [attachmentsLocked]);
+  }, [attachmentsLocked, setAttachments, updateAttachment]);
 
   // ── Attachment management ──────────────────────────────────────
 
   const removeAttachment = useCallback((id: string) => {
     if (attachmentsLocked) return;
     setAttachments(prev => prev.filter(a => a.id !== id));
-  }, [attachmentsLocked]);
+  }, [attachmentsLocked, setAttachments]);
 
   const allReady = attachments.length === 0 || attachments.every(a => a.status === 'ready');
   const hasFailedAttachments = attachments.some((a) => a.status === 'error');
@@ -944,7 +922,7 @@ export function ChatInput({
     setPickerOpen(false);
     setSkillPickerOpen(false);
     setWorkspaceMenuOpen(false);
-  }, [input, attachments, canSend, onSend, setInput]);
+  }, [input, attachments, canSend, onSend, setInput, setAttachments]);
 
   const handleStop = useCallback(() => {
     if (!canStop) return;

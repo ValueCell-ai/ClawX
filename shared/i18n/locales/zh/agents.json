@@ -1,6 +1,6 @@
 {
     "title": "助手",
-    "subtitle": "为不同任务创建专属助手，设置它的模型与工作空间。",
+    "subtitle": "保留各自的工作方式与记忆，在需要时交给它处理。",
     "refresh": "刷新",
     "addAgent": "添加助手",
     "gatewayWarning": "本地服务暂不可用，助手或消息应用的配置变更可能需要稍等生效。",
@@ -13,12 +13,16 @@
     "settings": "设置",
     "creating": "创建中...",
     "createDialog": {
-        "title": "添加助手",
-        "description": "输入名称即可创建新助手，可选择是否继承主助手的工作区引导文件。",
+        "title": "创建助手",
+        "description": "给它一个名字和工作方式。模型默认跟随全局设置，资料目录独立保存。",
         "nameLabel": "助手名称",
-        "namePlaceholder": "Coding Helper",
-        "inheritWorkspaceLabel": "继承主助手工作区",
-        "inheritWorkspaceDescription": "从主助手复制 SOUL.md、AGENTS.md 等引导文件"
+        "namePlaceholder": "例如：研究搭档",
+        "inheritWorkspaceLabel": "复制主助手的初始设定",
+        "inheritWorkspaceDescription": "一次性复制工作规则和偏好；上方填写的工作方式优先。",
+        "optional": "（可选）",
+        "instructionsPlaceholder": "例如：帮我研究问题，优先查找一手资料，区分事实与推测，结论保持简洁。",
+        "instructionsHint": "保存到 SOUL.md，助手在之后的任务中会使用这份工作方式说明。",
+        "submit": "创建助手"
     },
     "deleteDialog": {
         "title": "永久删除助手？",
@@ -26,11 +30,11 @@
         "confirm": "永久删除"
     },
     "settingsDialog": {
-        "title": "{{name}} 设置",
-        "description": "更新助手名称，并管理哪些消息应用归属于这个助手。",
+        "title": "{{name}}",
+        "description": "管理工作方式、记忆文件和运行偏好。",
         "nameLabel": "助手名称",
         "agentIdLabel": "助手 ID",
-        "modelLabel": "Model",
+        "modelLabel": "默认模型",
         "modelOverrideLabel": "模型覆盖",
         "modelProviderLabel": "Provider",
         "modelProviderPlaceholder": "选择 Provider",
@@ -74,5 +78,56 @@
         "channelAssignFailed": "分配消息应用失败：{{error}}",
         "channelRemoved": "{{channel}} 已移除",
         "channelRemoveFailed": "移除消息应用失败：{{error}}"
+    },
+    "card": {
+        "openDetails": "查看 {{name}} 的详情",
+        "actions": "{{name}} 的操作",
+        "defaultModel": "默认 · {{model}}",
+        "workspaceUnavailable": "暂时无法读取助手资料。",
+        "emptyWorkStyle": "还没有工作方式说明。",
+        "continuityHint": "每位助手都可以处理多个任务。新任务有独立的对话上下文，助手已保存的工作方式与记忆会保留。",
+        "working": "正在处理任务",
+        "recentActivity": "最近使用 {{date}}",
+        "readyHint": "需要时，交给它一个任务",
+        "startTask": "开始任务"
+    },
+    "profile": {
+        "close": "关闭详情",
+        "workStyle": "工作方式",
+        "editStyle": "编辑",
+        "saveStyle": "保存工作方式",
+        "nativeStyleHint": "直接更新完整的 SOUL.md 文件，已有说明可在这里继续编辑。",
+        "loadingFiles": "正在读取助手资料…",
+        "filesUnavailable": "未能读取助手资料，可刷新重试。",
+        "noStyle": "还没有工作方式文件。首次运行时 OpenClaw 会生成，也可在资料目录中添加 SOUL.md。",
+        "readOnlyStyle": "此文件在 ClawX 中只读，可查看或在原目录中编辑。",
+        "viewFile": "查看 {{file}}",
+        "filesTitle": "规则与记忆",
+        "refreshFiles": "刷新助手资料",
+        "memoryHint": "暂时没有记忆文件，助手在使用中保存的记忆会出现在这里。",
+        "fileChanged": "SOUL.md 已被其他程序修改，草稿已保留，请重新载入后再保存。",
+        "styleSaved": "工作方式已保存",
+        "styleSaveFailed": "保存工作方式失败：{{error}}",
+        "followDefault": "跟随全局默认 · {{model}}",
+        "notConfigured": "未配置",
+        "currentModel": "当前模型 · {{model}}",
+        "modelHint": "选择后立即生效，新任务使用这位助手的默认模型。",
+        "customModel": "自定义模型",
+        "modelRefLabel": "提供商 / 模型 ID",
+        "channelsTitle": "消息入口",
+        "manageChannels": "管理",
+        "noChannels": "连接消息应用账号后，也可以从 IM 中给这位助手安排任务。",
+        "workspaceTitle": "助手资料目录",
+        "workspaceHint": "存放这位助手的规则与记忆；具体任务可以使用其他工作目录。",
+        "openFolder": "打开助手资料文件夹",
+        "openFolderFailed": "无法打开助手资料文件夹",
+        "files": {
+            "rules": "工作规则",
+            "user": "关于你",
+            "identity": "身份设定",
+            "memory": "长期记忆",
+            "note": "记忆日志"
+        },
+        "reloadStyle": "用最新文件替换草稿"
     }
 }

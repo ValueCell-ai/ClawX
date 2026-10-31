@@ -19,7 +19,7 @@ for (const language of ['zh', 'en', 'ja', 'ru']) {
           '["/api/agents","GET"]': { success: true, agents, defaultAgentId, defaultModelRef: agents[0].modelRef },
         },
       });
-      await app.evaluate(async () => {
+      await app.evaluate(async (_electron, locale) => {
         const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
         type Request = { id: string; module: string; action: string; payload?: Record<string, unknown> };
         const calls: Request[] = [];
@@ -36,7 +36,13 @@ for (const language of ['zh', 'en', 'ja', 'ru']) {
             return respond({ success: true, skills: [{ name: `${id}-skill`, description: `${id} original skill`, source: 'workspace', sourceLabel: 'Workspace', baseDir: `/tmp/${id}-skill`, manifestPath: `/tmp/${id}-skill/SKILL.md` }] });
           }
           if (request.module === 'dialog' && request.action === 'open') return respond({ canceled: false, filePaths: ['/tmp/clawx-agent-draft.txt'] });
-          if (request.module === 'files' && request.action === 'stagePaths') return respond([{ id: 'draft-file', stagedPath: '/tmp/clawx-agent-draft.txt', fileName: 'clawx-agent-draft.txt', fileSize: 12, mimeType: 'text/plain', sourceKind: 'path' }]);
+          if (request.module === 'files' && request.action === 'stagePaths') {
+            const files = [{ id: 'draft-file', stagedPath: '/tmp/clawx-agent-draft.txt', fileName: 'clawx-agent-draft.txt', fileSize: 12, mimeType: 'text/plain', sourceKind: 'path' }];
+            if (locale === 'en') return new Promise(resolve => {
+              (globalThis as unknown as { finishDraftUpload: () => void }).finishDraftUpload = () => resolve(respond(files));
+            });
+            return respond(files);
+          }
           if (request.module === 'providers' && request.action === 'accounts') return respond(['main', 'coder'].map(id => ({ id: id === 'main' ? 'main1234' : 'coder123', vendorId: 'custom', label: id, authMode: 'api_key', enabled: true, model: `model-${id}`, updatedAt: '2026-10-25' })));
           if (request.module === 'providers' && request.action === 'list') return respond(['main', 'coder'].map(id => ({ id: id === 'main' ? 'main1234' : 'coder123', enabled: true, hasKey: true })));
           if (request.module === 'providers' && request.action === 'accountKeyInfo') return respond(['main1234', 'coder123'].map(accountId => ({ accountId, hasKey: true })));
@@ -44,7 +50,7 @@ for (const language of ['zh', 'en', 'ja', 'ru']) {
           if (request.module === 'providers' && request.action === 'getDefaultAccount') return respond({ accountId: 'main1234' });
           return original(event, request);
         });
-      });
+      }, language);
       const page = await getStableWindow(app);
       await page.reload();
       const selector = page.getByTestId('chat-composer-agent');
@@ -84,12 +90,16 @@ for (const language of ['zh', 'en', 'ja', 'ru']) {
         await composerBox.getByRole('button').first().click();
         await expect(attachmentTray).toBeVisible();
       }
-      await selector.click();
-      await page.getByTestId('chat-agent-option-coder').click();
+      await page.getByTestId('sidebar-nav-agents').click();
+      await page.getByTestId('agent-start-coder').click();
       await expect(selector).toHaveText('Coder1');
       await expect(input).toHaveValue('Keep this task draft');
       await expect(page.getByTestId('chat-attachment-remove')).toHaveCount(1);
       await expect(page.getByTestId('chat-workspace-selector')).toContainText('clawx-execution-workspace-coder');
+      if (language === 'en') {
+        await expect(page.getByTestId('chat-composer-send')).toBeDisabled();
+        await app.evaluate(() => (globalThis as unknown as { finishDraftUpload: () => void }).finishDraftUpload());
+      }
       await expect(page.getByTestId('chat-model-picker-button')).toHaveText('model-coder');
       await expect(page.getByText('@Main Agent', { exact: true })).toHaveCount(0);
       await selector.click();

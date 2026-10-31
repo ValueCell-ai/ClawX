@@ -79,15 +79,20 @@ describe('chat session catalog startup', () => {
       sessions: [{ key: originalKey }, { key: coderMain }],
     });
     useComposerDraftStore.getState().setDraft(originalKey, 'Unsent work');
+    const attachments = [{ id: 'upload', fileName: 'draft.txt', mimeType: 'text/plain', fileSize: 12, stagedPath: '/tmp/draft.txt', sourceKind: 'path' as const, preview: null, status: 'ready' as const }];
+    useComposerDraftStore.getState().setAttachments(originalKey, attachments);
     useChatStore.getState().newSession({ agentId: 'coder', preserveDraft: true });
     const first = useChatStore.getState().currentSessionKey;
     expect(first).toBe('agent:coder:session-1711111111111');
     expect(useChatStore.getState().currentAgentId).toBe('coder');
     expect(useComposerDraftStore.getState().drafts[first]).toBe('Unsent work');
+    expect(useComposerDraftStore.getState().attachments[first]).toEqual(attachments);
     expect(useChatStore.getState().sessions.find(session => session.key === coderMain)).toEqual({ key: coderMain });
     useChatStore.getState().newSession({ agentId: 'coder', preserveDraft: true });
     expect(useChatStore.getState().currentSessionKey).not.toBe(first);
     expect(useComposerDraftStore.getState().drafts[useChatStore.getState().currentSessionKey]).toBe('Unsent work');
+    expect(useComposerDraftStore.getState().attachments[useChatStore.getState().currentSessionKey]).toEqual(attachments);
+    expect(useComposerDraftStore.getState().attachments[first]).toBeUndefined();
     expect(gatewayRpcMock).not.toHaveBeenCalled();
   });
 

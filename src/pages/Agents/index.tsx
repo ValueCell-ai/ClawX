@@ -1,882 +1,128 @@
-import { Select, SelectItem } from '@/components/ui/select';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Bot, Check, Plus, RefreshCw, Settings2, Trash2, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import { AlertCircle, ArrowUpRight, Bot, Check, FolderOpen, MessageCircle, MoreHorizontal, Plus, RefreshCw, Settings2, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import * as Menu from '@/components/ui/dropdown-menu';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
-import { Switch } from '@/components/ui/switch';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useAgentsStore } from '@/stores/agents';
 import { useGatewayStore } from '@/stores/gateway';
 import { useProviderStore } from '@/stores/providers';
+import { useChatStore } from '@/stores/chat';
+import { useSettingsStore } from '@/stores/settings';
 import { hostApi, type ChannelGroupItem } from '@/lib/host-api';
 import { hostEvents } from '@/lib/host-events';
-import { CHANNEL_ICONS, CHANNEL_NAMES, type ChannelType } from '@/types/channel';
+import { agentInstructionsSummary, type AgentWorkspaceSnapshot } from '@/lib/agent-workspace';
+import { CHANNEL_NAMES, type ChannelType } from '@/types/channel';
 import type { AgentSummary } from '@/types/agent';
-import { buildRuntimeProviderOptions, splitModelRef, type RuntimeProviderOption } from '@/lib/model-options';
-import { useTranslation } from 'react-i18next';
-import { toast } from 'sonner';
+import type { ChatSession } from '@shared/chat/types';
 import { cn } from '@/lib/utils';
-import telegramIcon from '@/assets/channels/telegram.svg';
-import discordIcon from '@/assets/channels/discord.svg';
-import whatsappIcon from '@/assets/channels/whatsapp.svg';
-import wechatIcon from '@/assets/channels/wechat.svg';
-import dingtalkIcon from '@/assets/channels/dingtalk.svg';
-import feishuIcon from '@/assets/channels/feishu.svg';
-import wecomIcon from '@/assets/channels/wecom.svg';
-import qqIcon from '@/assets/channels/qq.svg';
+import { CreateAgentDialog } from './CreateAgentDialog';
+import { AgentDetails } from './AgentDetails';
+import { useAgentWorkspaces } from './useAgentWorkspaces';
 
 export function Agents() {
   const { t } = useTranslation('agents');
-  const gatewayStatus = useGatewayStore((state) => state.status);
-  const refreshProviderSnapshot = useProviderStore((state) => state.refreshProviderSnapshot);
+  const navigate = useNavigate();
+  const gatewayStatus = useGatewayStore(state => state.status);
+  const refreshProviderSnapshot = useProviderStore(state => state.refreshProviderSnapshot);
   const lastGatewayStateRef = useRef(gatewayStatus.state);
   const { agents, loading, error, fetchAgents, createAgent, deleteAgent } = useAgentsStore();
+  const sessions = useChatStore(state => state.sessions);
   const [channelGroups, setChannelGroups] = useState<ChannelGroupItem[]>([]);
   const [hasCompletedInitialLoad, setHasCompletedInitialLoad] = useState(() => agents.length > 0);
-
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [activeAgentId, setActiveAgentId] = useState<string | null>(null);
-  const [settingsModalAgent, setSettingsModalAgent] = useState<AgentSummary | null>(null);
+  const [lastOpenedAgent, setLastOpenedAgent] = useState<AgentSummary | null>(null);
+  const [detailVisit, setDetailVisit] = useState(0);
   const [agentToDelete, setAgentToDelete] = useState<AgentSummary | null>(null);
-
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+  const { snapshots, refresh: refreshWorkspaces } = useAgentWorkspaces(agents);
   const fetchChannelAccounts = useCallback(async () => {
-    try {
-      const response = await hostApi.channels.accounts();
-      setChannelGroups(response.channels || []);
-    } catch {
-      // Keep the last rendered snapshot when channel account refresh fails.
-    }
+    try { setChannelGroups((await hostApi.channels.accounts()).channels || []); }
+    catch { /* Retain the last usable snapshot during refresh failures. */ }
   }, []);
-
   useEffect(() => {
     let mounted = true;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial asynchronous host snapshots
     void Promise.all([fetchAgents(), fetchChannelAccounts(), refreshProviderSnapshot()]).finally(() => {
-      if (mounted) {
-        setHasCompletedInitialLoad(true);
-      }
+      if (mounted) setHasCompletedInitialLoad(true);
     });
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, [fetchAgents, fetchChannelAccounts, refreshProviderSnapshot]);
-
+  useEffect(() => hostEvents.onGatewayChannelStatus(() => { void fetchChannelAccounts(); }), [fetchChannelAccounts]);
   useEffect(() => {
-    const unsubscribe = hostEvents.onGatewayChannelStatus(() => {
-      void fetchChannelAccounts();
-    });
-    return () => {
-      if (typeof unsubscribe === 'function') {
-        unsubscribe();
-      }
-    };
-  }, [fetchChannelAccounts]);
-
-  useEffect(() => {
-    const previousGatewayState = lastGatewayStateRef.current;
+    const previous = lastGatewayStateRef.current;
     lastGatewayStateRef.current = gatewayStatus.state;
-
-    if (previousGatewayState !== 'running' && gatewayStatus.state === 'running') {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      void fetchChannelAccounts();
-    }
-  }, [fetchChannelAccounts, gatewayStatus.state]);
-
-  const activeAgent = useMemo(
-    () => agents.find((agent) => agent.id === activeAgentId) ?? null,
-    [activeAgentId, agents],
-  );
-
-  const visibleAgents = agents;
-  const visibleChannelGroups = channelGroups;
-  const isUsingStableValue = loading && hasCompletedInitialLoad;
-  const handleRefresh = () => {
-    void Promise.all([fetchAgents(), fetchChannelAccounts()]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- refresh asynchronous channel data after reconnect
+    if (previous !== 'running' && gatewayStatus.state === 'running') void fetchChannelAccounts();
+  }, [gatewayStatus.state, fetchChannelAccounts]);
+  const activeAgent = useMemo(() => agents.find(agent => agent.id === activeAgentId) ?? null, [agents, activeAgentId]);
+  const detailAgent = activeAgent || agents.find(agent => agent.id === lastOpenedAgent?.id) || lastOpenedAgent;
+  const workspaceFor = (agent: AgentSummary) => snapshots[agent.id]?.workspace === agent.workspace ? snapshots[agent.id] : undefined;
+  const refresh = () => { void Promise.all([fetchAgents(), fetchChannelAccounts()]); refreshWorkspaces(); };
+  const openDetails = (agent: AgentSummary, trigger: HTMLElement) => {
+    returnFocusRef.current = trigger;
+    setLastOpenedAgent(agent);
+    setDetailVisit(value => value + 1);
+    setActiveAgentId(agent.id);
   };
-
-  if (loading && !hasCompletedInitialLoad) {
-    return (
-      <div data-testid="agents-page" className="flex flex-col -m-6 dark:bg-background h-[calc(100%+3rem)] overflow-hidden">
-        <div className="mx-auto flex h-full w-full max-w-6xl flex-col p-6 md:p-8">
-          <h1 className="mb-6 font-sans text-2xl font-medium tracking-normal">{t('title')}</h1>
-          <div className="flex flex-1 items-center justify-center"><LoadingSpinner size="lg" /></div>
-        </div>
+  const startTask = (agent: AgentSummary) => {
+    void useSettingsStore.getState().setChatWorkspacePath(agent.workspace);
+    useChatStore.getState().newSession({ agentId: agent.id, preserveDraft: true });
+    navigate('/');
+  };
+  return <div data-testid="agents-page" className="flex h-[calc(100%+3rem)] flex-col -m-6 overflow-hidden dark:bg-background">
+    <div className="mx-auto flex h-full w-full max-w-6xl flex-col p-6 md:p-8">
+      <div className="mb-6 flex shrink-0 flex-col justify-between gap-4 md:flex-row md:items-start">
+        <div><h1 className="mb-1 font-sans text-2xl font-medium tracking-normal text-foreground">{t('title')}</h1><p className="text-sm text-muted-foreground">{t('subtitle')}</p></div>
+        <div className="flex flex-wrap items-center gap-3 md:mt-2"><Button variant="outline" onClick={refresh} className="h-9 px-3 text-sm shadow-none"><RefreshCw className={cn('mr-2 h-3.5 w-3.5', loading && hasCompletedInitialLoad && 'animate-spin')} />{t('refresh')}</Button><Button data-testid="agents-add-button" onClick={() => setShowAddDialog(true)} className="h-9 px-3 text-sm shadow-none"><Plus className="mr-2 h-3.5 w-3.5" />{t('addAgent')}</Button></div>
       </div>
-    );
-  }
-
-  return (
-    <div
-      data-testid="agents-page"
-      className="flex flex-col -m-6 dark:bg-background h-[calc(100%+3rem)] overflow-hidden"
-    >
-      <div className="w-full max-w-6xl mx-auto flex flex-col h-full p-6 md:p-8">
-        <div className="mb-6 flex shrink-0 flex-col justify-between gap-4 md:flex-row md:items-start">
-          <div>
-            <h1 className="mb-1 font-sans text-2xl font-medium tracking-normal text-foreground">{t('title')}</h1>
-            <p className="text-sm text-muted-foreground">{t('subtitle')}</p>
+      <div className="min-h-0 flex-1 overflow-y-auto -mr-2 pr-2">
+        {error && <div role="alert" className="mb-4 flex items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive"><AlertCircle className="h-4 w-4 shrink-0" />{error}</div>}
+        {loading && !hasCompletedInitialLoad ? <div className="flex h-full items-center justify-center"><LoadingSpinner size="lg" /></div> : <>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2" data-testid="agents-roster">
+            {agents.map((agent, index) => <AgentCard key={agent.id} agent={agent} index={index} workspace={workspaceFor(agent)} sessions={sessions} channelGroups={channelGroups} onManage={trigger => openDetails(agent, trigger)} onStart={() => startTask(agent)} onDelete={() => setAgentToDelete(agent)} />)}
           </div>
-          <div className="flex flex-wrap items-center gap-3 md:mt-2">
-            <Button
-              variant="outline"
-              onClick={handleRefresh}
-              className="h-9 text-sm font-medium rounded-md px-3 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground transition-colors"
-            >
-              <RefreshCw className={cn('h-3.5 w-3.5 mr-2', isUsingStableValue && 'animate-spin')} />
-              {t('refresh')}
-            </Button>
-            <Button
-              data-testid="agents-add-button"
-              onClick={() => setShowAddDialog(true)}
-              className="h-9 text-sm font-medium rounded-md px-3 shadow-none"
-            >
-              <Plus className="h-3.5 w-3.5 mr-2" />
-              {t('addAgent')}
-            </Button>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto pr-2 min-h-0 -mr-2">
-          {error && (
-            <div className="mb-8 p-4 rounded-xl border border-destructive/50 bg-destructive/10 flex items-center gap-3">
-              <AlertCircle className="h-5 w-5 text-destructive" />
-              <span className="text-destructive text-sm font-medium">{error}</span>
-            </div>
-          )}
-
-          <div className="space-y-3">
-            {visibleAgents.map((agent) => (
-              <AgentCard
-                key={agent.id}
-                agent={agent}
-                channelGroups={visibleChannelGroups}
-                onOpenSettings={() => {
-                  setSettingsModalAgent(agent);
-                  setActiveAgentId(agent.id);
-                }}
-                onDelete={() => setAgentToDelete(agent)}
-              />
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <AddAgentDialog
-        open={showAddDialog}
-        onClose={() => setShowAddDialog(false)}
-        onCreate={async (name, options) => {
-          await createAgent(name, options);
-          setShowAddDialog(false);
-          toast.success(t('toast.agentCreated'));
-        }}
-      />
-
-      {(activeAgent || settingsModalAgent) && (
-        <AgentSettingsModal
-          open={!!activeAgent}
-          agent={(activeAgent || settingsModalAgent)!}
-          channelGroups={visibleChannelGroups}
-          onClose={() => setActiveAgentId(null)}
-        />
-      )}
-
-      <ConfirmDialog
-        open={!!agentToDelete}
-        title={t('deleteDialog.title')}
-        message={agentToDelete ? t('deleteDialog.message', { name: agentToDelete.name }) : ''}
-        confirmLabel={t('deleteDialog.confirm')}
-        cancelLabel={t('common:actions.cancel')}
-        variant="destructive"
-        onConfirm={async () => {
-          if (!agentToDelete) return;
-          try {
-            await deleteAgent(agentToDelete.id);
-            const deletedId = agentToDelete.id;
-            setAgentToDelete(null);
-            if (activeAgentId === deletedId) {
-              setActiveAgentId(null);
-            }
-            toast.success(t('toast.agentDeleted'));
-          } catch (error) {
-            toast.error(t('toast.agentDeleteFailed', { error: String(error) }));
-          }
-        }}
-        onCancel={() => setAgentToDelete(null)}
-      />
-    </div>
-  );
-}
-
-function AgentCard({
-  agent,
-  channelGroups,
-  onOpenSettings,
-  onDelete,
-}: {
-  agent: AgentSummary;
-  channelGroups: ChannelGroupItem[];
-  onOpenSettings: () => void;
-  onDelete: () => void;
-}) {
-  const { t } = useTranslation('agents');
-  const boundChannelAccounts = channelGroups.flatMap((group) =>
-    group.accounts
-      .filter((account) => account.agentId === agent.id)
-      .map((account) => {
-        const channelName = CHANNEL_NAMES[group.channelType as ChannelType] || group.channelType;
-        const accountLabel =
-          account.accountId === 'default' ? t('settingsDialog.mainAccount') : account.name || account.accountId;
-        return `${channelName} · ${accountLabel}`;
-      }),
-  );
-  const channelsText = boundChannelAccounts.length > 0 ? boundChannelAccounts.join(', ') : t('none');
-
-  return (
-    <div
-      data-testid={`agent-card-${agent.id}`}
-      className={cn(
-        'group flex items-start gap-4 p-4 rounded-xl transition-all text-left border relative overflow-hidden bg-surface-modal border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5',
-        agent.isDefault && 'bg-black/[0.04] dark:bg-white/[0.06]',
-      )}
-    >
-      <div className="h-[46px] w-[46px] shrink-0 flex items-center justify-center text-primary bg-primary/10 rounded-full shadow-sm mb-3">
-        <Bot className="h-[22px] w-[22px]" />
-      </div>
-      <div className="flex flex-col flex-1 min-w-0 py-0.5 mt-1">
-        <div className="flex items-center justify-between gap-3 mb-1">
-          <div className="flex items-center gap-2 min-w-0">
-            <h2 className="text-base font-semibold text-foreground truncate">{agent.name}</h2>
-            {agent.isDefault && (
-              <Badge
-                variant="secondary"
-                className="flex items-center gap-1 font-mono text-2xs font-medium px-2 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] border-0 shadow-none text-foreground/70"
-              >
-                <Check className="h-3 w-3" />
-                {t('defaultBadge')}
-              </Badge>
-            )}
-          </div>
-          <div className="flex items-center gap-1 shrink-0">
-            {!agent.isDefault && (
-              <Button
-                data-testid={`agent-delete-${agent.id}`}
-                variant="ghost"
-                size="icon"
-                className="opacity-0 group-hover:opacity-100 h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all"
-                onClick={onDelete}
-                title={t('deleteAgent')}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn(
-                'h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/10 transition-all',
-                !agent.isDefault && 'opacity-0 group-hover:opacity-100',
-              )}
-              onClick={onOpenSettings}
-              title={t('settings')}
-            >
-              <Settings2 className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-        <p className="text-sm text-muted-foreground line-clamp-2 leading-[1.5]">
-          {t('modelLine', {
-            model: agent.modelDisplay,
-            suffix: agent.inheritedModel ? ` (${t('inherited')})` : '',
-          })}
-        </p>
-        <p className="text-sm text-muted-foreground line-clamp-2 leading-[1.5]">
-          {t('channelsLine', { channels: channelsText })}
-        </p>
+          {agents.length > 0 && <p className="mt-5 text-xs leading-relaxed text-muted-foreground">{t('card.continuityHint')}</p>}
+        </>}
       </div>
     </div>
-  );
+    <CreateAgentDialog open={showAddDialog} onClose={() => setShowAddDialog(false)} onCreate={async (name, options) => { await createAgent(name, options); setShowAddDialog(false); toast.success(t('toast.agentCreated')); }} />
+    {detailAgent && <AgentDetails key={detailVisit} open={!!activeAgent} agent={detailAgent} workspace={workspaceFor(detailAgent)} channelGroups={channelGroups} onClose={() => setActiveAgentId(null)} onReturnFocus={() => returnFocusRef.current?.focus()} onWorkspaceSaved={refreshWorkspaces} />}
+    <ConfirmDialog open={!!agentToDelete} title={t('deleteDialog.title')} message={agentToDelete ? t('deleteDialog.message', { name: agentToDelete.name }) : ''} confirmLabel={t('deleteDialog.confirm')} cancelLabel={t('common:actions.cancel')} variant="destructive" onCancel={() => setAgentToDelete(null)} onConfirm={async () => {
+      if (!agentToDelete) return;
+      try { await deleteAgent(agentToDelete.id); setAgentToDelete(null); if (activeAgentId === agentToDelete.id) setActiveAgentId(null); toast.success(t('toast.agentDeleted')); }
+      catch (error) { toast.error(t('toast.agentDeleteFailed', { error: String(error) })); }
+    }} />
+  </div>;
 }
 
-const inputClasses =
-  'h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/10 focus-visible:border-foreground/30 focus-visible:ring-offset-0 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
-const selectClasses =
-  'h-[44px] w-full rounded-xl font-mono text-meta bg-background border border-black/10 dark:border-white/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/10 focus-visible:border-foreground/30 focus-visible:ring-offset-0 shadow-sm transition-all text-foreground px-3';
-const labelClasses = 'text-sm text-foreground/80 font-bold';
-
-function ChannelLogo({ type }: { type: ChannelType }) {
-  switch (type) {
-    case 'telegram':
-      return <img src={telegramIcon} alt="Telegram" className="w-[20px] h-[20px] dark:invert" />;
-    case 'discord':
-      return <img src={discordIcon} alt="Discord" className="w-[20px] h-[20px] dark:invert" />;
-    case 'whatsapp':
-      return <img src={whatsappIcon} alt="WhatsApp" className="w-[20px] h-[20px] dark:invert" />;
-    case 'wechat':
-      return <img src={wechatIcon} alt="WeChat" className="w-[20px] h-[20px] dark:invert" />;
-    case 'dingtalk':
-      return <img src={dingtalkIcon} alt="DingTalk" className="w-[20px] h-[20px] dark:invert" />;
-    case 'feishu':
-      return <img src={feishuIcon} alt="Feishu" className="w-[20px] h-[20px] dark:invert" />;
-    case 'wecom':
-      return <img src={wecomIcon} alt="WeCom" className="w-[20px] h-[20px] dark:invert" />;
-    case 'qqbot':
-      return <img src={qqIcon} alt="QQ" className="w-[20px] h-[20px] dark:invert" />;
-    default:
-      return <span className="text-xl leading-none">{CHANNEL_ICONS[type] || '💬'}</span>;
-  }
-}
-
-function AddAgentDialog({
-  open,
-  onClose,
-  onCreate,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onCreate: (name: string, options: { inheritWorkspace: boolean }) => Promise<void>;
+function AgentCard({ agent, index, workspace, sessions, channelGroups, onManage, onStart, onDelete }: {
+  agent: AgentSummary; index: number; workspace?: AgentWorkspaceSnapshot; sessions: ChatSession[]; channelGroups: ChannelGroupItem[];
+  onManage: (trigger: HTMLElement) => void; onStart: () => void; onDelete: () => void;
 }) {
-  const { t } = useTranslation('agents');
-  const [name, setName] = useState('');
-  const [inheritWorkspace, setInheritWorkspace] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [prevOpen, setPrevOpen] = useState(open);
-
-  if (prevOpen !== open) {
-    setPrevOpen(open);
-    if (open) {
-      setName('');
-      setInheritWorkspace(false);
-      setSaving(false);
-    }
-  }
-
-  const handleSubmit = async () => {
-    if (!name.trim()) return;
-    setSaving(true);
-    try {
-      await onCreate(name.trim(), { inheritWorkspace });
-    } catch (error) {
-      toast.error(t('toast.agentCreateFailed', { error: String(error) }));
-      setSaving(false);
-      return;
-    }
-    setSaving(false);
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <DialogContent
-        asChild
-        className="w-[calc(100%-2rem)] max-w-md rounded-3xl border-0 shadow-2xl bg-surface-modal overflow-hidden"
-      >
-        <Card data-testid="add-agent-dialog">
-          <CardHeader className="pb-2">
-            <DialogTitle asChild>
-              <CardTitle className="text-xl font-sans font-medium tracking-normal">
-                {t('createDialog.title')}
-              </CardTitle>
-            </DialogTitle>
-            <DialogDescription asChild>
-              <CardDescription className="text-sm mt-1 text-foreground/70">
-                {t('createDialog.description')}
-              </CardDescription>
-            </DialogDescription>
-          </CardHeader>
-          <CardContent className="space-y-6 pt-4 p-6">
-            <div className="space-y-2.5">
-              <Label htmlFor="agent-name" className={labelClasses}>
-                {t('createDialog.nameLabel')}
-              </Label>
-              <Input
-                id="agent-name"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder={t('createDialog.namePlaceholder')}
-                className={inputClasses}
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label htmlFor="inherit-workspace" className={labelClasses}>
-                  {t('createDialog.inheritWorkspaceLabel')}
-                </Label>
-                <p className="text-meta text-foreground/60">{t('createDialog.inheritWorkspaceDescription')}</p>
-              </div>
-              <Switch id="inherit-workspace" checked={inheritWorkspace} onCheckedChange={setInheritWorkspace} />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={onClose}
-                className="h-9 text-sm font-medium rounded-md px-3 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground"
-              >
-                {t('common:actions.cancel')}
-              </Button>
-              <Button
-                onClick={() => void handleSubmit()}
-                disabled={saving || !name.trim()}
-                className="h-9 text-sm font-medium rounded-md px-3 shadow-none"
-              >
-                {saving ? (
-                  <>
-                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                    {t('creating')}
-                  </>
-                ) : (
-                  t('common:actions.save')
-                )}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function AgentSettingsModal({
-  open,
-  agent,
-  channelGroups,
-  onClose,
-}: {
-  open: boolean;
-  agent: AgentSummary;
-  channelGroups: ChannelGroupItem[];
-  onClose: () => void;
-}) {
-  const { t } = useTranslation('agents');
-  const { updateAgent, defaultModelRef } = useAgentsStore();
-  const [name, setName] = useState(agent.name);
-  const [savingName, setSavingName] = useState(false);
-  const [showModelModal, setShowModelModal] = useState(false);
-  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
-  const [prevOpen, setPrevOpen] = useState(open);
-
-  useEffect(() => {
-    setName(agent.name);
-  }, [agent.name]);
-
-  if (prevOpen !== open) {
-    setPrevOpen(open);
-    if (!open) {
-      setShowModelModal(false);
-      setShowCloseConfirm(false);
-      setName(agent.name);
-    }
-  }
-
-  const hasNameChanges = name.trim() !== agent.name;
-
-  const handleRequestClose = () => {
-    if (savingName || hasNameChanges) {
-      setShowCloseConfirm(true);
-      return;
-    }
-    onClose();
-  };
-
-  const handleSaveName = async () => {
-    if (!name.trim() || name.trim() === agent.name) return;
-    setSavingName(true);
-    try {
-      await updateAgent(agent.id, name.trim());
-      toast.success(t('toast.agentUpdated'));
-    } catch (error) {
-      toast.error(t('toast.agentUpdateFailed', { error: String(error) }));
-    } finally {
-      setSavingName(false);
-    }
-  };
-
-  const assignedChannels = channelGroups.flatMap((group) =>
-    group.accounts
-      .filter((account) => account.agentId === agent.id)
-      .map((account) => ({
-        channelType: group.channelType as ChannelType,
-        accountId: account.accountId,
-        name: account.accountId === 'default' ? t('settingsDialog.mainAccount') : account.name || account.accountId,
-        error: account.lastError,
-      })),
-  );
-
-  return (
-    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && handleRequestClose()}>
-      <DialogContent
-        asChild
-        className="w-[calc(100%-2rem)] max-w-2xl max-h-[90vh] flex flex-col rounded-3xl border-0 shadow-2xl bg-surface-modal overflow-hidden"
-      >
-        <Card>
-          <CardHeader className="flex flex-row items-start justify-between pb-2 shrink-0">
-            <div>
-              <DialogTitle asChild>
-                <CardTitle className="text-xl font-sans font-medium tracking-normal">
-                  {t('settingsDialog.title', { name: agent.name })}
-                </CardTitle>
-              </DialogTitle>
-              <DialogDescription asChild>
-                <CardDescription className="text-sm mt-1 text-foreground/70">
-                  {t('settingsDialog.description')}
-                </CardDescription>
-              </DialogDescription>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleRequestClose}
-              className="rounded-full h-8 w-8 -mr-2 -mt-2 text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </CardHeader>
-          <CardContent className="space-y-6 pt-4 overflow-y-auto flex-1 p-6">
-            <div className="space-y-4">
-              <div className="space-y-2.5">
-                <Label htmlFor="agent-settings-name" className={labelClasses}>
-                  {t('settingsDialog.nameLabel')}
-                </Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="agent-settings-name"
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
-                    readOnly={agent.isDefault}
-                    className={inputClasses}
-                  />
-                  {!agent.isDefault && (
-                    <Button
-                      variant="outline"
-                      onClick={() => void handleSaveName()}
-                      disabled={savingName || !name.trim() || name.trim() === agent.name}
-                      className="h-[44px] text-meta font-medium rounded-xl px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground"
-                    >
-                      {savingName ? <RefreshCw className="h-4 w-4 animate-spin" /> : t('common:actions.save')}
-                    </Button>
-                  )}
-                </div>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-1 rounded-2xl bg-black/5 dark:bg-white/5 border border-transparent p-4">
-                  <p className="text-tiny uppercase tracking-[0.08em] text-muted-foreground/80 font-medium">
-                    {t('settingsDialog.agentIdLabel')}
-                  </p>
-                  <p className="font-mono text-meta text-foreground">{agent.id}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowModelModal(true)}
-                  className="space-y-1 rounded-2xl bg-black/5 dark:bg-white/5 border border-transparent p-4 text-left hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
-                >
-                  <p className="text-tiny uppercase tracking-[0.08em] text-muted-foreground/80 font-medium">
-                    {t('settingsDialog.modelLabel')}
-                  </p>
-                  <p className="text-sm text-foreground">
-                    {agent.modelDisplay}
-                    {agent.inheritedModel ? ` (${t('inherited')})` : ''}
-                  </p>
-                  <p className="font-mono text-xs text-foreground/70 break-all">
-                    {agent.modelRef || defaultModelRef || '-'}
-                  </p>
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h3 className="text-lg font-sans text-foreground font-medium tracking-normal">
-                    {t('settingsDialog.channelsTitle')}
-                  </h3>
-                  <p className="text-sm text-foreground/70 mt-1">{t('settingsDialog.channelsDescription')}</p>
-                </div>
-              </div>
-
-              {assignedChannels.length === 0 && agent.channelTypes.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4 text-sm text-muted-foreground">
-                  {t('settingsDialog.noChannels')}
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {assignedChannels.map((channel) => (
-                    <div
-                      key={`${channel.channelType}-${channel.accountId}`}
-                      className="flex items-center justify-between rounded-2xl bg-black/5 dark:bg-white/5 border border-transparent p-4"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="h-[40px] w-[40px] shrink-0 flex items-center justify-center text-foreground bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-full shadow-sm">
-                          <ChannelLogo type={channel.channelType} />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-foreground">{channel.name}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {CHANNEL_NAMES[channel.channelType]} ·{' '}
-                            {channel.accountId === 'default' ? t('settingsDialog.mainAccount') : channel.accountId}
-                          </p>
-                          {channel.error && <p className="text-xs text-destructive mt-1">{channel.error}</p>}
-                        </div>
-                      </div>
-                      <div className="shrink-0" />
-                    </div>
-                  ))}
-                  {assignedChannels.length === 0 && agent.channelTypes.length > 0 && (
-                    <div className="rounded-2xl border border-dashed border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4 text-sm text-muted-foreground">
-                      {t('settingsDialog.channelsManagedInChannels')}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </DialogContent>
-      <AgentModelModal open={showModelModal} agent={agent} onClose={() => setShowModelModal(false)} />
-      <ConfirmDialog
-        open={showCloseConfirm}
-        title={t('settingsDialog.unsavedChangesTitle')}
-        message={t('settingsDialog.unsavedChangesMessage')}
-        confirmLabel={t('settingsDialog.closeWithoutSaving')}
-        cancelLabel={t('common:actions.cancel')}
-        onConfirm={() => {
-          setShowCloseConfirm(false);
-          setName(agent.name);
-          onClose();
-        }}
-        onCancel={() => setShowCloseConfirm(false)}
-      />
-    </Dialog>
-  );
-}
-
-function AgentModelModal({ open, agent, onClose }: { open: boolean; agent: AgentSummary; onClose: () => void }) {
-  const { t } = useTranslation('agents');
-  const providerAccounts = useProviderStore((state) => state.accounts);
-  const providerStatuses = useProviderStore((state) => state.statuses);
-  const providerVendors = useProviderStore((state) => state.vendors);
-  const providerDefaultAccountId = useProviderStore((state) => state.defaultAccountId);
-  const { updateAgentModel, defaultModelRef } = useAgentsStore();
-  const [selectedRuntimeProviderKey, setSelectedRuntimeProviderKey] = useState('');
-  const [modelIdInput, setModelIdInput] = useState('');
-  const [savingModel, setSavingModel] = useState(false);
-  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
-  const [prevOpen, setPrevOpen] = useState(open);
-
-  const runtimeProviderOptions = useMemo<RuntimeProviderOption[]>(
-    () => buildRuntimeProviderOptions(providerAccounts, providerStatuses, providerVendors, providerDefaultAccountId),
-    [providerAccounts, providerDefaultAccountId, providerStatuses, providerVendors],
-  );
-
-  useEffect(() => {
-    const override = splitModelRef(agent.overrideModelRef);
-    if (override) {
-      setSelectedRuntimeProviderKey(override.providerKey);
-      setModelIdInput(override.modelId);
-      return;
-    }
-
-    const effective = splitModelRef(agent.modelRef || defaultModelRef);
-    if (effective) {
-      setSelectedRuntimeProviderKey(effective.providerKey);
-      setModelIdInput(effective.modelId);
-      return;
-    }
-
-    setSelectedRuntimeProviderKey(runtimeProviderOptions[0]?.runtimeProviderKey || '');
-    setModelIdInput('');
-  }, [agent.modelRef, agent.overrideModelRef, defaultModelRef, runtimeProviderOptions]);
-
-  if (prevOpen !== open) {
-    setPrevOpen(open);
-    if (!open) {
-      setSavingModel(false);
-      setShowCloseConfirm(false);
-    }
-  }
-
-  const selectedProvider =
-    runtimeProviderOptions.find((option) => option.runtimeProviderKey === selectedRuntimeProviderKey) || null;
-  const trimmedModelId = modelIdInput.trim();
-  const nextModelRef =
-    selectedRuntimeProviderKey && trimmedModelId ? `${selectedRuntimeProviderKey}/${trimmedModelId}` : '';
-  const normalizedDefaultModelRef = (defaultModelRef || '').trim();
-  const isUsingDefaultModelInForm = Boolean(normalizedDefaultModelRef) && nextModelRef === normalizedDefaultModelRef;
-  const currentOverrideModelRef = (agent.overrideModelRef || '').trim();
-  const desiredOverrideModelRef = nextModelRef && nextModelRef !== normalizedDefaultModelRef ? nextModelRef : null;
-  const modelChanged = (desiredOverrideModelRef || '') !== currentOverrideModelRef;
-
-  const handleRequestClose = () => {
-    if (savingModel || modelChanged) {
-      setShowCloseConfirm(true);
-      return;
-    }
-    onClose();
-  };
-
-  const handleSaveModel = async () => {
-    if (!selectedRuntimeProviderKey) {
-      toast.error(t('toast.agentModelProviderRequired'));
-      return;
-    }
-    if (!trimmedModelId) {
-      toast.error(t('toast.agentModelIdRequired'));
-      return;
-    }
-    if (!modelChanged) return;
-    if (!nextModelRef.includes('/')) {
-      toast.error(t('toast.agentModelInvalid'));
-      return;
-    }
-
-    setSavingModel(true);
-    try {
-      await updateAgentModel(agent.id, desiredOverrideModelRef);
-      toast.success(desiredOverrideModelRef ? t('toast.agentModelUpdated') : t('toast.agentModelReset'));
-      onClose();
-    } catch (error) {
-      toast.error(t('toast.agentModelUpdateFailed', { error: String(error) }));
-    } finally {
-      setSavingModel(false);
-    }
-  };
-
-  const handleUseDefaultModel = () => {
-    const parsedDefault = splitModelRef(normalizedDefaultModelRef);
-    if (!parsedDefault) {
-      setSelectedRuntimeProviderKey('');
-      setModelIdInput('');
-      return;
-    }
-    setSelectedRuntimeProviderKey(parsedDefault.providerKey);
-    setModelIdInput(parsedDefault.modelId);
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && handleRequestClose()}>
-      <DialogContent
-        asChild
-        className="z-[60] w-[calc(100%-2rem)] max-w-xl rounded-3xl border-0 shadow-2xl bg-surface-modal overflow-hidden"
-      >
-        <Card>
-          <CardHeader className="flex flex-row items-start justify-between pb-2">
-            <div>
-              <DialogTitle asChild>
-                <CardTitle className="text-xl font-sans font-medium tracking-normal">
-                  {t('settingsDialog.modelLabel')}
-                </CardTitle>
-              </DialogTitle>
-              <DialogDescription asChild>
-                <CardDescription className="text-sm mt-1 text-foreground/70">
-                  {t('settingsDialog.modelOverrideDescription', { defaultModel: defaultModelRef || '-' })}
-                </CardDescription>
-              </DialogDescription>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleRequestClose}
-              className="rounded-full h-8 w-8 -mr-2 -mt-2 text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </CardHeader>
-          <CardContent className="space-y-4 p-6 pt-4">
-            <div className="space-y-2">
-              <Label htmlFor="agent-model-provider" className="text-xs text-foreground/70">
-                {t('settingsDialog.modelProviderLabel')}
-              </Label>
-              <Select
-                id="agent-model-provider"
-                value={selectedRuntimeProviderKey}
-                onValueChange={(value) => {
-                  const nextProvider = value;
-                  setSelectedRuntimeProviderKey(nextProvider);
-                  if (!modelIdInput.trim()) {
-                    const option = runtimeProviderOptions.find(
-                      (candidate) => candidate.runtimeProviderKey === nextProvider,
-                    );
-                    setModelIdInput(option?.configuredModelId || '');
-                  }
-                }}
-                className={selectClasses}
-              >
-                <SelectItem value="">{t('settingsDialog.modelProviderPlaceholder')}</SelectItem>
-                {runtimeProviderOptions.map((option) => (
-                  <SelectItem key={option.runtimeProviderKey} value={option.runtimeProviderKey}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="agent-model-id" className="text-xs text-foreground/70">
-                {t('settingsDialog.modelIdLabel')}
-              </Label>
-              <Input
-                id="agent-model-id"
-                value={modelIdInput}
-                onChange={(event) => setModelIdInput(event.target.value)}
-                placeholder={
-                  selectedProvider?.modelIdPlaceholder ||
-                  selectedProvider?.configuredModelId ||
-                  t('settingsDialog.modelIdPlaceholder')
-                }
-                className={inputClasses}
-              />
-            </div>
-            {!!nextModelRef && (
-              <p className="text-xs font-mono text-foreground/70 break-all">
-                {t('settingsDialog.modelPreview')}: {nextModelRef}
-              </p>
-            )}
-            {runtimeProviderOptions.length === 0 && (
-              <p className="text-xs text-amber-600 dark:text-amber-400">{t('settingsDialog.modelProviderEmpty')}</p>
-            )}
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <Button
-                variant="outline"
-                onClick={handleUseDefaultModel}
-                disabled={savingModel || !normalizedDefaultModelRef || isUsingDefaultModelInForm}
-                className="h-9 text-sm font-medium rounded-md px-3 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground"
-              >
-                {t('settingsDialog.useDefaultModel')}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={handleRequestClose}
-                className="h-9 text-sm font-medium rounded-md px-3 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground"
-              >
-                {t('common:actions.cancel')}
-              </Button>
-              <Button
-                onClick={() => void handleSaveModel()}
-                disabled={savingModel || !selectedRuntimeProviderKey || !trimmedModelId || !modelChanged}
-                className="h-9 text-sm font-medium rounded-md px-3 shadow-none"
-              >
-                {savingModel ? <RefreshCw className="h-4 w-4 animate-spin" /> : t('common:actions.save')}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </DialogContent>
-      <ConfirmDialog
-        open={showCloseConfirm}
-        title={t('settingsDialog.unsavedChangesTitle')}
-        message={t('settingsDialog.unsavedChangesMessage')}
-        confirmLabel={t('settingsDialog.closeWithoutSaving')}
-        cancelLabel={t('common:actions.cancel')}
-        onConfirm={() => {
-          setShowCloseConfirm(false);
-          onClose();
-        }}
-        onCancel={() => setShowCloseConfirm(false)}
-      />
-    </Dialog>
-  );
+  const { t, i18n } = useTranslation('agents');
+  const menuRef = useRef<HTMLButtonElement>(null);
+  const ownedSessions = sessions.filter(session => session.key.split(':')[1] === agent.id && !session.createdLocally);
+  const lastActive = Math.max(0, ...ownedSessions.map(session => Number.isFinite(session.updatedAt) ? session.updatedAt! : 0));
+  const busy = ownedSessions.some(session => session.hasActiveRun);
+  const bound = channelGroups.flatMap(group => group.accounts.filter(account => account.agentId === agent.id).map(account => `${CHANNEL_NAMES[group.channelType as ChannelType] || group.channelType} · ${account.name || account.accountId}`));
+  const directory = agent.workspace.replace(/\\/g, '/').replace(/\/+$/, '').split('/').pop() || agent.workspace;
+  const summary = workspace?.instructions ? agentInstructionsSummary(workspace.instructions) : '';
+  const colors = ['bg-blue-500/10 text-blue-700 dark:text-blue-400', 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400', 'bg-violet-500/10 text-violet-700 dark:text-violet-400'];
+  return <article data-testid={`agent-card-${agent.id}`} className="flex flex-col rounded-xl border border-border bg-surface-modal p-4 transition-colors hover:border-foreground/20">
+    <div className="flex items-start gap-3">
+      <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl', colors[index % colors.length])}><Bot className="h-5 w-5" /></div>
+      <div className="min-w-0 flex-1 pt-0.5"><h2 className="flex h-6 items-center gap-2 text-base font-medium"><button type="button" data-testid={`agent-manage-${agent.id}`} className="min-w-0 truncate rounded text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={event => onManage(event.currentTarget)} aria-label={t('card.openDetails', { name: agent.name })}>{agent.name}</button>{agent.isDefault && <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-black/5 px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground dark:bg-white/10"><Check className="h-2.5 w-2.5" />{t('defaultBadge')}</span>}</h2><p className="mt-0.5 truncate text-xs text-muted-foreground">{agent.inheritedModel ? t('card.defaultModel', { model: agent.modelDisplay }) : agent.modelDisplay}</p></div>
+      <Menu.Root><Menu.Trigger asChild><Button ref={menuRef} variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground" data-testid={`agent-menu-${agent.id}`} aria-label={t('card.actions', { name: agent.name })} title={t('card.actions', { name: agent.name })}><MoreHorizontal className="h-4 w-4" /></Button></Menu.Trigger><Menu.Portal><Menu.Content align="end" sideOffset={6} className="clawx-menu-list min-w-40 rounded-xl border border-border bg-surface-modal p-1.5 shadow-xl"><Menu.Item className="clawx-menu-item flex items-center gap-2 text-sm" onSelect={() => { if (menuRef.current) onManage(menuRef.current); }}><Settings2 className="h-3.5 w-3.5" />{t('settings')}</Menu.Item>{!agent.isDefault && <Menu.Item data-testid={`agent-delete-${agent.id}`} className="clawx-menu-item flex items-center gap-2 text-sm text-destructive" onSelect={onDelete}><Trash2 className="h-3.5 w-3.5" />{t('deleteAgent')}</Menu.Item>}</Menu.Content></Menu.Portal></Menu.Root>
+    </div>
+    <p className="mt-3 min-h-10 text-sm leading-5 text-muted-foreground line-clamp-2" title={summary || undefined}>{summary || t(!workspace ? 'profile.loadingFiles' : workspace.error ? 'card.workspaceUnavailable' : 'card.emptyWorkStyle')}</p>
+    <div className="mt-3 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground" title={agent.workspace}><FolderOpen className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{directory}</span>{bound.length > 0 && <span className="ml-auto inline-flex min-w-0 items-center gap-1.5 truncate" title={bound.join(', ')}><MessageCircle className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{bound.join(', ')}</span></span>}</div>
+    <div className="mt-3 flex items-center justify-between gap-3 border-t border-border/60 pt-3"><span className="min-w-0 truncate text-xs text-muted-foreground">{busy ? t('card.working') : lastActive > 0 ? t('card.recentActivity', { date: new Intl.DateTimeFormat(i18n?.language || 'en', { month: 'short', day: 'numeric' }).format(lastActive) }) : t('card.readyHint')}</span><Button variant="ghost" className="h-8 shrink-0 gap-1 rounded-lg px-2.5 text-xs font-medium text-primary hover:bg-primary/5 hover:text-primary" data-testid={`agent-start-${agent.id}`} onClick={onStart}>{t('card.startTask')}<ArrowUpRight className="h-3.5 w-3.5" /></Button></div>
+  </article>;
 }
 
 export default Agents;

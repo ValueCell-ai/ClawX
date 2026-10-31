@@ -1,6 +1,6 @@
 {
     "title": "アシスタント",
-    "subtitle": "タスクに合わせたアシスタントを作成し、モデルとワークスペースを設定します。",
+    "subtitle": "それぞれの作業方針と記憶を持つアシスタントに、仕事を任せましょう。",
     "refresh": "更新",
     "addAgent": "アシスタント を追加",
     "gatewayWarning": "ローカルサービスを利用できません。アシスタントやメッセージアプリの変更の反映に時間がかかる場合があります。",
@@ -13,12 +13,16 @@
     "settings": "設定",
     "creating": "作成中...",
     "createDialog": {
-        "title": "アシスタント を追加",
-        "description": "名前だけで新しい アシスタント を作成できます。メイン アシスタント のワークスペース初期ファイルを引き継ぐかどうかも選択できます。",
+        "title": "アシスタントを作成",
+        "description": "名前と作業方針を決めます。全体のモデル設定を使い、専用の作業フォルダーを持ちます。",
         "nameLabel": "アシスタント 名",
-        "namePlaceholder": "Coding Helper",
-        "inheritWorkspaceLabel": "メイン アシスタント のワークスペースを引き継ぐ",
-        "inheritWorkspaceDescription": "SOUL.md、AGENTS.md などの初期ファイルをコピーします"
+        "namePlaceholder": "例：リサーチパートナー",
+        "inheritWorkspaceLabel": "メインアシスタントの初期設定をコピー",
+        "inheritWorkspaceDescription": "ルールと好みを一度だけコピーします。上記の作業方針が優先されます。",
+        "optional": "（任意）",
+        "instructionsPlaceholder": "例：一次資料を優先し、事実と推測を区別して、簡潔に結論をまとめてください。",
+        "instructionsHint": "SOUL.md に保存し、以後のタスクで使います。",
+        "submit": "作成"
     },
     "deleteDialog": {
         "title": "アシスタント を完全に削除しますか？",
@@ -26,11 +30,11 @@
         "confirm": "完全に削除"
     },
     "settingsDialog": {
-        "title": "{{name}} Settings",
-        "description": "アシスタント 名を更新し、この アシスタント に属する Channel を管理します。",
+        "title": "{{name}}",
+        "description": "作業方針、記憶ファイル、実行設定を管理します。",
         "nameLabel": "アシスタント 名",
         "agentIdLabel": "アシスタント ID",
-        "modelLabel": "Model",
+        "modelLabel": "既定モデル",
         "modelOverrideLabel": "モデル上書き",
         "modelProviderLabel": "Provider",
         "modelProviderPlaceholder": "Provider を選択",
@@ -74,5 +78,56 @@
         "channelAssignFailed": "Channel の割り当てに失敗しました: {{error}}",
         "channelRemoved": "{{channel}} を削除しました",
         "channelRemoveFailed": "Channel の削除に失敗しました: {{error}}"
+    },
+    "card": {
+        "openDetails": "{{name}} の詳細を表示",
+        "actions": "{{name}} の操作",
+        "defaultModel": "既定 · {{model}}",
+        "workspaceUnavailable": "現在、アシスタントの資料を読み取れません。",
+        "emptyWorkStyle": "作業方針はまだ設定されていません。",
+        "continuityHint": "各アシスタントは複数のタスクを処理できます。会話のコンテキストは独立し、保存した作業方針と記憶は残ります。",
+        "working": "タスクを処理中",
+        "recentActivity": "最終利用 {{date}}",
+        "readyHint": "必要なときにタスクを依頼",
+        "startTask": "タスクを開始"
+    },
+    "profile": {
+        "close": "詳細を閉じる",
+        "workStyle": "作業方針",
+        "editStyle": "編集",
+        "saveStyle": "作業方針を保存",
+        "nativeStyleHint": "既存の指示を含む SOUL.md 全体を更新します。",
+        "loadingFiles": "資料を読み込み中…",
+        "filesUnavailable": "資料を読み取れません。更新して再試行してください。",
+        "noStyle": "作業方針ファイルはまだありません。初回実行時に生成されます。資料フォルダーに SOUL.md を追加することもできます。",
+        "readOnlyStyle": "このファイルは読み取り専用です。表示するか、元のフォルダーで編集できます。",
+        "viewFile": "{{file}} を表示",
+        "filesTitle": "ルールと記憶",
+        "refreshFiles": "資料を更新",
+        "memoryHint": "記憶ファイルはまだありません。保存された記憶がここに表示されます。",
+        "fileChanged": "SOUL.md は別の場所で変更されました。下書きを保持しました。再読込してから保存してください。",
+        "styleSaved": "作業方針を保存しました",
+        "styleSaveFailed": "作業方針を保存できませんでした：{{error}}",
+        "followDefault": "全体の既定に従う · {{model}}",
+        "notConfigured": "未設定",
+        "currentModel": "現在 · {{model}}",
+        "modelHint": "選択はすぐに反映され、新しいタスクの既定モデルになります。",
+        "customModel": "カスタムモデル",
+        "modelRefLabel": "プロバイダー / モデル ID",
+        "channelsTitle": "メッセージの入口",
+        "manageChannels": "管理",
+        "noChannels": "アカウントを接続すると、IM アプリからもタスクを依頼できます。",
+        "workspaceTitle": "資料フォルダー",
+        "workspaceHint": "ルールと記憶を保管します。各タスクは別の作業ディレクトリを使えます。",
+        "openFolder": "資料フォルダーを開く",
+        "openFolderFailed": "フォルダーを開けませんでした",
+        "files": {
+            "rules": "作業ルール",
+            "user": "あなたについて",
+            "identity": "アイデンティティ",
+            "memory": "長期記憶",
+            "note": "記憶ログ"
+        },
+        "reloadStyle": "最新ファイルで下書きを置き換える"
     }
 }

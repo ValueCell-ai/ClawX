@@ -1,6 +1,6 @@
 {
     "title": "Assistants",
-    "subtitle": "Create assistants for different tasks and choose their models and workspaces.",
+    "subtitle": "Assistants with their own working styles and memories, ready for your next task.",
     "refresh": "Refresh",
     "addAgent": "Add Assistant",
     "gatewayWarning": "The local service is unavailable. Assistant or messaging app changes may take a moment to apply.",
@@ -13,12 +13,16 @@
     "settings": "Settings",
     "creating": "Creating...",
     "createDialog": {
-        "title": "Add Assistant",
-        "description": "Create a new assistant by name. You can optionally inherit the main assistant's workspace bootstrap files.",
+        "title": "Create assistant",
+        "description": "Give it a name and a way of working. It starts with the global model and its own workspace.",
         "nameLabel": "Assistant Name",
-        "namePlaceholder": "Coding Helper",
-        "inheritWorkspaceLabel": "Inherit main assistant workspace",
-        "inheritWorkspaceDescription": "Copy SOUL.md, AGENTS.md, etc. from the main assistant"
+        "namePlaceholder": "For example: Research partner",
+        "inheritWorkspaceLabel": "Copy the main assistant’s initial settings",
+        "inheritWorkspaceDescription": "Copy working rules and preferences once. The working style above takes priority.",
+        "optional": "(optional)",
+        "instructionsPlaceholder": "For example: Research with primary sources, distinguish facts from assumptions, and keep reports concise.",
+        "instructionsHint": "Saved to SOUL.md for future tasks.",
+        "submit": "Create assistant"
     },
     "deleteDialog": {
         "title": "Permanently delete Assistant?",
@@ -26,11 +30,11 @@
         "confirm": "Permanently delete"
     },
     "settingsDialog": {
-        "title": "{{name}} Settings",
-        "description": "Update the assistant name and manage which channels belong to this assistant.",
+        "title": "{{name}}",
+        "description": "Working style, memory files and preferences.",
         "nameLabel": "Assistant Name",
         "agentIdLabel": "Assistant ID",
-        "modelLabel": "Model",
+        "modelLabel": "Default model",
         "modelOverrideLabel": "Model Override",
         "modelProviderLabel": "Provider",
         "modelProviderPlaceholder": "Select a provider",
@@ -74,5 +78,56 @@
         "channelAssignFailed": "Failed to assign channel: {{error}}",
         "channelRemoved": "{{channel}} removed",
         "channelRemoveFailed": "Failed to remove channel: {{error}}"
+    },
+    "card": {
+        "openDetails": "View {{name}} details",
+        "actions": "Actions for {{name}}",
+        "defaultModel": "Default · {{model}}",
+        "workspaceUnavailable": "Workspace information is temporarily unavailable.",
+        "emptyWorkStyle": "No working style has been set yet.",
+        "continuityHint": "Each assistant can handle many tasks. New tasks have separate conversations and retain the assistant’s saved working style and memory.",
+        "working": "Working on a task",
+        "recentActivity": "Last active {{date}}",
+        "readyHint": "Start a task when you need it",
+        "startTask": "Start task"
+    },
+    "profile": {
+        "close": "Close details",
+        "workStyle": "Working style",
+        "editStyle": "Edit",
+        "saveStyle": "Save working style",
+        "nativeStyleHint": "Edits update the full SOUL.md file, including its existing instructions.",
+        "loadingFiles": "Reading assistant files…",
+        "filesUnavailable": "Could not read assistant files. Refresh to try again.",
+        "noStyle": "No working style file yet. OpenClaw creates it on first use, or add SOUL.md in the assistant folder.",
+        "readOnlyStyle": "This file is read-only in ClawX. You can view it or edit it in its original folder.",
+        "viewFile": "View {{file}}",
+        "filesTitle": "Instructions & memory",
+        "refreshFiles": "Refresh assistant files",
+        "memoryHint": "No memory files yet. Saved memories appear here as the assistant works.",
+        "fileChanged": "SOUL.md changed elsewhere. Your draft is retained; refresh before saving again.",
+        "styleSaved": "Working style saved",
+        "styleSaveFailed": "Could not save working style: {{error}}",
+        "followDefault": "Follow global default · {{model}}",
+        "notConfigured": "not configured",
+        "currentModel": "Current · {{model}}",
+        "modelHint": "Selections take effect immediately. New tasks use this assistant’s default model.",
+        "customModel": "Custom model",
+        "modelRefLabel": "Provider / model ID",
+        "channelsTitle": "Messaging entry points",
+        "manageChannels": "Manage",
+        "noChannels": "Connect a messaging account to give this assistant tasks from an IM app.",
+        "workspaceTitle": "Assistant files",
+        "workspaceHint": "Keeps this assistant’s instructions and memory. A task can use a separate working directory.",
+        "openFolder": "Open assistant folder",
+        "openFolderFailed": "Could not open assistant folder",
+        "files": {
+            "rules": "Working rules",
+            "user": "About you",
+            "identity": "Identity",
+            "memory": "Long-term memory",
+            "note": "Memory note"
+        },
+        "reloadStyle": "Replace draft with latest file"
     }
 }

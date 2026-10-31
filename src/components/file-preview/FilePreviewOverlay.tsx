@@ -13,16 +13,17 @@ interface FilePreviewOverlayProps {
   open: boolean;
   onClose: () => void;
   onReturnFocus: () => void;
+  testId?: string;
   initialPptxSlideIndex?: number;
   onPptxSlideIndexChange?: (index: number) => void;
 }
 
-export function FilePreviewOverlay({ file, open, onClose, onReturnFocus, initialPptxSlideIndex, onPptxSlideIndexChange }: FilePreviewOverlayProps) {
+export function FilePreviewOverlay({ file, open, onClose, onReturnFocus, testId = 'skill-file-reader', initialPptxSlideIndex, onPptxSlideIndexChange }: FilePreviewOverlayProps) {
   const { t } = useTranslation('chat');
   if (!file) return null;
   return (
     <Sheet open={open} onOpenChange={next => { if (!next) onClose(); }}>
-      <SheetContent side="right" data-testid="skill-file-reader"
+      <SheetContent side="right" data-testid={testId}
         className="inset-y-2 right-2 flex h-[calc(100%-16px)] w-[calc(100vw-16px)] max-w-none flex-col gap-0 overflow-hidden rounded-2xl border border-border bg-surface-modal p-0 data-[state=closed]:pointer-events-none sm:w-[min(80vw,1100px)] sm:max-w-[1100px]"
         aria-describedby={undefined}
         onCloseAutoFocus={event => { event.preventDefault(); onReturnFocus(); }}>

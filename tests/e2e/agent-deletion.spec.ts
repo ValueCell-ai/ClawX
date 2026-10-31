@@ -118,7 +118,7 @@ test.describe('Agent deletion session reconciliation', () => {
       await navigateToSection(page, 'agents');
       const agentCard = page.getByTestId('agent-card-test1');
       await expect(agentCard).toBeVisible();
-      await agentCard.hover();
+      await page.getByTestId('agent-menu-test1').click();
       await page.getByTestId('agent-delete-test1').click();
 
       await expect(page.getByText('Permanently delete Assistant?')).toBeVisible();

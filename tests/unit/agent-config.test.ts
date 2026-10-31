@@ -857,6 +857,36 @@ describe('agent config lifecycle', () => {
     await expect(readFile(join(testHome, '.openclaw', 'workspace-research', 'IDENTITY.md'), 'utf8')).resolves.toContain('ClawX');
   });
 
+  it('seeds native work style while copying other initial rules without copying memory', async () => {
+    await writeOpenClawJson({ agents: { list: [{ id: 'main', name: 'Main', default: true }] } });
+    const mainWorkspace = join(testHome, '.openclaw', 'workspace');
+    await mkdir(mainWorkspace, { recursive: true });
+    await writeFile(join(mainWorkspace, 'SOUL.md'), 'Original personality');
+    await writeFile(join(mainWorkspace, 'AGENTS.md'), 'Shared operating rules');
+    await writeFile(join(mainWorkspace, 'MEMORY.md'), 'Private accumulated memories');
+    const { createAgent } = await import('@electron/utils/agent-config');
+
+    await createAgent('Research', { inheritWorkspace: true, instructions: 'Use primary sources.\n\nKeep uncertainty explicit.' });
+    const workspace = join(testHome, '.openclaw', 'workspace-research');
+    await expect(readFile(join(workspace, 'SOUL.md'), 'utf8')).resolves.toBe('Use primary sources.\n\nKeep uncertainty explicit.\n');
+    await expect(readFile(join(workspace, 'AGENTS.md'), 'utf8')).resolves.toBe('Shared operating rules');
+    await expect(access(join(workspace, 'MEMORY.md'))).rejects.toThrow();
+    await expect(readFile(join(mainWorkspace, 'SOUL.md'), 'utf8')).resolves.toBe('Original personality');
+  });
+
+  it('does not overwrite existing instructions and rolls back a failed creation', async () => {
+    await writeOpenClawJson({ agents: { list: [{ id: 'main', name: 'Main', default: true }] } });
+    const workspace = join(testHome, '.openclaw', 'workspace-research');
+    await mkdir(workspace, { recursive: true });
+    await writeFile(join(workspace, 'SOUL.md'), 'Preserve existing file');
+    const { createAgent } = await import('@electron/utils/agent-config');
+    await expect(createAgent('Research', { instructions: 'Replacement' })).rejects.toThrow();
+    await expect(readFile(join(workspace, 'SOUL.md'), 'utf8')).resolves.toBe('Preserve existing file');
+    const config = await readOpenClawJson();
+    expect((config.agents as { list: Array<{ id: string }> }).list.map(agent => agent.id)).toEqual(['main']);
+    await expect(access(join(testHome, '.openclaw', 'agents', 'research'))).rejects.toThrow();
+  });
+
   it('rolls back a committed agent entry when filesystem provisioning fails', async () => {
     await writeOpenClawJson({
       agents: {
