@@ -225,6 +225,8 @@ pnpm build           # 本番ビルドを実行
 pnpm package         # 現在のプラットフォーム向けにパッケージ化（:mac / :win / :linux）
 ```
 
+`pnpm-workspace.yaml` で Electron のインストールスクリプトを許可し、デスクトップランタイムを準備します。既存の環境で `Electron failed to install correctly` が表示された場合は、`pnpm rebuild electron` を実行してから `pnpm dev` を再試行してください。
+
 > プロジェクト構成、完全なコマンド一覧、E2Eの並列実行ポリシー、パフォーマンス診断、通信回帰チェック、技術スタックについては [docs/ja-JP/development.md](docs/ja-JP/development.md) を参照してください。
 
 ## コントリビューション

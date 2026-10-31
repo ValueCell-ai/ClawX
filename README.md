@@ -225,6 +225,8 @@ pnpm build           # Full production build
 pnpm package         # Package for the current platform (:mac / :win / :linux)
 ```
 
+Electron’s install script is allowed in `pnpm-workspace.yaml` so dependency installation can provision the desktop runtime. If an existing checkout reports `Electron failed to install correctly`, run `pnpm rebuild electron` and retry `pnpm dev`.
+
 > For the project structure, complete command list, E2E parallel policy, performance diagnostics, communication regression checks, and tech stack, see [docs/en-US/development.md](docs/en-US/development.md).
 
 ## Contributing

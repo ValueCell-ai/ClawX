@@ -226,6 +226,8 @@ pnpm build           # 完整生产构建
 pnpm package         # 为当前平台打包（可用 :mac / :win / :linux 后缀）
 ```
 
+`pnpm-workspace.yaml` 已允许 Electron 的安装脚本准备桌面运行时。若已有依赖出现 `Electron failed to install correctly`，执行 `pnpm rebuild electron` 后重试 `pnpm dev`。
+
 > 项目结构、技术栈、完整命令列表、E2E 并行策略、性能诊断与通信回归检查等细节，请参阅 [docs/zh-CN/development.md](docs/zh-CN/development.md)。
 
 ## 参与贡献
