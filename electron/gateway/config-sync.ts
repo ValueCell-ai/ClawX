@@ -1,7 +1,7 @@
+import { getDevelopmentProfile } from '../utils/development-profile';
 import { app } from 'electron';
 import path from 'path';
 import { existsSync, readFileSync, mkdirSync, readdirSync, symlinkSync } from 'fs';
-import { homedir } from 'os';
 import { join } from 'path';
 
 function fsPath(filePath: string): string {
@@ -121,7 +121,7 @@ function listBundledOpenClawExtensionPluginIds(): string[] {
 
 function cleanupStaleBuiltInExtensions(): void {
   for (const ext of listBundledOpenClawExtensionPluginIds()) {
-    const extDir = join(homedir(), '.openclaw', 'extensions', ext);
+    const extDir = join(getOpenClawConfigDir(), 'extensions', ext);
     if (existsSync(fsPath(extDir))) {
       logger.info(`[plugin] Removing stale built-in extension copy: ${ext}`);
       try {
@@ -193,7 +193,7 @@ function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): boolean 
     if (!pluginInfo) continue;
     const { dirName, npmName } = pluginInfo;
 
-    const targetDir = join(homedir(), '.openclaw', 'extensions', dirName);
+    const targetDir = join(getOpenClawConfigDir(), 'extensions', dirName);
     const targetManifest = join(targetDir, 'openclaw.plugin.json');
     const isInstalled = existsSync(fsPath(targetManifest));
     const installedPackage = isInstalled
@@ -217,7 +217,7 @@ function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): boolean 
       if (!isInstalled || packageOwnerChanged || (sourceVersion && installedVersion && sourceVersion !== installedVersion)) {
         logger.info(`[plugin] ${isInstalled ? 'Auto-upgrading' : 'Installing'} ${channelType} plugin${isInstalled ? `: ${installedVersion} → ${sourceVersion}` : `: ${sourceVersion}`} (bundled)`);
         try {
-          mkdirSync(fsPath(join(homedir(), '.openclaw', 'extensions')), { recursive: true });
+          mkdirSync(fsPath(join(getOpenClawConfigDir(), 'extensions')), { recursive: true });
           safeRmSync(fsPath(targetDir));
           cpSyncSafe(bundledDir, targetDir);
           fixupPluginManifest(targetDir);
@@ -253,7 +253,7 @@ function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): boolean 
         logger.info(`[plugin] ${isInstalled ? 'Auto-upgrading' : 'Installing'} ${channelType} plugin${isInstalled ? `: ${installedVersion} → ${sourceVersion}` : `: ${sourceVersion}`} (dev/node_modules)`);
 
         try {
-          mkdirSync(fsPath(join(homedir(), '.openclaw', 'extensions')), { recursive: true });
+          mkdirSync(fsPath(join(getOpenClawConfigDir(), 'extensions')), { recursive: true });
           copyPluginFromNodeModules(npmPkgPath, targetDir, npmName);
           fixupPluginManifest(targetDir);
         } catch (err) {
@@ -280,7 +280,7 @@ function cleanupUnconfiguredChannelPlugins(configuredChannels: string[]): boolea
     if (configuredSet.has(channelType)) continue;
 
     const { dirName } = pluginInfo;
-    const targetDir = join(homedir(), '.openclaw', 'extensions', dirName);
+    const targetDir = join(getOpenClawConfigDir(), 'extensions', dirName);
     if (!existsSync(fsPath(targetDir))) continue;
 
     logger.info(`[plugin] Removing unconfigured channel plugin: ${channelType} (${dirName})`);
@@ -358,7 +358,7 @@ function buildPluginMaintenanceCacheKey(openclawDir: string, configuredChannels:
     openclawDir,
     cwd: process.cwd(),
     configuredChannels: [...configuredChannels].sort(),
-    extensionsDir: directoryChildrenSignature(join(homedir(), '.openclaw', 'extensions')),
+    extensionsDir: directoryChildrenSignature(join(getOpenClawConfigDir(), 'extensions')),
     sourceSignatures: buildPluginSourceSignatures(configuredChannels),
   });
 }
@@ -655,6 +655,7 @@ async function resolveChannelStartupPolicy(): Promise<{
   skipChannels: boolean;
   channelStartupSummary: string;
 }> {
+  if (getDevelopmentProfile()) return { skipChannels: true, channelStartupSummary: 'skipped(development profile)' };
   try {
     const rawCfg = await readOpenClawConfig();
     const configuredChannels = await listConfiguredChannelsFromConfig(rawCfg);
@@ -766,7 +767,7 @@ export async function prepareGatewayLaunchContext(port: number): Promise<Gateway
     ...uvEnv,
     ...proxyEnv,
     OPENCLAW_GATEWAY_TOKEN: appSettings.gatewayToken,
-    OPENCLAW_SKIP_CHANNELS: skipChannels ? '1' : '',
+    OPENCLAW_SKIP_CHANNELS: skipChannels || getDevelopmentProfile() ? '1' : '',
     OPENCLAW_NO_RESPAWN: '1',
     // Disable OpenClaw's interactive-shell env snapshot. When the Gateway runs
     // as an Electron utilityProcess, `process.execPath` is the Electron binary,

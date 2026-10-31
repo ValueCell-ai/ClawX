@@ -7,9 +7,8 @@
 import { access, mkdir, readFile, writeFile, readdir, unlink } from 'fs/promises';
 import { constants } from 'fs';
 import { join, resolve, sep } from 'path';
-import { homedir } from 'os';
 import { logger } from './logger';
-import { getResourcesDir } from './paths';
+import { getOpenClawConfigDir, expandPath, getResourcesDir } from './paths';
 
 const CLAWX_BEGIN = '<!-- clawx:begin -->';
 const CLAWX_END = '<!-- clawx:end -->';
@@ -23,7 +22,7 @@ async function fileExists(p: string): Promise<boolean> {
 }
 
 function isCurrentOpenClawPath(p: string): boolean {
-  const openclawDir = resolve(join(homedir(), '.openclaw'));
+  const openclawDir = resolve(getOpenClawConfigDir());
   const workspaceDir = resolve(p);
   return workspaceDir === openclawDir || workspaceDir.startsWith(openclawDir + sep);
 }
@@ -209,7 +208,7 @@ type WorkspaceDir = {
  * Collect all unique workspace directories from the openclaw config.
  */
 async function resolveAllWorkspaceDirs(): Promise<WorkspaceDir[]> {
-  const openclawDir = join(homedir(), '.openclaw');
+  const openclawDir = getOpenClawConfigDir();
   const dirs = new Map<string, WorkspaceDir>();
   const addDir = (dir: string, waitForGatewaySeed: boolean) => {
     const existing = dirs.get(dir);
@@ -227,7 +226,7 @@ async function resolveAllWorkspaceDirs(): Promise<WorkspaceDir[]> {
       const defaultWs = config?.agents?.defaults?.workspace;
       let hasDefaultWorkspace = false;
       if (typeof defaultWs === 'string' && defaultWs.trim()) {
-        addDir(defaultWs.replace(/^~/, homedir()), true);
+        addDir(expandPath(defaultWs), true);
         hasDefaultWorkspace = true;
       }
 
@@ -238,7 +237,7 @@ async function resolveAllWorkspaceDirs(): Promise<WorkspaceDir[]> {
           if (typeof ws === 'string' && ws.trim()) {
             const isMainDefault =
               agent?.default === true || (agent?.id === 'main' && !hasDefaultWorkspace);
-            addDir(ws.replace(/^~/, homedir()), isMainDefault);
+            addDir(expandPath(ws), isMainDefault);
           }
         }
       }

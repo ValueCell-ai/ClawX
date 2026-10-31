@@ -228,6 +228,8 @@ pnpm package         # 为当前平台打包（可用 :mac / :win / :linux 后�
 
 `pnpm-workspace.yaml` 已允许 Electron 的安装脚本准备桌面运行时。若已有依赖出现 `Electron failed to install correctly`，执行 `pnpm rebuild electron` 后重试 `pnpm dev`。
 
+并行调试 OpenClaw 升级时，在 2026.7.1-2 分支使用 `pnpm dev:legacy`。它会备份迁移后的数据，从兼容的迁移前快照建立 `~/.clawx-dev/legacy`，复制工作空间，并使用 Gateway 19789 / Vite 5174 / CDP 9224。会话从空状态开始，只导入静态 API 凭据；IM 渠道、定时任务和电脑操作默认关闭。已有 profile 会复用，升级分支继续使用原数据。详见[运行环境隔离](harness/reference/development-runtime-isolation.md)。
+
 > 项目结构、技术栈、完整命令列表、E2E 并行策略、性能诊断与通信回归检查等细节，请参阅 [docs/zh-CN/development.md](docs/zh-CN/development.md)。
 
 ## 参与贡献

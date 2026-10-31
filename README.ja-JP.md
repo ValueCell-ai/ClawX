@@ -227,6 +227,8 @@ pnpm package         # 現在のプラットフォーム向けにパッケージ
 
 `pnpm-workspace.yaml` で Electron のインストールスクリプトを許可し、デスクトップランタイムを準備します。既存の環境で `Electron failed to install correctly` が表示された場合は、`pnpm rebuild electron` を実行してから `pnpm dev` を再試行してください。
 
+OpenClaw のアップグレードと並行開発する場合、2026.7.1-2 ブランチで `pnpm dev:legacy` を使います。移行済みデータをバックアップし、互換性のある移行前スナップショットから `~/.clawx-dev/legacy` を準備してワークスペースをコピーします。Gateway 19789 / Vite 5174 / CDP 9224 を使用し、会話は新規作成、静的 API 認証情報のみを取り込み、IM・定期タスク・コンピューター操作は既定で無効です。既存の profile は再利用し、アップグレード側のデータは維持します。[ランタイムの分離](harness/reference/development-runtime-isolation.md)を参照してください。
+
 > プロジェクト構成、完全なコマンド一覧、E2Eの並列実行ポリシー、パフォーマンス診断、通信回帰チェック、技術スタックについては [docs/ja-JP/development.md](docs/ja-JP/development.md) を参照してください。
 
 ## コントリビューション

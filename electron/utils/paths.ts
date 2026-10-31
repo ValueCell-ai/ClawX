@@ -7,6 +7,8 @@ import { dirname, join, resolve } from 'path';
 import { homedir } from 'os';
 import { existsSync, mkdirSync, readFileSync, realpathSync } from 'fs';
 
+import { getDevelopmentProfile } from './development-profile';
+
 const require = createRequire(import.meta.url);
 
 type ElectronAppLike = Pick<typeof import('electron').app, 'isPackaged' | 'getPath' | 'getAppPath'>;
@@ -41,6 +43,9 @@ function getElectronApp() {
  * Expand ~ to home directory
  */
 export function expandPath(path: string): string {
+  if (process.env.OPENCLAW_STATE_DIR && (path === '~/.openclaw' || path.startsWith('~/.openclaw/'))) {
+    return join(resolveOpenClawStateDir(), path.slice('~/.openclaw'.length));
+  }
   if (path.startsWith('~')) {
     return path.replace('~', homedir());
   }
@@ -51,15 +56,19 @@ export function expandPath(path: string): string {
  * Get OpenClaw config directory
  */
 export function getOpenClawConfigDir(): string {
-  return join(homedir(), '.openclaw');
+  return resolveOpenClawStateDir();
 }
 
 export function resolveOpenClawStateDir(env: NodeJS.ProcessEnv = process.env): string {
+  const profile = getDevelopmentProfile(env);
+  if (profile) return profile.stateDir;
   const configured = env.OPENCLAW_STATE_DIR?.trim();
-  return resolve(expandPath(configured || join(homedir(), '.openclaw')));
+  return resolve((configured || join(homedir(), '.openclaw')).replace(/^~(?=[/\\]|$)/, homedir()));
 }
 
 export function resolveOpenClawConfigPath(env: NodeJS.ProcessEnv = process.env): string {
+  const profile = getDevelopmentProfile(env);
+  if (profile) return profile.configPath;
   const configured = env.OPENCLAW_CONFIG_PATH?.trim();
   return resolve(expandPath(configured || join(resolveOpenClawStateDir(env), 'openclaw.json')));
 }
@@ -79,7 +88,7 @@ export function getOpenClawSkillsDir(): string {
  * Get ClawX config directory
  */
 export function getClawXConfigDir(): string {
-  return join(homedir(), '.clawx');
+  return getDevelopmentProfile()?.userDataDir || process.env.CLAWX_CONFIG_DIR?.trim() || join(homedir(), '.clawx');
 }
 
 /**
@@ -234,4 +243,9 @@ export function getOpenClawStatus(): OpenClawStatus {
     // Ignore logger bootstrap issues in non-Electron contexts such as unit tests.
   }
   return status;
+}
+
+/** Preserve the traditional display shorthand outside isolated runtimes. */
+export function getOpenClawManagedPath(...segments: string[]): string {
+  return process.env.OPENCLAW_STATE_DIR ? join(getOpenClawConfigDir(), ...segments) : ['~/.openclaw', ...segments].join('/');
 }

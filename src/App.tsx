@@ -141,7 +141,7 @@ function App() {
 
   // Redirect to setup wizard if not complete
   useEffect(() => {
-    if (!setupComplete && !skipSetupForE2E && !location.pathname.startsWith('/setup')) {
+    if (!setupComplete && !skipSetupForE2E && !(import.meta.env.DEV && import.meta.env.VITE_CLAWX_DEV_PROFILE === 'legacy') && !location.pathname.startsWith('/setup')) {
       navigate('/setup');
     }
   }, [setupComplete, skipSetupForE2E, location.pathname, navigate]);

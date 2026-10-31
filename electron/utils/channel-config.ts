@@ -7,14 +7,13 @@
 import { access, mkdir, readFile, writeFile, readdir, stat, rm } from 'fs/promises';
 import { constants } from 'fs';
 import { join } from 'path';
-import { homedir } from 'os';
 import {
     mutateOpenClawConfig,
     OPENCLAW_REDACTED_SENTINEL,
     readDurableOpenClawConfig,
     readOpenClawConfigSnapshot,
 } from '../gateway/config-delivery';
-import { getOpenClawResolvedDir, resolveOpenClawConfigPath } from './paths';
+import { getOpenClawConfigDir, getOpenClawResolvedDir, resolveOpenClawConfigPath } from './paths';
 import * as logger from './logger';
 import { proxyAwareFetch } from './proxy-fetch';
 import {
@@ -32,7 +31,7 @@ import {
     sanitizeDingTalkChannelConfig,
 } from './dingtalk-plugin-compat';
 
-const OPENCLAW_DIR = join(homedir(), '.openclaw');
+const OPENCLAW_DIR = getOpenClawConfigDir();
 const WECOM_PLUGIN_ID = 'wecom';
 const WECHAT_PLUGIN_ID = OPENCLAW_WECHAT_CHANNEL_TYPE;
 const FEISHU_PLUGIN_ID_CANDIDATES = ['openclaw-lark', 'feishu-openclaw-plugin'] as const;
@@ -195,7 +194,7 @@ function normalizeCredentialValue(value: string): string {
 }
 
 async function resolveFeishuPluginId(): Promise<string> {
-    const extensionRoot = join(homedir(), '.openclaw', 'extensions');
+    const extensionRoot = join(getOpenClawConfigDir(), 'extensions');
     for (const dirName of FEISHU_PLUGIN_ID_CANDIDATES) {
         const manifestPath = join(extensionRoot, dirName, 'openclaw.plugin.json');
         try {
@@ -1134,7 +1133,7 @@ export async function deleteChannelConfig(channelType: string): Promise<void> {
 
     if (resolvedChannelType === 'whatsapp') {
         try {
-            const whatsappDir = join(homedir(), '.openclaw', 'credentials', 'whatsapp');
+            const whatsappDir = join(getOpenClawConfigDir(), 'credentials', 'whatsapp');
             if (await fileExists(whatsappDir)) {
                 await rm(whatsappDir, { recursive: true, force: true });
                 console.log('Deleted WhatsApp credentials directory');
@@ -1167,7 +1166,7 @@ export async function listConfiguredChannelsFromConfig(config: OpenClawConfig): 
     }
 
     try {
-        const whatsappDir = join(homedir(), '.openclaw', 'credentials', 'whatsapp');
+        const whatsappDir = join(getOpenClawConfigDir(), 'credentials', 'whatsapp');
         if (await fileExists(whatsappDir)) {
             const entries = await readdir(whatsappDir);
             const hasSession = await (async () => {

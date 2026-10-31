@@ -1,3 +1,4 @@
+import { getOpenClawConfigDir } from './paths';
 /**
  * Persist ClawX-managed plugin install records into OpenClaw's SQLite
  * installed_plugin_index store (openclaw.sqlite).
@@ -6,7 +7,6 @@
  * not from transient plugins.installs in openclaw.json.
  */
 import { existsSync, mkdirSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { logger } from './logger';
@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS installed_plugin_index (
 `;
 
 function resolveOpenClawStateDir(): string {
-  return process.env.OPENCLAW_STATE_DIR?.trim() || join(homedir(), '.openclaw');
+  return process.env.OPENCLAW_STATE_DIR?.trim() || getOpenClawConfigDir();
 }
 
 function resolveOpenClawStateSqlitePath(): string {

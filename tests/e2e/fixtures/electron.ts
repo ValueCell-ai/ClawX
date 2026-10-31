@@ -1,7 +1,7 @@
 import electronBinaryPath from 'electron';
 import { _electron as electron, expect, test as base, type ElectronApplication, type Page } from '@playwright/test';
 import { build as buildWithEsbuild } from 'esbuild';
-import { access, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -9,6 +9,7 @@ import type { RawMessage } from '../../../shared/chat/types';
 
 export type LaunchElectronOptions = {
   skipSetup?: boolean;
+  developmentProfile?: 'legacy';
   additionalArgs?: string[];
 };
 
@@ -230,7 +231,16 @@ async function launchClawXElectron(
   if (options.additionalArgs?.some((arg) => arg.startsWith('--use-fake-ui-for-media-stream'))) {
     throw new Error('Electron E2E must not bypass application media permission prompts');
   }
-  await seedE2eSettings(userDataDir);
+  const profileRoot = options.developmentProfile ? join(await realpath(homeDir), 'legacy-profile') : null;
+  const effectiveUserData = profileRoot ? join(profileRoot, 'clawx') : userDataDir;
+  if (profileRoot) await mkdir(join(profileRoot, 'openclaw'), { recursive: true });
+  await mkdir(effectiveUserData, { recursive: true });
+  await seedE2eSettings(effectiveUserData);
+  if (profileRoot) {
+    const settingsPath = join(effectiveUserData, 'settings.json');
+    const settings = JSON.parse(await readFile(settingsPath, 'utf8'));
+    await writeFile(settingsPath, JSON.stringify({ ...settings, gatewayAutoStart: false, gatewayPort: 19789 }));
+  }
   const inheritedEnv = { ...process.env };
   delete inheritedEnv.CLAWX_E2E_SKIP_SETUP;
   delete inheritedEnv.CLAWX_REMOTE_DEBUGGING_PORT;
@@ -260,6 +270,12 @@ async function launchClawXElectron(
       OPENCLAW_STATE_DIR: join(homeDir, '.openclaw'),
       OPENCLAW_CONFIG_PATH: join(homeDir, '.openclaw', 'openclaw.json'),
       ...(options.skipSetup ? { CLAWX_E2E_SKIP_SETUP: '1' } : {}),
+      ...(profileRoot ? {
+        CLAWX_DEV_PROFILE: 'legacy', CLAWX_DEV_PROFILE_ROOT: profileRoot,
+        CLAWX_USER_DATA_DIR: effectiveUserData, CLAWX_CONFIG_DIR: effectiveUserData,
+        OPENCLAW_STATE_DIR: join(profileRoot, 'openclaw'), OPENCLAW_CONFIG_PATH: join(profileRoot, 'openclaw/openclaw.json'),
+        CLAWX_PORT_OPENCLAW_GATEWAY: '19789',
+      } : {}),
     },
     timeout: 90_000,
   });

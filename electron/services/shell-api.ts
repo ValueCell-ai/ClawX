@@ -1,15 +1,8 @@
+import { expandPath } from '../utils/paths';
 import { shell } from 'electron';
-import { homedir } from 'node:os';
-import { join, sep } from 'node:path';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 
-function expandShellPath(input: string): string {
-  if (input === '~') return homedir();
-  if (input.startsWith(`~${sep}`) || input.startsWith('~/') || input.startsWith('~\\')) {
-    return join(homedir(), input.slice(2));
-  }
-  return input;
-}
+function expandShellPath(input: string): string { return expandPath(input); }
 
 function requirePath(path: unknown): string {
   if (typeof path !== 'string' || !path.trim()) {

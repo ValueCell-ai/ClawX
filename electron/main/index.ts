@@ -1,3 +1,4 @@
+import { getDevelopmentProfile } from '../utils/development-profile';
 /**
  * Electron Main Process Entry
  * Manages window creation, system tray, and IPC handlers
@@ -65,6 +66,7 @@ import { syncAllProviderAuthToRuntime } from '../services/providers/provider-run
 
 const WINDOWS_APP_USER_MODEL_ID = 'app.clawx.desktop';
 const isE2EMode = process.env.CLAWX_E2E === '1';
+const developmentProfile = getDevelopmentProfile();
 const requestedUserDataDir = process.env.CLAWX_USER_DATA_DIR?.trim();
 const requestedRemoteDebuggingPort = process.env.CLAWX_REMOTE_DEBUGGING_PORT?.trim();
 
@@ -72,7 +74,7 @@ if (requestedRemoteDebuggingPort) {
   app.commandLine.appendSwitch('remote-debugging-port', requestedRemoteDebuggingPort);
 }
 
-if (isE2EMode && requestedUserDataDir) {
+if ((isE2EMode || developmentProfile) && requestedUserDataDir) {
   app.setPath('userData', requestedUserDataDir);
 }
 
@@ -352,7 +354,7 @@ async function initialize(): Promise<void> {
 
     // Apply persisted proxy settings before creating windows or network requests.
     await applyProxySettings();
-    await syncLaunchAtStartupSettingFromStore();
+    if (!developmentProfile) await syncLaunchAtStartupSettingFromStore();
   } else {
     logger.info('Running in E2E mode: startup side effects minimized');
   }
@@ -373,7 +375,7 @@ async function initialize(): Promise<void> {
   // The URL filter ensures this callback only fires for gateway requests,
   // avoiding unnecessary overhead on every other HTTP response.
   session.defaultSession.webRequest.onHeadersReceived(
-    { urls: ['http://127.0.0.1:18789/*', 'http://localhost:18789/*'] },
+    { urls: [`http://127.0.0.1:${developmentProfile?.gatewayPort ?? 18789}/*`, `http://localhost:${developmentProfile?.gatewayPort ?? 18789}/*`] },
     (details, callback) => {
       const headers = { ...details.responseHeaders };
       delete headers['X-Frame-Options'];

@@ -1,3 +1,4 @@
+import { getDevelopmentProfile } from './development-profile';
 /**
  * Persistent Storage
  * Electron-store wrapper for application settings
@@ -104,7 +105,7 @@ function createDefaultSettings(): AppSettings {
     // Gateway
     gatewayAutoStart: true,
     computerUseEnabled: false,
-    gatewayPort: 18789,
+    gatewayPort: getDevelopmentProfile()?.gatewayPort ?? 18789,
     gatewayToken: generateToken(),
     proxyEnabled: false,
     proxyServer: '',
@@ -146,6 +147,8 @@ async function getSettingsStore() {
       deserialize: bomTolerantDeserialize,
       defaults: createDefaultSettings(),
     });
+    const profile = getDevelopmentProfile();
+    if (profile) settingsStoreInstance.set('gatewayPort', profile.gatewayPort);
   }
   return settingsStoreInstance;
 }
@@ -165,6 +168,8 @@ export async function setSetting<K extends keyof AppSettings>(
   key: K,
   value: AppSettings[K]
 ): Promise<void> {
+  const profile = getDevelopmentProfile();
+  if (key === 'gatewayPort' && profile && value !== profile.gatewayPort) throw new Error('The development profile requires its dedicated Gateway port');
   if (key === 'computerUseEnabled') {
     if (typeof value !== 'boolean' || !computerUsePreferenceHandler) {
       throw new Error('Invalid or unavailable Computer Use preference handler');
@@ -209,6 +214,8 @@ export async function exportSettings(): Promise<string> {
 export async function importSettings(json: string): Promise<void> {
   try {
     const settings = JSON.parse(json);
+    const profile = getDevelopmentProfile();
+    if (profile) settings.gatewayPort = profile.gatewayPort;
     if (Object.prototype.hasOwnProperty.call(settings, 'computerUseEnabled')) {
       await setSetting('computerUseEnabled', settings.computerUseEnabled);
       delete settings.computerUseEnabled;

@@ -1,3 +1,4 @@
+import { getDevelopmentProfile } from '../utils/development-profile';
 import { app, utilityProcess } from 'electron';
 import path from 'path';
 import { existsSync } from 'fs';
@@ -78,7 +79,7 @@ export async function terminateOwnedGatewayProcess(child: Electron.UtilityProces
 }
 
 export async function unloadLaunchctlGatewayService(): Promise<void> {
-  if (process.platform !== 'darwin') return;
+  if (getDevelopmentProfile() || process.platform !== 'darwin') return;
 
   try {
     const uid = process.getuid?.();
@@ -263,6 +264,10 @@ export async function findExistingGatewayProcess(options: {
 }
 
 export async function runOpenClawDoctorRepair(): Promise<boolean> {
+  if (getDevelopmentProfile()) {
+    logger.warn('Automatic Doctor repair is disabled for isolated developer runtimes; inspect the profile config explicitly');
+    return false;
+  }
   const openclawDir = getOpenClawDir();
   const entryScript = getOpenClawEntryPath();
   if (!existsSync(entryScript)) {

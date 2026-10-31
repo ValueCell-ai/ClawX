@@ -227,6 +227,8 @@ pnpm package         # Package for the current platform (:mac / :win / :linux)
 
 Electron’s install script is allowed in `pnpm-workspace.yaml` so dependency installation can provision the desktop runtime. If an existing checkout reports `Electron failed to install correctly`, run `pnpm rebuild electron` and retry `pnpm dev`.
 
+For parallel OpenClaw upgrades, use `pnpm dev:legacy` on the 2026.7.1-2 branch. It prepares `~/.clawx-dev/legacy` from the compatible pre-migration snapshot, backs up migrated state, copies workspaces, and uses Gateway 19789 / Vite 5174 / CDP 9224. Sessions start fresh; only static API credentials are imported, and IM channels, cron and computer operation stay disabled by default. Existing profiles are reused. The upgrade branch continues to use its original data. See [runtime isolation](harness/reference/development-runtime-isolation.md).
+
 > For the project structure, complete command list, E2E parallel policy, performance diagnostics, communication regression checks, and tech stack, see [docs/en-US/development.md](docs/en-US/development.md).
 
 ## Contributing

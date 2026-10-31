@@ -25,6 +25,7 @@ vi.mock('os', async () => {
 });
 
 vi.mock('@electron/utils/paths', () => ({
+  getOpenClawConfigDir: () => join(state.homeDir, '.openclaw'),
   getOpenClawDir: () => '/runtime/openclaw',
   getOpenClawResolvedDir: () => '/runtime/openclaw',
   getResourcesDir: () => state.resourcesDir,

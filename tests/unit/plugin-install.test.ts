@@ -809,3 +809,8 @@ describe('plugin installer diagnostics', () => {
     expect(mockSymlinkSync).toHaveBeenCalledWith(openclawDir, linkPath, 'junction');
   });
 });
+
+vi.mock('@electron/utils/paths', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@electron/utils/paths')>(),
+  getOpenClawConfigDir: () => '/home/test/.openclaw',
+}));

@@ -1,3 +1,4 @@
+import { getOpenClawConfigDir } from './paths';
 /**
  * OpenClaw 2026.6+ persists agent auth in openclaw-agent.sqlite.
  * ClawX historically wrote auth-profiles.json only; gateway runtime reads SQLite.
@@ -6,7 +7,6 @@ import { chmodSync, existsSync, mkdirSync } from 'fs';
 import { access, readFile } from 'fs/promises';
 import { constants } from 'fs';
 import { join } from 'path';
-import { homedir } from 'os';
 import { DatabaseSync } from 'node:sqlite';
 
 const AUTH_PROFILE_FILENAME = 'auth-profiles.json';
@@ -75,7 +75,7 @@ export interface PersistedAuthProfilesStore {
 }
 
 function getAgentAuthDir(agentId: string): string {
-  return join(homedir(), '.openclaw', 'agents', agentId, 'agent');
+  return join(getOpenClawConfigDir(), 'agents', agentId, 'agent');
 }
 
 export function getAuthProfilesJsonPath(agentId: string): string {

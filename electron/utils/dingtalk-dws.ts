@@ -1,3 +1,4 @@
+import { getOpenClawConfigDir } from './paths';
 /**
  * Provision the official DingTalk workspace CLI (`dws`) so plugin skills
  * such as `dws-cli` can execute calendar/doc commands.
@@ -58,7 +59,7 @@ let activeOAuthStartResolver: ((snapshot: DingTalkDwsOAuthSnapshot) => void) | n
 let activeOAuthExpiryTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function getDingTalkDwsInstallDir(): string {
-  return join(homedir(), '.openclaw', 'tools', 'dingtalk-workspace-cli');
+  return join(getOpenClawConfigDir(), 'tools', 'dingtalk-workspace-cli');
 }
 
 export function getDingTalkDwsBinDir(): string {

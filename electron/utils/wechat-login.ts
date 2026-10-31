@@ -1,7 +1,7 @@
+import { getOpenClawConfigDir } from './paths';
 import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
 import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { deflateSync } from 'node:zlib';
 import { readOpenClawConfigSnapshot } from '../gateway/config-delivery';
@@ -13,7 +13,7 @@ const DEFAULT_ILINK_BOT_TYPE = '3';
 const ACTIVE_LOGIN_TTL_MS = 5 * 60_000;
 const QR_POLL_TIMEOUT_MS = 35_000;
 const MAX_QR_REFRESH_COUNT = 3;
-const OPENCLAW_DIR = join(homedir(), '.openclaw');
+const OPENCLAW_DIR = getOpenClawConfigDir();
 const WECHAT_STATE_DIR = join(OPENCLAW_DIR, 'openclaw-weixin');
 const WECHAT_ACCOUNT_INDEX_FILE = join(WECHAT_STATE_DIR, 'accounts.json');
 const WECHAT_ACCOUNTS_DIR = join(WECHAT_STATE_DIR, 'accounts');

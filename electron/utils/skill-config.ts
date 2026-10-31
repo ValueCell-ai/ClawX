@@ -6,8 +6,7 @@ import { readFile, writeFile, mkdir, readdir, rm, lstat, mkdtemp, rename } from 
 import { createHash } from 'crypto';
 import { existsSync } from 'fs';
 import { join } from 'path';
-import { homedir } from 'os';
-import { getOpenClawResolvedDir, getResourcesDir } from './paths';
+import { getOpenClawConfigDir, getOpenClawResolvedDir, getResourcesDir } from './paths';
 import { logger } from './logger';
 import { cpAsyncSafe } from './plugin-install';
 import { mutateOpenClawConfig, readOpenClawConfigSnapshot } from '../gateway/config-delivery';
@@ -324,7 +323,7 @@ async function computerUseBundleHash(directory: string): Promise<string | undefi
  * block the normal startup flow.
  */
 export async function ensureBuiltinSkillsInstalled(): Promise<void> {
-    const skillsRoot = join(homedir(), '.openclaw', 'skills');
+    const skillsRoot = join(getOpenClawConfigDir(), 'skills');
 
     for (const slug of BUILTIN_SKILLS) {
         const targetDir = join(skillsRoot, slug);
@@ -488,7 +487,7 @@ export async function ensurePreinstalledSkillsInstalled(): Promise<void> {
     }
     const lockVersions = await readPreinstalledLockVersions(sourceRoot);
 
-    const targetRoot = join(homedir(), '.openclaw', 'skills');
+    const targetRoot = join(getOpenClawConfigDir(), 'skills');
     await mkdir(targetRoot, { recursive: true });
     const toEnable: string[] = [];
 

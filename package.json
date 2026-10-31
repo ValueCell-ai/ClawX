@@ -11,6 +11,8 @@
         "init": "pnpm install && pnpm run uv:download && pnpm run agent-browser:download && pnpm run cua-driver:download",
         "predev": "node scripts/generate-ext-bridge.mjs && zx scripts/prepare-preinstalled-skills-dev.mjs",
         "dev": "vite",
+        "predev:legacy": "pnpm run predev",
+        "dev:legacy": "node scripts/dev-legacy.mjs",
         "ext:bridge": "node scripts/generate-ext-bridge.mjs",
         "build": "pnpm run cua-driver:download && node scripts/generate-ext-bridge.mjs && pnpm run build:vite && zx scripts/bundle-openclaw.mjs && zx scripts/bundle-openclaw-plugins.mjs && zx scripts/bundle-preinstalled-skills.mjs && node scripts/run-electron-builder.mjs",
         "build:vite": "node --max-old-space-size=6144 ./node_modules/vite/bin/vite.js build",

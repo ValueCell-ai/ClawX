@@ -14,6 +14,7 @@ vi.mock('@electron/utils/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(
 vi.mock('os', async (original) => ({ ...await original<typeof import('os')>(), homedir: () => state.home }));
 vi.mock('node:os', async (original) => ({ ...await original<typeof import('os')>(), homedir: () => state.home }));
 vi.mock('@electron/utils/paths', () => ({
+  getOpenClawConfigDir: () => join(state.home, '.openclaw'),
   getResourcesDir: () => state.resources,
   getOpenClawDir: () => join(state.home, 'runtime'),
   getOpenClawResolvedDir: () => join(state.home, 'runtime'),
