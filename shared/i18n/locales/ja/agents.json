@@ -111,7 +111,7 @@
         "followDefault": "全体の既定に従う · {{model}}",
         "notConfigured": "未設定",
         "currentModel": "現在 · {{model}}",
-        "modelHint": "選択はすぐに反映され、新しいタスクの既定モデルになります。",
+        "modelHint": "タスクでモデルを指定しない場合に使用します。全体の既定設定に従うか、このアシスタント専用のモデルを選べます。",
         "customModel": "カスタムモデル",
         "modelRefLabel": "プロバイダー / モデル ID",
         "channelsTitle": "メッセージの入口",

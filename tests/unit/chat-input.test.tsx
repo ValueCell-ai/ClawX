@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ChatInput } from '@/pages/Chat/ChatInput';
+import { useTaskModelStore } from '@/stores/task-models';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { AcpCurrentPlan } from '@/lib/acp/current-plan';
 import type { AcpSubagentSession } from '@/pages/Chat/AcpSubagentSessions';
@@ -266,6 +267,7 @@ function configureAgentAndModelPickers() {
 
 describe('ChatInput execution agent and composer', () => {
   beforeEach(() => {
+    useTaskModelStore.setState({ choices: {}, loading: {}, saving: {}, errors: {} });
     agentsState.agents = [];
     agentsState.defaultModelRef = null;
     agentsState.updateAgentModel.mockReset();
@@ -298,21 +300,11 @@ describe('ChatInput execution agent and composer', () => {
     expect(await screen.findByRole('tooltip')).toHaveTextContent('25% context used: 25,000 / 100,000 tokens');
   });
 
-  it('recomputes the context total and percentage after switching models', async () => {
+  it('switches the task model without changing the Agent and accepts refreshed native usage', async () => {
     configureAgentAndModelPickers();
-    agentsState.updateAgentModel.mockImplementation(async (agentId: string, modelRef: string | null) => {
-      agentsState.agents = agentsState.agents.map((agent) => agent.id === agentId
-        ? {
-            ...agent,
-            modelRef: modelRef || agentsState.defaultModelRef,
-            overrideModelRef: modelRef,
-            contextWindow: 272_000,
-            inheritedModel: !modelRef,
-          }
-        : agent);
-    });
+    chatState.sessions = [];
     const contextUsage = { used: 68_000, size: 400_000 };
-    const { rerender } = renderChatInput(vi.fn(), contextUsage);
+    const { rerender } = render(<TooltipProvider delayDuration={0}><ChatInput draftKey={chatState.currentSessionKey} onSend={vi.fn()} contextUsage={contextUsage} /></TooltipProvider>);
 
     expect(screen.getByRole('progressbar', {
       name: '17% context used: 68,000 / 400,000 tokens',
@@ -321,21 +313,16 @@ describe('ChatInput execution agent and composer', () => {
     fireEvent.keyDown(screen.getByTestId('chat-model-picker-button'), { key: 'ArrowDown' });
     fireEvent.click(screen.getByRole('menuitemradio', { name: 'gpt-b', exact: true }));
     await waitFor(() => {
-      expect(agentsState.updateAgentModel).toHaveBeenCalledWith('main', 'custom-bbbbbbbb/gpt-b');
+      expect(useTaskModelStore.getState().choices[chatState.currentSessionKey]?.modelRef).toBe('custom-bbbbbbbb/gpt-b');
     });
-    rerender(
-      <TooltipProvider delayDuration={0}>
-        <ChatInput onSend={vi.fn()} contextUsage={contextUsage} />
-      </TooltipProvider>,
-    );
-
+    expect(agentsState.updateAgentModel).not.toHaveBeenCalled();
     expect(screen.getByRole('progressbar', {
-      name: '25% context used: 68,000 / 272,000 tokens',
+      name: '17% context used: 68,000 / 400,000 tokens',
     })).toBeInTheDocument();
 
     rerender(
       <TooltipProvider delayDuration={0}>
-        <ChatInput onSend={vi.fn()} contextUsage={{ used: 68_000, size: 260_000 }} />
+        <ChatInput draftKey={chatState.currentSessionKey} onSend={vi.fn()} contextUsage={{ used: 68_000, size: 260_000 }} />
       </TooltipProvider>,
     );
     expect(screen.getByRole('progressbar', {
@@ -557,7 +544,7 @@ describe('ChatInput execution agent and composer', () => {
     expect(screen.queryByTestId('chat-composer-image-generation-indicator')).not.toBeInTheDocument();
   });
 
-  it('waits for the provider snapshot before clearing an unavailable model override', async () => {
+  it('preserves an unavailable Agent override after the provider snapshot resolves', async () => {
     let resolveSnapshot!: () => void;
     agentsState.updateAgentModel.mockResolvedValue(undefined);
     providersState.refreshProviderSnapshot.mockReturnValue(new Promise<void>((resolve) => {
@@ -583,10 +570,9 @@ describe('ChatInput execution agent and composer', () => {
     expect(agentsState.updateAgentModel).not.toHaveBeenCalled();
 
     resolveSnapshot();
-
-    await waitFor(() => {
-      expect(agentsState.updateAgentModel).toHaveBeenCalledWith('main', null);
-    });
+    await providersState.refreshProviderSnapshot.mock.results[0].value;
+    expect(agentsState.updateAgentModel).not.toHaveBeenCalled();
+    expect(agentsState.agents[0].overrideModelRef).toBe('custom-stale/model');
   });
 
   it('renders editable workspace selector in the composer footer', () => {

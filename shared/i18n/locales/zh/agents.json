@@ -111,7 +111,7 @@
         "followDefault": "跟随全局默认 · {{model}}",
         "notConfigured": "未配置",
         "currentModel": "当前模型 · {{model}}",
-        "modelHint": "选择后立即生效，新任务使用这位助手的默认模型。",
+        "modelHint": "用于未单独选择模型的任务。可以跟随全局默认，也可以为这个助手指定专用模型。",
         "customModel": "自定义模型",
         "modelRefLabel": "提供商 / 模型 ID",
         "channelsTitle": "消息入口",

@@ -15,7 +15,8 @@
         "tabs": {
             "chat": "对话模型",
             "imageGeneration": "图像生成",
-            "voice": "语音转写"
+            "voice": "语音转写",
+            "usage": "用量"
         }
     },
     "quickActions": {
@@ -76,7 +77,8 @@
             "total": "总量",
             "cost": "费用（USD）",
             "actions": "详情"
-        }
+        },
+        "sourceHint": "用量与费用来自本地运行记录，记录费用可能与服务商实际账单不同。"
     },
     "imageGeneration": {
         "title": "图像生成",

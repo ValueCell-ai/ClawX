@@ -281,6 +281,29 @@ describe('provider-runtime-sync config delivery', () => {
     expectNoGatewayLifecycleCalls(gateway);
   });
 
+  it('resolves imported custom model metadata when a legacy default switch has no account model', async () => {
+    mocks.getProvider.mockResolvedValue(createProvider({ id: 'custom-work1234', type: 'custom', model: undefined }));
+    mocks.getProviderAccount.mockResolvedValue({ id: 'custom-work1234', vendorId: 'custom', metadata: { customModels: ['model-a', 'provider/model-b'] } });
+    await syncDefaultProviderToRuntime('custom-work1234');
+    expect(mocks.setOpenClawDefaultModelWithOverride).toHaveBeenCalledWith('custom-work1234', 'custom-work1234/model-a', expect.any(Object), expect.any(Array));
+  });
+
+  it('rejects a legacy custom default switch with no configured model', async () => {
+    mocks.getProvider.mockResolvedValue(createProvider({ id: 'custom-work1234', type: 'custom', model: undefined }));
+    mocks.getProviderAccount.mockResolvedValue({ metadata: { customModels: [] } });
+    await expect(syncDefaultProviderToRuntime('custom-work1234')).rejects.toThrow('No configured model');
+    expect(mocks.setOpenClawDefaultModelWithOverride).not.toHaveBeenCalled();
+  });
+
+  it('sets an explicitly selected imported model without changing the saved account model', async () => {
+    const provider = createProvider({ id: 'custom-work1234', type: 'custom', model: undefined });
+    mocks.getProvider.mockResolvedValue(provider);
+    mocks.getProviderAccount.mockResolvedValue({ id: provider.id, vendorId: 'custom', metadata: { customModels: ['model-a', 'provider/model-b'] } });
+    await syncDefaultProviderToRuntime(provider.id, undefined, 'provider/model-b');
+    expect(mocks.setOpenClawDefaultModelWithOverride).toHaveBeenCalledWith(provider.id, `${provider.id}/provider/model-b`, expect.any(Object), expect.any(Array));
+    expect(provider.model).toBeUndefined();
+  });
+
   it('skips refresh after switching default provider when gateway is stopped', async () => {
     const gateway = createGateway('stopped');
     await syncDefaultProviderToRuntime('moonshot', gateway as GatewayManager);

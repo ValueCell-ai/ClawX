@@ -38,6 +38,7 @@ export function resolveRuntimeProviderKey(account: ProviderAccount): string {
   if (account.vendorId === 'minimax-portal-cn') {
     return 'minimax-portal';
   }
+  if (account.vendorId === 'zai-global') return 'zai';
 
   return account.vendorId;
 }

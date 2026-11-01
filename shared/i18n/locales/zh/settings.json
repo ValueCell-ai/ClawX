@@ -14,7 +14,7 @@
     "launchAtStartupDesc": "登录系统后自动启动 ClawX"
   },
   "aiProviders": {
-    "title": "AI 模型提供商",
+    "title": "模型服务",
     "description": "配置 AI 模型提供商和 API 密钥",
     "overview": {
       "title": "提供商账户",
@@ -33,7 +33,7 @@
       "model": "模型配置",
       "fallback": "回退配置"
     },
-    "add": "添加提供商",
+    "add": "添加服务",
     "custom": "自定义",
     "notRequired": "非必填",
     "empty": {
@@ -42,17 +42,20 @@
       "cta": "添加您的第一个提供商"
     },
     "dialog": {
-      "title": "添加 AI 提供商",
-      "desc": "配置新的 AI 模型提供商",
+      "title": "添加模型服务",
+      "desc": "连接你要使用的模型服务。",
       "displayName": "显示名称",
       "apiKey": "API 密钥",
-      "apiKeyConfigured": "这个 provider 已经保存了 API key。",
-      "apiKeyMissing": "这个 provider 还没有保存 API key。",
+      "apiKeyConfigured": "API 密钥已保存。",
+      "apiKeyMissing": "尚未保存 API 密钥。",
       "apiKeyStored": "您的 API 密钥存储在本地机器上。",
-      "replaceApiKey": "替换 API Key",
-      "replaceApiKeyHelp": "如果想保留当前已保存的 API key，这里留空即可。",
+      "replaceApiKey": "替换 API 密钥",
+      "replaceApiKeyHelp": "留空保留已保存的 API 密钥。",
       "baseUrl": "基础 URL",
       "modelId": "模型 ID",
+      "configuredModels": "已配置模型",
+      "configuredModelsHint": "此处仅供查看，不会更改全局默认模型。",
+      "singleModelHint": "填写单个模型 ID，不支持逗号分隔。",
       "modelIdEditDisabled": "模型 ID 创建后不可修改。如需使用其他模型 ID，请删除此 Provider 后重新添加。",
       "codePlanPreset": "Code Plan 预设",
       "codePlanMode": "Code Plan",
@@ -70,8 +73,8 @@
       "fallbackModelIdsHelp": "每行一个模型 ID。会先使用当前 provider 的这些模型，再回退到其他 provider。",
       "noFallbackOptions": "请先添加其他 provider，才能把它设为回退目标。",
       "cancel": "取消",
-      "change": "更换提供商",
-      "add": "添加提供商",
+      "change": "更换服务",
+      "add": "添加服务",
       "save": "保存",
       "customDoc": "查看文档",
       "validate": "验证",
@@ -404,5 +407,23 @@
       "title": "关于与帮助",
       "description": "查看版本、检查更新，获取帮助或反馈问题。"
     }
+  },
+  "modelManagement": {
+    "globalDefault": "全局默认模型",
+    "defaultSaved": "全局默认模型已更新",
+    "defaultSaveFailed": "更新全局默认模型失败：{{error}}",
+    "globalDefaultHint": "跟随全局默认的助手会使用此模型；单个任务可以另选模型。",
+    "defaultUnset": "尚未设置全局默认模型",
+    "defaultUnavailable": "暂时无法读取全局默认模型",
+    "loading": "正在读取配置…",
+    "editService": "编辑模型服务",
+    "editServiceHint": "管理服务连接和访问凭据。",
+    "configure": "配置",
+    "editConfiguration": "编辑配置",
+    "notConfigured": "尚未配置模型",
+    "configured": "配置已保存",
+    "needsConfiguration": "待配置",
+    "voiceDescription": "选择将语音转成任务文字的服务。",
+    "imageDescription": "选择生成图片时使用的服务和模型。"
   }
 }

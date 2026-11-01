@@ -15,7 +15,8 @@
         "tabs": {
             "chat": "Chat models",
             "imageGeneration": "Image generation",
-            "voice": "Speech-to-text"
+            "voice": "Speech-to-text",
+            "usage": "Usage"
         }
     },
     "quickActions": {
@@ -76,7 +77,8 @@
             "total": "Total",
             "cost": "Cost (USD)",
             "actions": "Details"
-        }
+        },
+        "sourceHint": "Usage and costs come from local runtime records. Recorded costs may differ from the provider’s bill."
     },
     "imageGeneration": {
         "title": "Image Generation",

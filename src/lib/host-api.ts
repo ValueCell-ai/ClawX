@@ -341,6 +341,9 @@ export const hostApi = {
     setDefaultAccount: (accountId: string) => (
       invokeHost('providers', 'setDefaultAccount', { accountId })
     ),
+    setDefaultModel: (accountId: string, modelId: string) => (
+      invokeHost('providers', 'setDefaultModel', { accountId, modelId })
+    ),
     requestOAuth: (input: ProviderOAuthRequestPayload) => invokeHost('providers', 'requestOAuth', input),
     cancelOAuth: () => invokeHost('providers', 'cancelOAuth'),
     submitOAuth: (input: { code: string }) => invokeHost('providers', 'submitOAuth', input),
@@ -417,6 +420,8 @@ export const hostApi = {
     ),
   },
   chat: {
+    getSessionModel: (sessionKey: string) => invokeHost('chat', 'getSessionModel', { sessionKey }),
+    setSessionModel: (sessionKey: string, modelRef: string) => invokeHost('chat', 'setSessionModel', { sessionKey, modelRef }),
     getAcpSessionFamily: (input: AcpSessionFamilyPayload) => (
       invokeHost('chat', 'getAcpSessionFamily', input)
     ),

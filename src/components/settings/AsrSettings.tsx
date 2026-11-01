@@ -1,7 +1,7 @@
 /**
  * Global speech-to-text (ASR) settings for voice dictation.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ExternalLink, Loader2, Mic } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -18,10 +18,11 @@ import {
   normalizeAsrProtocol,
 } from '@shared/asr/presets';
 import type { AsrConfig, AsrPreset, AsrProtocol } from '@shared/host-api/contract';
+import { ModelConfigDialog, modelFieldClasses } from './ModelConfigDialog';
+import { ModelConfigurationSummary } from './ModelConfigurationSummary';
 import { cn } from '@/lib/utils';
 
-const inputClasses =
-  'h-10 rounded-lg font-mono text-sm bg-surface-input border-black/10 dark:border-white/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/10 focus-visible:border-foreground/30 focus-visible:ring-offset-0 shadow-sm transition-[color,background-color,border-color,box-shadow] text-foreground placeholder:text-foreground/40';
+const inputClasses = modelFieldClasses;
 const labelClasses = 'text-sm text-foreground/80 font-medium';
 
 const ASR_LANGUAGE_OPTIONS = ['zh', 'en'] as const;
@@ -58,6 +59,10 @@ function resolveSaveErrorCode(error: unknown): AsrErrorCode {
 
 export function AsrSettings() {
   const { t } = useTranslation(['settings', 'dashboard', 'common']);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [savedConfig, setSavedConfig] = useState<AsrConfig | null>(null);
+  const [configured, setConfigured] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [hasApiKey, setHasApiKey] = useState(false);
@@ -73,6 +78,8 @@ export function AsrSettings() {
     try {
       const result = await hostApi.asr.getConfig();
       const config = result.config;
+      setSavedConfig(config);
+      setConfigured(result.configured);
       setHasApiKey(result.hasApiKey);
       if (config) {
         setProtocol(normalizeAsrProtocol(config.protocol));
@@ -101,6 +108,7 @@ export function AsrSettings() {
 
   const handleProtocolChange = (next: AsrProtocol) => {
     setProtocol(next);
+    if (preset === 'custom') return;
     const nextPreset = ASR_PRESETS_BY_PROTOCOL[next][0];
     setPreset(nextPreset);
     setBaseUrl(ASR_PRESET_DEFAULTS[nextPreset].baseUrl);
@@ -109,6 +117,7 @@ export function AsrSettings() {
 
   const handlePresetChange = (next: AsrPreset) => {
     setPreset(next);
+    if (next !== 'custom') setProtocol(ASR_PRESETS_BY_PROTOCOL.transcriptions.includes(next) ? 'transcriptions' : 'chat');
     setBaseUrl(ASR_PRESET_DEFAULTS[next].baseUrl);
     setModel(ASR_PRESET_DEFAULTS[next].model);
   };
@@ -134,6 +143,9 @@ export function AsrSettings() {
       const trimmedApiKey = apiKey.trim();
       const next = await hostApi.asr.saveConfig(config, trimmedApiKey || undefined);
       setHasApiKey(next.hasApiKey);
+      setSavedConfig(next.config);
+      setConfigured(next.configured);
+      setEditorOpen(false);
       setApiKey('');
       toast.success(t('settings:asr.toast.saved'));
     } catch (error) {
@@ -145,204 +157,40 @@ export function AsrSettings() {
   };
 
   const providerConsoleUrl = ASR_PROVIDER_CONSOLES[preset];
-
+  const openEditor = () => {
+    const current = savedConfig;
+    setProtocol(normalizeAsrProtocol(current?.protocol));
+    setPreset(current?.preset ?? 'openai');
+    setBaseUrl(current?.baseUrl ?? ASR_PRESET_DEFAULTS.openai.baseUrl);
+    setModel(current?.model ?? ASR_PRESET_DEFAULTS.openai.model);
+    setLanguage(current?.language ?? '');
+    setApiKey('');
+    setEditorOpen(true);
+  };
   return (
     <div data-testid="asr-settings" className="space-y-4">
-      <div>
-        <h2
-          data-testid="asr-settings-title"
-          className="text-lg font-sans text-foreground font-medium tracking-normal flex items-center gap-2"
-        >
-          <Mic className="h-5 w-5 text-muted-foreground" />
-          {t('settings:asr.title')}
-        </h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          {t('settings:asr.description')}
-        </p>
-      </div>
-
-      {loading ? (
-        <div className="flex items-center justify-center py-12 text-muted-foreground bg-black/5 dark:bg-white/5 rounded-xl border border-dashed border-black/10 dark:border-white/10">
-          <Loader2 className="h-6 w-6 animate-spin" />
-        </div>
-      ) : (
-        <div
-          data-testid="asr-settings-surface"
-          className="space-y-4 rounded-xl border border-black/10 bg-surface-modal p-4 dark:border-white/10"
-        >
+      <ModelConfigurationSummary prefix="asr" title={t('settings:asr.title')} description={t('settings:modelManagement.voiceDescription')} icon={Mic} model={savedConfig?.model} service={savedConfig ? t(`settings:asr.presets.${savedConfig.preset}`) : undefined} configured={configured} loading={loading} onConfigure={openEditor} triggerRef={triggerRef} />
+      <ModelConfigDialog open={editorOpen} onClose={() => setEditorOpen(false)} title={t('settings:asr.title')} description={t('settings:modelManagement.voiceDescription')} testId="asr-config-dialog" busy={saving} returnFocusRef={triggerRef}
+        footer={<><Button variant="outline" className="h-9" disabled={saving} onClick={() => setEditorOpen(false)}>{t('settings:aiProviders.dialog.cancel')}</Button><Button onClick={() => void handleSave()} disabled={saving} className="h-9" data-testid="asr-save-button">{saving && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}{t('settings:asr.save')}</Button></>}
+      >
+        <fieldset disabled={saving} data-testid="asr-settings-surface" className="min-w-0 space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="asr-protocol" className={labelClasses}>
-                {t('settings:asr.protocol.label')}
-              </Label>
-              <Select
-                id="asr-protocol"
-                value={protocol}
-                onValueChange={(value) => handleProtocolChange(value as AsrProtocol)}
-                className={cn(inputClasses, 'w-full')}
-                data-testid="asr-protocol-select"
-              >
-                {ASR_PROTOCOLS.map((protocolKey) => (
-                  <SelectItem key={protocolKey} value={protocolKey}>
-                    {t(`settings:asr.protocol.${protocolKey}`)}
-                  </SelectItem>
-                ))}
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="asr-preset" className={labelClasses}>
-                {t('settings:asr.presets.label')}
-              </Label>
-              <Select
-                id="asr-preset"
-                value={preset}
-                onValueChange={(value) => handlePresetChange(value as AsrPreset)}
-                className={cn(inputClasses, 'w-full')}
-                data-testid="asr-preset-select"
-              >
-                {ASR_PRESETS_BY_PROTOCOL[protocol].map((presetKey) => (
-                  <SelectItem key={presetKey} value={presetKey}>
-                    {t(`settings:asr.presets.${presetKey}`)}
-                  </SelectItem>
-                ))}
-              </Select>
-              {preset === 'bailian' ? (
-                <p
-                  data-testid="asr-bailian-dialect-hint"
-                  className="text-meta text-muted-foreground"
-                >
-                  {t('settings:asr.hints.bailianDialectPrefix')}
-                  <button
-                    type="button"
-                    className="text-blue-600 hover:underline dark:text-blue-400"
-                    onClick={() => void hostApi.shell.openExternal(BAILIAN_DOCS_URL)}
-                    data-testid="asr-bailian-docs-link"
-                  >
-                    {t('settings:asr.hints.bailianDialectLinkText')}
-                  </button>
-                  {t('settings:asr.hints.bailianDialectSuffix')}
-                </p>
-              ) : null}
-            </div>
+            <div className="space-y-1.5"><Label htmlFor="asr-preset" className={labelClasses}>{t('settings:asr.presets.label')}</Label><Select id="asr-preset" value={preset} onValueChange={value => handlePresetChange(value as AsrPreset)} className={inputClasses} data-testid="asr-preset-select">{(Object.keys(ASR_PRESET_DEFAULTS) as AsrPreset[]).map(key => <SelectItem key={key} value={key}>{t(`settings:asr.presets.${key}`)}</SelectItem>)}</Select></div>
+            <div className="space-y-1.5"><Label htmlFor="asr-model" className={labelClasses}>{t('settings:asr.model')}</Label><Input id="asr-model" value={model} onChange={event => setModel(event.target.value)} className={inputClasses} data-testid="asr-model-input" /></div>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="asr-base-url" className={labelClasses}>
-              {t('settings:asr.baseUrl')}
-            </Label>
-            <div className="flex">
-            <Input
-              id="asr-base-url"
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder={
-                protocol === 'transcriptions' && preset === 'custom'
-                  ? 'https://api.example.com/v1/audio/transcriptions'
-                  : 'https://api.example.com/v1'
-              }
-              className={cn(
-                inputClasses,
-                protocol === 'transcriptions' && preset !== 'custom'
-                  ? 'rounded-r-none flex-1 min-w-0'
-                  : 'w-full min-w-0',
-              )}
-              data-testid="asr-base-url-input"
-            />
-            {protocol === 'transcriptions' && preset !== 'custom' ? (
-              <span
-                data-testid="asr-base-url-suffix"
-                className="flex items-center rounded-r-lg border border-l-0 border-black/10 bg-black/5 px-3 font-mono text-meta text-muted-foreground dark:border-white/10 dark:bg-white/5 select-none"
-              >
-                /audio/transcriptions
-              </span>
-            ) : null}
-            </div>
-            {protocol === 'chat' && preset === 'bailian' ? (
-              <p
-                data-testid="asr-bailian-workspace-hint"
-                className="text-meta text-muted-foreground"
-              >
-                {t('settings:asr.hints.bailianWorkspace')}
-              </p>
-            ) : null}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2"><Label htmlFor="asr-api-key" className={labelClasses}>{t('settings:asr.apiKey')}</Label>{providerConsoleUrl && <button type="button" data-testid="asr-api-key-link" title={t('settings:asr.apiKeyLinkTitle')} className="inline-flex items-center gap-1 text-xs text-primary" onClick={() => void hostApi.shell.openExternal(providerConsoleUrl)}>{t('settings:asr.apiKeyLink')}<ExternalLink className="h-3 w-3" /></button>}</div>
+            <p data-testid="asr-api-key-status" className="text-xs text-muted-foreground">{t(hasApiKey ? 'settings:aiProviders.dialog.apiKeyConfigured' : 'settings:aiProviders.dialog.apiKeyMissing')}</p>
+            <Input id="asr-api-key" type="password" value={apiKey} onChange={event => setApiKey(event.target.value)} placeholder={hasApiKey ? t('settings:asr.apiKeyConfiguredPlaceholder') : undefined} autoComplete="off" className={inputClasses} data-testid="asr-api-key-input" />
           </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="asr-model" className={labelClasses}>
-                {t('settings:asr.model')}
-              </Label>
-              <Input
-                id="asr-model"
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                className={inputClasses}
-                data-testid="asr-model-input"
-              />
-            </div>
-            {protocol === 'chat' ? null : (
-              <div className="space-y-2">
-                <Label htmlFor="asr-language" className={labelClasses}>
-                  {t('settings:asr.language')}
-                </Label>
-                <Select
-                  id="asr-language"
-                  value={language}
-                  onValueChange={(value) => setLanguage(value)}
-                  className={cn(inputClasses, 'w-full')}
-                  data-testid="asr-language-input"
-                >
-                  <SelectItem value="">{t('settings:asr.languageAuto')}</SelectItem>
-                  {ASR_LANGUAGE_OPTIONS.map((code) => (
-                    <SelectItem key={code} value={code}>
-                      {code}
-                    </SelectItem>
-                  ))}
-                </Select>
-              </div>
-            )}
-          </div>
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="asr-api-key" className={labelClasses}>
-                {t('settings:asr.apiKey')}
-              </Label>
-              {providerConsoleUrl ? (
-                <Button
-                  type="button"
-                  variant="link"
-                  className="h-auto p-0 text-xs gap-0.5"
-                  onClick={() => void hostApi.shell.openExternal(providerConsoleUrl)}
-                  data-testid="asr-api-key-link"
-                  title={t('settings:asr.apiKeyLinkTitle')}
-                >
-                  {t('settings:asr.apiKeyLink')}
-                  <ExternalLink className="h-3 w-3" />
-                </Button>
-              ) : null}
-            </div>
-            <Input
-              id="asr-api-key"
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder={hasApiKey ? t('settings:asr.apiKeyConfiguredPlaceholder') : undefined}
-              className={inputClasses}
-              autoComplete="off"
-              data-testid="asr-api-key-input"
-            />
-          </div>
-          <div className="flex justify-end">
-            <Button
-              className="rounded-md h-9 text-sm"
-              onClick={() => void handleSave()}
-              disabled={saving}
-              data-testid="asr-save-button"
-            >
-              {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              {t('settings:asr.save')}
-            </Button>
-          </div>
-        </div>
-      )}
+          {protocol === 'transcriptions' && <div className="space-y-1.5"><Label htmlFor="asr-language">{t('settings:asr.language')}</Label><Select id="asr-language" value={language} onValueChange={setLanguage} className={inputClasses} data-testid="asr-language-input"><SelectItem value="">{t('settings:asr.languageAuto')}</SelectItem>{ASR_LANGUAGE_OPTIONS.map(value => <SelectItem key={value} value={value}>{value}</SelectItem>)}</Select></div>}
+          <details className="border-t border-border pt-3"><summary className="cursor-pointer text-xs font-medium text-muted-foreground">{t('settings:aiProviders.dialog.advancedConfig')}</summary><div className="mt-4 space-y-4">
+            <div className="space-y-1.5"><Label htmlFor="asr-protocol">{t('settings:asr.protocol.label')}</Label><Select id="asr-protocol" value={protocol} onValueChange={value => handleProtocolChange(value as AsrProtocol)} className={inputClasses} data-testid="asr-protocol-select">{ASR_PROTOCOLS.map(value => <SelectItem key={value} value={value}>{t(`settings:asr.protocol.${value}`)}</SelectItem>)}</Select></div>
+            <div className="space-y-1.5"><Label htmlFor="asr-base-url">{t('settings:asr.baseUrl')}</Label><div className="flex"><Input id="asr-base-url" value={baseUrl} onChange={event => setBaseUrl(event.target.value)} placeholder={protocol === 'transcriptions' && preset === 'custom' ? 'https://api.example.com/v1/audio/transcriptions' : 'https://api.example.com/v1'} className={cn(inputClasses, 'min-w-0', protocol === 'transcriptions' && preset !== 'custom' && 'rounded-r-none')} data-testid="asr-base-url-input" />{protocol === 'transcriptions' && preset !== 'custom' && <span data-testid="asr-base-url-suffix" className="flex shrink-0 items-center rounded-r-lg border border-l-0 border-input bg-surface-input px-2 text-[11px] text-muted-foreground">/audio/transcriptions</span>}</div></div>
+            {preset === 'bailian' && <><p data-testid="asr-bailian-workspace-hint" className="text-xs leading-relaxed text-muted-foreground">{t('settings:asr.hints.bailianWorkspace')}</p><p data-testid="asr-bailian-dialect-hint" className="text-xs leading-relaxed text-muted-foreground">{t('settings:asr.hints.bailianDialectPrefix')}<button type="button" className="text-primary hover:underline" data-testid="asr-bailian-docs-link" onClick={() => void hostApi.shell.openExternal(BAILIAN_DOCS_URL)}>{t('settings:asr.hints.bailianDialectLinkText')}</button>{t('settings:asr.hints.bailianDialectSuffix')}</p></>}
+          </div></details>
+        </fieldset>
+      </ModelConfigDialog>
     </div>
   );
 }

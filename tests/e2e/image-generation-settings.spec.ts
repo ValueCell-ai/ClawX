@@ -10,6 +10,8 @@ test.describe('Image generation settings page', () => {
     await navigateToSection(page, 'models');
     await expect(page.getByTestId('models-page')).toBeVisible();
     await page.getByTestId('models-tab-image-generation').click();
+    await page.getByTestId('image-generation-configure').click();
+    await page.getByTestId('image-generation-advanced').locator('summary').click();
   }
 
   test('shows image generation only in the developer-gated Models tab after skipping setup', async ({ page }) => {
@@ -38,6 +40,8 @@ test.describe('Image generation settings page', () => {
     });
     await expect(page.getByTestId('models-page')).toBeVisible();
     await page.getByTestId('models-tab-image-generation').click();
+    await page.getByTestId('image-generation-configure').click();
+    await page.getByTestId('image-generation-advanced').locator('summary').click();
     await expect(page.getByTestId('image-generation-settings')).toBeVisible();
     await expect(page.getByTestId('image-generation-settings-title')).toBeVisible();
     await expect(page.getByTestId('image-generation-relay-enabled')).toHaveCount(0);
@@ -50,23 +54,17 @@ test.describe('Image generation settings page', () => {
     await expect(page.getByTestId('image-generation-clear')).toBeDisabled();
   });
 
-  test('uses consistent single-level model configuration cards', async ({ page }) => {
-    await expect(page.getByTestId('setup-page')).toBeVisible();
+  test('keeps saved state separate from an editable configuration dialog', async ({ page }) => {
     await page.getByTestId('setup-skip-button').click();
-
     await expect(page.getByTestId('main-layout')).toBeVisible();
     await unlockDeveloperMode(page);
-
-    await expect(page.getByTestId('image-generation-settings-surface')).toBeVisible();
+    const dialog = page.getByTestId('image-generation-config-dialog');
+    await expect(dialog).toBeVisible();
     await expect(page.getByTestId('image-generation-settings-surface')).not.toHaveClass(/bg-surface-input/);
-    for (const testId of [
-      'image-generation-endpoint-card',
-      'image-generation-runtime-card',
-      'image-generation-actions-card',
-    ]) {
-      await expect(page.getByTestId(testId)).toBeVisible();
-      await expect(page.getByTestId(testId)).toHaveClass(/bg-surface-modal/);
-    }
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByTestId('image-generation-summary')).toBeVisible();
+    await expect(page.getByTestId('image-generation-configure')).toBeFocused();
   });
 
   test('configures an independent OpenAI-compatible image endpoint', async ({ page }) => {
@@ -206,6 +204,9 @@ test.describe('Image generation settings page', () => {
     await expect(confirmDialog).toBeVisible();
     await confirmDialog.getByRole('button', { name: 'Clear', exact: true }).click();
 
+    await expect(page.getByTestId('image-generation-config-dialog')).toHaveCount(0);
+    await page.getByTestId('image-generation-configure').click();
+    await page.getByTestId('image-generation-advanced').locator('summary').click();
     await expect(page.getByTestId('image-generation-relay-base-url')).toHaveValue('');
     await expect(page.getByTestId('image-generation-clear')).toBeDisabled();
   });

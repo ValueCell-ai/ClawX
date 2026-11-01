@@ -13,6 +13,7 @@ import type {
 import { normalizeProviderApiKeyInput } from '@/lib/providers';
 import { hostApi } from '@/lib/host-api';
 import { fetchProviderSnapshot } from '@/lib/provider-accounts';
+import { useAgentsStore } from './agents';
 
 // Re-export types for consumers that imported from here
 export type {
@@ -60,6 +61,7 @@ interface ProviderState {
   deleteApiKey: (providerId: string) => Promise<void>;
   setDefaultProvider: (providerId: string) => Promise<void>;
   setDefaultAccount: (accountId: string) => Promise<void>;
+  setDefaultModel: (accountId: string, modelId: string) => Promise<string>;
   validateApiKey: (
     providerId: string,
     apiKey: string,
@@ -275,6 +277,14 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
   },
 
   setDefaultProvider: async (providerId) => get().setDefaultAccount(providerId),
+
+  setDefaultModel: async (accountId, modelId) => {
+    const result = await hostApi.providers.setDefaultModel(accountId, modelId);
+    if (!result.success || !result.modelRef) throw new Error(result.error || 'Default model was not updated');
+    set({ defaultAccountId: accountId });
+    await useAgentsStore.getState().fetchAgents();
+    return result.modelRef;
+  },
 
   setDefaultAccount: async (accountId) => {
     try {

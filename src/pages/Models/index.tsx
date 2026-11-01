@@ -1,7 +1,8 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, X, MessageSquare, Mic, ImagePlus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, MessageSquare, Mic, ImagePlus, ChartColumn } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useGatewayStore } from '@/stores/gateway';
 import { useSettingsStore } from '@/stores/settings';
@@ -28,9 +29,10 @@ const USAGE_AUTO_REFRESH_INTERVAL_MS = 15_000;
 
 const HIDDEN_USAGE_MARKERS = ['gateway-injected', 'delivery-mirror'];
 
-type ModelsManagementTab = 'chat' | 'image-generation' | 'voice';
+type ModelsManagementTab = 'chat' | 'image-generation' | 'voice' | 'usage';
 
 function getModelsManagementTab(tab: string | null, devModeUnlocked: boolean): ModelsManagementTab {
+  if (tab === 'usage') return 'usage';
   if (tab === 'voice' || tab === 'image-generation') {
     return devModeUnlocked ? tab : 'chat';
   }
@@ -58,6 +60,8 @@ export function Models({ embedded = false }: { embedded?: boolean }) {
   const [usageWindow, setUsageWindow] = useState<UsageWindow>('7d');
   const [usagePage, setUsagePage] = useState(1);
   const [selectedUsageEntry, setSelectedUsageEntry] = useState<UsageHistoryEntry | null>(null);
+  const [usageContentOpen, setUsageContentOpen] = useState(false);
+  const usageTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [usageRefreshNonce, setUsageRefreshNonce] = useState(0);
   function formatUsageSource(source?: string): string | undefined {
     if (!source) return undefined;
@@ -195,7 +199,6 @@ export function Models({ embedded = false }: { embedded?: boolean }) {
         if (usageFetchGenerationRef.current !== generation) return;
 
         const normalized = Array.isArray(entries) ? entries : [];
-        setUsagePage(1);
         trackUiEvent('models.token_usage_fetch_succeeded', {
           generation,
           attempt,
@@ -274,7 +277,13 @@ export function Models({ embedded = false }: { embedded?: boolean }) {
   });
   const filteredUsageHistory = filterUsageHistoryByWindow(visibleUsageHistory, usageWindow);
   const usageGroups = groupUsageHistory(filteredUsageHistory, usageGroupBy);
-  const usagePageSize = 5;
+  const usageTotals = filteredUsageHistory.reduce((total, entry) => ({
+    total: total.total + entry.totalTokens,
+    input: total.input + entry.inputTokens,
+    output: total.output + entry.outputTokens,
+    cache: total.cache + entry.cacheReadTokens + entry.cacheWriteTokens,
+  }), { total: 0, input: 0, output: 0, cache: 0 });
+  const usagePageSize = 10;
   const usageTotalPages = Math.max(1, Math.ceil(filteredUsageHistory.length / usagePageSize));
   const safeUsagePage = Math.min(usagePage, usageTotalPages);
   const pagedUsageHistory = filteredUsageHistory.slice(
@@ -319,23 +328,24 @@ export function Models({ embedded = false }: { embedded?: boolean }) {
             }}
             data-testid="models-management-tabs"
           >
-            <TabsList className="bg-transparent p-0 gap-1">
-              <TabsTrigger className="rounded-lg px-4 data-[state=active]:bg-black/5 dark:data-[state=active]:bg-white/10 data-[state=active]:shadow-none" value="chat" data-testid="models-tab-chat">
+            <TabsList className="flex h-auto w-fit max-w-full flex-wrap justify-start gap-1 bg-transparent p-0">
+              <TabsTrigger className="rounded-lg px-3 data-[state=active]:bg-black/5 dark:data-[state=active]:bg-white/10 data-[state=active]:shadow-none" value="chat" data-testid="models-tab-chat">
                 <MessageSquare aria-hidden="true" className="mr-2 h-4 w-4" />
                 {t('dashboard:models.tabs.chat')}
               </TabsTrigger>
               {devModeUnlocked && (
                 <>
-                  <TabsTrigger className="rounded-lg px-4 data-[state=active]:bg-black/5 dark:data-[state=active]:bg-white/10 data-[state=active]:shadow-none" value="voice" data-testid="models-tab-voice">
+                  <TabsTrigger className="rounded-lg px-3 data-[state=active]:bg-black/5 dark:data-[state=active]:bg-white/10 data-[state=active]:shadow-none" value="voice" data-testid="models-tab-voice">
                     <Mic aria-hidden="true" className="mr-2 h-4 w-4" />
                 {t('dashboard:models.tabs.voice')}
                   </TabsTrigger>
-                  <TabsTrigger className="rounded-lg px-4 data-[state=active]:bg-black/5 dark:data-[state=active]:bg-white/10 data-[state=active]:shadow-none" value="image-generation" data-testid="models-tab-image-generation">
+                  <TabsTrigger className="rounded-lg px-3 data-[state=active]:bg-black/5 dark:data-[state=active]:bg-white/10 data-[state=active]:shadow-none" value="image-generation" data-testid="models-tab-image-generation">
                     <ImagePlus aria-hidden="true" className="mr-2 h-4 w-4" />
                 {t('dashboard:models.tabs.imageGeneration')}
                   </TabsTrigger>
                 </>
               )}
+              <TabsTrigger className="rounded-lg px-3 data-[state=active]:bg-black/5 dark:data-[state=active]:bg-white/10 data-[state=active]:shadow-none" value="usage" data-testid="models-tab-usage"><ChartColumn aria-hidden="true" className="mr-2 h-4 w-4" />{t('dashboard:models.tabs.usage')}</TabsTrigger>
             </TabsList>
             <TabsContent value="chat" className="mt-5">
               <ProvidersSettings />
@@ -350,12 +360,12 @@ export function Models({ embedded = false }: { embedded?: boolean }) {
                 </TabsContent>
               </>
             )}
-          </Tabs>
-
-          {(!devModeUnlocked || selectedManagementTab === 'chat') && <div>
+            <TabsContent value="usage" className="mt-5">
+          <div data-testid="models-usage-panel">
             <h2 className="text-lg font-sans text-foreground mb-4 font-medium tracking-normal">
               {t('dashboard:recentTokenHistory.title', 'Token Usage History')}
             </h2>
+            <p className="mb-4 text-xs leading-relaxed text-muted-foreground">{t('dashboard:recentTokenHistory.sourceHint')}</p>
             <div>
               {usageLoading ? (
                 <div className="flex items-center justify-center py-12 text-muted-foreground bg-black/5 dark:bg-white/5 rounded-xl border border-black/10 dark:border-white/10 border-dashed">
@@ -458,6 +468,9 @@ export function Models({ embedded = false }: { embedded?: boolean }) {
                     </p>
                   </div>
 
+                  <div data-testid="usage-summary" className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
+                    {([['totalTokens', usageTotals.total], ['inputShort', usageTotals.input], ['outputShort', usageTotals.output], ['cacheShort', usageTotals.cache]] as const).map(([label, value]) => <div key={label} className="flex items-baseline gap-2"><span className="text-xs text-muted-foreground">{t(`dashboard:recentTokenHistory.${label}`)}</span><span className="font-medium tabular-nums">{formatTokenCount(value)}</span></div>)}
+                  </div>
                   <UsageBarChart
                     groups={usageGroups}
                     emptyLabel={t('dashboard:recentTokenHistory.empty')}
@@ -505,7 +518,7 @@ export function Models({ embedded = false }: { embedded?: boolean }) {
                                 {typeof entry.costUsd === 'number' && Number.isFinite(entry.costUsd) ? `$${entry.costUsd.toFixed(4)}` : '—'}
                               </td>
                               {devModeUnlocked && <td className="px-3 py-2.5 text-right">
-                                {entry.content && <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground whitespace-nowrap" onClick={() => setSelectedUsageEntry(entry)}>
+                                {entry.content && <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground whitespace-nowrap" onClick={event => { usageTriggerRef.current = event.currentTarget; setSelectedUsageEntry(entry); setUsageContentOpen(true); }}>
                                   {t('dashboard:recentTokenHistory.viewContent')}
                                 </Button>}
                               </td>}
@@ -546,13 +559,17 @@ export function Models({ embedded = false }: { embedded?: boolean }) {
                 </div>
               )}
             </div>
-          </div>}
+          </div>
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
       {devModeUnlocked && selectedUsageEntry && (
         <UsageContentPopup
           entry={selectedUsageEntry}
-          onClose={() => setSelectedUsageEntry(null)}
+          open={usageContentOpen}
+          onReturnFocus={() => { if (usageTriggerRef.current?.isConnected) usageTriggerRef.current.focus(); }}
+          onClose={() => setUsageContentOpen(false)}
           title={t('dashboard:recentTokenHistory.contentDialogTitle')}
           closeLabel={t('dashboard:recentTokenHistory.close')}
           unknownModelLabel={t('dashboard:recentTokenHistory.unknownModel')}
@@ -681,50 +698,31 @@ export default Models;
 
 function UsageContentPopup({
   entry,
+  open,
+  onReturnFocus,
   onClose,
   title,
   closeLabel,
   unknownModelLabel,
 }: {
   entry: UsageHistoryEntry;
+  open: boolean;
+  onReturnFocus: () => void;
   onClose: () => void;
   title: string;
   closeLabel: string;
   unknownModelLabel: string;
 }) {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
-      role="dialog"
-      aria-modal="true"
-    >
-      <div className="w-full max-w-3xl rounded-2xl border border-black/10 dark:border-white/10 bg-background shadow-xl">
-        <div className="flex items-start justify-between gap-3 border-b border-black/10 dark:border-white/10 px-5 py-4">
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-foreground">{title}</p>
-            <p className="text-xs text-muted-foreground truncate mt-0.5">
-              {entry.model || unknownModelLabel} • {formatUsageTimestamp(entry.timestamp)}
-            </p>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 rounded-full"
-            onClick={onClose}
-            aria-label={closeLabel}
-          >
-            <X className="h-4 w-4" />
-          </Button>
+    <Dialog open={open} onOpenChange={open => { if (!open) onClose(); }}>
+      <DialogContent onCloseAutoFocus={event => { event.preventDefault(); onReturnFocus(); }} data-testid="usage-content-dialog" className="flex max-h-[85vh] w-[calc(100vw-2rem)] max-w-2xl flex-col gap-0 overflow-hidden rounded-xl bg-surface-modal p-0">
+        <div className="px-5 pb-4 pt-5">
+          <DialogTitle className="font-sans text-lg font-medium tracking-normal">{title}</DialogTitle>
+          <DialogDescription className="mt-1 text-xs">{entry.model || unknownModelLabel} · {formatUsageTimestamp(entry.timestamp)}</DialogDescription>
         </div>
-        <div className="max-h-[65vh] overflow-y-auto px-5 py-4">
-          <pre className="whitespace-pre-wrap break-words text-sm text-foreground font-mono">{entry.content}</pre>
-        </div>
-        <div className="flex justify-end border-t border-black/10 dark:border-white/10 px-5 py-3">
-          <Button variant="outline" onClick={onClose}>
-            {closeLabel}
-          </Button>
-        </div>
-      </div>
-    </div>
+        <div className="min-h-0 overflow-y-auto px-5 pb-5"><pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-foreground">{entry.content}</pre></div>
+        <div className="flex justify-end border-t border-border px-5 py-3"><Button variant="outline" className="h-9" onClick={onClose}>{closeLabel}</Button></div>
+      </DialogContent>
+    </Dialog>
   );
 }

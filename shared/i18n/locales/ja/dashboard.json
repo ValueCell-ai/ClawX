@@ -15,7 +15,8 @@
         "tabs": {
             "chat": "チャットモデル",
             "imageGeneration": "画像生成",
-            "voice": "音声入力"
+            "voice": "音声入力",
+            "usage": "使用量"
         }
     },
     "quickActions": {
@@ -76,7 +77,8 @@
             "total": "合計",
             "cost": "費用（USD）",
             "actions": "詳細"
-        }
+        },
+        "sourceHint": "使用量と費用はローカルの実行記録に基づき、サービス提供元の請求額と異なる場合があります。"
     },
     "imageGeneration": {
         "title": "画像生成",

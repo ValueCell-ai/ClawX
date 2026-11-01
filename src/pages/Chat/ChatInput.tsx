@@ -27,13 +27,14 @@ import { useGatewayStore } from '@/stores/gateway';
 import { useSettingsStore } from '@/stores/settings';
 import { useAgentsStore } from '@/stores/agents';
 import { useChatStore } from '@/stores/chat';
+import { useTaskModelStore } from '@/stores/task-models';
 import { EMPTY_DRAFT_ATTACHMENTS, useComposerDraftStore } from '@/stores/composer-drafts';
 import type { FileAttachment } from '@/types/attachment';
 export type { FileAttachment } from '@/types/attachment';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import { buildPreviewTarget } from '@/components/file-preview/build-preview-target';
 import { useProviderStore } from '@/stores/providers';
-import { buildConfiguredModelOptions, formatModelRefLabel, isConfiguredModelRefAvailable, resolveConfiguredModelRef } from '@/lib/model-options';
+import { buildConfiguredModelOptions, formatModelRefLabel, resolveConfiguredModelRef } from '@/lib/model-options';
 import type { AgentSummary } from '@/types/agent';
 import type { QuickAccessSkill } from '@/types/skill';
 import { useTranslation } from 'react-i18next';
@@ -48,7 +49,7 @@ import { useVoiceDictation } from '@/hooks/useVoiceDictation';
 import { VoiceDictationButton } from '@/components/voice/VoiceDictationButton';
 import { MicrophonePermissionDialog } from '@/components/voice/MicrophonePermissionDialog';
 import type { AsrMicrophoneAccessResult } from '@shared/host-api/contract';
-import { ModelIcon } from '@/components/common/ModelIcon';
+import { ModelPicker } from '@/components/common/ModelPicker';
 import { AcpSessionPlan } from './AcpSessionPlan';
 import { AcpSubagentSessions, type AcpSubagentSession } from './AcpSubagentSessions';
 
@@ -357,9 +358,6 @@ export function ChatInput({
   const skillsRequestRef = useRef(0);
   const [skillsError, setSkillsError] = useState<string | null>(null);
   const [selectedSkill, setSelectedSkill] = useState<QuickAccessSkill | null>(null);
-  const [switchingModelRef, setSwitchingModelRef] = useState<string | null>(null);
-  const [optimisticModelRef, setOptimisticModelRef] = useState<string | null>(null);
-  const [providerSnapshotReady, setProviderSnapshotReady] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const draftSelectionsRef = useRef(new Map<string, {
     start: number;
@@ -371,15 +369,19 @@ export function ChatInput({
   const gatewayStatus = useGatewayStore((s) => s.status);
   const devModeUnlocked = useSettingsStore((s) => s.devModeUnlocked);
   const agents = useAgentsStore((s) => s.agents);
-  const updateAgentModel = useAgentsStore((s) => s.updateAgentModel);
   const defaultModelRef = useAgentsStore((s) => s.defaultModelRef);
   const providerAccounts = useProviderStore((s) => s.accounts);
   const providerStatuses = useProviderStore((s) => s.statuses);
   const providerDefaultAccountId = useProviderStore((s) => s.defaultAccountId);
   const providerVendors = useProviderStore((s) => s.vendors);
-  const providerError = useProviderStore((s) => s.error);
   const refreshProviderSnapshot = useProviderStore((s) => s.refreshProviderSnapshot);
   const currentAgentId = useChatStore((s) => s.currentAgentId);
+  const sessionKey = draftKey ?? '';
+  const sessionIsDraft = useChatStore(s => !s.sessions.some(session => session.key === sessionKey && !session.createdLocally));
+  const taskModel = useTaskModelStore(s => s.choices[sessionKey]?.modelRef);
+  const modelLoading = useTaskModelStore(s => !!s.loading[sessionKey]);
+  const switchingModelRef = useTaskModelStore(s => !!s.saving[sessionKey]);
+  const modelError = useTaskModelStore(s => s.errors[sessionKey]);
   const currentAgent = useMemo(
     () => (agents ?? []).find((agent) => agent.id === currentAgentId) ?? null,
     [agents, currentAgentId],
@@ -397,31 +399,15 @@ export function ChatInput({
     ),
     [providerAccounts, providerDefaultAccountId, providerStatuses, providerVendors],
   );
-  const modelGroups = useMemo(() => {
-    const groups = new Map<string, { providerKey: string; providerName: string; options: typeof modelOptions }>();
-    for (const option of modelOptions) {
-      const group = groups.get(option.runtimeProviderKey);
-      if (group) {
-        group.options.push(option);
-      } else {
-        groups.set(option.runtimeProviderKey, {
-          providerKey: option.runtimeProviderKey,
-          providerName: option.providerName,
-          options: [option],
-        });
-      }
-    }
-    return [...groups.values()];
-  }, [modelOptions]);
   const configuredModelRef = useMemo(
-    () => resolveConfiguredModelRef(currentAgent?.modelRef, defaultModelRef, modelOptions),
+    () => currentAgent?.modelRef?.trim() || defaultModelRef?.trim() || resolveConfiguredModelRef(null, null, modelOptions),
     [currentAgent?.modelRef, defaultModelRef, modelOptions],
   );
-  const effectiveModelRef = optimisticModelRef || configuredModelRef;
+  const effectiveModelRef = taskModel || configuredModelRef;
   const currentModelLabel = useMemo(() => {
     const matchedOption = modelOptions.find((option) => option.modelRef === effectiveModelRef);
-    return matchedOption?.modelId || formatModelRefLabel(effectiveModelRef);
-  }, [effectiveModelRef, modelOptions]);
+    return modelError && !taskModel ? t('composer.modelReadFailed') : matchedOption?.modelId || formatModelRefLabel(effectiveModelRef);
+  }, [effectiveModelRef, modelOptions, modelError, taskModel, t]);
   const filteredQuickSkills = useMemo(() => {
     const query = skillQuery.trim().toLowerCase();
     if (!query) return quickSkills;
@@ -436,7 +422,7 @@ export function ChatInput({
   const showModelPicker = modelOptions.length > 1;
   const chatComposerStatusComponents = rendererExtensionRegistry.getChatComposerStatusComponents();
   const isGatewayUsable = gatewayStatus.state === 'running' && gatewayStatus.gatewayReady !== false;
-  const inputDisabled = disabled;
+  const inputDisabled = disabled || modelLoading || switchingModelRef;
   const attachmentsLocked = inputDisabled;
   const gatewayUnavailable = !isGatewayUsable;
   const workspaceSelectorDisabled = workspaceReadOnly || inputDisabled || sending || !onSelectWorkspace;
@@ -492,17 +478,7 @@ export function ChatInput({
     })
     : null;
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        await refreshProviderSnapshot();
-      } finally {
-        if (!cancelled) setProviderSnapshotReady(true);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    void refreshProviderSnapshot();
   }, [refreshProviderSnapshot]);
 
   useEffect(() => {
@@ -522,8 +498,10 @@ export function ChatInput({
   }, [gatewayStatus.state, refreshProviderSnapshot]);
 
   useEffect(() => {
-    setOptimisticModelRef(null);
-  }, [currentAgent?.modelRef, currentAgentId]);
+    if (sessionKey && !sessionIsDraft && gatewayStatus.state === 'running' && gatewayStatus.gatewayReady !== false) {
+      void useTaskModelStore.getState().read(sessionKey);
+    }
+  }, [sessionKey, sessionIsDraft, gatewayStatus.state, gatewayStatus.gatewayReady]);
 
   useEffect(() => {
     if (workspaceSelectorDisabled) {
@@ -538,13 +516,6 @@ export function ChatInput({
     setModelPickerOpen(false);
     setWorkspaceMenuOpen(false);
   }, [inputDisabled]);
-
-  useEffect(() => {
-    if (!providerSnapshotReady || providerError || !currentAgent || switchingModelRef || optimisticModelRef) return;
-    const override = (currentAgent.overrideModelRef || '').trim();
-    if (!override || isConfiguredModelRefAvailable(override, modelOptions)) return;
-    void updateAgentModel(currentAgent.id, null).catch(() => {});
-  }, [currentAgent, modelOptions, optimisticModelRef, providerError, providerSnapshotReady, switchingModelRef, updateAgentModel]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -725,27 +696,19 @@ export function ChatInput({
   };
 
   const handleSelectModel = useCallback(async (modelRef: string) => {
-    if (!currentAgent || switchingModelRef) return;
-    if (modelRef === effectiveModelRef) {
+    if (!currentAgent || !sessionKey || switchingModelRef || modelLoading) return;
+    if (modelRef === effectiveModelRef && !modelError) {
       setModelPickerOpen(false);
       return;
     }
 
-    const previousModelRef = effectiveModelRef;
-    const desiredOverride = modelRef === (defaultModelRef || '').trim() ? null : modelRef;
-    setSwitchingModelRef(modelRef);
-    setOptimisticModelRef(modelRef);
     setModelPickerOpen(false);
     try {
-      await updateAgentModel(currentAgent.id, desiredOverride);
+      await useTaskModelStore.getState().choose(sessionKey, modelRef, sessionIsDraft);
     } catch (error) {
-      setOptimisticModelRef(previousModelRef);
       toast.error(t('composer.modelSwitchFailed', { error: String(error) }));
-    } finally {
-      setSwitchingModelRef(null);
-      if (!hasFloatingSurface()) textareaRef.current?.focus();
     }
-  }, [currentAgent, defaultModelRef, effectiveModelRef, switchingModelRef, t, updateAgentModel]);
+  }, [currentAgent, effectiveModelRef, switchingModelRef, modelLoading, modelError, sessionKey, sessionIsDraft, t]);
 
   const handleSelectWorkspace = useCallback((path: string) => {
     if (workspaceSelectorDisabled || !onSelectWorkspace) return;
@@ -1420,73 +1383,14 @@ export function ChatInput({
                     percentageLabel={contextUsagePercentage}
                   />
                 )}
-                {showModelPicker && (
-                  <div className="relative min-w-0">
-                  <DropdownMenu.Root open={modelPickerOpen} onOpenChange={(open) => handlePickerOpenChange('model', open)} modal={false}>
-                  <DropdownMenu.Trigger asChild>
-                    <button
-                      type="button"
-                      data-testid="chat-model-picker-button"
-                      className={cn(
-                        'inline-flex h-8 max-w-[140px] sm:max-w-[220px] items-center gap-1 rounded-lg px-1.5 text-meta font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50',
-                        (modelPickerOpen || switchingModelRef) && 'text-foreground',
-                      )}
-                      disabled={inputDisabled || sending || !currentAgent || !!switchingModelRef}
-                      title={t('composer.pickModel')}
-                    >
-                      {switchingModelRef ? (
-                        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
-                      ) : (
-                        <ModelIcon modelName={currentModelLabel} testId="chat-model-picker-current-icon" />
-                      )}
-                      <span className="truncate">{currentModelLabel}</span>
-                      <ChevronDown className={cn('h-3.5 w-3.5 shrink-0 transition-transform', modelPickerOpen && 'rotate-180')} />
-                    </button>
-                    </DropdownMenu.Trigger>
-                  <DropdownMenu.Portal><DropdownMenu.Content side="top" align="end" sideOffset={8} onCloseAutoFocus={handlePickerCloseAutoFocus}
-                        className="w-72 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10"
-                        data-testid="chat-model-picker-menu"
-                      >
-                        <div className="px-3 py-1.5 text-tiny font-medium text-muted-foreground/80">
-                          {t('composer.modelPickerTitle')}
-                        </div>
-                        <DropdownMenu.RadioGroup value={effectiveModelRef || ""} className="max-h-64 space-y-1 overflow-y-auto">
-                          {modelGroups.map((group) => (
-                            <div key={group.providerKey} role="group" aria-label={group.providerName}
-                              data-testid={`chat-model-provider-group-${group.providerKey}`}>
-                              <div title={group.providerName} className="truncate px-3 pb-0.5 pt-1 text-tiny font-medium text-muted-foreground">
-                                {group.providerName}
-                              </div>
-                              <div className="clawx-menu-list">
-                                {group.options.map((option) => (
-                                  <DropdownMenu.RadioItem key={option.modelRef} value={option.modelRef} asChild>
-                                  <button
-                                    type="button"
-                                    onClick={() => void handleSelectModel(option.modelRef)}
-                                    className={cn(
-                                      'clawx-menu-item flex w-full items-center justify-between gap-3 text-left text-sm font-medium transition-colors',
-                                      menuOptionStateClass(option.modelRef === effectiveModelRef)
-                                    )}
-                                    data-testid={`chat-model-picker-option-${option.label}`}
-                                    title={option.label}
-                                    aria-current={option.modelRef === effectiveModelRef ? 'true' : undefined}
-                                  >
-                                    <span className="flex min-w-0 items-center gap-2">
-                                      <ModelIcon modelName={option.modelId} testId="chat-model-picker-option-icon" />
-                                      <span className="min-w-0 truncate">{option.modelId}</span>
-                                    </span>
-                                    <MenuSelectionIndicator selected={option.modelRef === effectiveModelRef} />
-                                  </button>
-                                  </DropdownMenu.RadioItem>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                        </DropdownMenu.RadioGroup>
-                      </DropdownMenu.Content></DropdownMenu.Portal>
-                    </DropdownMenu.Root>
-                </div>
-                )}
+                {showModelPicker && <ModelPicker
+                  options={modelOptions} value={effectiveModelRef} label={currentModelLabel}
+                  title={t('composer.modelPickerTitle')} testIdPrefix="chat-model-picker"
+                  open={modelPickerOpen} onOpenChange={open => handlePickerOpenChange('model', open)}
+                  onValueChange={ref => void handleSelectModel(ref)}
+                  disabled={inputDisabled || sending || !currentAgent} busy={switchingModelRef}
+                  onCloseAutoFocus={handlePickerCloseAutoFocus}
+                />}
 
                 {devModeUnlocked && (
                   <VoiceDictationButton

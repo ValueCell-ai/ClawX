@@ -231,6 +231,8 @@ test.describe('ClawX voice dictation', () => {
       await expect(page).toHaveURL(/\/models/);
       await expect(page).toHaveURL(/tab=voice/);
       await expect(page.getByTestId('asr-settings')).toBeVisible();
+      await page.getByTestId('asr-configure').click();
+      await page.getByTestId('asr-config-dialog').locator('summary').click();
 
       await expect(page.getByTestId('asr-protocol-select')).toHaveAttribute('value', 'transcriptions');
       await expect(page.getByTestId('asr-base-url-suffix')).toBeVisible();

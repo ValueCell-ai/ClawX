@@ -21,6 +21,23 @@ async function seedTestProvider(page: Parameters<typeof completeSetup>[0]): Prom
 }
 
 test.describe('ClawX provider lifecycle', () => {
+  test('renames a service without changing its identity or saved model', async ({ page }) => {
+    await completeSetup(page);
+    await seedTestProvider(page);
+    await navigateToSection(page, 'models');
+    const card = page.getByTestId(`provider-card-${TEST_PROVIDER_ID}`);
+    await expect(card).toContainText(TEST_PROVIDER_LABEL);
+    await page.getByTestId(`provider-more-${TEST_PROVIDER_ID}`).click();
+    await page.getByTestId(`provider-edit-${TEST_PROVIDER_ID}`).click();
+    const dialog = page.getByTestId(`provider-edit-dialog-${TEST_PROVIDER_ID}`);
+    await dialog.getByLabel('Display Name', { exact: true }).fill('Research service');
+    await dialog.getByTestId(`provider-edit-save-${TEST_PROVIDER_ID}`).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(card).toContainText('Research service');
+    await expect(card.getByTestId(`provider-model-${TEST_PROVIDER_ID}`)).toHaveText('kimi-k2.6');
+    await expect(page.getByTestId('providers-settings').getByText(TEST_PROVIDER_LABEL, { exact: true })).toHaveCount(0);
+  });
+
   test('promotes a remaining provider after deleting the default provider', async ({ page }) => {
     await completeSetup(page);
 
@@ -50,7 +67,7 @@ test.describe('ClawX provider lifecycle', () => {
       ];
 
       for (const provider of providers) {
-        await window.electron.ipcRenderer.invoke('provider:save', provider);
+        await window.electron.ipcRenderer.invoke('provider:save', provider, 'sk-model-selection-e2e');
       }
       await window.electron.ipcRenderer.invoke('provider:setDefault', providers[0].id);
     });
@@ -59,9 +76,12 @@ test.describe('ClawX provider lifecycle', () => {
     await expect(page.getByTestId('provider-card-moonshot-default-e2e')).toContainText('Default');
     await expect(page.getByTestId('provider-card-deepseek-replacement-e2e')).toBeVisible();
 
-    await page.getByTestId('provider-set-default-deepseek-replacement-e2e').click();
-    await expect(page.getByTestId('provider-set-default-deepseek-replacement-e2e')).toHaveCount(0);
-    await page.getByTestId('provider-set-default-moonshot-default-e2e').click();
+    await page.getByTestId('global-model-picker-button').click();
+    await page.getByRole('menuitemradio', { name: 'deepseek-flash', exact: true }).click();
+    await expect(page.getByTestId('global-model-picker-button')).toContainText('deepseek-flash');
+    await page.getByTestId('global-model-picker-button').click();
+    await page.getByRole('menuitemradio', { name: 'kimi-k2.6', exact: true }).click();
+    await expect(page.getByTestId('global-model-picker-button')).toContainText('kimi-k2.6');
     await page.getByTestId('provider-card-moonshot-default-e2e').hover();
     await page.getByTestId('provider-more-moonshot-default-e2e').click();
     await page.getByTestId('provider-delete-moonshot-default-e2e').click();
@@ -479,11 +499,8 @@ test.describe('ClawX provider lifecycle', () => {
     await page.getByTestId('provider-more-moonshot-edit').click();
     await page.getByTestId('provider-edit-moonshot-edit').click();
 
-    await expect(page.getByTestId('provider-edit-model-id-moonshot-edit')).toBeDisabled();
-    await expect(page.getByTestId('provider-edit-model-id-moonshot-edit')).toHaveValue('kimi-k2.6');
-    await expect(page.getByTestId('provider-edit-model-id-help-moonshot-edit')).toContainText(
-      'The model ID cannot be changed after creation.',
-    );
+    await expect(page.getByTestId('provider-edit-models-moonshot-edit').getByRole('listitem')).toHaveText(['kimi-k2.6']);
+    await expect(page.getByTestId('provider-edit-dialog-moonshot-edit').locator('input[id$="-model"]')).toHaveCount(0);
 
     await page.getByTestId('provider-edit-key-input-moonshot-edit').fill('sk-bad');
     await page.getByTestId('provider-edit-save-moonshot-edit').click();

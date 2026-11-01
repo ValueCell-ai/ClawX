@@ -120,6 +120,9 @@ for (const locale of locales) {
         const shortcut = page.getByTestId(`chat-home-skill-${name}`);
         await expect(shortcut).toHaveText(locale.labels[index]);
         if (!availableSkills.includes(name)) { await expect(shortcut).toBeVisible(); await expect(shortcut).toBeDisabled(); continue; }
+        // Shortcut focus/caret restoration runs in a frame. Finish it before
+        // Playwright selects all text for the next fill operation.
+        await input.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
         await input.fill('Keep my draft');
         await shortcut.click();
         await expect(input).toHaveValue(`/${name}  Keep my draft`);

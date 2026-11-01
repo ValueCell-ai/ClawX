@@ -74,8 +74,10 @@ test.describe('ClawX developer-mode gated UI', () => {
     await page.getByTestId('models-tab-image-generation').click();
     await expect(page.getByTestId('image-generation-settings')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Recent Token Usage' })).toHaveCount(0);
-    await page.getByTestId('models-tab-chat').click();
+    await page.getByTestId('models-tab-usage').click();
     await expect(page.getByRole('heading', { name: 'Recent Token Usage' })).toBeVisible();
+    await page.getByTestId('models-tab-chat').click();
+    await expect(page.getByRole('heading', { name: 'Recent Token Usage' })).toHaveCount(0);
     await page.getByTestId('providers-add-button').click();
     await expect(page.getByTestId('add-provider-dialog')).toBeVisible();
     await page.getByTestId('add-provider-type-siliconflow').click();

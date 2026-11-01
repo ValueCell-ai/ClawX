@@ -111,7 +111,7 @@
         "followDefault": "Follow global default · {{model}}",
         "notConfigured": "not configured",
         "currentModel": "Current · {{model}}",
-        "modelHint": "Selections take effect immediately. New tasks use this assistant’s default model.",
+        "modelHint": "Used as this assistant’s default for tasks without their own model choice. Follow the global default or select a dedicated model.",
         "customModel": "Custom model",
         "modelRefLabel": "Provider / model ID",
         "channelsTitle": "Messaging entry points",

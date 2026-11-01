@@ -22,6 +22,7 @@ import {
 import { validateApiKeyWithProvider } from './providers/provider-validation';
 import type { ProviderAccount } from '../shared/providers/types';
 import { isRecord } from './payload-utils';
+import { setGlobalDefaultModel } from './model-selection-service';
 
 type ProvidersApiContext = {
   gatewayManager: GatewayManager;
@@ -305,8 +306,8 @@ async function setDefaultProvider(payload: ProviderPayload<'setDefault'>, gatewa
   const providerService = getProviderService();
   const providerId = getProviderId(payload, 'setDefault');
   try {
-    await providerService._setDefaultProviderInternal(providerId);
     await syncDefaultProviderToRuntime(providerId, gatewayManager);
+    await providerService._setDefaultProviderInternal(providerId);
     return { success: true };
   } catch (error) {
     return { success: false, error: String(error) };
@@ -406,12 +407,8 @@ async function setDefaultAccount(payload: ProviderPayload<'setDefaultAccount'>, 
   const providerService = getProviderService();
   const accountId = getAccountId(payload, 'setDefaultAccount');
   try {
-    const currentDefault = await providerService.getDefaultAccountId();
-    if (currentDefault === accountId) {
-      return { success: true, noChange: true };
-    }
-    await providerService.setDefaultAccount(accountId);
     await syncDefaultProviderToRuntime(accountId, gatewayManager);
+    await providerService.setDefaultAccount(accountId);
     return { success: true };
   } catch (error) {
     return { success: false, error: String(error) };
@@ -496,6 +493,7 @@ export function createProvidersApi(ctx: ProvidersApiContext): CompleteHostServic
     deleteAccount: async (payload) => deleteAccount(payload, ctx.gatewayManager),
     deleteAccountApiKey: async (payload) => deleteAccount({ accountId: getAccountId(payload, 'deleteAccountApiKey'), apiKeyOnly: true }, ctx.gatewayManager),
     setDefaultAccount: async (payload) => setDefaultAccount(payload, ctx.gatewayManager),
+    setDefaultModel: setGlobalDefaultModel,
     requestOAuth,
     cancelOAuth,
     submitOAuth,

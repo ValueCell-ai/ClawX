@@ -14,7 +14,7 @@
     "launchAtStartupDesc": "ログイン時に ClawX を自動的に起動します"
   },
   "aiProviders": {
-    "title": "AI プロバイダー",
+    "title": "モデルサービス",
     "description": "AI モデルプロバイダーと API キーを設定",
     "overview": {
       "title": "プロバイダーアカウント",
@@ -33,7 +33,7 @@
       "model": "モデル設定",
       "fallback": "フォールバック設定"
     },
-    "add": "プロバイダーを追加",
+    "add": "サービスを追加",
     "custom": "カスタム",
     "notRequired": "不要",
     "empty": {
@@ -42,17 +42,20 @@
       "cta": "最初のプロバイダーを追加"
     },
     "dialog": {
-      "title": "AI プロバイダーを追加",
-      "desc": "新しい AI モデルプロバイダーを構成",
+      "title": "モデルサービスを追加",
+      "desc": "利用するモデルサービスに接続します。",
       "displayName": "表示名",
       "apiKey": "API キー",
-      "apiKeyConfigured": "このプロバイダーには API キーが保存されています。",
-      "apiKeyMissing": "このプロバイダーにはまだ API キーが保存されていません。",
+      "apiKeyConfigured": "API キーは保存済みです。",
+      "apiKeyMissing": "API キーは未保存です。",
       "apiKeyStored": "API キーはローカルマシンに保存されます。",
-      "replaceApiKey": "API キーを置き換える",
-      "replaceApiKeyHelp": "現在保存されている API キーをそのまま使う場合は、この欄を空のままにしてください。",
+      "replaceApiKey": "API キーを更新",
+      "replaceApiKeyHelp": "保存済みの API キーを使う場合は空欄にしてください。",
       "baseUrl": "ベース URL",
       "modelId": "モデル ID",
+      "configuredModels": "設定済みモデル",
+      "configuredModelsHint": "表示のみです。この一覧で全体の既定モデルは変更されません。",
+      "singleModelHint": "モデル ID を 1 つ入力してください。カンマ区切りには対応していません。",
       "modelIdEditDisabled": "モデル ID は作成後に変更できません。別のモデル ID を使用するには、このプロバイダーを削除して再度追加してください。",
       "codePlanPreset": "Code Plan プリセット",
       "codePlanMode": "Code Plan",
@@ -70,8 +73,8 @@
       "fallbackModelIdsHelp": "1 行につき 1 つのモデル ID を指定します。まず現在のプロバイダー内でこれらを試し、その後ほかのプロバイダーへフォールバックします。",
       "noFallbackOptions": "フォールバック先にするには、先に別のプロバイダーを追加してください。",
       "cancel": "キャンセル",
-      "change": "プロバイダーを変更",
-      "add": "プロバイダーを追加",
+      "change": "サービスを変更",
+      "add": "サービスを追加",
       "save": "保存",
       "customDoc": "ドキュメント",
       "validate": "検証",
@@ -404,5 +407,23 @@
       "title": "情報とヘルプ",
       "description": "バージョンや更新を確認し、ヘルプや問題報告にアクセスします。"
     }
+  },
+  "modelManagement": {
+    "globalDefault": "全体の既定モデル",
+    "defaultSaved": "全体の既定モデルを更新しました",
+    "defaultSaveFailed": "全体の既定モデルを更新できませんでした: {{error}}",
+    "globalDefaultHint": "全体の既定設定に従うアシスタントが使用します。タスクごとに別のモデルを選べます。",
+    "defaultUnset": "全体の既定モデルは未設定です",
+    "defaultUnavailable": "既定モデルを読み取れませんでした",
+    "loading": "設定を読み込み中…",
+    "editService": "モデルサービスを編集",
+    "editServiceHint": "接続先と認証情報を管理します。",
+    "configure": "設定する",
+    "editConfiguration": "設定を編集",
+    "notConfigured": "モデルは未設定です",
+    "configured": "設定を保存済み",
+    "needsConfiguration": "設定が必要です",
+    "voiceDescription": "音声をタスクの文章に変換するサービスを選びます。",
+    "imageDescription": "画像生成に使うサービスとモデルを選びます。"
   }
 }

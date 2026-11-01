@@ -5,6 +5,7 @@ import type { AttachmentRenderPart, RenderPart } from '@/lib/acp/timeline-types'
 const hostApiMock = vi.hoisted(() => ({
   loadAcpSession: vi.fn(),
   sendAcpPrompt: vi.fn(),
+  setSessionModel: vi.fn(),
   cancelAcpSession: vi.fn(),
   respondAcpPermission: vi.fn(),
   mediaThumbnails: vi.fn(),
@@ -43,6 +44,7 @@ vi.mock('@/lib/host-api', () => ({
     chat: {
       loadAcpSession: hostApiMock.loadAcpSession,
       sendAcpPrompt: hostApiMock.sendAcpPrompt,
+      setSessionModel: hostApiMock.setSessionModel,
       cancelAcpSession: hostApiMock.cancelAcpSession,
       respondAcpPermission: hostApiMock.respondAcpPermission,
     },
@@ -131,6 +133,7 @@ describe('ACP Chat store', () => {
     vi.resetModules();
     hostApiMock.loadAcpSession.mockReset().mockResolvedValue({ success: true, generation: 1 });
     hostApiMock.sendAcpPrompt.mockReset().mockResolvedValue({ success: true });
+    hostApiMock.setSessionModel.mockReset().mockImplementation(async (_key, modelRef) => ({ success: true, modelRef }));
     hostApiMock.cancelAcpSession.mockReset().mockResolvedValue({ success: true });
     hostApiMock.respondAcpPermission.mockReset().mockResolvedValue({ success: true });
     hostApiMock.mediaThumbnails.mockReset().mockResolvedValue({});
@@ -633,6 +636,29 @@ describe('ACP Chat store', () => {
       sessionKey: 'agent:pi:s1',
       limit: 1000,
     });
+  });
+
+  it('saves a draft model before sending its first prompt', async () => {
+    const { useAcpChatSessionStore } = await importStore();
+    const { useTaskModelStore } = await import('@/stores/task-models');
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
+    await useTaskModelStore.getState().choose('agent:pi:s1', 'custom-task/provider/model', true);
+    await useAcpChatSessionStore.getState().sendPrompt({ sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'hello' });
+    expect(hostApiMock.setSessionModel).toHaveBeenCalledWith('agent:pi:s1', 'custom-task/provider/model');
+    expect(hostApiMock.setSessionModel.mock.invocationCallOrder[0]).toBeLessThan(hostApiMock.sendAcpPrompt.mock.invocationCallOrder[0]);
+  });
+
+  it('retains the unsent text and does not prompt when the draft model cannot be saved', async () => {
+    const { useAcpChatSessionStore } = await importStore();
+    const { useTaskModelStore } = await import('@/stores/task-models');
+    const { useComposerDraftStore } = await import('@/stores/composer-drafts');
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
+    await useTaskModelStore.getState().choose('agent:pi:s1', 'custom-task/provider/model', true);
+    hostApiMock.setSessionModel.mockResolvedValueOnce({ success: false, error: 'Model unavailable' });
+    await expect(useAcpChatSessionStore.getState().sendPrompt({ sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'keep this draft' })).resolves.toBe(false);
+    expect(hostApiMock.sendAcpPrompt).not.toHaveBeenCalled();
+    expect(useComposerDraftStore.getState().drafts['agent:pi:s1']).toBe('keep this draft');
+    expect(useAcpChatSessionStore.getState().error).toContain('Model unavailable');
   });
 
   it('tracks live whole-turn timing and freezes it when the prompt settles', async () => {

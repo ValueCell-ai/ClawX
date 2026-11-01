@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { useTaskModelStore } from './task-models';
+import { useComposerDraftStore } from './composer-drafts';
 import type {
   AcpChatLoadPayload,
   AcpChatOperationResult,
@@ -1391,6 +1393,18 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       );
     }
     try {
+      const taskModels = useTaskModelStore.getState();
+      if (taskModels.choices[sessionKey]?.pending || taskModels.loading[sessionKey] || taskModels.saving[sessionKey] || taskModels.errors[sessionKey]) {
+        try {
+          await taskModels.applyPending(sessionKey);
+          if (!isCurrentAction(get(), sessionKey, generation) || loadRequestSeq !== loadRequestId) {
+            throw new Error('The task changed before its model selection finished');
+          }
+        } catch (error) {
+          useComposerDraftStore.getState().setDraft(sessionKey, existing => existing || input.message || '');
+          throw error;
+        }
+      }
       const promptResult = await hostApi.chat.sendAcpPrompt(payload);
       let replayResult: AcpChatOperationResult | null = null;
       let replayTimeline: AcpTimelineSnapshot | null = null;

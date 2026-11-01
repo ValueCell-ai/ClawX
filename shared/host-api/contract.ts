@@ -15,6 +15,9 @@ import type { MarketplaceSkill, QuickAccessSkill, Skill } from '../types/skill';
 import type { WebBrowserNavigatePayload } from '../web-browser';
 export type JsonRecord = Record<string, unknown>;
 export type HostSuccess = { success: boolean; error?: string };
+export type ModelSelectionResult = HostSuccess & { modelRef?: string | null };
+export type GlobalModelSelectionPayload = { accountId: string; modelId: string };
+export type TaskModelSelectionPayload = { sessionKey: string; modelRef: string };
 export type OptionalHostSuccess = { success?: boolean; error?: string };
 
 export type OpenClawDoctorMode = 'diagnose' | 'fix';
@@ -1051,6 +1054,7 @@ export type HostApiContract = {
     deleteAccount: (payload: ProviderAccountIdPayload) => HostSuccess;
     deleteAccountApiKey: (payload: ProviderAccountIdPayload) => HostSuccess;
     setDefaultAccount: (payload: ProviderAccountIdPayload) => HostSuccess;
+    setDefaultModel: (payload: GlobalModelSelectionPayload) => ModelSelectionResult;
     requestOAuth: (payload: ProviderOAuthRequestPayload) => HostSuccess;
     cancelOAuth: () => HostSuccess;
     submitOAuth: (payload: ProviderOAuthSubmitPayload) => HostSuccess;
@@ -1100,6 +1104,8 @@ export type HostApiContract = {
     turnTimings: (payload: SessionTurnTimingsPayload) => SessionTurnTimingsResult;
   };
   chat: {
+    getSessionModel: (payload: { sessionKey: string }) => ModelSelectionResult;
+    setSessionModel: (payload: TaskModelSelectionPayload) => ModelSelectionResult;
     getAcpSessionFamily: (payload: AcpSessionFamilyPayload) => AcpSessionFamilyResult;
     loadAcpSession: (payload: AcpChatLoadPayload) => AcpChatOperationResult;
     sendAcpPrompt: (payload: AcpChatPromptPayload) => AcpChatOperationResult;

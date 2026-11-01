@@ -9,6 +9,18 @@ ownedPaths:
   - src/App.tsx
   - src/pages/Settings/**
   - src/pages/Models/index.tsx
+  - src/components/settings/ModelConfigDialog.tsx
+  - src/components/settings/ModelConfigurationSummary.tsx
+  - src/components/settings/ModelDefaultSummary.tsx
+  - src/components/common/ModelPicker.tsx
+  - src/stores/task-models.ts
+  - electron/services/model-selection-service.ts
+  - tests/unit/chat-session-model.test.ts
+  - tests/unit/model-selection-service.test.ts
+  - src/components/settings/ProviderConnectionFields.tsx
+  - src/components/settings/ProvidersSettings.tsx
+  - src/components/settings/AsrSettings.tsx
+  - src/components/settings/ImageGenerationSettings.tsx
   - src/pages/Channels/index.tsx
   - src/pages/ComputerUse/index.tsx
   - src/pages/Agents/**
@@ -147,7 +159,9 @@ Assistant cards represent persistent configured OpenClaw agents, showing native 
 
 Management page visual consistency is covered by `tests/e2e/management-page-style.spec.ts`: compact system-font headings, shared page padding and width, and contained scroll regions across Skills, Models, Agents, Channels, Cron, Settings and Computer Use in desktop and narrow dark layouts.
 
-Provider configuration UI separates model and authentication metadata, keeps Set default visible, and puts editing and deletion in a keyboard-operable menu. Direct provider selection and the fixed add footer are covered by `tests/e2e/provider-lifecycle.spec.ts`; no changes to validation or credential storage are implied.
+Models exposes same-level chat, voice, image and usage tabs, retaining developer gates for voice/image. Service rows expose saved names, hosts and model metadata while the default summary reads the actual runtime default separately from credential account preferences. Add/edit share bounded dialogs and connection fields; native provider IDs, API-key validation, OAuth and fallback settings retain existing semantics. Voice and image show saved summaries, with configuration in the same dialog pattern and diagnostics in advanced disclosure. Usage background refresh preserves page/filter intent; content uses shared Radix dismissal, focus containment and return focus. Cover four locales and narrow dark layouts in `tests/e2e/models-layout.spec.ts`, provider validation and lifecycle in `tests/e2e/provider-lifecycle.spec.ts`, and image configuration/clearing in `tests/e2e/image-generation-settings.spec.ts`.
+
+Provider configuration UI separates model and authentication metadata and puts editing and deletion in a keyboard-operable menu. A global-default picker selects a concrete configured model; service rows have no Set default action. Save success requires native read-back, and account preferences are persisted afterward. Editing shows configured models as individual read-only list items, including imported services with model metadata but no account-level model. The actual global default stays in a separate summary; creation accepts a single model ID with an explicit no-comma-list hint. Direct provider selection and the fixed add footer are covered by `tests/e2e/provider-lifecycle.spec.ts`; no changes to validation or credential storage are implied.
 
 Model configuration tabs use consistent compact headings, icons and forms. Token usage records use a semantic table with distinct cache read/write columns, status placeholders and horizontal overflow in narrow windows.
 
@@ -162,3 +176,5 @@ Execution-agent selection in the composer or Start task on an assistant card ope
 Dropdown, select and rich picker interactions use shared Radix wrappers with centralized entrance/exit motion, reduced-motion support, focus restoration and viewport collision handling. Form selections preserve empty and disabled values; search-based skill insertion preserves drafts and caret positions.
 
 Workspace and Preview share one current file and one mounted preview surface. Tree selection never changes the top-level tab based on extension; attachment and activity entries select the same shared file. The workspace title and secondary assistant label replace decorative header pills. File search retains parent context and explicitly covers loaded tree entries; hidden files are opt-in and folders start collapsed. Folder expansion and bounded recent paths are retained in memory per agent/workspace; current-task files use existing session activity and omit latest-deleted paths. Search/empty/truncated states remain localized. Both dividers support keyboard and pointer resizing, file actions use typed scoped reveal routes, and windows below 1024px use a Radix drawer. Narrow file panels switch between navigation and detail with an explicit back action. Validate the localized desktop/drawer flow, clipboard, scope isolation and current task projection in `tests/e2e/workspace-panel.spec.ts` and the workspace/artifact unit specs.
+
+Model scope priority is task selection, then the Agent-specific model, then the global default. Agent details own Agent overrides. The composer never mutates Agent models or clears unavailable Agent configuration while browsing. Blank tasks retain model choices locally until the first prompt; existing tasks use Main-owned Gateway sessions.patch, and reads use an exact session-key match from sessions.list. A failed model selection blocks prompting with stale choices and preserves unsent text. Verify native write boundaries in tests/unit/model-selection-service.test.ts and task persistence, navigation and first-send order in tests/e2e/chat-model-picker.spec.ts.
