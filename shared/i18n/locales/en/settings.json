@@ -15,7 +15,7 @@
   },
   "aiProviders": {
     "title": "Model services",
-    "description": "Configure your AI model providers and API keys",
+    "description": "Manage providers and available models for text conversations.",
     "overview": {
       "title": "Provider Accounts",
       "description": "A summary of the provider accounts and models currently configured.",
@@ -46,7 +46,6 @@
       "desc": "Connect a service to use its models.",
       "displayName": "Display Name",
       "apiKey": "API Key",
-      "apiKeyConfigured": "An API key has been saved.",
       "apiKeyMissing": "No API key has been saved yet.",
       "apiKeyStored": "Your API key is stored locally on your machine.",
       "replaceApiKey": "Replace API key",
@@ -54,7 +53,6 @@
       "baseUrl": "Base URL",
       "modelId": "Model ID",
       "configuredModels": "Configured models",
-      "configuredModelsHint": "Read-only. This list does not change the global default model.",
       "singleModelHint": "Enter one model ID. Comma-separated lists are not supported.",
       "modelIdEditDisabled": "The model ID cannot be changed after creation. Delete this provider and add it again to use a different model ID.",
       "codePlanPreset": "Code Plan Preset",
@@ -99,7 +97,7 @@
     },
     "protocols": {
       "openai": "OpenAI Compatible",
-      "openaiCompletions": "OpenAI Completions",
+      "openaiCompletions": "OpenAI Chat Completions",
       "openaiResponses": "OpenAI Responses",
       "anthropic": "Anthropic Compatible"
     },
@@ -409,12 +407,6 @@
     }
   },
   "modelManagement": {
-    "globalDefault": "Global default model",
-    "defaultSaved": "Default model saved",
-    "defaultSaveFailed": "Could not save the default model: {{error}}",
-    "globalDefaultHint": "Used by assistants that follow the global default. Each task can choose another model.",
-    "defaultUnset": "No global default model is set",
-    "defaultUnavailable": "Unable to read the global default model",
     "loading": "Loading configuration…",
     "editService": "Edit model service",
     "editServiceHint": "Update the service connection and credentials.",
@@ -423,7 +415,7 @@
     "notConfigured": "No model configured",
     "configured": "Configuration saved",
     "needsConfiguration": "Configuration required",
-    "voiceDescription": "Choose the service that turns your voice into task instructions.",
-    "imageDescription": "Choose the service and model used to generate images."
+    "voiceDescription": "Configure the service and model that transcribe speech into the input box.",
+    "imageDescription": "Configure the service and model for image generation."
   }
 }

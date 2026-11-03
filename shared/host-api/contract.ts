@@ -320,7 +320,7 @@ export type AgentDeleteResult = AgentSnapshotResult & {
   /** Resolved path, present only when Main successfully removed a ClawX-managed workspace directory. */
   removedWorkspacePath?: string;
 };
-export type AgentCreatePayload = { name: string; inheritWorkspace?: boolean; instructions?: string };
+export type AgentCreatePayload = { name: string; inheritWorkspace?: boolean; instructions?: string; modelRef?: string };
 export type AgentUpdatePayload = { id: string; name: string };
 export type AgentUpdateModelPayload = { id: string; modelRef: string | null };
 export type AgentIdPayload = { id: string };

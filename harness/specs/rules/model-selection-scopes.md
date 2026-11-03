@@ -7,13 +7,20 @@ appliesTo:
   - chat-workspace-and-navigation
 ---
 
-Global model defaults select a concrete configured provider/model, including
-imported multi-model accounts with no account-level model. A successful save
-must reflect the runtime default, not merely a credential account preference.
-Repeated selection must repair stale account/runtime divergence rather than
-return success solely because the account ID matches.
+AI Models manages provider connections and the available model catalog. Do not
+expose global-default model selectors or default-provider badges on this page.
+Retain native global defaults for compatibility without migrating, backfilling,
+deleting, or materializing inherited settings during reads or page navigation.
+Existing API clients may still set native defaults; confirm the runtime value
+before reporting success instead of relying on a credential account preference.
 
-Agent details may set or clear that Agent's explicit model. Composer selection
+New assistants created in the UI select an explicit configured model using the
+shared ModelPicker. Save it with creation, not a separate follow-up mutation.
+Existing assistants display their effective model even when inherited or absent
+from the current catalog. Only deliberate selection writes that Agent's model,
+preserving fallbacks and unknown fields. Do not expose reset-to-global controls.
+Legacy clients may still omit creation models or clear explicit overrides.
+Composer selection
 belongs only to its task/session and must never call agents.updateModel or clear
 an Agent override while browsing. Blank drafts hold their choice locally until
 the first prompt creates a native session; existing session overrides persist

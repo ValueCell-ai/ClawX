@@ -34,10 +34,14 @@ export function createAgentsApi(_ctx: AgentsApiContext): CompleteHostServiceRegi
       const name = requireString(payload, 'name');
       const inheritWorkspace = isRecord(payload) ? payload.inheritWorkspace === true : undefined;
       const instructions = isRecord(payload) ? payload.instructions : undefined;
+      const modelRef = isRecord(payload) ? payload.modelRef : undefined;
       if (instructions !== undefined && (typeof instructions !== 'string' || instructions.length > 4000)) {
         throw new Error('instructions must be text of at most 4000 characters');
       }
-      const snapshot = await createAgent(name, { inheritWorkspace, instructions });
+      if (modelRef !== undefined && (typeof modelRef !== 'string' || !modelRef.trim())) {
+        throw new Error('modelRef must be a non-empty provider/model reference');
+      }
+      const snapshot = await createAgent(name, { inheritWorkspace, instructions, ...(modelRef !== undefined ? { modelRef } : {}) });
       syncAllProviderAuthToRuntime().catch((err) => {
         console.warn('[agents] Failed to sync provider auth after agent creation:', err);
       });

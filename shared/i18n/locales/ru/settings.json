@@ -15,7 +15,7 @@
   },
   "aiProviders": {
     "title": "Сервисы моделей",
-    "description": "Настройте провайдеров AI-моделей и API-ключи",
+    "description": "Управляйте провайдерами и доступными моделями для текстовых диалогов.",
     "overview": {
       "title": "Учётные записи провайдеров",
       "description": "Сводка об учётных записях провайдеров и моделях.",
@@ -46,7 +46,6 @@
       "desc": "Подключите сервис для доступа к моделям.",
       "displayName": "Отображаемое имя",
       "apiKey": "API-ключ",
-      "apiKeyConfigured": "API-ключ сохранён.",
       "apiKeyMissing": "API-ключ ещё не сохранён.",
       "apiKeyStored": "Ваш API-ключ хранится локально на вашем компьютере.",
       "replaceApiKey": "Заменить API-ключ",
@@ -54,7 +53,6 @@
       "baseUrl": "Базовый URL",
       "modelId": "ID модели",
       "configuredModels": "Настроенные модели",
-      "configuredModelsHint": "Только для просмотра. Этот список не изменяет глобальную модель по умолчанию.",
       "singleModelHint": "Введите один ID модели. Списки через запятую не поддерживаются.",
       "modelIdEditDisabled": "ID модели нельзя изменить после создания. Чтобы использовать другой ID, удалите этого провайдера и добавьте его снова.",
       "codePlanPreset": "Пресет Code Plan",
@@ -99,7 +97,7 @@
     },
     "protocols": {
       "openai": "Совместимый с OpenAI",
-      "openaiCompletions": "OpenAI Completions",
+      "openaiCompletions": "OpenAI Chat Completions",
       "openaiResponses": "OpenAI Responses",
       "anthropic": "Совместимый с Anthropic"
     },
@@ -409,12 +407,6 @@
     }
   },
   "modelManagement": {
-    "globalDefault": "Модель по умолчанию",
-    "defaultSaved": "Глобальная модель по умолчанию обновлена",
-    "defaultSaveFailed": "Не удалось обновить глобальную модель: {{error}}",
-    "globalDefaultHint": "Используется помощниками без собственной модели. Для отдельной задачи можно выбрать другую модель.",
-    "defaultUnset": "Общая модель по умолчанию не задана",
-    "defaultUnavailable": "Не удалось прочитать модель по умолчанию",
     "loading": "Загрузка настроек…",
     "editService": "Изменить сервис моделей",
     "editServiceHint": "Настройте подключение и учётные данные.",
@@ -423,7 +415,7 @@
     "notConfigured": "Модель не настроена",
     "configured": "Настройки сохранены",
     "needsConfiguration": "Требуется настройка",
-    "voiceDescription": "Выберите сервис для преобразования голоса в текст задачи.",
-    "imageDescription": "Выберите сервис и модель для создания изображений."
+    "voiceDescription": "Настройте сервис и модель для преобразования речи в текст в поле ввода.",
+    "imageDescription": "Настройте сервис и модель для генерации изображений."
   }
 }

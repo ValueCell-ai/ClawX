@@ -6,7 +6,7 @@ import type { ProviderAccount } from '@/stores/providers';
 import { modelFieldClasses } from './ModelConfigDialog';
 
 /** Shared connection fields; creation and editing retain their own lifecycle. */
-export function ProviderConnectionFields({ prefix, baseUrl, onBaseUrlChange, modelId, onModelChange, protocol, onProtocolChange, showBaseUrl, showModel, showProtocol, modelLocked = false, configuredModels, modelPlaceholder, modelTestId, modelHelpTestId, baseUrlTestId }: {
+export function ProviderConnectionFields({ prefix, baseUrl, onBaseUrlChange, modelId, onModelChange, protocol, onProtocolChange, showBaseUrl, showModel, showProtocol, modelLocked = false, configuredModels, modelPlaceholder, modelTestId, baseUrlTestId }: {
   prefix: string;
   baseUrl: string;
   onBaseUrlChange: (value: string) => void;
@@ -21,7 +21,6 @@ export function ProviderConnectionFields({ prefix, baseUrl, onBaseUrlChange, mod
   configuredModels?: string[];
   modelPlaceholder?: string;
   modelTestId: string;
-  modelHelpTestId?: string;
   baseUrlTestId: string;
 }) {
   const { t } = useTranslation('settings');
@@ -35,10 +34,9 @@ export function ProviderConnectionFields({ prefix, baseUrl, onBaseUrlChange, mod
       {showModel && <div className="space-y-1.5">
         {modelLocked ? <>
           <p id={`${prefix}-model-label`} className="text-sm font-medium leading-none">{t('aiProviders.dialog.configuredModels')}</p>
-          {savedModels.length > 0 ? <ul data-testid={modelTestId} aria-labelledby={`${prefix}-model-label`} aria-describedby={`${prefix}-model-help`} className="flex flex-wrap gap-1.5 pt-0.5">
+          {savedModels.length > 0 ? <ul data-testid={modelTestId} aria-labelledby={`${prefix}-model-label`} className="flex flex-wrap gap-1.5 pt-0.5">
             {savedModels.map(model => <li key={model} className="max-w-full break-all rounded-md bg-black/5 px-2.5 py-1 text-sm text-foreground dark:bg-white/10">{model}</li>)}
           </ul> : <p data-testid={modelTestId} className="text-sm text-muted-foreground">{t('modelManagement.notConfigured')}</p>}
-          <p id={`${prefix}-model-help`} data-testid={modelHelpTestId} className="text-xs leading-relaxed text-muted-foreground">{t('aiProviders.dialog.configuredModelsHint')}</p>
         </> : <>
           <Label htmlFor={`${prefix}-model`}>{t('aiProviders.dialog.modelId')}</Label>
           <Input id={`${prefix}-model`} value={modelId} onChange={event => onModelChange(event.target.value)} placeholder={modelPlaceholder || 'model-id'} className={modelFieldClasses} data-testid={modelTestId} aria-describedby={`${prefix}-model-help`} />

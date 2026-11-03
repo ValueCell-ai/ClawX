@@ -25,7 +25,7 @@ interface ModelPickerProps {
   testIdPrefix: string;
 }
 
-/** Shared model UI; callers retain ownership of global or task-specific changes. */
+/** Shared model UI; callers retain ownership of assistant or task-specific changes. */
 export const ModelPicker = forwardRef<HTMLButtonElement, ModelPickerProps>(function ModelPicker({
   options, value, label, title, onValueChange, disabled, busy = false,
   open, onOpenChange, onCloseAutoFocus, side = 'top', align = 'end',

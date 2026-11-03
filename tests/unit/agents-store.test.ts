@@ -67,6 +67,12 @@ describe('agents store deletion', () => {
     });
   });
 
+  it('passes an explicit model in the creation request without a second mutation', async () => {
+    createAgentMock.mockResolvedValue(survivingSnapshot);
+    await useAgentsStore.getState().createAgent('Writer', { modelRef: 'openai/model-a', inheritWorkspace: false });
+    expect(createAgentMock).toHaveBeenCalledWith({ name: 'Writer', modelRef: 'openai/model-a', inheritWorkspace: false });
+  });
+
   it('forgets renderer sessions only after Main confirms agent deletion', async () => {
     deleteAgentMock.mockResolvedValue({
       ...survivingSnapshot,

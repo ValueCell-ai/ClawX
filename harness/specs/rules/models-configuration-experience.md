@@ -7,9 +7,17 @@ appliesTo:
   - gateway-backend-communication
 ---
 
-Keep model services, their configured models and the actual runtime default distinct.
-Select the global default by explicit model, not by a service-row action.
-Global and task model controls must reuse `src/components/common/ModelPicker.tsx`.
+Keep model services and their configured models in AI Models; choose models in
+Assistants and individual tasks. Do not show a global-default summary or default
+service badges. Do not automatically set a global default when adding a service.
+Keep the standard page heading and icon tabs. Tab panels retain a short explanatory
+subtitle, without repeating the tab title or icon as a second heading. Voice/image
+edit actions belong in their saved-summary rows, and provider creation stays next
+to its subtitle. Preserve these subtitles in empty and configured states.
+Provider rows expose edit and delete directly as compact named icon buttons with
+localized tooltips. Do not hide these two actions in an overflow menu. Editing
+returns focus to its actual opener when the configuration dialog closes.
+Assistant and task model controls must reuse `src/components/common/ModelPicker.tsx`.
 Keep provider grouping, ModelIcon, compact option spacing, selection dots and
 Radix dismissal/motion in that shared component; consumers own persistence only.
 Preserve Radix-generated trigger IDs and link external labels with aria-labelledby;
@@ -18,7 +26,8 @@ Do not infer a global default solely from a credential account or imply every as
 and existing conversation will change. Keep missing metadata explicit.
 Display registered models as individual read-only list items, never comma-join them
 inside a single-model input. Creation accepts one model ID and explains that
-comma-separated input is unsupported; the global default remains a separate summary.
+comma-separated input is unsupported. Existing native defaults remain compatible
+and are never migrated as part of this presentation change.
 
 Add and edit forms share dialog and connection-field patterns. Retain existing validation,
 OAuth, local-provider defaults and immutable model-ID behavior. Keep diagnostics behind

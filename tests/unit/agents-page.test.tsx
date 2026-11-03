@@ -14,6 +14,7 @@ const loadWorkspaceMock = vi.fn();
 const readTextMock = vi.fn();
 const writeTextMock = vi.fn();
 const newSessionMock = vi.fn();
+const createAgentMock = vi.fn();
 const setWorkspaceMock = vi.fn();
 
 const { gatewayState, agentsState, providersState } = vi.hoisted(() => ({
@@ -51,7 +52,7 @@ vi.mock('@/stores/agents', () => ({
       fetchAgents: fetchAgentsMock,
       updateAgent: updateAgentMock,
       updateAgentModel: updateAgentModelMock,
-      createAgent: vi.fn(),
+      createAgent: createAgentMock,
       deleteAgent: vi.fn(),
     };
     return typeof selector === 'function' ? selector(state) : state;
@@ -129,6 +130,7 @@ describe('Agents page status refresh', () => {
     fetchAgentsMock.mockResolvedValue(undefined);
     updateAgentMock.mockResolvedValue(undefined);
     updateAgentModelMock.mockResolvedValue(undefined);
+    createAgentMock.mockResolvedValue(undefined);
     refreshProviderSnapshotMock.mockResolvedValue(undefined);
     loadWorkspaceMock.mockImplementation(async (workspace: string) => ({
       workspace, instructions: 'Use primary sources.\n\nPreserve all existing rules.', readOnly: false, error: null,
@@ -215,11 +217,47 @@ describe('Agents page status refresh', () => {
     providersState.accounts = [{ id: 'custom-12345678', label: 'Research Lab', vendorId: 'custom', authMode: 'local', enabled: true, model: 'model-a', metadata: { customModels: ['model-a', 'model-b'] }, updatedAt: '2026-10-31' }];
     render(<AgentsWithRouter />);
     fireEvent.click(screen.getByTestId('agent-manage-main'));
-    const trigger = screen.getByRole('combobox', { name: 'settingsDialog.modelLabel' });
+    const trigger = screen.getByTestId('agent-model-picker-button');
     fireEvent.keyDown(trigger, { key: 'ArrowDown' });
-    fireEvent.keyDown(await screen.findByRole('option', { name: 'model-b' }), { key: 'Enter' });
+    fireEvent.keyDown(await screen.findByRole('menuitemradio', { name: 'model-b' }), { key: 'Enter' });
     await waitFor(() => expect(updateAgentModelMock).toHaveBeenCalledWith('main', 'custom-12345678/model-b'));
     expect(screen.getAllByRole('dialog')).toHaveLength(1);
+  });
+
+  it('keeps an unknown inherited model visible and does not write it while browsing or cancelling', async () => {
+    agentsState.agents = [{ ...mainAgent, modelRef: 'external/exact-model', modelDisplay: 'exact-model' }];
+    render(<AgentsWithRouter />);
+    fireEvent.click(screen.getByTestId('agent-manage-main'));
+    expect(screen.getByTestId('agent-model-picker-button')).toHaveTextContent('exact-model');
+    expect(screen.getByTestId('agent-model-picker-button')).toBeDisabled();
+    expect(screen.getByTestId('agent-model-legacy-hint')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'profile.close' }));
+    expect(updateAgentModelMock).not.toHaveBeenCalled();
+    expect(createAgentMock).not.toHaveBeenCalled();
+  });
+
+  it('requires a configured model to create an assistant and never writes when cancelled', async () => {
+    agentsState.agents = [mainAgent];
+    render(<AgentsWithRouter />);
+    fireEvent.click(screen.getByTestId('agents-add-button'));
+    fireEvent.change(screen.getByLabelText('createDialog.nameLabel'), { target: { value: 'Planner' } });
+    expect(screen.getByTestId('agent-create-model-picker-button')).toBeDisabled();
+    expect(screen.getByTestId('agent-create-model-picker-button')).toHaveTextContent('profile.notConfigured');
+    expect(screen.getByRole('button', { name: 'createDialog.submit' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'common:actions.cancel' }));
+    expect(createAgentMock).not.toHaveBeenCalled();
+    expect(updateAgentModelMock).not.toHaveBeenCalled();
+  });
+
+  it('includes the explicit model in assistant creation without a follow-up model write', async () => {
+    agentsState.agents = [mainAgent];
+    providersState.accounts = [{ id: 'custom-12345678', label: 'Lab', vendorId: 'custom', authMode: 'local', enabled: true, model: 'model-a', updatedAt: '2026-10-31' }];
+    render(<AgentsWithRouter />);
+    fireEvent.click(screen.getByTestId('agents-add-button'));
+    fireEvent.change(screen.getByLabelText('createDialog.nameLabel'), { target: { value: 'Planner' } });
+    fireEvent.click(screen.getByRole('button', { name: 'createDialog.submit' }));
+    await waitFor(() => expect(createAgentMock).toHaveBeenCalledWith('Planner', { inheritWorkspace: false, instructions: '', modelRef: mainAgent.modelRef }));
+    expect(updateAgentModelMock).not.toHaveBeenCalled();
   });
 
   it('edits the full native SOUL.md and keeps the default assistant name editable', async () => {

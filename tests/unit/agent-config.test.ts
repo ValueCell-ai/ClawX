@@ -843,6 +843,35 @@ describe('agent config lifecycle', () => {
     expect(agentIds).not.toContain('1');
   });
 
+  it('creates an explicit-model assistant without materializing or changing existing model settings', async () => {
+    const defaults = { model: { primary: 'openai/old-model', fallbacks: ['openai/backup'] } };
+    const oldEntries = [
+      { id: 'main', name: 'Main', default: true },
+      { id: 'specialist', name: 'Specialist', model: { primary: 'openai/special', fallbacks: [], customField: 'keep' } },
+    ];
+    await writeOpenClawJson({ agents: { defaults, list: oldEntries } });
+    const { createAgent, listAgentsSnapshot } = await import('@electron/utils/agent-config');
+    await createAgent('Research', { modelRef: 'openai/new-model' });
+    const config = await readOpenClawJson();
+    const saved = config.agents as { defaults: unknown; list: Array<{ id: string; model?: unknown }> };
+    expect(saved.defaults).toEqual(defaults);
+    expect(saved.list.slice(0, 2)).toEqual(oldEntries);
+    expect(saved.list.find(agent => agent.id === 'research')?.model).toEqual({ primary: 'openai/new-model', fallbacks: ['openai/backup'] });
+    const before = await readFile(join(testHome, '.openclaw', 'openclaw.json'), 'utf8');
+    await listAgentsSnapshot();
+    expect(await readFile(join(testHome, '.openclaw', 'openclaw.json'), 'utf8')).toBe(before);
+  });
+
+  it('rejects an invalid creation model before writing config or provisioning files', async () => {
+    await writeOpenClawJson({ agents: { defaults: { model: 'openai/old-model' } } });
+    const before = await readFile(join(testHome, '.openclaw', 'openclaw.json'), 'utf8');
+    const { createAgent } = await import('@electron/utils/agent-config');
+    await expect(createAgent('Research', { modelRef: 'invalid' })).rejects.toThrow('provider/model');
+    await expect(createAgent('Research', { modelRef: '' })).rejects.toThrow('provider/model');
+    expect(await readFile(join(testHome, '.openclaw', 'openclaw.json'), 'utf8')).toBe(before);
+    await expect(access(join(testHome, '.openclaw', 'workspace-research'))).rejects.toThrow();
+  });
+
   it('seeds a default ClawX IDENTITY.md for newly created agent workspaces', async () => {
     await writeOpenClawJson({
       agents: {

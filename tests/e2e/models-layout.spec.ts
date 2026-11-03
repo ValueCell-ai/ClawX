@@ -1,7 +1,6 @@
 import { I18N_RESOURCES } from '../../shared/i18n/resources';
 import { navigateToSection } from './fixtures/navigation';
 import { expectQuietFieldFocus } from './fixtures/field-focus';
-import { settleFloatingSurface } from './fixtures/floating-ui';
 import { closeElectronApp, expect, getRecordedHostInvocations, getStableWindow, installIpcMocks, test } from './fixtures/electron';
 
 function stableKey(value: unknown): string {
@@ -11,7 +10,7 @@ function stableKey(value: unknown): string {
 }
 
 for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
-  test(`models show real defaults and consistent configuration, preserving usage browsing in ${language}`, async ({ launchElectronApp }, testInfo) => {
+  test(`models show a provider catalog without defaults, preserving configuration and usage browsing in ${language}`, async ({ launchElectronApp }, testInfo) => {
     const app = await launchElectronApp({ skipSetup: true });
     const text = I18N_RESOURCES[language];
     const accountId = 'custom-alpha123';
@@ -45,26 +44,18 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
           })),
         },
       });
-      await app.evaluate(({ app: _app }) => {
-        const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
-        const handlers = (ipcMain as unknown as { _invokeHandlers: Map<string, (...args: unknown[]) => Promise<{ data?: Record<string, unknown> }>> })._invokeHandlers;
-        const original = handlers.get('host:invoke')!;
-        let globalModel = 'custom-alpha123/model-alpha';
-        ipcMain.removeHandler('host:invoke');
-        ipcMain.handle('host:invoke', async (event, request) => {
-          const response = await original(event, request);
-          if (request.module === 'providers' && request.action === 'setDefaultModel' && response.data?.success) globalModel = String(response.data.modelRef);
-          if (request.module === 'agents' && request.action === 'list' && response.data) response.data.defaultModelRef = globalModel;
-          return response;
-        });
-      });
       const page = await getStableWindow(app);
       await page.reload();
       await navigateToSection(page, 'models');
       const table = page.getByTestId('token-usage-table');
       await expect(table).toHaveCount(0);
       for (const tab of ['chat', 'voice', 'image-generation', 'usage']) await expect(page.getByTestId(`models-tab-${tab}`).locator('svg')).toBeVisible();
-      await expect(page.getByTestId('models-default-value')).toContainText('model-alpha');
+      await expect(page.getByTestId('models-page-title')).toBeVisible();
+      await expect(page.getByRole('tabpanel').getByRole('heading', { level: 2 })).toHaveCount(0);
+      await expect(page.getByTestId('providers-settings-description')).toHaveText(text.settings.aiProviders.description);
+      await expect(page.getByTestId('providers-settings-description')).toHaveCSS('font-size', '14px');
+      await expect(page.getByTestId('models-default-summary')).toHaveCount(0);
+      await expect(page.getByTestId('global-model-picker-button')).toHaveCount(0);
       await expect(page.getByTestId(`provider-set-default-${accountId}`)).toHaveCount(0);
       const card = page.getByTestId(`provider-card-${accountId}`);
       await expect(card).toContainText('work.example');
@@ -72,22 +63,38 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       expect((await card.boundingBox())!.height).toBeLessThan(110);
       await page.screenshot({ path: testInfo.outputPath(`model-services-${language}.png`), animations: 'disabled' });
 
-      const more = page.getByTestId(`provider-more-${accountId}`);
-      await more.click();
-      await page.getByTestId(`provider-edit-${accountId}`).click();
+      await expect(page.getByTestId(`provider-more-${accountId}`)).toHaveCount(0);
+      const editTrigger = page.getByTestId(`provider-edit-${accountId}`);
+      const deleteTrigger = page.getByTestId(`provider-delete-${accountId}`);
+      await expect(editTrigger).toBeVisible();
+      await expect(deleteTrigger).toBeVisible();
+      await expect(editTrigger).toHaveAccessibleName(text.settings.aiProviders.card.editKey);
+      await expect(deleteTrigger).toHaveAccessibleName(text.settings.aiProviders.card.delete);
+      await page.getByTestId('models-page-title').hover();
+      await editTrigger.hover();
+      const editTooltip = page.getByRole('tooltip', { name: text.settings.aiProviders.card.editKey, exact: true });
+      await expect(editTooltip).toBeVisible();
+      await deleteTrigger.hover();
+      await expect(page.getByRole('tooltip', { name: text.settings.aiProviders.card.delete, exact: true })).toBeVisible();
+      await expect(editTooltip).toHaveCount(0);
+      await editTrigger.focus();
+      await editTrigger.press('Enter');
       const edit = page.getByTestId(`provider-edit-dialog-${accountId}`);
       await expect(edit).toHaveAccessibleName(text.settings.modelManagement.editService);
       const configuredModels = edit.getByRole('list', { name: text.settings.aiProviders.dialog.configuredModels, exact: true });
       await expect(configuredModels.getByRole('listitem')).toHaveText(['model-alpha', 'model-beta', 'gpt-5.5']);
+      await expect(configuredModels).not.toHaveAttribute('aria-describedby');
+      await expect(edit.getByTestId(`provider-edit-key-status-${accountId}`)).toHaveCount(0);
       await expect(edit.locator('input[id$="-model"]')).toHaveCount(0);
-      await expect(page.getByTestId('models-default-value')).toContainText('model-alpha');
+      await expect(page.getByTestId('models-default-summary')).toHaveCount(0);
+      await expect(page.getByTestId('global-model-picker-button')).toHaveCount(0);
       await expect(edit.getByTestId(`provider-edit-key-input-${accountId}`)).toHaveValue('');
       await expect(edit.getByTestId(`provider-edit-cancel-${accountId}`)).toHaveAccessibleName(text.settings.aiProviders.dialog.cancel);
       await edit.getByLabel(text.settings.aiProviders.dialog.displayName, { exact: true }).fill('Renamed API');
       await page.screenshot({ path: testInfo.outputPath(`model-edit-${language}.png`), animations: 'disabled' });
       await edit.getByTestId(`provider-edit-cancel-${accountId}`).click();
       await expect(edit).toHaveCount(0);
-      await expect(more).toBeFocused();
+      await expect(editTrigger).toBeFocused();
       await expect(card).toContainText('Work API');
 
       const add = page.getByTestId('providers-add-button');
@@ -103,48 +110,16 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       await expect(dialog).toHaveCount(0);
       await expect(add).toBeFocused();
 
-      const globalDefault = page.getByTestId('global-model-picker-button');
-      await globalDefault.click();
-      const globalMenu = page.getByTestId('global-model-picker-menu');
-      const globalTriggerId = await globalDefault.getAttribute('id');
-      expect(globalTriggerId).toBeTruthy();
-      await expect(globalMenu).toHaveAttribute('aria-labelledby', globalTriggerId!);
-      await expect(globalMenu).toHaveCSS('animation-name', 'clawx-floating-in');
-      await settleFloatingSurface(globalMenu);
-      const workModels = globalMenu.getByRole('group', { name: 'Work API', exact: true });
-      await expect(globalMenu.getByText('Work API', { exact: true })).toHaveCount(1);
-      await expect(workModels.getByRole('menuitemradio')).toHaveText(['model-alpha', 'model-beta', 'gpt-5.5']);
-      await expect(workModels.getByRole('menuitemradio', { name: 'gpt-5.5', exact: true }).getByTestId('global-model-picker-option-icon')).toHaveAttribute('data-model-icon', 'openai');
-      await expect(globalDefault.getByTestId('global-model-picker-current-icon')).toBeVisible();
-      expect((await workModels.getByRole('menuitemradio').first().boundingBox())!.height).toBe(28);
-      await page.screenshot({ path: testInfo.outputPath(`global-model-picker-${language}.png`), animations: 'disabled' });
-      await page.keyboard.press('Escape');
-      await expect(globalMenu).toHaveCount(0);
-      await expect(globalDefault).toBeFocused();
-      await globalDefault.click();
-      await page.getByRole('heading', { level: 1 }).click();
-      await expect(globalMenu).toHaveCount(0);
-      await globalDefault.press('ArrowDown');
-      await expect(globalMenu).toBeVisible();
-      await page.keyboard.press('End');
-      await expect(workModels.getByRole('menuitemradio', { name: 'gpt-5.5', exact: true })).toBeFocused();
-      await page.keyboard.press('ArrowUp');
-      await expect(workModels.getByRole('menuitemradio', { name: 'model-beta', exact: true })).toBeFocused();
-      await page.keyboard.press('Enter');
-      await expect(globalDefault).toContainText('model-beta');
-      await expect(globalDefault).toBeEnabled();
-      await expect(globalDefault).toBeFocused();
-      await globalDefault.click();
-      await page.getByRole('menuitemradio', { name: 'model-alpha', exact: true }).click();
-      await expect(page.getByText(/Model write rejected/)).toBeVisible();
-      await expect(globalDefault).toContainText('model-beta');
-      await expect(globalDefault).toBeFocused();
-      expect((await getRecordedHostInvocations(app)).filter(call => call.module === 'agents' && call.action === 'updateModel')).toHaveLength(0);
+      const browsingCalls = await getRecordedHostInvocations(app);
+      expect(browsingCalls.filter(call => call.module === 'agents' && ['create', 'updateModel'].includes(call.action))).toHaveLength(0);
+      expect(browsingCalls.filter(call => call.module === 'providers' && ['setDefaultModel', 'setDefaultAccount', 'setDefault'].includes(call.action))).toHaveLength(0);
 
       await page.getByTestId('models-tab-voice').click();
+      await expect(page.getByRole('tabpanel').getByRole('heading', { level: 2 })).toHaveCount(0);
+      await expect(page.getByTestId('asr-settings-description')).toHaveText(text.settings.modelManagement.voiceDescription);
       await expect(page.getByTestId('asr-summary')).toContainText(text.settings.modelManagement.needsConfiguration);
       await expect(page.getByTestId('asr-model-input')).toHaveCount(0);
-      const voiceConfigure = page.getByTestId('asr-configure');
+      const voiceConfigure = page.getByTestId('asr-summary').getByTestId('asr-configure');
       await voiceConfigure.click();
       const voiceDialog = page.getByTestId('asr-config-dialog');
       await expect(voiceDialog).toBeVisible();
@@ -159,8 +134,11 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       await expect(voiceConfigure).toBeFocused();
 
       await page.getByTestId('models-tab-image-generation').click();
+      await expect(page.getByRole('tabpanel').getByRole('heading', { level: 2 })).toHaveCount(0);
+      await expect(page.getByTestId('image-generation-settings-description')).toHaveText(text.settings.modelManagement.imageDescription);
       await expect(page.getByTestId('image-generation-summary')).toContainText('gpt-image-2');
-      await page.getByTestId('image-generation-configure').click();
+      await page.screenshot({ path: testInfo.outputPath(`model-image-summary-${language}.png`), animations: 'disabled' });
+      await page.getByTestId('image-generation-summary').getByTestId('image-generation-configure').click();
       const imageDialog = page.getByTestId('image-generation-config-dialog');
       await expect(imageDialog.getByTestId('image-generation-save')).toBeDisabled();
       await expect(imageDialog.getByTestId('image-generation-relay-api-key')).toHaveValue('');
@@ -171,6 +149,8 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       await expect(imageDialog).toHaveCount(0);
 
       await page.getByTestId('models-tab-usage').click();
+      await expect(page.getByRole('tabpanel').getByRole('heading', { level: 2 })).toHaveCount(0);
+      await expect(page.getByTestId('models-usage-description')).toHaveText(text.dashboard.recentTokenHistory.sourceHint);
       await expect(table).toBeVisible();
       const rows = table.getByTestId('token-usage-entry');
       await expect(rows).toHaveCount(10);
@@ -198,15 +178,10 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       await page.evaluate(() => document.documentElement.classList.add('dark'));
       await page.getByTestId('models-tab-chat').click();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-      await globalDefault.click();
-      const menuBounds = await globalMenu.boundingBox();
-      expect(menuBounds!.x).toBeGreaterThanOrEqual(0);
-      expect(menuBounds!.x + menuBounds!.width).toBeLessThanOrEqual(900);
-      expect(menuBounds!.y + menuBounds!.height).toBeLessThanOrEqual(650);
-      await expect(globalMenu.getByRole('menuitemradio', { name: 'gpt-5.5', exact: true })).toBeInViewport();
-      await page.keyboard.press('Escape');
-      await expect(globalDefault).toBeFocused();
       await page.getByTestId('models-tab-image-generation').click();
+      await expect(page.getByTestId('image-generation-settings-description')).toBeVisible();
+      await expect(page.getByTestId('image-generation-summary').getByTestId('image-generation-configure')).toBeInViewport();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await page.getByTestId('image-generation-configure').click();
       const bounds = await imageDialog.boundingBox();
       expect(bounds!.height).toBeLessThanOrEqual(650 * 0.85 + 1);

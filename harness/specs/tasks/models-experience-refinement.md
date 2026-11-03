@@ -29,14 +29,14 @@ touchedAreas:
   - README.ja-JP.md
 expectedUserBehavior:
   - The standard management header stays aligned and usage is accessible in a same-level tab.
-  - Service rows expose readable names, hosts and model summaries; actual global default model and unset states remain explicit.
+  - Service rows expose readable names, hosts and model summaries. Assistant-owned model selection supersedes the original global-default summary; see assistant-owned-models.
   - Editing presents configured models as a read-only list separate from the default summary; creation clearly accepts a single model ID without comma-separated syntax.
   - Add and edit configuration use consistent shared dialog and field patterns with localized labels, clear actions and focus return.
   - Voice and image settings expose current configuration status before editing, with diagnostics in advanced sections.
   - Automatic usage refresh retains valid pagination, filters and reading position; content dialogs support Escape and focus containment.
-  - The global default picker selects an explicit configured model and verifies the saved runtime default before reporting success.
-  - Global and task model controls reuse the same ModelPicker with provider groups, model icons, compact rows, selection indicators and Radix motion.
-  - Agent details configure an Agent-specific model or inheritance; the composer only changes its own task and never writes Agent configuration.
+  - Native global defaults remain compatible without exposing a default picker in the model catalog.
+  - Assistant and task model controls reuse the same ModelPicker with provider groups, model icons, compact rows, selection indicators and Radix motion.
+  - Agent details configure an Agent-specific model while preserving legacy inheritance; the composer only changes its own task and never writes Agent configuration.
   - Task model choices survive navigation and runtime reloads without leaking into other tasks or creating conversations merely by browsing a draft.
 requiredProfiles:
   - fast
@@ -50,7 +50,6 @@ requiredRules:
   - docs-sync
 requiredTests:
   - tests/unit/models-page.test.tsx
-  - tests/unit/model-default-summary.test.tsx
   - tests/unit/asr-settings.test.tsx
   - tests/e2e/models-layout.spec.ts
   - tests/e2e/provider-lifecycle.spec.ts

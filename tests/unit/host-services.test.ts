@@ -1638,6 +1638,9 @@ describe('host services', () => {
     const agentsApi = createAgentsApi({ gatewayManager: gatewayManager as never });
 
     await expect(agentsApi.create({ name: 'Writer' })).resolves.toEqual({ success: true, ...snapshot });
+    await expect(agentsApi.create({ name: 'Writer', modelRef: 'openai/model-a' })).resolves.toEqual({ success: true, ...snapshot });
+    expect(createAgentMock).toHaveBeenLastCalledWith('Writer', { inheritWorkspace: false, instructions: undefined, modelRef: 'openai/model-a' });
+    await expect(agentsApi.create({ name: 'Invalid', modelRef: '' })).rejects.toThrow('modelRef');
     await expect(agentsApi.update({ id: 'writer', name: 'Writer' })).resolves.toEqual({ success: true, ...snapshot });
 
     expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();

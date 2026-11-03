@@ -165,7 +165,8 @@ describe('Models page auto refresh', () => {
     expect(screen.queryByRole('heading', { name: 'Token Usage History' })).not.toBeInTheDocument();
 
     fireEvent.mouseDown(screen.getByTestId('models-tab-usage'), { button: 0 });
-    expect(screen.getByRole('heading', { name: 'Token Usage History' })).toBeInTheDocument();
+    expect(screen.getByTestId('models-usage-description')).toHaveTextContent('dashboard:recentTokenHistory.sourceHint');
+    expect(screen.queryByRole('heading', { name: 'Token Usage History' })).not.toBeInTheDocument();
   });
 
   it('opens only an allowed Models tab from the tab query parameter', async () => {

@@ -74,7 +74,7 @@
         "codePlanDoc": "Code Plan ドキュメント",
         "protocol": "プロトコル",
         "protocols": {
-            "openaiCompletions": "OpenAI Completions",
+            "openaiCompletions": "OpenAI Chat Completions",
             "openaiResponses": "OpenAI Responses",
             "anthropic": "Anthropic 互換"
         },

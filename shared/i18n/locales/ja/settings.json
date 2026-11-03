@@ -15,7 +15,7 @@
   },
   "aiProviders": {
     "title": "モデルサービス",
-    "description": "AI モデルプロバイダーと API キーを設定",
+    "description": "テキスト会話に使用するプロバイダーと利用可能なモデルを管理します。",
     "overview": {
       "title": "プロバイダーアカウント",
       "description": "現在設定されているプロバイダーアカウントとモデルの概要です。",
@@ -46,7 +46,6 @@
       "desc": "利用するモデルサービスに接続します。",
       "displayName": "表示名",
       "apiKey": "API キー",
-      "apiKeyConfigured": "API キーは保存済みです。",
       "apiKeyMissing": "API キーは未保存です。",
       "apiKeyStored": "API キーはローカルマシンに保存されます。",
       "replaceApiKey": "API キーを更新",
@@ -54,7 +53,6 @@
       "baseUrl": "ベース URL",
       "modelId": "モデル ID",
       "configuredModels": "設定済みモデル",
-      "configuredModelsHint": "表示のみです。この一覧で全体の既定モデルは変更されません。",
       "singleModelHint": "モデル ID を 1 つ入力してください。カンマ区切りには対応していません。",
       "modelIdEditDisabled": "モデル ID は作成後に変更できません。別のモデル ID を使用するには、このプロバイダーを削除して再度追加してください。",
       "codePlanPreset": "Code Plan プリセット",
@@ -99,7 +97,7 @@
     },
     "protocols": {
       "openai": "OpenAI 互換",
-      "openaiCompletions": "OpenAI Completions",
+      "openaiCompletions": "OpenAI Chat Completions",
       "openaiResponses": "OpenAI Responses",
       "anthropic": "Anthropic 互換"
     },
@@ -409,12 +407,6 @@
     }
   },
   "modelManagement": {
-    "globalDefault": "全体の既定モデル",
-    "defaultSaved": "全体の既定モデルを更新しました",
-    "defaultSaveFailed": "全体の既定モデルを更新できませんでした: {{error}}",
-    "globalDefaultHint": "全体の既定設定に従うアシスタントが使用します。タスクごとに別のモデルを選べます。",
-    "defaultUnset": "全体の既定モデルは未設定です",
-    "defaultUnavailable": "既定モデルを読み取れませんでした",
     "loading": "設定を読み込み中…",
     "editService": "モデルサービスを編集",
     "editServiceHint": "接続先と認証情報を管理します。",
@@ -423,7 +415,7 @@
     "notConfigured": "モデルは未設定です",
     "configured": "設定を保存済み",
     "needsConfiguration": "設定が必要です",
-    "voiceDescription": "音声をタスクの文章に変換するサービスを選びます。",
-    "imageDescription": "画像生成に使うサービスとモデルを選びます。"
+    "voiceDescription": "音声を文字に変換して入力欄に反映するサービスとモデルを設定します。",
+    "imageDescription": "画像生成に使用するサービスとモデルを設定します。"
   }
 }

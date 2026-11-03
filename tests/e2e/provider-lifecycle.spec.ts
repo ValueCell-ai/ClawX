@@ -27,7 +27,6 @@ test.describe('ClawX provider lifecycle', () => {
     await navigateToSection(page, 'models');
     const card = page.getByTestId(`provider-card-${TEST_PROVIDER_ID}`);
     await expect(card).toContainText(TEST_PROVIDER_LABEL);
-    await page.getByTestId(`provider-more-${TEST_PROVIDER_ID}`).click();
     await page.getByTestId(`provider-edit-${TEST_PROVIDER_ID}`).click();
     const dialog = page.getByTestId(`provider-edit-dialog-${TEST_PROVIDER_ID}`);
     await dialog.getByLabel('Display Name', { exact: true }).fill('Research service');
@@ -73,21 +72,16 @@ test.describe('ClawX provider lifecycle', () => {
     });
 
     await navigateToSection(page, 'models');
-    await expect(page.getByTestId('provider-card-moonshot-default-e2e')).toContainText('Default');
+    await expect(page.getByTestId('provider-card-moonshot-default-e2e')).toBeVisible();
+    await expect(page.getByTestId('global-model-picker-button')).toHaveCount(0);
     await expect(page.getByTestId('provider-card-deepseek-replacement-e2e')).toBeVisible();
 
-    await page.getByTestId('global-model-picker-button').click();
-    await page.getByRole('menuitemradio', { name: 'deepseek-flash', exact: true }).click();
-    await expect(page.getByTestId('global-model-picker-button')).toContainText('deepseek-flash');
-    await page.getByTestId('global-model-picker-button').click();
-    await page.getByRole('menuitemradio', { name: 'kimi-k2.6', exact: true }).click();
-    await expect(page.getByTestId('global-model-picker-button')).toContainText('kimi-k2.6');
     await page.getByTestId('provider-card-moonshot-default-e2e').hover();
-    await page.getByTestId('provider-more-moonshot-default-e2e').click();
     await page.getByTestId('provider-delete-moonshot-default-e2e').click();
 
     await expect(page.getByTestId('provider-card-moonshot-default-e2e')).toHaveCount(0);
-    await expect(page.getByTestId('provider-card-deepseek-replacement-e2e')).toContainText('Default');
+    await expect(page.getByTestId('provider-card-deepseek-replacement-e2e')).toBeVisible();
+    await expect.poll(() => page.evaluate(() => window.electron.ipcRenderer.invoke('provider:getDefault'))).toBe('deepseek-replacement-e2e');
     await expect(page.getByTestId('provider-set-default-deepseek-replacement-e2e')).toHaveCount(0);
   });
 
@@ -120,7 +114,6 @@ test.describe('ClawX provider lifecycle', () => {
     });
 
     await page.getByTestId(`provider-card-${TEST_PROVIDER_ID}`).hover();
-    await page.getByTestId(`provider-more-${TEST_PROVIDER_ID}`).click();
     await page.getByTestId(`provider-delete-${TEST_PROVIDER_ID}`).click();
 
     await expect(page.getByTestId(`provider-card-${TEST_PROVIDER_ID}`)).toHaveCount(0, { timeout: 500 });
@@ -136,7 +129,6 @@ test.describe('ClawX provider lifecycle', () => {
     await expect(page.getByTestId(`provider-card-${TEST_PROVIDER_ID}`)).toContainText(TEST_PROVIDER_LABEL);
 
     await page.getByTestId(`provider-card-${TEST_PROVIDER_ID}`).hover();
-    await page.getByTestId(`provider-more-${TEST_PROVIDER_ID}`).click();
     await page.getByTestId(`provider-delete-${TEST_PROVIDER_ID}`).click();
     await expect(page.getByTestId(`provider-card-${TEST_PROVIDER_ID}`)).toHaveCount(0);
 
@@ -496,7 +488,6 @@ test.describe('ClawX provider lifecycle', () => {
     await expect(page.getByTestId('provider-card-moonshot-edit')).toBeVisible();
 
     await page.getByTestId('provider-card-moonshot-edit').hover();
-    await page.getByTestId('provider-more-moonshot-edit').click();
     await page.getByTestId('provider-edit-moonshot-edit').click();
 
     await expect(page.getByTestId('provider-edit-models-moonshot-edit').getByRole('listitem')).toHaveText(['kimi-k2.6']);
@@ -648,12 +639,11 @@ test('provider configuration stays discoverable and its submit action stays visi
   await seedTestProvider(page);
   await navigateToSection(page, 'models');
   await expect(page.getByTestId(`provider-model-${TEST_PROVIDER_ID}`)).toHaveText('kimi-k2.6');
-  await page.getByTestId(`provider-more-${TEST_PROVIDER_ID}`).click();
-  await expect(page.getByTestId(`provider-edit-${TEST_PROVIDER_ID}`)).toHaveText('Edit configuration');
+  await expect(page.getByTestId(`provider-edit-${TEST_PROVIDER_ID}`)).toHaveAccessibleName('Edit configuration');
   await expect(page.getByTestId(`provider-delete-${TEST_PROVIDER_ID}`)).toBeVisible();
-  await expect(page.getByTestId(`provider-edit-${TEST_PROVIDER_ID}`)).toHaveCSS('height', '28px');
-  await expect(page.getByTestId(`provider-delete-${TEST_PROVIDER_ID}`)).toHaveCSS('height', '28px');
-  await page.keyboard.press('Escape');
+  await expect(page.getByTestId(`provider-edit-${TEST_PROVIDER_ID}`)).toHaveCSS('height', '32px');
+  await expect(page.getByTestId(`provider-delete-${TEST_PROVIDER_ID}`)).toHaveCSS('height', '32px');
+  await expect(page.getByTestId(`provider-more-${TEST_PROVIDER_ID}`)).toHaveCount(0);
   await page.getByTestId('providers-add-button').click();
   await expect(page.getByTestId('provider-search')).toHaveCount(0);
   await expect(page.getByTestId('add-provider-type-openai')).toBeVisible();

@@ -3,7 +3,7 @@ import { Select, SelectItem } from '@/components/ui/select';
  * Global image generation settings (agents.defaults.imageGenerationModel).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Eye, EyeOff, ImagePlus, Loader2, Play, RefreshCw, Trash2 } from 'lucide-react';
+import { Eye, EyeOff, Loader2, Play, RefreshCw, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -204,7 +204,7 @@ export function ImageGenerationSettings() {
   const busy = saving || clearing;
   return (
     <div data-testid="image-generation-settings" className="space-y-4">
-      <ModelConfigurationSummary prefix="image-generation" title={t('imageGeneration.title')} description={t('settings:modelManagement.imageDescription')} icon={ImagePlus} model={hasConfiguredRelay ? snapshot?.openAiRelay.model || snapshot?.config.primary || undefined : undefined} service={service} configured={configured} loading={loading} onConfigure={openEditor} triggerRef={triggerRef} />
+      <ModelConfigurationSummary prefix="image-generation" title={t('imageGeneration.title')} description={t('settings:modelManagement.imageDescription')} model={hasConfiguredRelay ? snapshot?.openAiRelay.model || snapshot?.config.primary || undefined : undefined} service={service} configured={configured} loading={loading} onConfigure={openEditor} triggerRef={triggerRef} />
       <ModelConfigDialog open={editorOpen} onClose={() => setEditorOpen(false)} title={t('imageGeneration.title')} description={t('settings:modelManagement.imageDescription')} testId="image-generation-config-dialog" busy={busy} returnFocusRef={triggerRef}
         footer={<><Button variant="outline" className="h-9" disabled={busy} onClick={() => setEditorOpen(false)}>{t('settings:aiProviders.dialog.cancel')}</Button><Button data-testid="image-generation-save" className="h-9" disabled={busy || !dirty} onClick={() => void handleSave()}>{saving && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}{t('imageGeneration.save')}</Button></>}
       >
@@ -214,7 +214,7 @@ export function ImageGenerationSettings() {
             <div className="space-y-1.5"><Label htmlFor="image-gen-relay-model">{t('imageGeneration.openAiRelay.model')}</Label><Input id="image-gen-relay-model" value={relayModel} onChange={event => setRelayModel(event.target.value)} placeholder="gpt-image-2" className={inputClasses} data-testid="image-generation-relay-model" /><p className="text-xs leading-relaxed text-muted-foreground">{t('imageGeneration.openAiRelay.modelHint')}</p></div>
             <div className="space-y-1.5">
               <Label htmlFor="image-gen-relay-api-key">{snapshot?.openAiRelay.apiKeyConfigured ? t('settings:aiProviders.dialog.replaceApiKey') : t('imageGeneration.openAiRelay.apiKey')}</Label>
-              <p data-testid="image-generation-api-key-status" className="text-xs text-muted-foreground">{t(snapshot?.openAiRelay.apiKeyConfigured ? 'settings:aiProviders.dialog.apiKeyConfigured' : 'settings:aiProviders.dialog.apiKeyMissing')}</p>
+              {!snapshot?.openAiRelay.apiKeyConfigured && <p data-testid="image-generation-api-key-status" className="text-xs text-muted-foreground">{t('settings:aiProviders.dialog.apiKeyMissing')}</p>}
               <div className="relative"><Input id="image-gen-relay-api-key" type={showRelayApiKey ? 'text' : 'password'} value={relayApiKey} onChange={event => setRelayApiKey(event.target.value)} placeholder={snapshot?.openAiRelay.apiKeyConfigured && snapshot.openAiRelay.providerKey !== 'openai' ? t('settings:aiProviders.dialog.replaceApiKeyHelp') : t('imageGeneration.openAiRelay.apiKeyPlaceholder')} className={cn(inputClasses, 'pr-10')} autoComplete="off" data-testid="image-generation-relay-api-key" /><button type="button" onClick={() => setShowRelayApiKey(value => !value)} aria-label={t(showRelayApiKey ? 'settings:aiProviders.dialog.hideKey' : 'settings:aiProviders.dialog.showKey')} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">{showRelayApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></div>
               <p data-testid="image-generation-api-key-help" className="text-xs text-muted-foreground">{t('settings:aiProviders.dialog.apiKeyStored')}</p>
             </div>

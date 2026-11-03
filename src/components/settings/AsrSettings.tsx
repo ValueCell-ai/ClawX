@@ -2,7 +2,7 @@
  * Global speech-to-text (ASR) settings for voice dictation.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ExternalLink, Loader2, Mic } from 'lucide-react';
+import { ExternalLink, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -169,7 +169,7 @@ export function AsrSettings() {
   };
   return (
     <div data-testid="asr-settings" className="space-y-4">
-      <ModelConfigurationSummary prefix="asr" title={t('settings:asr.title')} description={t('settings:modelManagement.voiceDescription')} icon={Mic} model={savedConfig?.model} service={savedConfig ? t(`settings:asr.presets.${savedConfig.preset}`) : undefined} configured={configured} loading={loading} onConfigure={openEditor} triggerRef={triggerRef} />
+      <ModelConfigurationSummary prefix="asr" title={t('settings:asr.title')} description={t('settings:modelManagement.voiceDescription')} model={savedConfig?.model} service={savedConfig ? t(`settings:asr.presets.${savedConfig.preset}`) : undefined} configured={configured} loading={loading} onConfigure={openEditor} triggerRef={triggerRef} />
       <ModelConfigDialog open={editorOpen} onClose={() => setEditorOpen(false)} title={t('settings:asr.title')} description={t('settings:modelManagement.voiceDescription')} testId="asr-config-dialog" busy={saving} returnFocusRef={triggerRef}
         footer={<><Button variant="outline" className="h-9" disabled={saving} onClick={() => setEditorOpen(false)}>{t('settings:aiProviders.dialog.cancel')}</Button><Button onClick={() => void handleSave()} disabled={saving} className="h-9" data-testid="asr-save-button">{saving && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}{t('settings:asr.save')}</Button></>}
       >
@@ -180,7 +180,7 @@ export function AsrSettings() {
           </div>
           <div className="space-y-1.5">
             <div className="flex items-center justify-between gap-2"><Label htmlFor="asr-api-key" className={labelClasses}>{t('settings:asr.apiKey')}</Label>{providerConsoleUrl && <button type="button" data-testid="asr-api-key-link" title={t('settings:asr.apiKeyLinkTitle')} className="inline-flex items-center gap-1 text-xs text-primary" onClick={() => void hostApi.shell.openExternal(providerConsoleUrl)}>{t('settings:asr.apiKeyLink')}<ExternalLink className="h-3 w-3" /></button>}</div>
-            <p data-testid="asr-api-key-status" className="text-xs text-muted-foreground">{t(hasApiKey ? 'settings:aiProviders.dialog.apiKeyConfigured' : 'settings:aiProviders.dialog.apiKeyMissing')}</p>
+            {!hasApiKey && <p data-testid="asr-api-key-status" className="text-xs text-muted-foreground">{t('settings:aiProviders.dialog.apiKeyMissing')}</p>}
             <Input id="asr-api-key" type="password" value={apiKey} onChange={event => setApiKey(event.target.value)} placeholder={hasApiKey ? t('settings:asr.apiKeyConfiguredPlaceholder') : undefined} autoComplete="off" className={inputClasses} data-testid="asr-api-key-input" />
           </div>
           {protocol === 'transcriptions' && <div className="space-y-1.5"><Label htmlFor="asr-language">{t('settings:asr.language')}</Label><Select id="asr-language" value={language} onValueChange={setLanguage} className={inputClasses} data-testid="asr-language-input"><SelectItem value="">{t('settings:asr.languageAuto')}</SelectItem>{ASR_LANGUAGE_OPTIONS.map(value => <SelectItem key={value} value={value}>{value}</SelectItem>)}</Select></div>}

@@ -1,4 +1,5 @@
 import { navigateToSection } from './fixtures/navigation';
+import { I18N_RESOURCES } from '../../shared/i18n/resources';
 import { expect, installIpcMocks, test } from './fixtures/electron';
 
 test.describe('Image generation settings page', () => {
@@ -43,7 +44,7 @@ test.describe('Image generation settings page', () => {
     await page.getByTestId('image-generation-configure').click();
     await page.getByTestId('image-generation-advanced').locator('summary').click();
     await expect(page.getByTestId('image-generation-settings')).toBeVisible();
-    await expect(page.getByTestId('image-generation-settings-title')).toBeVisible();
+    await expect(page.getByTestId('image-generation-config-dialog')).toHaveAccessibleName(I18N_RESOURCES.en.dashboard.imageGeneration.title);
     await expect(page.getByTestId('image-generation-relay-enabled')).toHaveCount(0);
     await expect(page.getByTestId('image-generation-relay-model')).toBeVisible();
     await expect(page.getByTestId('image-generation-openai-relay')).toBeVisible();
@@ -130,7 +131,7 @@ test.describe('Image generation settings page', () => {
     await unlockDeveloperMode(page);
 
     await expect(page.getByTestId('image-generation-relay-api-key')).toHaveValue('');
-    await expect(page.getByTestId('image-generation-api-key-status')).not.toBeEmpty();
+    await expect(page.getByTestId('image-generation-api-key-status')).toHaveCount(0);
     await expect(page.getByTestId('image-generation-relay-api-key')).toHaveAttribute('placeholder', /.+/);
   });
 

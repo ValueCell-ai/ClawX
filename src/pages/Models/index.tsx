@@ -362,10 +362,7 @@ export function Models({ embedded = false }: { embedded?: boolean }) {
             )}
             <TabsContent value="usage" className="mt-5">
           <div data-testid="models-usage-panel">
-            <h2 className="text-lg font-sans text-foreground mb-4 font-medium tracking-normal">
-              {t('dashboard:recentTokenHistory.title', 'Token Usage History')}
-            </h2>
-            <p className="mb-4 text-xs leading-relaxed text-muted-foreground">{t('dashboard:recentTokenHistory.sourceHint')}</p>
+            <p data-testid="models-usage-description" className="mb-4 text-sm leading-relaxed text-muted-foreground">{t('dashboard:recentTokenHistory.sourceHint')}</p>
             <div>
               {usageLoading ? (
                 <div className="flex items-center justify-center py-12 text-muted-foreground bg-black/5 dark:bg-white/5 rounded-xl border border-black/10 dark:border-white/10 border-dashed">

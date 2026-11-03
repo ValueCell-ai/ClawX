@@ -5,10 +5,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus,
-  MoreHorizontal,
   Trash2,
   Edit,
-  MessageSquare,
   Eye,
   EyeOff,
   Loader2,
@@ -23,9 +21,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ModelConfigDialog, modelFieldClasses } from './ModelConfigDialog';
 import { ProviderConnectionFields } from './ProviderConnectionFields';
-import { ModelDefaultSummary } from './ModelDefaultSummary';
-import { normalizeModelIdForRuntimeProvider, resolveRuntimeProviderKey, splitModelRef } from '@/lib/model-options';
-import * as DropdownMenu from '@/components/ui/dropdown-menu';
+import { normalizeModelIdForRuntimeProvider, resolveRuntimeProviderKey } from '@/lib/model-options';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   useProviderStore,
   type ProviderAccount,
@@ -174,21 +171,12 @@ export function ProvidersSettings() {
     createAccount,
     removeAccount,
     updateAccount,
-    setDefaultAccount,
     validateAccountApiKey,
   } = useProviderStore();
 
   const addTriggerRef = useRef<HTMLButtonElement>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
-  const [runtimeDefaultModel, setRuntimeDefaultModel] = useState<string | null | undefined>(undefined);
-  const runtimeDefaultAccount = useMemo(() => {
-    const parsed = splitModelRef(runtimeDefaultModel);
-    if (!parsed) return undefined;
-    const matches = accounts.filter(account => resolveRuntimeProviderKey(account) === parsed.providerKey);
-    return matches.find(account => account.id === defaultAccountId) ?? matches[0];
-  }, [accounts, defaultAccountId, runtimeDefaultModel]);
-  const defaultRowAccountId = runtimeDefaultModel === undefined ? defaultAccountId : runtimeDefaultAccount?.id;
   const vendorMap = new Map(vendors.map((vendor) => [vendor.id, vendor]));
   const existingVendorIds = new Set(accounts.map((account) => account.vendorId));
   const displayProviders = useMemo(
@@ -232,11 +220,6 @@ export function ProvidersSettings() {
         updatedAt: new Date().toISOString(),
       }, effectiveApiKey);
 
-      // Auto-set as default if no default is currently configured
-      if (!defaultAccountId) {
-        await setDefaultAccount(id);
-      }
-
       setShowAddDialog(false);
       toast.success(t('aiProviders.toast.added'));
     } catch (error) {
@@ -255,18 +238,13 @@ export function ProvidersSettings() {
 
   return (
     <div data-testid="providers-settings" className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 data-testid="providers-settings-title" className="flex items-center gap-2 text-lg font-sans text-foreground font-medium tracking-normal">
-          <MessageSquare aria-hidden="true" className="h-5 w-5 text-muted-foreground" />
-          {t('aiProviders.title', 'AI Providers')}
-        </h2>
-        <Button ref={addTriggerRef} data-testid="providers-add-button" onClick={() => setShowAddDialog(true)} className="rounded-md px-3 h-9 shadow-none font-medium text-meta">
+      <div className="flex items-center justify-between gap-3">
+        <p data-testid="providers-settings-description" className="min-w-0 text-sm leading-relaxed text-muted-foreground">{t('aiProviders.description')}</p>
+        <Button ref={addTriggerRef} data-testid="providers-add-button" onClick={() => setShowAddDialog(true)} className="h-9 shrink-0 rounded-md px-3 shadow-none font-medium text-meta">
           <Plus className="h-4 w-4 mr-2" />
           {t('aiProviders.add')}
         </Button>
       </div>
-
-      <ModelDefaultSummary accounts={accounts} statuses={statuses} vendors={vendors} defaultAccountId={defaultAccountId} onModelLoaded={setRuntimeDefaultModel} />
 
       {loading ? (
         <div className="flex items-center justify-center py-12 text-muted-foreground bg-black/5 dark:bg-white/5 rounded-xl border border-black/10 dark:border-white/10 border-dashed">
@@ -291,7 +269,6 @@ export function ProvidersSettings() {
               key={item.account.id}
               item={item}
               allProviders={displayProviders}
-              isDefault={item.account.id === defaultRowAccountId}
               isEditing={editingProvider === item.account.id}
               onEdit={() => setEditingProvider(item.account.id)}
               onCancelEdit={() => setEditingProvider(null)}
@@ -341,7 +318,6 @@ export function ProvidersSettings() {
 interface ProviderCardProps {
   item: ProviderListItem;
   allProviders: ProviderListItem[];
-  isDefault: boolean;
   isEditing: boolean;
   onEdit: () => void;
   onCancelEdit: () => void;
@@ -359,7 +335,6 @@ interface ProviderCardProps {
 function ProviderCard({
   item,
   allProviders,
-  isDefault,
   isEditing,
   onEdit,
   onCancelEdit,
@@ -371,7 +346,6 @@ function ProviderCard({
   const { t, i18n } = useTranslation('settings');
   const { account, vendor, status } = item;
   const editTriggerRef = useRef<HTMLElement | null>(null);
-  const menuRef = useRef<HTMLButtonElement>(null);
   const [displayName, setDisplayName] = useState(account.label);
   const [newKey, setNewKey] = useState('');
   const [baseUrl, setBaseUrl] = useState(account.baseUrl || '');
@@ -527,16 +501,19 @@ function ProviderCard({
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2">
             <button type="button" className="truncate rounded text-left text-sm font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={event => { editTriggerRef.current = event.currentTarget; onEdit(); }}>{account.label}</button>
-            {isDefault && <span className="shrink-0 rounded-md bg-black/5 px-1.5 py-0.5 text-[10px] text-muted-foreground dark:bg-white/10">{t('aiProviders.card.default')}</span>}
           </div>
           <p data-testid={`provider-model-${account.id}`} className="mt-0.5 truncate text-xs text-muted-foreground" title={models.join(', ')}>{modelSummary}{models.length > 2 && ` +${models.length - 2}`}</p>
           <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground"><span className="truncate">{host || vendor?.name || account.vendorId}</span><span aria-hidden="true">·</span><span className="shrink-0">{hasConfiguredCredentials(account, status) ? t('aiProviders.card.configured') : t('aiProviders.card.noKey')}</span></p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          <DropdownMenu.Root><DropdownMenu.Trigger asChild><Button ref={menuRef} data-testid={`provider-more-${account.id}`} variant="ghost" size="icon" className="h-8 w-8" aria-label={t('aiProviders.card.more')}><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content align="end" sideOffset={6} className="clawx-menu-list min-w-40 rounded-xl border border-border bg-surface-modal p-1.5 shadow-xl">
-            <DropdownMenu.Item data-testid={`provider-edit-${account.id}`} onSelect={() => { editTriggerRef.current = menuRef.current; onEdit(); }} className="clawx-menu-item flex items-center gap-2 text-sm"><Edit className="h-3.5 w-3.5" />{t('aiProviders.card.editKey')}</DropdownMenu.Item>
-            <DropdownMenu.Item data-testid={`provider-delete-${account.id}`} onSelect={onDelete} className="clawx-menu-item flex items-center gap-2 text-sm text-destructive"><Trash2 className="h-3.5 w-3.5" />{t('aiProviders.card.delete')}</DropdownMenu.Item>
-          </DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root>
+          <Tooltip disableHoverableContent>
+            <TooltipTrigger asChild><Button data-testid={`provider-edit-${account.id}`} type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" aria-label={t('aiProviders.card.editKey')} onClick={event => { editTriggerRef.current = event.currentTarget; onEdit(); }}><Edit aria-hidden="true" className="h-4 w-4" /></Button></TooltipTrigger>
+            <TooltipContent>{t('aiProviders.card.editKey')}</TooltipContent>
+          </Tooltip>
+          <Tooltip disableHoverableContent>
+            <TooltipTrigger asChild><Button data-testid={`provider-delete-${account.id}`} type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" aria-label={t('aiProviders.card.delete')} onClick={onDelete}><Trash2 aria-hidden="true" className="h-4 w-4" /></Button></TooltipTrigger>
+            <TooltipContent>{t('aiProviders.card.delete')}</TooltipContent>
+          </Tooltip>
         </div>
       </div>
       <ModelConfigDialog open={isEditing} onClose={onCancelEdit} title={t('modelManagement.editService')} description={t('modelManagement.editServiceHint')} testId={`provider-edit-dialog-${account.id}`} busy={busy} returnFocusRef={editTriggerRef}
@@ -545,10 +522,10 @@ function ProviderCard({
         <fieldset disabled={busy} className="min-w-0 space-y-4">
           <div className="space-y-1.5"><Label htmlFor={`provider-name-${account.id}`}>{t('aiProviders.dialog.displayName')}</Label><Input id={`provider-name-${account.id}`} value={displayName} onChange={event => setDisplayName(event.target.value)} className={inputClasses} maxLength={120} /></div>
           {effectiveDocsUrl && <a href={effectiveDocsUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-primary">{t('aiProviders.dialog.customDoc')}<ExternalLink className="h-3 w-3" /></a>}
-          <ProviderConnectionFields prefix={`provider-${account.id}`} baseUrl={baseUrl} onBaseUrlChange={setBaseUrl} modelId={modelId} onModelChange={setModelId} protocol={apiProtocol} onProtocolChange={setApiProtocol} showBaseUrl={!!typeInfo?.showBaseUrl} showModel={showModelIdField || models.length > 0} showProtocol={account.vendorId === 'custom'} modelLocked configuredModels={models} modelTestId={`provider-edit-models-${account.id}`} modelHelpTestId={`provider-edit-models-help-${account.id}`} baseUrlTestId={`provider-edit-base-url-${account.id}`} />
+          <ProviderConnectionFields prefix={`provider-${account.id}`} baseUrl={baseUrl} onBaseUrlChange={setBaseUrl} modelId={modelId} onModelChange={setModelId} protocol={apiProtocol} onProtocolChange={setApiProtocol} showBaseUrl={!!typeInfo?.showBaseUrl} showModel={showModelIdField || models.length > 0} showProtocol={account.vendorId === 'custom'} modelLocked configuredModels={models} modelTestId={`provider-edit-models-${account.id}`} baseUrlTestId={`provider-edit-base-url-${account.id}`} />
           <div className="space-y-1.5">
             <Label htmlFor={`provider-key-${account.id}`}>{t('aiProviders.dialog.replaceApiKey')}</Label>
-            <p className="text-xs text-muted-foreground">{hasConfiguredCredentials(account, status) ? t('aiProviders.dialog.apiKeyConfigured') : t('aiProviders.dialog.apiKeyMissing')}</p>
+            {!hasConfiguredCredentials(account, status) && <p data-testid={`provider-edit-key-status-${account.id}`} className="text-xs text-muted-foreground">{t('aiProviders.dialog.apiKeyMissing')}</p>}
             <div className="relative"><Input id={`provider-key-${account.id}`} data-testid={`provider-edit-key-input-${account.id}`} type={showKey ? 'text' : 'password'} autoComplete="off" value={newKey} onChange={event => { setNewKey(event.target.value); setValidationError(null); }} placeholder={account.vendorId === 'ollama' ? t('aiProviders.notRequired') : t('aiProviders.dialog.replaceApiKeyHelp')} className={cn(inputClasses, 'pr-10')} /><button type="button" aria-label={t(showKey ? 'aiProviders.dialog.hideKey' : 'aiProviders.dialog.showKey')} onClick={() => setShowKey(!showKey)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">{showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></div>
             {validationError && <p role="alert" data-testid={`provider-edit-validation-error-${account.id}`} className="text-xs text-red-700 dark:text-red-400">{validationError}</p>}
           </div>
