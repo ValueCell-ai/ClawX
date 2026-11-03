@@ -27,7 +27,7 @@ function requireString(payload: unknown, key: string): string {
   return payload[key].trim();
 }
 
-export function createAgentsApi(_ctx: AgentsApiContext): CompleteHostServiceRegistry['agents'] {
+export function createAgentsApi(ctx: AgentsApiContext): CompleteHostServiceRegistry['agents'] {
   return {
     list: async () => ({ success: true, ...(await listAgentsSnapshot()) }),
     create: async (payload) => {
@@ -50,6 +50,14 @@ export function createAgentsApi(_ctx: AgentsApiContext): CompleteHostServiceRegi
     updateModel: async (payload) => {
       const agentId = requireString(payload, 'id');
       const modelRef = isRecord(payload) && typeof payload.modelRef === 'string' ? payload.modelRef : null;
+      const status = ctx.gatewayManager.getStatus();
+      // Config hot reload can supersede OpenClaw's background model publication
+      // and leave admission permanently failed. Guard before any config/auth
+      // writes, while preserving stopped/offline and older Gateway behavior.
+      if (status.state === 'starting' || status.state === 'reconnecting'
+        || (status.state === 'running' && status.gatewayReady === false)) {
+        throw new Error(status.error || 'Gateway is still preparing agents. Please wait before switching models.');
+      }
       const snapshot = await updateAgentModel(agentId, modelRef);
       await syncAllProviderAuthToRuntime();
       await syncAgentModelOverrideToRuntime(agentId);

@@ -400,12 +400,29 @@ During that window:
   `agentDatabases: [{ agentId, code: "agent-database-inspection-pending" }]`.
   The entry disappears at the moment `sessions.list` returns the full catalog.
 
-The data is intact: once admission completes, the same Gateway returns every
-session. Main therefore publishes `gatewayReady: true` only after `/readyz`
-lists no pending agent database (`electron/gateway/agent-database-admission.ts`),
-with a bounded wait (`GATEWAY_AGENT_DATABASE_ADMISSION_WAIT_MS`). An
-unreachable probe or an older Gateway without `agentDatabases` does not block
-readiness.
+Once admission succeeds, the same Gateway returns the session catalog. Main
+therefore checks both pending and failed Agent refusals before publishing
+`gatewayReady: true` (`electron/gateway/agent-database-admission.ts`).
+`GATEWAY_AGENT_DATABASE_ADMISSION_WAIT_MS` now triggers a slow-preparation
+warning and slower polling, not forced readiness or a migration-interrupting
+restart. Valid readiness JSON with omitted/empty `agentDatabases` is accepted;
+modern Gateway omits the field after admission, as do older versions. Overall
+channel failures/HTTP 503 are not Agent admission failures. An unavailable
+probe retries three times before the compatibility fallback, which cannot
+override an explicit admission block, including across reconnects.
+
+The 2026-11-03 Windows report exposed a separate failure: switching the Agent
+model during background publication triggered config reload, then admission
+failed with `prepared model runtime publication was superseded`. The former
+pending-only probe mistook that terminal failure for completion. Main now
+rejects model writes during startup/reconnect or explicit non-readiness, while
+preserving offline and legacy undefined-readiness behavior. For this exact
+publication-race failure only, Main re-probes after a delay and may restart its
+own Gateway once, provided no Agent remains pending and lifecycle operations
+have settled. Other failures retain their diagnostics and do not auto-restart.
+The recovery budget survives stop/start and resets only on confirmed admission.
+External Gateways, schema migrations, Doctor, upgrade backups, and prompt
+replay are not changed. See task `fix-agent-startup-admission-race` for coverage.
 
 ## 2026.10 config shape written by ClawX
 

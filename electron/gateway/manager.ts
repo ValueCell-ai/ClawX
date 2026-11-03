@@ -93,7 +93,7 @@ import {
   GATEWAY_AGENT_DATABASE_ADMISSION_POLL_MS,
   GATEWAY_AGENT_DATABASE_ADMISSION_WAIT_MS,
 } from './recovery-budget';
-import { probePendingAgentDatabaseAdmissions } from './agent-database-admission';
+import { probeAgentDatabaseAdmissions } from './agent-database-admission';
 
 export interface GatewayStatus {
   state: GatewayLifecycleState;
@@ -227,8 +227,15 @@ export class GatewayManager extends EventEmitter {
     connectedAt: number | undefined;
     startedAt: number;
     pendingLogged: boolean;
+    observedBlock: boolean;
+    unknownAttempts: number;
+    error?: string;
+    recoveryAfter?: number;
   } | null = null;
   private gatewayReadyAdmissionTimer: NodeJS.Timeout | null = null;
+  // Survives stop/start and reconnects; only confirmed admission rearms recovery.
+  private gatewayAdmissionRecoveryUsed = false;
+  private gatewayAdmissionBlocked = false;
   private readonly capabilityMonitor = new GatewayCapabilityMonitor();
   private diagnostics: GatewayDiagnosticsSnapshot = {
     consecutiveHeartbeatMisses: 0,
@@ -784,8 +791,17 @@ export class GatewayManager extends EventEmitter {
       connectedAt: this.status.connectedAt,
       startedAt: Date.now(),
       pendingLogged: false,
+      observedBlock: false,
+      unknownAttempts: 0,
     };
     void this.checkGatewayReadyAdmission();
+  }
+
+  private scheduleGatewayReadyAdmissionCheck(delayMs = GATEWAY_AGENT_DATABASE_ADMISSION_POLL_MS): void {
+    this.gatewayReadyAdmissionTimer = setTimeout(() => {
+      this.gatewayReadyAdmissionTimer = null;
+      void this.checkGatewayReadyAdmission();
+    }, delayMs);
   }
 
   private async checkGatewayReadyAdmission(): Promise<void> {
@@ -798,33 +814,94 @@ export class GatewayManager extends EventEmitter {
       return;
     }
 
-    const pendingAgents = await probePendingAgentDatabaseAdmissions(this.status.port);
+    const admission = await probeAgentDatabaseAdmissions(this.status.port);
     if (!isCurrent()) {
       return;
     }
 
     const waitedMs = Date.now() - gate.startedAt;
-    if (pendingAgents && pendingAgents.length > 0) {
-      if (waitedMs < GATEWAY_AGENT_DATABASE_ADMISSION_WAIT_MS) {
-        if (!gate.pendingLogged) {
-          gate.pendingLogged = true;
-          logger.info(`Gateway ready deferred: agent database admission pending (agents=${pendingAgents.join(',')})`);
+    const reportError = (error: string) => {
+      if (gate.error === error) return;
+      gate.error = error;
+      logger.warn(error);
+      this.setStatus({ gatewayReady: false, error });
+    };
+    if (admission.state === 'unknown') {
+      gate.recoveryAfter = undefined;
+      gate.unknownAttempts += 1;
+      // Preserve the legacy unavailable-probe fallback, but never let a failed
+      // probe erase an explicit refusal (including across our recovery restart).
+      if (gate.unknownAttempts < 3 || this.gatewayAdmissionBlocked || this.gatewayAdmissionRecoveryUsed) {
+        if (gate.unknownAttempts >= 3 && !gate.error) {
+          reportError('Unable to verify Gateway agent database admission; waiting for readiness.');
         }
-        this.gatewayReadyAdmissionTimer = setTimeout(() => {
-          this.gatewayReadyAdmissionTimer = null;
-          void this.checkGatewayReadyAdmission();
-        }, GATEWAY_AGENT_DATABASE_ADMISSION_POLL_MS);
+        this.scheduleGatewayReadyAdmissionCheck(gate.unknownAttempts < 3 ? undefined : 5_000);
         return;
       }
-      logger.warn(
-        `Gateway agent database admission still pending after ${waitedMs}ms (agents=${pendingAgents.join(',')}); marking ready anyway`,
-      );
-    } else if (gate.pendingLogged) {
-      logger.info(`Gateway agent database admission completed after ${waitedMs}ms`);
+      logger.warn('Gateway admission probe unavailable after 3 attempts; retaining legacy readiness fallback');
+    } else if (admission.state === 'pending') {
+      this.gatewayAdmissionBlocked = true;
+      gate.observedBlock = true;
+      gate.unknownAttempts = 0;
+      gate.recoveryAfter = undefined;
+      if (!gate.pendingLogged) {
+        gate.pendingLogged = true;
+        logger.info(`Gateway ready deferred: agent database admission pending (agents=${admission.agentIds.join(',')})`);
+      }
+      const slow = waitedMs >= GATEWAY_AGENT_DATABASE_ADMISSION_WAIT_MS;
+      if (slow) {
+        reportError(`Gateway agent database preparation is taking longer than expected (agents=${admission.agentIds.join(',')}); still waiting.`);
+      }
+      // Slow upgrade migrations must neither be interrupted nor published ready.
+      this.scheduleGatewayReadyAdmissionCheck(slow ? 5_000 : undefined);
+      return;
+    } else if (admission.state === 'failed') {
+      this.gatewayAdmissionBlocked = true;
+      gate.observedBlock = true;
+      gate.unknownAttempts = 0;
+      const error = admission.failures.map(({ agentId, reason, repairHint }) =>
+        `Agent ${agentId}: ${reason}${repairHint ? `\n${repairHint}` : ''}`).join('\n');
+      if (gate.error !== error) gate.recoveryAfter = undefined;
+      reportError(error);
+      const recoverable = admission.pendingAgentIds.length === 0
+        && admission.failures.every(({ code, reason }) => code === 'agent-database-inspection-failed'
+          && reason.startsWith('prepared model runtime publication was superseded'));
+      if (recoverable && !this.gatewayAdmissionRecoveryUsed && this.ownsProcess
+        && this.shouldReconnect && !this.startLock && !this.restartInFlight) {
+        // Re-probe after a quiet interval before restarting. Existing explicit
+        // restart requests can supersede this gate; never queue an unfenced one.
+        gate.recoveryAfter ??= Date.now() + GatewayManager.RESTART_COOLDOWN_MS;
+        if (Date.now() >= gate.recoveryAfter) {
+          this.gatewayAdmissionRecoveryUsed = true;
+          logger.warn('Recovering superseded agent model publication with one owned Gateway restart');
+          try {
+            await this.restart();
+          } catch (error) {
+            logger.warn('Gateway agent admission recovery restart failed:', error);
+          }
+          // A governor-suppressed restart may leave the same connection alive.
+          if (isCurrent()) this.scheduleGatewayReadyAdmissionCheck(5_000);
+          return;
+        }
+      } else {
+        gate.recoveryAfter = undefined;
+      }
+      this.scheduleGatewayReadyAdmissionCheck(5_000);
+      return;
     }
 
+    if (admission.state === 'ready') {
+      this.gatewayAdmissionRecoveryUsed = false;
+      this.gatewayAdmissionBlocked = false;
+      if (gate.observedBlock) {
+        logger.info(`Gateway agent database admission completed after ${waitedMs}ms`);
+      }
+    }
     this.clearGatewayReadyAdmission();
-    this.setStatus({ gatewayReady: true });
+    this.setStatus({
+      gatewayReady: true,
+      ...(gate.error && this.status.error === gate.error ? { error: undefined } : {}),
+    });
   }
 
   private clearGatewayReadyFallbackTimer(): void {

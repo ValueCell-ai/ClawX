@@ -1,274 +1,290 @@
 // @vitest-environment node
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AgentDatabaseAdmissionResult } from '@electron/gateway/agent-database-admission';
+import type { GatewayStatus } from '@electron/gateway/manager';
+import { GATEWAY_AGENT_DATABASE_ADMISSION_WAIT_MS } from '@electron/gateway/recovery-budget';
 
-const { removeUpgradeSnapshotMock, probePendingAgentDatabaseAdmissionsMock } = vi.hoisted(() => ({
+const { removeUpgradeSnapshotMock, admissionProbe } = vi.hoisted(() => ({
   removeUpgradeSnapshotMock: vi.fn(async () => ({ status: 'removed' as const, snapshotDir: '/tmp/snapshot' })),
-  probePendingAgentDatabaseAdmissionsMock: vi.fn(async (): Promise<string[] | null> => []),
+  admissionProbe: vi.fn<() => Promise<AgentDatabaseAdmissionResult>>(async () => ({ state: 'ready' })),
 }));
 
-vi.mock('electron', () => ({
-  app: {
-    getPath: () => '/tmp',
-    isPackaged: false,
-  },
-  utilityProcess: {},
-}));
-
-vi.mock('@electron/utils/logger', () => ({
-  logger: {
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  },
-}));
-
-vi.mock('@electron/utils/config', () => ({
-  PORTS: { OPENCLAW_GATEWAY: 18789 },
-}));
-
-vi.mock('@electron/utils/openclaw-upgrade-snapshot', () => ({
-  removeOpenClawUpgradeSnapshot: removeUpgradeSnapshotMock,
-}));
-
-vi.mock('@electron/gateway/agent-database-admission', () => ({
-  probePendingAgentDatabaseAdmissions: probePendingAgentDatabaseAdmissionsMock,
-}));
-
+vi.mock('electron', () => ({ app: { getPath: () => '/tmp', isPackaged: false }, utilityProcess: {} }));
+vi.mock('@electron/utils/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
+vi.mock('@electron/utils/config', () => ({ PORTS: { OPENCLAW_GATEWAY: 18789 } }));
+vi.mock('@electron/utils/openclaw-upgrade-snapshot', () => ({ removeOpenClawUpgradeSnapshot: removeUpgradeSnapshotMock }));
+vi.mock('@electron/gateway/agent-database-admission', () => ({ probeAgentDatabaseAdmissions: admissionProbe }));
 vi.mock('@electron/gateway/startup-orchestrator', () => ({
-  runGatewayStartupSequence: vi.fn(async () => {
-    throw new Error('startup unavailable in unit test');
-  }),
+  runGatewayStartupSequence: vi.fn(async () => { throw new Error('startup unavailable in unit test'); }),
 }));
+
+const pending: AgentDatabaseAdmissionResult = { state: 'pending', agentIds: ['main'] };
+const superseded: AgentDatabaseAdmissionResult = {
+  state: 'failed',
+  failures: [{ agentId: 'main', code: 'agent-database-inspection-failed', reason: 'prepared model runtime publication was superseded for main' }],
+  pendingAgentIds: [],
+};
+
+async function createManager(owned = false) {
+  const { GatewayManager } = await import('@electron/gateway/manager');
+  const manager = new GatewayManager();
+  const internals = manager as unknown as {
+    stateController: { setStatus: (status: Partial<GatewayStatus>) => void };
+    clearGatewayReadyAdmission: () => void;
+    scheduleGatewayReadyFallback: () => void;
+    ownsProcess: boolean;
+    shouldReconnect: boolean;
+    startLock: boolean;
+    restartInFlight: Promise<void> | null;
+  };
+  let connection = 0;
+  const setRunning = () => {
+    internals.ownsProcess = owned;
+    internals.shouldReconnect = true;
+    internals.stateController.setStatus({ state: 'running', connectedAt: ++connection, gatewayReady: false, error: undefined });
+  };
+  setRunning();
+  const updates: GatewayStatus[] = [];
+  manager.on('status', (status) => updates.push(status));
+  const readyUpdates = () => updates.filter((status) => status.gatewayReady === true);
+  const signalReady = async () => {
+    manager.emit('gateway:ready', {});
+    await vi.advanceTimersByTimeAsync(0);
+  };
+  return { manager, internals, setRunning, readyUpdates, signalReady };
+}
 
 describe('GatewayManager gatewayReady fallback', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    vi.resetModules();
     vi.clearAllMocks();
-    probePendingAgentDatabaseAdmissionsMock.mockResolvedValue([]);
+    admissionProbe.mockReset().mockResolvedValue({ state: 'ready' });
   });
-
   afterEach(() => {
+    vi.clearAllTimers();
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
-  it('sets gatewayReady=false when entering starting state', async () => {
-    vi.resetModules();
-    const { GatewayManager } = await import('@electron/gateway/manager');
-    const manager = new GatewayManager();
-
-    const statusUpdates: Array<{ gatewayReady?: boolean }> = [];
-    manager.on('status', (status: { gatewayReady?: boolean }) => {
-      statusUpdates.push({ gatewayReady: status.gatewayReady });
-    });
-
-    const stateController = (manager as unknown as { stateController: { setStatus: (u: Record<string, unknown>) => void } }).stateController;
-    stateController.setStatus({ state: 'starting', gatewayReady: false });
-
-    const startingUpdate = statusUpdates.find((u) => u.gatewayReady === false);
-    expect(startingUpdate).toBeDefined();
-  });
-
-  it('emits gatewayReady=true when gateway:ready event is received', async () => {
-    vi.resetModules();
-    const { GatewayManager } = await import('@electron/gateway/manager');
-    const manager = new GatewayManager();
-
-    // Force internal state to 'running' for the test
-    const stateController = (manager as unknown as { stateController: { setStatus: (u: Record<string, unknown>) => void } }).stateController;
-    stateController.setStatus({ state: 'running', connectedAt: Date.now() });
-
-    const statusUpdates: Array<{ gatewayReady?: boolean; state: string }> = [];
-    manager.on('status', (status: { gatewayReady?: boolean; state: string }) => {
-      statusUpdates.push({ gatewayReady: status.gatewayReady, state: status.state });
-    });
-
-    manager.emit('gateway:ready', {});
-    await vi.advanceTimersByTimeAsync(0);
-
-    const readyUpdate = statusUpdates.find((u) => u.gatewayReady === true);
-    expect(readyUpdate).toBeDefined();
-  });
-
-  it('auto-sets gatewayReady=true after fallback RPC router probe succeeds', async () => {
-    vi.resetModules();
-    const { GatewayManager } = await import('@electron/gateway/manager');
-    const manager = new GatewayManager();
-    const rpcSpy = vi.spyOn(manager as unknown as { rpc: (method: string, params?: unknown, timeoutMs?: number) => Promise<unknown> }, 'rpc')
-      .mockResolvedValue({ ok: true });
-
-    // Force internal state to 'running' without gatewayReady
-    const stateController = (manager as unknown as { stateController: { setStatus: (u: Record<string, unknown>) => void } }).stateController;
-    stateController.setStatus({ state: 'running', connectedAt: Date.now() });
-
-    const statusUpdates: Array<{ gatewayReady?: boolean }> = [];
-    manager.on('status', (status: { gatewayReady?: boolean }) => {
-      statusUpdates.push({ gatewayReady: status.gatewayReady });
-    });
-
-    // Call the private scheduleGatewayReadyFallback method
-    (manager as unknown as { scheduleGatewayReadyFallback: () => void }).scheduleGatewayReadyFallback();
-
-    // The first readiness probe happens quickly after handshake, not after 30s.
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(statusUpdates.find((u) => u.gatewayReady === true)).toBeUndefined();
-
-    await vi.advanceTimersByTimeAsync(1_000);
-    const readyUpdate = statusUpdates.find((u) => u.gatewayReady === true);
-    expect(readyUpdate).toBeDefined();
-    expect(rpcSpy).toHaveBeenCalledWith('system-presence', {}, 5_000);
+  it('keeps starting unready and admits after a ready event', async () => {
+    const { manager, internals, setRunning, signalReady, readyUpdates } = await createManager();
+    internals.stateController.setStatus({ state: 'starting', gatewayReady: false });
+    await signalReady();
+    expect(manager.getStatus().gatewayReady).toBe(false);
+    expect(readyUpdates()).toHaveLength(0);
+    setRunning();
+    await signalReady();
+    expect(readyUpdates()).toHaveLength(1);
     expect(removeUpgradeSnapshotMock).not.toHaveBeenCalled();
   });
 
-  it('keeps gatewayReady=false when fallback RPC router probe fails', async () => {
-    vi.resetModules();
-    const { GatewayManager } = await import('@electron/gateway/manager');
-    const manager = new GatewayManager();
-    vi.spyOn(manager as unknown as { rpc: (method: string, params?: unknown, timeoutMs?: number) => Promise<unknown> }, 'rpc')
-      .mockRejectedValue(new Error('RPC timeout: system-presence'));
-
-    const stateController = (manager as unknown as { stateController: { setStatus: (u: Record<string, unknown>) => void } }).stateController;
-    stateController.setStatus({ state: 'running', connectedAt: Date.now() });
-
-    const statusUpdates: Array<{ gatewayReady?: boolean }> = [];
-    manager.on('status', (status: { gatewayReady?: boolean }) => {
-      statusUpdates.push({ gatewayReady: status.gatewayReady });
-    });
-
-    (manager as unknown as { scheduleGatewayReadyFallback: () => void }).scheduleGatewayReadyFallback();
-
-    await vi.advanceTimersByTimeAsync(2_000);
-    expect(statusUpdates.find((u) => u.gatewayReady === true)).toBeUndefined();
-  });
-
-  it('cancels fallback timer when gateway:ready event arrives first', async () => {
-    vi.resetModules();
-    const { GatewayManager } = await import('@electron/gateway/manager');
-    const manager = new GatewayManager();
-
-    const stateController = (manager as unknown as { stateController: { setStatus: (u: Record<string, unknown>) => void } }).stateController;
-    stateController.setStatus({ state: 'running', connectedAt: Date.now() });
-
-    const statusUpdates: Array<{ gatewayReady?: boolean }> = [];
-    manager.on('status', (status: { gatewayReady?: boolean }) => {
-      statusUpdates.push({ gatewayReady: status.gatewayReady });
-    });
-
-    // Schedule fallback
-    (manager as unknown as { scheduleGatewayReadyFallback: () => void }).scheduleGatewayReadyFallback();
-
-    // gateway:ready event arrives at 5s
-    await vi.advanceTimersByTimeAsync(5_000);
-    manager.emit('gateway:ready', {});
-    await vi.advanceTimersByTimeAsync(0);
-    expect(statusUpdates.filter((u) => u.gatewayReady === true)).toHaveLength(1);
-
-    // After enough time, no duplicate gatewayReady=true
-    await vi.advanceTimersByTimeAsync(30_000);
-    expect(statusUpdates.filter((u) => u.gatewayReady === true)).toHaveLength(1);
-  });
-
-  it('defers gatewayReady while an agent database admission is pending after an unclean restart', async () => {
-    vi.resetModules();
-    const { GatewayManager } = await import('@electron/gateway/manager');
-    const manager = new GatewayManager();
-    probePendingAgentDatabaseAdmissionsMock
-      .mockResolvedValueOnce(['main'])
-      .mockResolvedValueOnce(['main'])
-      .mockResolvedValueOnce(['main'])
-      .mockResolvedValue([]);
-
-    const stateController = (manager as unknown as { stateController: { setStatus: (u: Record<string, unknown>) => void } }).stateController;
-    stateController.setStatus({ state: 'running', port: 18789, connectedAt: Date.now() });
-
-    const statusUpdates: Array<{ gatewayReady?: boolean }> = [];
-    manager.on('status', (status: { gatewayReady?: boolean }) => {
-      statusUpdates.push({ gatewayReady: status.gatewayReady });
-    });
-
-    manager.emit('gateway:ready', {});
-    await vi.advanceTimersByTimeAsync(0);
-    expect(statusUpdates.find((u) => u.gatewayReady === true)).toBeUndefined();
-
-    // Duplicate ready signals while gated must not start a parallel gate.
-    manager.emit('gateway:ready', {});
+  it('checks admission after the fallback RPC router probe succeeds', async () => {
+    const { manager, internals, readyUpdates } = await createManager();
+    const rpc = vi.spyOn(manager, 'rpc').mockResolvedValue({ ok: true });
+    internals.scheduleGatewayReadyFallback();
     await vi.advanceTimersByTimeAsync(1_000);
-    expect(statusUpdates.find((u) => u.gatewayReady === true)).toBeUndefined();
+    expect(readyUpdates()).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(readyUpdates()).toHaveLength(1);
+    expect(rpc).toHaveBeenCalledWith('system-presence', {}, 5_000);
+    expect(admissionProbe).toHaveBeenCalledWith(18789);
+    expect(removeUpgradeSnapshotMock).not.toHaveBeenCalled();
+  });
 
+  it('keeps unready when the fallback RPC router probe fails', async () => {
+    const { manager, internals, readyUpdates } = await createManager();
+    vi.spyOn(manager, 'rpc').mockRejectedValue(new Error('RPC timeout: system-presence'));
+    internals.scheduleGatewayReadyFallback();
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(readyUpdates()).toHaveLength(0);
+    expect(admissionProbe).not.toHaveBeenCalled();
+  });
+
+  it('cancels fallback on the ready event and does not emit duplicate ready transitions', async () => {
+    const { manager, internals, signalReady, readyUpdates } = await createManager();
+    const rpc = vi.spyOn(manager, 'rpc');
+    internals.scheduleGatewayReadyFallback();
+    await signalReady();
+    await signalReady();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(readyUpdates()).toHaveLength(1);
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('waits for admission without parallel gates on duplicate ready events', async () => {
+    const { signalReady, readyUpdates } = await createManager();
+    admissionProbe.mockResolvedValueOnce(pending).mockResolvedValueOnce(pending).mockResolvedValueOnce(pending);
+    await signalReady();
+    await signalReady();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(readyUpdates()).toHaveLength(0);
     await vi.advanceTimersByTimeAsync(500);
-    expect(statusUpdates.filter((u) => u.gatewayReady === true)).toHaveLength(1);
-    expect(probePendingAgentDatabaseAdmissionsMock).toHaveBeenCalledTimes(4);
-    expect(probePendingAgentDatabaseAdmissionsMock).toHaveBeenCalledWith(18789);
+    expect(readyUpdates()).toHaveLength(1);
+    expect(admissionProbe).toHaveBeenCalledTimes(4);
   });
 
-  it('marks gatewayReady after the bounded admission wait even if inspection never completes', async () => {
-    vi.resetModules();
-    const { GatewayManager } = await import('@electron/gateway/manager');
-    const { GATEWAY_AGENT_DATABASE_ADMISSION_WAIT_MS } = await import('@electron/gateway/recovery-budget');
-    const manager = new GatewayManager();
-    probePendingAgentDatabaseAdmissionsMock.mockResolvedValue(['main']);
-
-    const stateController = (manager as unknown as { stateController: { setStatus: (u: Record<string, unknown>) => void } }).stateController;
-    stateController.setStatus({ state: 'running', connectedAt: Date.now() });
-
-    const statusUpdates: Array<{ gatewayReady?: boolean }> = [];
-    manager.on('status', (status: { gatewayReady?: boolean }) => {
-      statusUpdates.push({ gatewayReady: status.gatewayReady });
-    });
-
-    manager.emit('gateway:ready', {});
-    await vi.advanceTimersByTimeAsync(GATEWAY_AGENT_DATABASE_ADMISSION_WAIT_MS - 1_000);
-    expect(statusUpdates.find((u) => u.gatewayReady === true)).toBeUndefined();
-
-    await vi.advanceTimersByTimeAsync(1_500);
-    expect(statusUpdates.filter((u) => u.gatewayReady === true)).toHaveLength(1);
-  });
-
-  it('does not block gatewayReady when the readiness probe is unavailable', async () => {
-    vi.resetModules();
-    const { GatewayManager } = await import('@electron/gateway/manager');
-    const manager = new GatewayManager();
-    probePendingAgentDatabaseAdmissionsMock.mockResolvedValue(null);
-
-    const stateController = (manager as unknown as { stateController: { setStatus: (u: Record<string, unknown>) => void } }).stateController;
-    stateController.setStatus({ state: 'running', connectedAt: Date.now() });
-
-    const statusUpdates: Array<{ gatewayReady?: boolean }> = [];
-    manager.on('status', (status: { gatewayReady?: boolean }) => {
-      statusUpdates.push({ gatewayReady: status.gatewayReady });
-    });
-
-    manager.emit('gateway:ready', {});
-    await vi.advanceTimersByTimeAsync(0);
-    expect(statusUpdates.filter((u) => u.gatewayReady === true)).toHaveLength(1);
-  });
-
-  it('drops a pending admission gate when the connection changes', async () => {
-    vi.resetModules();
-    const { GatewayManager } = await import('@electron/gateway/manager');
-    const manager = new GatewayManager();
-    probePendingAgentDatabaseAdmissionsMock.mockResolvedValue(['main']);
-
-    const stateController = (manager as unknown as { stateController: { setStatus: (u: Record<string, unknown>) => void } }).stateController;
-    stateController.setStatus({ state: 'running', connectedAt: 1 });
-
-    const statusUpdates: Array<{ gatewayReady?: boolean }> = [];
-    manager.on('status', (status: { gatewayReady?: boolean }) => {
-      statusUpdates.push({ gatewayReady: status.gatewayReady });
-    });
-
-    manager.emit('gateway:ready', {});
-    await vi.advanceTimersByTimeAsync(0);
-
-    probePendingAgentDatabaseAdmissionsMock.mockResolvedValue([]);
-    stateController.setStatus({ state: 'starting', gatewayReady: false });
+  it('does not interrupt slow upgrade preparation or publish ready at the old timeout', async () => {
+    const { manager, signalReady, readyUpdates } = await createManager(true);
+    const restart = vi.spyOn(manager, 'restart').mockResolvedValue();
+    admissionProbe.mockResolvedValue(pending);
+    await signalReady();
+    await vi.advanceTimersByTimeAsync(GATEWAY_AGENT_DATABASE_ADMISSION_WAIT_MS + 10_000);
+    expect(readyUpdates()).toHaveLength(0);
+    expect(restart).not.toHaveBeenCalled();
+    expect(manager.getStatus().error).toContain('taking longer than expected');
+    admissionProbe.mockResolvedValue({ state: 'ready' });
     await vi.advanceTimersByTimeAsync(5_000);
-    expect(statusUpdates.find((u) => u.gatewayReady === true)).toBeUndefined();
+    expect(readyUpdates()).toHaveLength(1);
+    expect(manager.getStatus().error).toBeUndefined();
+    expect(removeUpgradeSnapshotMock).not.toHaveBeenCalled();
+  });
 
-    stateController.setStatus({ state: 'running', connectedAt: 2 });
-    manager.emit('gateway:ready', {});
-    await vi.advanceTimersByTimeAsync(0);
-    expect(statusUpdates.filter((u) => u.gatewayReady === true)).toHaveLength(1);
+  it('retries an unavailable probe before using the legacy fallback', async () => {
+    const { signalReady, readyUpdates } = await createManager();
+    admissionProbe.mockResolvedValue({ state: 'unknown' });
+    await signalReady();
+    expect(readyUpdates()).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(readyUpdates()).toHaveLength(1);
+    expect(admissionProbe).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not let unavailable probes erase observed pending admission, even on reconnect', async () => {
+    const { manager, internals, setRunning, signalReady, readyUpdates } = await createManager();
+    admissionProbe.mockResolvedValue(pending);
+    await signalReady();
+    admissionProbe.mockResolvedValue({ state: 'unknown' });
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(readyUpdates()).toHaveLength(0);
+    internals.stateController.setStatus({ state: 'reconnecting', gatewayReady: false });
+    setRunning();
+    await signalReady();
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(readyUpdates()).toHaveLength(0);
+    expect(manager.getStatus().error).toContain('Unable to verify');
+  });
+
+  it('reports failed admission rather than readiness and never restarts migration failures', async () => {
+    const { manager, signalReady, readyUpdates } = await createManager(true);
+    const restart = vi.spyOn(manager, 'restart').mockResolvedValue();
+    admissionProbe.mockResolvedValueOnce(pending).mockResolvedValue({
+      state: 'failed', failures: [{ agentId: 'main', code: 'agent-database-inspection-failed', reason: 'schema migration required', repairHint: 'Run doctor --fix' }], pendingAgentIds: [],
+    });
+    await signalReady();
+    await vi.advanceTimersByTimeAsync(GATEWAY_AGENT_DATABASE_ADMISSION_WAIT_MS + 10_000);
+    expect(readyUpdates()).toHaveLength(0);
+    expect(manager.getStatus().error).toContain('schema migration required\nRun doctor --fix');
+    expect(restart).not.toHaveBeenCalled();
+    admissionProbe.mockResolvedValue({ state: 'unknown' });
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(readyUpdates()).toHaveLength(0);
+    expect(manager.getStatus().error).toContain('schema migration required');
+  });
+
+  it('recovers superseded publication once, retaining the budget across stop/start and duplicate events', async () => {
+    const { manager, setRunning, signalReady, readyUpdates } = await createManager(true);
+    admissionProbe.mockResolvedValue(superseded);
+    const restart = vi.spyOn(manager, 'restart').mockImplementation(async () => {
+      await manager.stop();
+      setRunning();
+      manager.emit('gateway:ready', {});
+    });
+    await signalReady();
+    expect(restart).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(restart).toHaveBeenCalledTimes(1);
+    await signalReady();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(restart).toHaveBeenCalledTimes(1);
+    expect(readyUpdates()).toHaveLength(0);
+    expect(manager.getStatus().error).toContain('publication was superseded');
+    expect(removeUpgradeSnapshotMock).not.toHaveBeenCalled();
+
+    admissionProbe.mockResolvedValue({ state: 'ready' });
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(readyUpdates()).toHaveLength(1);
+    expect(manager.getStatus().error).toBeUndefined();
+
+    // A later independent startup may recover once again after confirmed health.
+    setRunning();
+    admissionProbe.mockResolvedValue(superseded);
+    await signalReady();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(restart).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['external', 'pending-peer', 'unrecognized-code', 'mixed-failure'] as const)(
+    'does not auto-restart superseded admission with %s', async (scenario) => {
+      const { manager, signalReady, readyUpdates } = await createManager(scenario !== 'external');
+      const restart = vi.spyOn(manager, 'restart').mockResolvedValue();
+      const result = structuredClone(superseded);
+      if (result.state !== 'failed') throw new Error('expected failure fixture');
+      if (scenario === 'pending-peer') result.pendingAgentIds = ['other'];
+      if (scenario === 'unrecognized-code') result.failures[0].code = 'future-refusal';
+      if (scenario === 'mixed-failure') result.failures.push({ agentId: 'other', code: 'agent-database-inspection-failed', reason: 'database requires doctor' });
+      admissionProbe.mockResolvedValue(result);
+      await signalReady();
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(restart).not.toHaveBeenCalled();
+      expect(readyUpdates()).toHaveLength(0);
+    },
+  );
+
+  it('waits for startup/restart coordination to settle before recovery', async () => {
+    const { manager, internals, signalReady } = await createManager(true);
+    const restart = vi.spyOn(manager, 'restart').mockResolvedValue();
+    admissionProbe.mockResolvedValue(superseded);
+    internals.startLock = true;
+    await signalReady();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(restart).not.toHaveBeenCalled();
+    internals.startLock = false;
+    internals.restartInFlight = Promise.resolve();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(restart).not.toHaveBeenCalled();
+    internals.restartInFlight = null;
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(restart).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(restart).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels scheduled recovery on stop', async () => {
+    const { manager, signalReady } = await createManager(true);
+    const restart = vi.spyOn(manager, 'restart').mockResolvedValue();
+    admissionProbe.mockResolvedValue(superseded);
+    await signalReady();
+    await manager.stop();
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(restart).not.toHaveBeenCalled();
+    expect(manager.getStatus().state).toBe('stopped');
+  });
+
+  it('drops stale admission results and recovery when the connection changes', async () => {
+    const { manager, internals, setRunning, signalReady, readyUpdates } = await createManager(true);
+    const restart = vi.spyOn(manager, 'restart').mockResolvedValue();
+    let resolveProbe!: (result: AgentDatabaseAdmissionResult) => void;
+    admissionProbe.mockImplementationOnce(() => new Promise((resolve) => { resolveProbe = resolve; }));
+    await signalReady();
+    internals.stateController.setStatus({ state: 'starting', gatewayReady: false });
+    setRunning();
+    await signalReady();
+    resolveProbe(superseded);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(restart).not.toHaveBeenCalled();
+    expect(readyUpdates()).toHaveLength(1);
+    expect(manager.getStatus().error).toBeUndefined();
+  });
+
+  it('rechecks admission instead of restarting after the failure clears', async () => {
+    const { manager, signalReady, readyUpdates } = await createManager(true);
+    const restart = vi.spyOn(manager, 'restart').mockResolvedValue();
+    admissionProbe.mockResolvedValueOnce(superseded);
+    await signalReady();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(restart).not.toHaveBeenCalled();
+    expect(readyUpdates()).toHaveLength(1);
   });
 });
