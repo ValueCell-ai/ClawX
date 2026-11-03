@@ -197,7 +197,11 @@
             "size": "File size: {{size}}",
             "cancel": "Cancel"
         },
+        "image": {
+            "loadFailed": "Image failed to load: {{error}}"
+        },
         "pdf": {
+            "title": "PDF preview",
             "loadFailed": "Failed to load PDF: {{error}}",
             "prev": "Previous page",
             "next": "Next page",
