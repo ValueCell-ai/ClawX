@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({
@@ -33,7 +34,112 @@ describe('GatewayManager restart recovery', () => {
     vi.doUnmock('@electron/gateway/ws-client');
     vi.doUnmock('@electron/gateway/process-launcher');
     vi.doUnmock('@electron/gateway/config-sync');
+    vi.doUnmock('@electron/gateway/supervisor');
     vi.useRealTimers();
+  });
+
+  it('gracefully shuts down an owned Gateway before terminating its process', async () => {
+    const terminateOwnedGatewayProcess = vi.fn(async () => {});
+    vi.doMock('@electron/gateway/supervisor', async (importOriginal) => ({
+      ...await importOriginal<typeof import('@electron/gateway/supervisor')>(),
+      terminateOwnedGatewayProcess,
+    }));
+
+    const { GatewayManager } = await import('@electron/gateway/manager');
+    const manager = new GatewayManager();
+    const child = Object.assign(new EventEmitter(), { pid: 42 });
+    const ws = {
+      readyState: 1,
+      terminate: vi.fn(),
+    };
+    const internals = manager as unknown as {
+      process: Electron.UtilityProcess | null;
+      ownsProcess: boolean;
+      ws: typeof ws | null;
+    };
+    internals.process = child as unknown as Electron.UtilityProcess;
+    internals.ownsProcess = true;
+    internals.ws = ws;
+
+    const rpcSpy = vi.spyOn(manager, 'rpc').mockImplementation(async (method) => {
+      expect(method).toBe('shutdown');
+      child.emit('exit', 0);
+      return {};
+    });
+
+    await manager.stop();
+
+    expect(rpcSpy).toHaveBeenCalledWith('shutdown', undefined, 5_000);
+    expect(terminateOwnedGatewayProcess).not.toHaveBeenCalled();
+    expect(ws.terminate).toHaveBeenCalledOnce();
+    expect(manager.getStatus().state).toBe('stopped');
+  });
+
+  it('force-terminates an owned Gateway only after the graceful shutdown budget expires', async () => {
+    const terminateOwnedGatewayProcess = vi.fn(async () => {});
+    vi.doMock('@electron/gateway/supervisor', async (importOriginal) => ({
+      ...await importOriginal<typeof import('@electron/gateway/supervisor')>(),
+      terminateOwnedGatewayProcess,
+    }));
+
+    const { GatewayManager } = await import('@electron/gateway/manager');
+    const manager = new GatewayManager();
+    const child = Object.assign(new EventEmitter(), { pid: 43 });
+    const ws = {
+      readyState: 1,
+      terminate: vi.fn(),
+    };
+    const internals = manager as unknown as {
+      process: Electron.UtilityProcess | null;
+      ownsProcess: boolean;
+      ws: typeof ws | null;
+    };
+    internals.process = child as unknown as Electron.UtilityProcess;
+    internals.ownsProcess = true;
+    internals.ws = ws;
+    vi.spyOn(manager, 'rpc').mockResolvedValue({});
+
+    const stopPromise = manager.stop();
+    await vi.advanceTimersByTimeAsync(7_999);
+    expect(terminateOwnedGatewayProcess).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    await stopPromise;
+
+    expect(terminateOwnedGatewayProcess).toHaveBeenCalledOnce();
+    expect(terminateOwnedGatewayProcess).toHaveBeenCalledWith(child);
+  });
+
+  it('treats an RPC disconnect followed by process exit as a graceful shutdown', async () => {
+    const terminateOwnedGatewayProcess = vi.fn(async () => {});
+    vi.doMock('@electron/gateway/supervisor', async (importOriginal) => ({
+      ...await importOriginal<typeof import('@electron/gateway/supervisor')>(),
+      terminateOwnedGatewayProcess,
+    }));
+
+    const { GatewayManager } = await import('@electron/gateway/manager');
+    const manager = new GatewayManager();
+    const child = Object.assign(new EventEmitter(), { pid: 44 });
+    const ws = {
+      readyState: 1,
+      terminate: vi.fn(),
+    };
+    const internals = manager as unknown as {
+      process: Electron.UtilityProcess | null;
+      ownsProcess: boolean;
+      ws: typeof ws | null;
+    };
+    internals.process = child as unknown as Electron.UtilityProcess;
+    internals.ownsProcess = true;
+    internals.ws = ws;
+    vi.spyOn(manager, 'rpc').mockRejectedValue(new Error('WebSocket closed'));
+
+    const stopPromise = manager.stop();
+    await vi.advanceTimersByTimeAsync(1_000);
+    child.emit('exit', 0);
+    await stopPromise;
+
+    expect(terminateOwnedGatewayProcess).not.toHaveBeenCalled();
   });
 
   it('re-enables auto-reconnect when start() fails during restart', async () => {
