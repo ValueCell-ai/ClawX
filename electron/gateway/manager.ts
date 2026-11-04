@@ -5,6 +5,7 @@
 import { app } from 'electron';
 import path from 'path';
 import { EventEmitter } from 'events';
+import { randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
 import { PORTS } from '../utils/config';
 import { JsonRpcNotification, isNotification, isResponse } from './protocol';
@@ -59,6 +60,7 @@ import {
   GATEWAY_STARTUP_SLOW_STAGE_MS,
   GATEWAY_STARTUP_SLOW_TOTAL_MS,
   GatewayStartupTraceCollector,
+  parseGatewayStartupPhaseStart,
   recordGatewayStartupStderrLine,
 } from './startup-stderr';
 import { runGatewayStartupSequence } from './startup-orchestrator';
@@ -94,6 +96,7 @@ import {
   GATEWAY_AGENT_DATABASE_ADMISSION_WAIT_MS,
 } from './recovery-budget';
 import { probeAgentDatabaseAdmissions } from './agent-database-admission';
+import { collectGatewayProcessDiagnostics, getGatewayDiagnosticEnvironment } from './process-diagnostics';
 
 export interface GatewayStatus {
   state: GatewayLifecycleState;
@@ -167,6 +170,22 @@ function classifyCapabilityMethod(method: string): GatewayCapabilityName | null 
 
 const GATEWAY_SHUTDOWN_RPC_TIMEOUT_MS = 5_000;
 const GATEWAY_GRACEFUL_EXIT_TIMEOUT_MS = 8_000;
+const GATEWAY_DIAGNOSTIC_INTERVAL_MS = 30_000;
+
+type GatewayDiagnosticAttempt = {
+  id: string;
+  kind: 'start' | 'restart';
+  requestedAt: number;
+  stage: string;
+  stageStartedAt: number;
+  spawnCount: number;
+  stopStartedAt?: number;
+  stopCompletedAt?: number;
+  spawnedAt?: number;
+  handshakeAt?: number;
+  readyAt?: number;
+  outcome?: 'ready' | 'failed' | 'stopped' | 'superseded';
+};
 
 /**
  * Gateway Manager Events
@@ -204,6 +223,13 @@ export class GatewayManager extends EventEmitter {
   private recentStartupStderrLines: string[] = [];
   private lastProcessOutputAt = 0;
   private readonly startupTraceCollector = new GatewayStartupTraceCollector();
+  private diagnosticAttempt: GatewayDiagnosticAttempt | null = null;
+  private restartDiagnosticAttempt: GatewayDiagnosticAttempt | null = null;
+  private diagnosticTimer: NodeJS.Timeout | null = null;
+  private diagnosticLastOutputAt: number | undefined;
+  private lastHeartbeatDiagnosticAt: number | undefined;
+  private diagnosticProcessGeneration = 0;
+  private diagnosticResourceSample: ReturnType<typeof collectGatewayProcessDiagnostics> | null = null;
   private pendingRequests: Map<string, PendingGatewayRequest> = new Map();
   private deviceIdentity: DeviceIdentity | null = null;
   private restartInFlight: Promise<void> | null = null;
@@ -358,6 +384,118 @@ export class GatewayManager extends EventEmitter {
     return this.stateController.isConnected(this.ws?.readyState === WebSocket.OPEN);
   }
 
+  private clearDiagnosticTimer(): void {
+    if (this.diagnosticTimer) clearInterval(this.diagnosticTimer);
+    this.diagnosticTimer = null;
+  }
+
+  private beginGatewayDiagnostics(kind: GatewayDiagnosticAttempt['kind']): GatewayDiagnosticAttempt {
+    this.finishGatewayDiagnostics('superseded');
+    const now = Date.now();
+    this.diagnosticAttempt = {
+      id: randomUUID(), kind, requestedAt: now, stage: `${kind}-requested`, stageStartedAt: now, spawnCount: 0,
+    };
+    this.startupTraceCollector.reset();
+    this.diagnosticLastOutputAt = undefined;
+    // Ignore the previous child's trailing output while a restart shuts it
+    // down. A plain start may reconnect to the same child (code 1012), whose
+    // output must continue to feed the new attempt.
+    if (kind === 'restart') this.diagnosticProcessGeneration += 1;
+    this.logGatewayDiagnostic(`${kind}-requested`);
+    logger.info('[gateway-diagnostics] environment', { attemptId: this.diagnosticAttempt.id, ...getGatewayDiagnosticEnvironment() });
+    this.startDiagnosticTimer();
+    return this.diagnosticAttempt;
+  }
+
+  private startDiagnosticTimer(): void {
+    this.clearDiagnosticTimer();
+    const attempt = this.diagnosticAttempt;
+    if (!attempt || attempt.outcome) return;
+    this.diagnosticTimer = setInterval(() => {
+      if (this.diagnosticAttempt === attempt && !attempt.outcome) {
+        this.logGatewayDiagnostic('progress');
+      }
+    }, GATEWAY_DIAGNOSTIC_INTERVAL_MS);
+    this.diagnosticTimer.unref?.();
+  }
+
+  private recordDiagnosticStage(stage: string, attempt = this.diagnosticAttempt): void {
+    if (!attempt || attempt !== this.diagnosticAttempt || attempt.outcome) return;
+    if (attempt.stage === stage) return;
+    attempt.stage = stage;
+    attempt.stageStartedAt = Date.now();
+    this.logGatewayDiagnostic(stage);
+  }
+
+  private finishGatewayDiagnostics(outcome: NonNullable<GatewayDiagnosticAttempt['outcome']>, attempt = this.diagnosticAttempt): void {
+    if (!attempt || attempt !== this.diagnosticAttempt || attempt.outcome) return;
+    attempt.outcome = outcome;
+    if (outcome === 'ready') attempt.readyAt = Date.now();
+    this.logGatewayDiagnostic(outcome);
+    this.clearDiagnosticTimer();
+  }
+
+  /** Parent-observed evidence remains available when the Gateway cannot answer RPC. */
+  private logGatewayDiagnostic(event: string, details: Record<string, unknown> = {}): void {
+    const now = Date.now();
+    const attempt = this.diagnosticAttempt;
+    const pid = this.ownsProcess ? this.process?.pid : undefined;
+    // Several lifecycle milestones can arrive in one tick. Reusing the native
+    // sample avoids near-zero CPU intervals and unnecessary OS queries.
+    if (!this.diagnosticResourceSample || this.diagnosticResourceSample.pid !== pid
+      || now - this.diagnosticResourceSample.sampledAt >= 1_000) {
+      this.diagnosticResourceSample = collectGatewayProcessDiagnostics(pid);
+    }
+    const age = (at: number | undefined) => at === undefined ? undefined : Math.max(0, now - at);
+    logger.info('[gateway-diagnostics]', {
+      event,
+      attemptId: attempt?.id,
+      kind: attempt?.kind,
+      outcome: attempt?.outcome,
+      requestedAt: attempt?.requestedAt,
+      elapsedMs: age(attempt?.requestedAt),
+      stage: attempt?.stage,
+      stageElapsedMs: age(attempt?.stageStartedAt),
+      spawnCount: attempt?.spawnCount,
+      stopMs: attempt?.stopCompletedAt !== undefined && attempt.stopStartedAt !== undefined
+        ? attempt.stopCompletedAt - attempt.stopStartedAt : undefined,
+      spawnToHandshakeMs: attempt?.handshakeAt !== undefined && attempt.spawnedAt !== undefined
+        ? attempt.handshakeAt - attempt.spawnedAt : undefined,
+      handshakeToReadyMs: attempt?.readyAt !== undefined && attempt.handshakeAt !== undefined
+        ? attempt.readyAt - attempt.handshakeAt : undefined,
+      requestToReadyMs: attempt?.readyAt !== undefined ? attempt.readyAt - attempt.requestedAt : undefined,
+      state: this.status.state,
+      gatewayReady: this.status.gatewayReady === true,
+      pid: this.status.pid,
+      ownedProcess: this.ownsProcess,
+      lastOutputAgeMs: age(this.diagnosticLastOutputAt),
+      lastAliveAgeMs: age(this.diagnostics.lastAliveAt),
+      lastRpcSuccessAgeMs: age(this.diagnostics.lastRpcSuccessAt),
+      pendingRpcCount: this.pendingRequests.size,
+      consecutiveHeartbeatMisses: this.diagnostics.consecutiveHeartbeatMisses,
+      trace: this.startupTraceCollector.getSummary(),
+      progress: this.startupTraceCollector.getProgress(now),
+      resources: this.diagnosticResourceSample,
+      ...details,
+    });
+  }
+
+  private recordStartupTrace(line: string, source: 'stdout' | 'stderr'): boolean {
+    const trace = this.startupTraceCollector.record(line);
+    const phase = parseGatewayStartupPhaseStart(line);
+    if (!trace && !phase) return false;
+    const fields = { attemptId: this.diagnosticAttempt?.id, source };
+    if (trace) {
+      const message = `[gateway-startup] stage=${trace.name} durationMs=${trace.durationMs}`
+        + (trace.totalMs === undefined ? '' : ` totalMs=${trace.totalMs}`);
+      if (trace.durationMs >= GATEWAY_STARTUP_SLOW_STAGE_MS) logger.warn(`${message} slow=true`, fields);
+      else logger.info(message, fields);
+    } else if (phase) {
+      logger.info('[gateway-startup] phase-start', { ...fields, stage: phase.name, totalMs: phase.totalMs });
+    }
+    return true;
+  }
+
   /**
    * Start Gateway process
    */
@@ -373,6 +511,11 @@ export class GatewayManager extends EventEmitter {
     }
 
     this.startLock = true;
+    const diagnosticAttempt = this.diagnosticAttempt && this.restartDiagnosticAttempt === this.diagnosticAttempt && !this.diagnosticAttempt.outcome
+      ? this.diagnosticAttempt
+      : this.beginGatewayDiagnostics('start');
+    this.recordDiagnosticStage('start-requested');
+    this.startDiagnosticTimer();
     const startEpoch = this.lifecycleController.bump('start');
     logger.info(`Gateway start requested (port=${this.status.port})`);
     this.lastSpawnSummary = null;
@@ -527,6 +670,7 @@ export class GatewayManager extends EventEmitter {
       });
     } catch (error) {
       if (error instanceof LifecycleSupersededError) {
+        this.finishGatewayDiagnostics('superseded', diagnosticAttempt);
         logger.debug(error.message);
         return;
       }
@@ -535,6 +679,7 @@ export class GatewayManager extends EventEmitter {
         error
       );
       this.setStatus({ state: 'error', error: String(error) });
+      this.finishGatewayDiagnostics('failed', diagnosticAttempt);
       const fatalStartupFailure = isOpenClawFatalConfigExitCode(this.processExitCode)
         || this.processExitCode === 1
         || hasFatalRuntimeFailureSignal(error, this.recentStartupStderrLines)
@@ -653,6 +798,9 @@ export class GatewayManager extends EventEmitter {
    */
   async stop(): Promise<void> {
     logger.info('Gateway stop requested');
+    const diagnosticAttempt = this.diagnosticAttempt;
+    if (diagnosticAttempt && !diagnosticAttempt.outcome) diagnosticAttempt.stopStartedAt = Date.now();
+    this.recordDiagnosticStage('stopping');
     cancelLocalDeviceAutoApproval();
     this.lifecycleController.bump('stop');
     // Disable auto-reconnect
@@ -711,6 +859,13 @@ export class GatewayManager extends EventEmitter {
     this.isAutoReconnectStart = false;
     this.diagnostics.consecutiveHeartbeatMisses = 0;
     this.setStatus({ state: 'stopped', error: undefined, pid: undefined, connectedAt: undefined, uptime: undefined, gatewayReady: undefined });
+    if (diagnosticAttempt && diagnosticAttempt === this.diagnosticAttempt && !diagnosticAttempt.outcome) {
+      diagnosticAttempt.stopCompletedAt = Date.now();
+      this.logGatewayDiagnostic('stop-completed', {
+        shutdownMethod: ownedChild ? (ownedProcessExitedGracefully ? 'graceful' : 'forced') : 'no-owned-process',
+      });
+      if (diagnosticAttempt !== this.restartDiagnosticAttempt) this.finishGatewayDiagnostics('stopped', diagnosticAttempt);
+    }
   }
 
   /**
@@ -775,6 +930,8 @@ export class GatewayManager extends EventEmitter {
     }
 
     const pidBefore = this.status.pid;
+    const diagnosticAttempt = this.beginGatewayDiagnostics('restart');
+    this.restartDiagnosticAttempt = diagnosticAttempt;
     logger.info(`[gateway-refresh] mode=restart requested pidBefore=${pidBefore ?? 'n/a'}`);
     this.restartInFlight = (async () => {
       await this.stop();
@@ -806,7 +963,11 @@ export class GatewayManager extends EventEmitter {
         `[gateway-refresh] mode=restart result=applied pidBefore=${pidBefore ?? 'n/a'} pidAfter=${this.status.pid ?? 'n/a'} ` +
         `suppressed=${observability.suppressed_total} executed=${observability.executed_total} circuitOpenUntil=${observability.circuit_open_until}`,
       );
+    } catch (error) {
+      this.finishGatewayDiagnostics('failed', diagnosticAttempt);
+      throw error;
     } finally {
+      if (this.restartDiagnosticAttempt === diagnosticAttempt) this.restartDiagnosticAttempt = null;
       this.restartInFlight = null;
       this.restartController.flushDeferredRestart(
         'restart:finally',
@@ -843,6 +1004,7 @@ export class GatewayManager extends EventEmitter {
    * Clear all active timers
    */
   private clearAllTimers(): void {
+    this.clearDiagnosticTimer();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -906,6 +1068,8 @@ export class GatewayManager extends EventEmitter {
     if (!isCurrent()) {
       return;
     }
+
+    this.recordDiagnosticStage(`admission-${admission.state}`);
 
     const waitedMs = Date.now() - gate.startedAt;
     const reportError = (error: string) => {
@@ -990,6 +1154,8 @@ export class GatewayManager extends EventEmitter {
       gatewayReady: true,
       ...(gate.error && this.status.error === gate.error ? { error: undefined } : {}),
     });
+    this.logGatewayDiagnostic('admission-completed', { admissionEvidence: admission.state });
+    this.finishGatewayDiagnostics('ready');
   }
 
   private clearGatewayReadyFallbackTimer(): void {
@@ -1221,6 +1387,10 @@ export class GatewayManager extends EventEmitter {
   private recordHeartbeatTimeout(consecutiveMisses: number): void {
     this.diagnostics.lastHeartbeatTimeoutAt = Date.now();
     this.diagnostics.consecutiveHeartbeatMisses = consecutiveMisses;
+    if (this.lastHeartbeatDiagnosticAt === undefined || Date.now() - this.lastHeartbeatDiagnosticAt >= GATEWAY_DIAGNOSTIC_INTERVAL_MS) {
+      this.lastHeartbeatDiagnosticAt = Date.now();
+      this.logGatewayDiagnostic('heartbeat-missed');
+    }
   }
 
   private recordSocketClose(code: number): void {
@@ -1233,6 +1403,8 @@ export class GatewayManager extends EventEmitter {
    * Uses OpenClaw npm package from node_modules (dev) or resources (production)
    */
   private async startProcess(): Promise<void> {
+    const diagnosticAttempt = this.diagnosticAttempt;
+    this.recordDiagnosticStage('preparing-launch', diagnosticAttempt);
     const launchContext = await prepareGatewayLaunchContext(this.status.port);
     await unloadLaunchctlGatewayService();
     this.processExitCode = null;
@@ -1241,6 +1413,10 @@ export class GatewayManager extends EventEmitter {
     // timings or stderr deduplication state from different Gateway children.
     const stderrDedup = new Map<string, number>();
     this.startupTraceCollector.reset();
+    this.diagnosticLastOutputAt = undefined;
+    this.recordDiagnosticStage('launching-process', diagnosticAttempt);
+    const diagnosticGeneration = ++this.diagnosticProcessGeneration;
+    this.diagnosticResourceSample = null;
 
     const { child, lastSpawnSummary } = await launchGatewayProcess({
       port: this.status.port,
@@ -1248,11 +1424,21 @@ export class GatewayManager extends EventEmitter {
       sanitizeSpawnArgs: (args) => this.sanitizeSpawnArgs(args),
       getCurrentState: () => this.status.state,
       getShouldReconnect: () => this.shouldReconnect,
+      onStdoutLine: (line) => {
+        if (diagnosticGeneration !== this.diagnosticProcessGeneration) return;
+        this.diagnosticLastOutputAt = Date.now();
+        // Only normalized timing records are logged. stdout may contain user
+        // content; it must not become a transcript or influence readiness.
+        this.recordStartupTrace(line, 'stdout');
+      },
       onStderrLine: (line) => {
         this.lastProcessOutputAt = Date.now();
         this.compactionActivity.recordStderrLine(line);
         recordGatewayStartupStderrLine(this.recentStartupStderrLines, line);
-        const traceStage = this.startupTraceCollector.record(line);
+        if (diagnosticGeneration === this.diagnosticProcessGeneration) {
+          this.diagnosticLastOutputAt = Date.now();
+          if (this.recordStartupTrace(line, 'stderr')) return;
+        }
         const classified = classifyGatewayStderrMessage(line);
         if (classified.level === 'drop') return;
 
@@ -1267,16 +1453,6 @@ export class GatewayManager extends EventEmitter {
           return;
         }
 
-        if (traceStage) {
-          const message = `[gateway-startup] stage=${traceStage.name} durationMs=${traceStage.durationMs}`
-            + (traceStage.totalMs === undefined ? '' : ` totalMs=${traceStage.totalMs}`);
-          if (traceStage.durationMs >= GATEWAY_STARTUP_SLOW_STAGE_MS) {
-            logger.warn(`${message} slow=true`);
-          } else {
-            logger.info(message);
-          }
-          return;
-        }
         if (classified.level === 'debug') {
           logger.debug(`[Gateway stderr] ${classified.normalized}`);
           return;
@@ -1289,8 +1465,17 @@ export class GatewayManager extends EventEmitter {
       },
       onSpawn: (pid) => {
         this.setStatus({ pid });
+        if (diagnosticAttempt && diagnosticAttempt === this.diagnosticAttempt && !diagnosticAttempt.outcome) {
+          diagnosticAttempt.spawnCount += 1;
+          diagnosticAttempt.spawnedAt = Date.now();
+          diagnosticAttempt.handshakeAt = undefined;
+          this.recordDiagnosticStage('waiting-for-handshake', diagnosticAttempt);
+        }
       },
       onExit: (exitedChild, code) => {
+        if (diagnosticGeneration === this.diagnosticProcessGeneration) {
+          this.logGatewayDiagnostic('process-exit', { exitedPid: exitedChild.pid, exitCode: code, expected: !this.shouldReconnect });
+        }
         this.processExitCode = code;
         this.ownsProcess = false;
         this.connectionMonitor.clear();
@@ -1300,6 +1485,9 @@ export class GatewayManager extends EventEmitter {
           this.process = null;
         }
         this.emit('exit', code);
+        if (diagnosticGeneration === this.diagnosticProcessGeneration && !this.startLock && this.shouldReconnect) {
+          this.finishGatewayDiagnostics('failed');
+        }
 
         if (this.status.state === 'running') {
           this.setStatus({ state: 'stopped' });
@@ -1363,6 +1551,10 @@ export class GatewayManager extends EventEmitter {
           port,
           connectedAt: Date.now(),
         });
+        if (this.diagnosticAttempt && !this.diagnosticAttempt.outcome) {
+          this.diagnosticAttempt.handshakeAt = Date.now();
+          this.recordDiagnosticStage('handshake-completed');
+        }
         this.startPing();
         this.scheduleGatewayReadyFallback();
         scheduleLocalDeviceAutoApproval(this);

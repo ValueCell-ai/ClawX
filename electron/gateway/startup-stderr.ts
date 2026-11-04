@@ -17,12 +17,37 @@ export type GatewayStartupTraceSummary = {
   slowestStageMs?: number;
 };
 
+export type GatewayStartupTraceProgress = {
+  lastStartedStage?: string;
+  lastStartedAt?: number;
+  lastCompletedStage?: string;
+  lastCompletedAt?: number;
+  lastProgressAt?: number;
+  silenceMs?: number;
+};
+
+export type GatewayStartupPhaseStart = {
+  name: string;
+  totalMs?: number;
+};
+
 export const GATEWAY_STARTUP_SLOW_STAGE_MS = 10_000;
 export const GATEWAY_STARTUP_SLOW_TOTAL_MS = 30_000;
 
 const MAX_STDERR_LINES = 120;
 const ANSI_ESCAPE_PATTERN = new RegExp(String.raw`\u001B\[[0-?]*[ -/]*[@-~]`, 'g');
-const STARTUP_TRACE_PATTERN = /startup trace:\s+([^\s]+)\s+(\d+(?:\.\d+)?)ms(?:\s+total=(\d+(?:\.\d+)?)ms)?/i;
+// Only copy a bounded stage identifier and numeric timings into diagnostics.
+// Runtime output can include paths, plugin details, or credentials after these.
+const STARTUP_TRACE_PATTERN = /startup trace:\s+([A-Za-z][A-Za-z0-9_.:-]{0,159})\s+(\d+(?:\.\d+)?)ms(?:\s+total=(\d+(?:\.\d+)?)ms)?/i;
+const STARTUP_PHASE_PATTERN = /startup phase:\s+([A-Za-z][A-Za-z0-9_.:-]{0,159})\s+starting(?:\s+total=(\d+(?:\.\d+)?)ms)?(?:\s|$)/i;
+
+export function parseGatewayStartupPhaseStart(message: string): GatewayStartupPhaseStart | null {
+  const match = STARTUP_PHASE_PATTERN.exec(message.replace(ANSI_ESCAPE_PATTERN, ''));
+  if (!match) return null;
+  const totalMs = match[2] === undefined ? undefined : Number(match[2]);
+  if (totalMs !== undefined && !Number.isFinite(totalMs)) return null;
+  return { name: match[1]!, ...(totalMs === undefined ? {} : { totalMs }) };
+}
 
 export function parseGatewayStartupTraceStage(message: string): GatewayStartupTraceStage | null {
   const match = STARTUP_TRACE_PATTERN.exec(message.replace(ANSI_ESCAPE_PATTERN, ''));
@@ -46,20 +71,37 @@ export class GatewayStartupTraceCollector {
   private lastStage: GatewayStartupTraceStage | null = null;
   private slowestStage: GatewayStartupTraceStage | null = null;
   private maxTraceTotalMs: number | undefined;
+  private lastStartedStage: string | undefined;
+  private lastStartedAt: number | undefined;
+  private lastCompletedAt: number | undefined;
+  private lastProgressAt: number | undefined;
 
   reset(): void {
     this.stageCount = 0;
     this.lastStage = null;
     this.slowestStage = null;
     this.maxTraceTotalMs = undefined;
+    this.lastStartedStage = undefined;
+    this.lastStartedAt = undefined;
+    this.lastCompletedAt = undefined;
+    this.lastProgressAt = undefined;
   }
 
-  record(message: string): GatewayStartupTraceStage | null {
+  record(message: string, observedAt = Date.now()): GatewayStartupTraceStage | null {
+    const phase = parseGatewayStartupPhaseStart(message);
+    if (phase) {
+      this.lastStartedStage = phase.name;
+      this.lastStartedAt = observedAt;
+      this.lastProgressAt = observedAt;
+      return null;
+    }
     const stage = parseGatewayStartupTraceStage(message);
     if (!stage) return null;
 
     this.stageCount += 1;
     this.lastStage = stage;
+    this.lastCompletedAt = observedAt;
+    this.lastProgressAt = observedAt;
     if (!this.slowestStage || stage.durationMs > this.slowestStage.durationMs) {
       this.slowestStage = stage;
     }
@@ -67,6 +109,25 @@ export class GatewayStartupTraceCollector {
       this.maxTraceTotalMs = Math.max(this.maxTraceTotalMs ?? 0, stage.totalMs);
     }
     return stage;
+  }
+
+  getProgress(now = Date.now()): GatewayStartupTraceProgress {
+    // A last-started stage is not necessarily still active: phases can nest,
+    // and the runtime may replay completed traces on a different output stream.
+    return {
+      ...(this.lastStartedStage === undefined ? {} : {
+        lastStartedStage: this.lastStartedStage,
+        lastStartedAt: this.lastStartedAt,
+      }),
+      ...(this.lastStage === null ? {} : {
+        lastCompletedStage: this.lastStage.name,
+        lastCompletedAt: this.lastCompletedAt,
+      }),
+      ...(this.lastProgressAt === undefined ? {} : {
+        lastProgressAt: this.lastProgressAt,
+        silenceMs: Math.max(0, now - this.lastProgressAt),
+      }),
+    };
   }
 
   getSummary(): GatewayStartupTraceSummary {
@@ -90,7 +151,7 @@ export function classifyGatewayStderrMessage(message: string): GatewayStderrClas
   const plain = msg.replace(ANSI_ESCAPE_PATTERN, '');
 
   // OpenClaw startup timing traces are expected diagnostics, not failures.
-  if (plain.includes('startup trace:')) {
+  if (plain.includes('startup trace:') || parseGatewayStartupPhaseStart(plain)) {
     return { level: 'info', normalized: msg };
   }
 
