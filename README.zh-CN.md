@@ -219,6 +219,8 @@ pnpm build           # 完整生产构建
 pnpm package         # 为当前平台打包（可用 :mac / :win / :linux 后缀）
 ```
 
+开发模式的文件监听会跳过生成的 `build/`、`release/`、`dist-electron/`、`artifacts/` 和 `playwright-report/` 目录，避免运行时打包产物拖慢编译，尤其是在 Windows 上。源码和链接的扩展仍支持热重载。
+
 > 项目结构、技术栈、完整命令列表、E2E 并行策略、性能诊断与通信回归检查等细节，请参阅 [docs/zh-CN/development.md](docs/zh-CN/development.md)。
 
 ## 参与贡献

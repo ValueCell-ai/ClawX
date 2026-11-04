@@ -218,6 +218,8 @@ pnpm build           # Full production build
 pnpm package         # Package for the current platform (:mac / :win / :linux)
 ```
 
+Development file watching skips generated `build/`, `release/`, `dist-electron/`, `artifacts/`, and `playwright-report/` trees to keep runtime bundles from slowing down compilation, especially on Windows. Source files and linked extensions continue to support hot reload.
+
 > For the project structure, complete command list, E2E parallel policy, performance diagnostics, communication regression checks, and tech stack, see [docs/en-US/development.md](docs/en-US/development.md).
 
 ## Contributing

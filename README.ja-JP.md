@@ -218,6 +218,8 @@ pnpm build           # 本番ビルドを実行
 pnpm package         # 現在のプラットフォーム向けにパッケージ化（:mac / :win / :linux）
 ```
 
+開発時のファイル監視では、生成された `build/`、`release/`、`dist-electron/`、`artifacts/`、`playwright-report/` を除外し、特に Windows でランタイムのビルド成果物がコンパイルを遅くすることを防ぎます。ソースとリンクされた拡張機能のホットリロードは引き続き利用できます。
+
 > プロジェクト構成、完全なコマンド一覧、E2Eの並列実行ポリシー、パフォーマンス診断、通信回帰チェック、技術スタックについては [docs/ja-JP/development.md](docs/ja-JP/development.md) を参照してください。
 
 ## コントリビューション
