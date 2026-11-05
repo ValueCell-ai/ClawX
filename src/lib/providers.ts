@@ -20,6 +20,7 @@ export const PROVIDER_TYPES = [
   'moonshot-global',
   'siliconflow',
   'deepseek',
+  'cheaperinference',
   'minimax-portal',
   'minimax-portal-cn',
   'zai',
@@ -52,6 +53,7 @@ export const BUILTIN_PROVIDER_TYPES = [
   'moonshot-global',
   'siliconflow',
   'deepseek',
+  'cheaperinference',
   'minimax-portal',
   'minimax-portal-cn',
   'zai',
@@ -228,6 +230,7 @@ export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
   // is `zai-org/GLM-5.3-Flash`.
   { id: 'siliconflow', name: 'SiliconFlow (CN)', icon: '🌊', placeholder: 'sk-...', model: 'Multi-Model', requiresApiKey: true, defaultBaseUrl: 'https://api.siliconflow.cn/v1', showModelId: true, modelIdPlaceholder: 'zai-org/GLM-5.3', defaultModelId: 'zai-org/GLM-5.3', docsUrl: 'https://docs.siliconflow.cn/cn/userguide/introduction' },
   { id: 'deepseek', name: 'DeepSeek', icon: '🐋', placeholder: 'sk-...', model: 'DeepSeek', requiresApiKey: true, defaultBaseUrl: 'https://api.deepseek.com/v1', showModelId: true, modelIdPlaceholder: 'deepseek-flash', defaultModelId: 'deepseek-flash', apiKeyUrl: 'https://platform.deepseek.com/api_keys', docsUrl: 'https://api-docs.deepseek.com/', docsUrlZh: 'https://api-docs.deepseek.com/zh-cn/' },
+  { id: 'cheaperinference', name: 'Cheaper Inference', icon: 'CI', placeholder: 'ci_live_...', model: 'Multi-Model', requiresApiKey: true, defaultBaseUrl: 'https://api.cheaperinference.com/v1', showModelId: true, modelIdPlaceholder: 'gpt-5.4-mini', defaultModelId: 'gpt-5.4-mini', apiKeyUrl: 'https://cheaperinference.com/signup', docsUrl: 'https://cheaperinference.com/docs' },
   { id: 'minimax-portal', name: 'MiniMax (Global)', icon: '☁️', placeholder: 'sk-...', model: 'MiniMax', requiresApiKey: false, isOAuth: true, supportsApiKey: true, defaultModelId: 'MiniMax-M3', showModelId: true, modelIdPlaceholder: 'MiniMax-M3', apiKeyUrl: 'https://platform.minimax.io' },
   {
     id: 'zai',
