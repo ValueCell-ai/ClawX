@@ -29,6 +29,7 @@ test.describe('ClawX chat skill trigger', () => {
 
     try {
       await installIpcMocks(app, {
+        emptyAcpSessions: [SESSION_KEY],
         gatewayStatus: { state: 'running', gatewayReady: true, port: 18789, pid: 12345 },
         gatewayRpc: {
           [stableStringify(['sessions.list', {}])]: {
@@ -137,6 +138,7 @@ test.describe('ClawX chat skill trigger', () => {
 
     try {
       await installIpcMocks(app, {
+        emptyAcpSessions: [SESSION_KEY],
         gatewayStatus: { state: 'running', gatewayReady: true, port: 18789, pid: 12345 },
         gatewayRpc: {
           [stableStringify(['sessions.list', {}])]: {

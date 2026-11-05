@@ -11,11 +11,13 @@ import {
   symlinkSync,
   unlinkSync,
 } from 'node:fs';
-import { spawn, type ForkOptions } from 'node:child_process';
+import { execFileSync, spawn, type ForkOptions } from 'node:child_process';
 import { homedir } from 'node:os';
 import { delimiter, join, dirname } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { getOpenClawDir, getOpenClawEntryPath } from './paths';
 import { logger } from './logger';
+import { ensureOpenClawRuntimeCompat } from './openclaw-utility-process';
 
 // ── Quoting helpers ──────────────────────────────────────────────────────────
 
@@ -124,19 +126,31 @@ function getWindowsCmdWrapperSpawnSpec(cmdPath: string): OpenClawCliSpawnSpec {
   };
 }
 
-function getExecutableFromPath(command: string): string | null {
-  const pathEnv = process.env.PATH || '';
-  for (const dir of pathEnv.split(delimiter)) {
-    if (!dir) continue;
-    const candidate = join(dir, command);
-    if (fileExists(candidate)) return candidate;
-  }
-  return null;
+function isSupportedOpenClawNodeVersion(version: string): boolean {
+  const match = /^(\d+)\.(\d+)\./.exec(version.trim().replace(/^v/, ''));
+  if (!match) return false;
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  return (major === 24 && minor >= 16) || (major === 26 && minor >= 1) || major > 26;
 }
 
 function getDevNodeExecPath(): string | null {
   const nodeCommand = process.platform === 'win32' ? 'node.exe' : 'node';
-  return getExecutableFromPath(nodeCommand);
+  const candidates = (process.env.PATH || '')
+    .split(delimiter)
+    .filter(Boolean)
+    .map((dir) => join(dir, nodeCommand))
+    .filter((candidate, index, all) => all.indexOf(candidate) === index && fileExists(candidate));
+  for (const candidate of candidates) {
+    try {
+      const version = execFileSync(candidate, ['--version'], { encoding: 'utf8', timeout: 1000 });
+      if (isSupportedOpenClawNodeVersion(version)) return candidate;
+      logger.warn(`[openclaw] Ignoring unsupported development Node runtime (${version.trim()})`);
+    } catch (error) {
+      logger.warn(`[openclaw] Failed to inspect development Node runtime at ${candidate}:`, error);
+    }
+  }
+  return null;
 }
 
 export function getOpenClawCliSpawnSpec(): OpenClawCliSpawnSpec {
@@ -200,9 +214,7 @@ function getOpenClawEmbeddedExecPath(): { execPath: string; electronRunAsNode: b
   if (!app.isPackaged) {
     const nodeExecPath = getDevNodeExecPath();
     if (nodeExecPath) return { execPath: nodeExecPath, electronRunAsNode: false };
-    if (process.versions?.electron) {
-      throw new Error('Node executable not found on PATH for embedded OpenClaw launch');
-    }
+    throw new Error('Supported Node executable not found on PATH for embedded OpenClaw launch');
   }
 
   if (app.isPackaged && process.platform === 'win32') {
@@ -243,7 +255,7 @@ export function getOpenClawEmbeddedForkSpec(args: string[] = []): OpenClawEmbedd
       cwd: getOpenClawDir(),
       env,
       execPath,
-      execArgv: [],
+      execArgv: getOpenClawRuntimeCompatExecArgv(),
       stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
       windowsHide: true,
     },
@@ -499,6 +511,10 @@ function getNodeExecForCli(): string {
   return process.execPath;
 }
 
+function getOpenClawRuntimeCompatExecArgv(): string[] {
+  return ['--import', pathToFileURL(ensureOpenClawRuntimeCompat()).href];
+}
+
 export function generateCompletionCache(): void {
   if (!app.isPackaged) return;
 
@@ -507,7 +523,7 @@ export function generateCompletionCache(): void {
 
   const execPath = getNodeExecForCli();
 
-  const child = spawn(execPath, [entryPath, 'completion', '--write-state'], {
+  const child = spawn(execPath, [...getOpenClawRuntimeCompatExecArgv(), entryPath, 'completion', '--write-state'], {
     env: {
       ...process.env,
       ELECTRON_RUN_AS_NODE: '1',
@@ -543,7 +559,7 @@ export function installCompletionToProfile(): void {
 
   const child = spawn(
     execPath,
-    [entryPath, 'completion', '--install', '-y'],
+    [...getOpenClawRuntimeCompatExecArgv(), entryPath, 'completion', '--install', '-y'],
     {
       env: {
         ...process.env,

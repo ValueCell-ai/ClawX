@@ -38,8 +38,8 @@ ownedPaths:
   - tests/e2e/chat-sidebar-session-attention.spec.ts
   - tests/unit/session-key-utils.test.ts
   - tests/unit/openclaw-acp-stream-patch.test.ts
-  - patches/openclaw@2026.7.1-2.patch
-  - patches/@wecom__wecom-openclaw-plugin@2026.8.17.patch
+  - patches/openclaw@2026.10.5.patch
+  - patches/@wecom__wecom-openclaw-plugin@2026.9.15.patch
   - pnpm-lock.yaml
   - shared/web-browser.ts
   - electron/main/web-browser-policy.ts
@@ -63,6 +63,9 @@ conditionalProfiles:
       - Voice dictation microphone permission detection or system-settings guidance changes
 requiredRules:
   - openclaw-config-delivery
+  - openclaw-upgrade-persistence
+  - openclaw-runtime-child-processes
+  - clawx-system-automations
   - renderer-main-boundary
   - backend-communication-boundary
   - api-client-transport-policy
@@ -109,15 +112,38 @@ Renderer code must not own transport selection, direct IPC channels, direct Gate
 
 Renderer code must not create direct Gateway WebSocket connections. Gateway frame diagnostics must be emitted by Main-process Gateway logging.
 
+Startup recovery must distinguish Gateway state-ownership contention from configuration
+or schema failures. An ownership failure cannot be repaired by running Doctor against
+the same occupied state. Stopping or superseding startup fences recovery, including
+Doctor preparation and completion, without killing an in-flight migration. See
+`harness/specs/tasks/fix-upgrade-state-ownership-recovery.md` and
+`harness/specs/rules/gateway-readiness-policy.md`.
+
+Agent startup admission is Main-owned: pending and failed `/readyz` refusals must not be reported ready, and model-switch config/auth writes are rejected during preparation. Only an explicitly superseded model publication permits one delayed, connection-fenced recovery restart of a ClawX-owned Gateway, with no other Agent pending; slow upgrade migrations and external Gateways are never restarted by this path. Valid older readiness responses and offline model configuration remain compatible. See `harness/specs/rules/gateway-readiness-policy.md` and task `fix-agent-startup-admission-race`.
+
 Typed generic Gateway RPC requests are validated by `electron/services/gateway-api.ts` and delegated directly to `GatewayManager.rpc`, including an optional positive finite timeout. This path has no Renderer Chat history/send specialization, polling queue, coalescing, or backpressure layer. ACP `session/load`, `session/prompt`, and `session/cancel` own ordinary Chat history and composer behavior independently.
 
 Channel/plugin migration behavior is also part of this scenario when ClawX rewrites OpenClaw config before Gateway launch. Upgrades must preserve single-owner channel registration for migrated plugin-backed channels such as Feishu/Lark. A desktop Chat session has no channel account context; a bundled WeCom business tool may fall back only when exactly one WeCom account is configured and must reject an ambiguous multi-account selection.
 
+Windows upgrade validation must use matching old/new runtime dependencies and isolated application/state directories. Retain old conversation and tool history, credentials, agents, workspaces and the pre-migration snapshot across restart and new activity. Record real readiness timings and distinguish unit coverage from runtime and installer coverage. The local 0.6.1 validation results and remaining limitations are recorded in `harness/reference/local-061-upgrade-validation.md`.
+
+Restart performance investigations must distinguish complete app launches from in-app Gateway restarts and separate the old process's stop duration from new-process readiness. Windows process-identity probes, stale ownership records and repeated configuration validation can dominate the runtime bootstrap. Controlled profiling evidence and the boundaries of safe stale-owner optimization are recorded in `harness/reference/windows-gateway-restart-latency.md`.
+
+Owned Gateway restarts must request the runtime's actual graceful shutdown handler
+over the private utility-process channel and wait for exit before replacement.
+Keep a bounded fallback and leave external ownership handling unchanged. Startup
+may fast-path definitely dead owners and reuse safe machine-state webhook
+completion, while retaining PID-reuse checks and restored-config migration guards.
+
 ClawX's prelaunch config sanitizer also owns desktop tool policy. It must keep `web_search` in both the agent-level and Gateway-level deny lists without replacing existing deny entries or disabling managed browser automation and `web_fetch`. It must also deny the agent-facing `gateway`, `nodes`, `create_goal`, `get_goal`, and `update_goal` tools at both layers while preserving application-owned Gateway RPCs. Messaging, session orchestration, and agent discovery tools remain available unless another explicit policy denies them.
+
+ClawX disables memory-core dreaming during prelaunch config synchronization while preserving memory search and existing memory data. Main excludes system-owned heartbeat and managed dreaming jobs from the user scheduled-task list before repairs and projection; same-name user jobs remain visible. Heartbeat execution is not disabled. See `harness/specs/rules/clawx-system-automations.md`.
 
 Scheduled-task history is Main-owned backend data. Current OpenClaw versions must be queried through the Gateway `cron.runs` RPC; direct run-log file reads are allowed only as a compatibility fallback for older file-backed runtimes. When a run's bounded summary ends with OpenClaw's truncation ellipsis, Main may recover the complete final assistant reply from the run transcript identified by that `cron.runs` entry, but only when the transcript reply is longer and shares the entire summary prefix. When a cron base session has no ACP replay, Renderer may project that typed host result into a generation-scoped, in-memory historical ACP timeline, but must not replace or duplicate non-empty ACP replay.
 
 The local HTML Preview privileged bridge is also Main-owned: Renderer may load a validated local HTML file or open that current file externally through the typed Host API. The guest is an implementation detail of the existing `preview` tab; there is no `web-browser` artifact tab or general address navigation. The durable guest contract is `harness/reference/web-browser.md`.
+
+Electron communication fixtures wait for Main initialization before replacing IPC handlers, explicitly model ACP session loading for provider-free composer flows, and retain production service transformations under test. Restart catalogs recover after their transient incomplete snapshot. See [E2E parallelism](../../reference/e2e-parallelism.md) and [full-suite repair](../tasks/stabilize-openclaw-upgrade-e2e.md) for fixture boundaries, failure diagnostics and validation evidence.
 
 Local Computer Use is also Main-owned and defaults off. Its Developer Mode-gated sidebar page retains typed host-api management for persistent opt-in and read-only macOS permission status. Only an explicit enabled permission action may prompt; startup and activation never prompt. Main retains `EmbeddedCuaDriverHost`, native SDK/ASAR loading, serialized lifecycle changes, and embedded daemon supervision. It atomically publishes the private `{ v: 2, generation, driverVersion, binaryPath, socketPath }` descriptor at `CLAWX_CUA_CONNECTION_FILE`; disabling stops the daemon and removes the descriptor, without plugin-policy reconciliation. Model operations use existing OpenClaw `exec` with the descriptor's absolute bundled binary and explicit socket, and image-capable `read` for workspace-scoped screenshot files. There is no custom `computer` tool, OpenClaw plugin, MCP proxy, CLI action wrapper, node host, pairing, or `node.invoke`. Native window/AX/menu/verification and other pinned CLI capabilities are available on supported hosts, alongside primary-display capture/input, rather than a ClawX action subset. See `harness/specs/tasks/cua-037-upgrade.md` for current upgrade acceptance; the earlier `cua-driver-cli` task superseded MCP requirements and retains historical 0.21.0 evidence.
 

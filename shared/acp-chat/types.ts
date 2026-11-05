@@ -67,6 +67,8 @@ export type AcpChatRespondPermissionPayload = AcpSessionKeyPayload & {
 export type AcpChatOperationResult = {
   success: boolean;
   error?: string;
+  /** Known local explanations; error retains the sanitized protocol reason. */
+  errorCode?: 'ACP_GATEWAY_RECONNECT_TIMEOUT';
   generation?: number;
   /** The requested session still has a live prompt and was reactivated without history replay. */
   resumedActivePrompt?: boolean;

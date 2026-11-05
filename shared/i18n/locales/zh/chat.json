@@ -54,6 +54,8 @@
             "browser": "操作浏览器",
             "computer": "操作计算机",
             "execCommand": "执行命令",
+            "execCode": "执行代码",
+            "listFiles": "列出文件",
             "read": "读取",
             "write": "写入",
             "spawnSubagent": "派出子智能体",
@@ -123,7 +125,8 @@
             "open": "打开 {{name}}",
             "preview": "预览 {{name}}",
             "openFailed": "无法打开附件"
-        }
+        },
+        "gatewayReconnectTimeout": "等待对话连接恢复超时，请稍后重试。"
     },
     "artifactPanel": {
         "tabs": {

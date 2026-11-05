@@ -82,6 +82,7 @@ vi.mock('@/i18n', () => ({
         'chat:imageGeneration.generatedReadyWithMissing': 'Generated image is ready. Some images could not be loaded.',
         'chat:imageGeneration.previewUnavailable': 'Image generation completed, but the preview could not be loaded.',
         'chat:acp.image': 'Image',
+        'chat:acp.gatewayReconnectTimeout': 'Timed out waiting for the conversation connection to recover. Please try again.',
       };
       return labels[key] ?? key;
     },
@@ -1689,6 +1690,17 @@ describe('ACP Chat store', () => {
     await useAcpChatSessionStore.getState().cancel();
     expect(hostApiMock.cancelAcpSession).toHaveBeenCalledWith({ sessionKey: 'agent:pi:s1' });
     expect(useAcpChatSessionStore.getState().cancelling).toBe(false);
+  });
+
+  it('explains reconnect timeouts while preserving the concrete protocol detail', async () => {
+    hostApiMock.sendAcpPrompt.mockResolvedValueOnce({ success: false,
+      error: 'ACP did not reconnect to Gateway within 60s (-32000): authentication unavailable',
+      errorCode: 'ACP_GATEWAY_RECONNECT_TIMEOUT' });
+    const { useAcpChatSessionStore } = await importStore();
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
+    await expect(useAcpChatSessionStore.getState().sendPrompt({ sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'hello' })).resolves.toBe(false);
+    expect(useAcpChatSessionStore.getState().error).toBe('Timed out waiting for the conversation connection to recover. Please try again.\nACP did not reconnect to Gateway within 60s (-32000): authentication unavailable');
+    expect(useAcpChatSessionStore.getState().sending).toBe(false);
   });
 
   it('adds an optimistic user segment immediately before ACP echoes a user update', async () => {

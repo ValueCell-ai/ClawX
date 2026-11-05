@@ -19,6 +19,12 @@ export const GATEWAY_CONNECT_HANDSHAKE_TIMEOUT_MS = 20_000;
 // cold startup bounded so a live process stuck in startup_failed cannot hold
 // the lifecycle lock (and ACP callers) for the old 2400-attempt ceiling.
 export const GATEWAY_READY_TIMEOUT_MS = 120_000;
+// With a progress signal, the deadline instead follows the Gateway's output.
+// On a slow Windows laptop after an upgrade, startup took 30-95s before
+// plugin loading, which then blocked the event loop for 70-90s without any
+// output.
+export const GATEWAY_READY_STALL_TIMEOUT_MS = 180_000;
+export const GATEWAY_READY_MAX_TIMEOUT_MS = 10 * 60_000;
 
 export async function probeGatewayReady(
   port: number,
@@ -79,16 +85,27 @@ export async function waitForGatewayReady(options: {
   getProcessExitCode: () => number | null;
   retries?: number;
   intervalMs?: number;
+  /** Hard deadline; defaults to the max timeout when `getLastProgressAt` is set. */
   timeoutMs?: number;
+  /** Time of the Gateway's latest output; extends the deadline while it keeps progressing. */
+  getLastProgressAt?: () => number;
+  stallTimeoutMs?: number;
 }): Promise<void> {
   const intervalMs = options.intervalMs ?? 200;
-  const timeoutMs = options.timeoutMs ?? GATEWAY_READY_TIMEOUT_MS;
+  const { getLastProgressAt } = options;
+  const timeoutMs = options.timeoutMs
+    ?? (getLastProgressAt ? GATEWAY_READY_MAX_TIMEOUT_MS : GATEWAY_READY_TIMEOUT_MS);
+  const stallTimeoutMs = options.stallTimeoutMs ?? GATEWAY_READY_STALL_TIMEOUT_MS;
   const maxAttempts = options.retries ?? Number.POSITIVE_INFINITY;
   const startedAt = Date.now();
-  const deadline = startedAt + timeoutMs;
+  const hardDeadline = startedAt + timeoutMs;
+  const lastProgressAt = () => Math.max(startedAt, getLastProgressAt?.() ?? startedAt);
+  const currentDeadline = () => (getLastProgressAt
+    ? Math.min(hardDeadline, lastProgressAt() + stallTimeoutMs)
+    : hardDeadline);
   let attempts = 0;
 
-  while (attempts < maxAttempts && Date.now() < deadline) {
+  while (attempts < maxAttempts && Date.now() < currentDeadline()) {
     const i = attempts;
     attempts += 1;
     const exitCode = options.getProcessExitCode();
@@ -98,7 +115,7 @@ export async function waitForGatewayReady(options: {
     }
 
     try {
-      const remainingBeforeProbe = deadline - Date.now();
+      const remainingBeforeProbe = currentDeadline() - Date.now();
       if (remainingBeforeProbe <= 0) break;
       const ready = await probeGatewayReady(options.port, Math.min(1500, remainingBeforeProbe));
       if (ready) {
@@ -114,15 +131,16 @@ export async function waitForGatewayReady(options: {
       logger.debug(`Still waiting for Gateway... (attempt ${i + 1}/${attemptLimit})`);
     }
 
-    const remainingMs = deadline - Date.now();
+    const remainingMs = currentDeadline() - Date.now();
     if (remainingMs <= 0) break;
     await new Promise((resolve) => setTimeout(resolve, Math.min(intervalMs, remainingMs)));
   }
 
   const elapsedMs = Date.now() - startedAt;
   const attemptLimit = Number.isFinite(maxAttempts) ? `${attempts} attempts` : `${timeoutMs}ms`;
-  logger.error(`Gateway failed to become ready after ${attemptLimit} (${elapsedMs}ms) on port ${options.port}`);
-  throw new Error(`Gateway failed to start after ${elapsedMs}ms (${attempts} readiness probes, port ${options.port})`);
+  const idle = getLastProgressAt ? `, no Gateway output for ${Date.now() - lastProgressAt()}ms` : '';
+  logger.error(`Gateway failed to become ready after ${attemptLimit} (${elapsedMs}ms${idle}) on port ${options.port}`);
+  throw new Error(`Gateway failed to start after ${elapsedMs}ms (${attempts} readiness probes, port ${options.port}${idle})`);
 }
 
 const GATEWAY_PROTOCOL_VERSION = 4;

@@ -28,17 +28,23 @@ import {
 } from '../utils/paths';
 import { getUvMirrorEnv } from '../utils/uv-env';
 import { cleanupDanglingWeChatPluginState, listConfiguredChannelsFromConfig, readOpenClawConfig } from '../utils/channel-config';
-import { sanitizeOpenClawConfig, batchSyncConfigFields } from '../utils/openclaw-auth';
+import {
+  sanitizeOpenClawConfig,
+  batchSyncConfigFields,
+  syncFeishuPluginRegistrationWithInstalledPlugin,
+} from '../utils/openclaw-auth';
 import { buildProxyEnv, resolveProxySettings } from '../utils/proxy';
 import { syncProxyConfigToOpenClaw } from '../utils/openclaw-proxy';
 import { logger } from '../utils/logger';
 import { prependPathEntry } from '../utils/env-path';
 import { ensureDingTalkDwsInstalled, resolveDingTalkDwsBinDir } from '../utils/dingtalk-dws';
-import { copyPluginFromNodeModules, fixupPluginManifest, cpSyncSafe, buildCandidateSources, repairTrustedOfficialPluginInstallRecords, removeTrustedOfficialPluginInstallRecord, removeLegacyOfficialDingTalkExtension, resolvePluginNpmPackagePath } from '../utils/plugin-install';
+import { copyPluginFromNodeModules, fixupPluginManifest, cpSyncSafe, replacePluginMirror, buildCandidateSources, repairTrustedOfficialPluginInstallRecords, removeTrustedOfficialPluginInstallRecord, removeLegacyOfficialDingTalkExtension, resolvePluginNpmPackagePath } from '../utils/plugin-install';
+import { ensureClawXPluginCapabilityConsent } from '../utils/plugin-capability-consent';
 import { safeRmSync } from '../utils/safe-fs';
 import { CLAWX_OPENAI_IMAGE_PROVIDER_KEY } from '../utils/openclaw-image-relay-constants';
+import { readImageGenerationModelValue } from '../utils/openclaw-media-models';
 import {
-  ensureOpenClaw2026_7_1UpgradeSnapshot,
+  ensureOpenClawUpgradeSnapshot,
   quarantineLegacyUpdateCheckState,
 } from '../utils/openclaw-upgrade-snapshot';
 import { stripSystemdSupervisorEnv, withCuaConnectionFileEnv } from './config-sync-env';
@@ -77,9 +83,9 @@ export interface GatewayPrelaunchSyncSummary {
 const CHANNEL_PLUGIN_MAP: Record<string, { dirName: string; npmName: string }> = {
   dingtalk: { dirName: 'dingtalk', npmName: '@dingtalk-real-ai/dingtalk-connector' },
   wecom: { dirName: 'wecom', npmName: '@wecom/wecom-openclaw-plugin' },
-  feishu: { dirName: 'feishu-openclaw-plugin', npmName: '@larksuite/openclaw-lark' },
+  feishu: { dirName: 'feishu-openclaw-plugin', npmName: '@openclaw/feishu' },
   discord: { dirName: 'discord', npmName: '@openclaw/discord' },
-  qqbot: { dirName: 'qqbot', npmName: '@openclaw/qqbot' },
+  qqbot: { dirName: 'qqbot', npmName: '@tencent-connect/openclaw-qqbot' },
   whatsapp: { dirName: 'whatsapp', npmName: '@openclaw/whatsapp' },
 
   'openclaw-weixin': { dirName: 'openclaw-weixin', npmName: '@tencent-weixin/openclaw-weixin' },
@@ -218,8 +224,7 @@ function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): boolean 
         logger.info(`[plugin] ${isInstalled ? 'Auto-upgrading' : 'Installing'} ${channelType} plugin${isInstalled ? `: ${installedVersion} → ${sourceVersion}` : `: ${sourceVersion}`} (bundled)`);
         try {
           mkdirSync(fsPath(join(homedir(), '.openclaw', 'extensions')), { recursive: true });
-          safeRmSync(fsPath(targetDir));
-          cpSyncSafe(bundledDir, targetDir);
+          replacePluginMirror(targetDir, (stagedDir) => cpSyncSafe(bundledDir, stagedDir));
           fixupPluginManifest(targetDir);
         } catch (err) {
           logger.warn(`[plugin] Failed to ${isInstalled ? 'auto-upgrade' : 'install'} ${channelType} plugin:`, err);
@@ -254,7 +259,7 @@ function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): boolean 
 
         try {
           mkdirSync(fsPath(join(homedir(), '.openclaw', 'extensions')), { recursive: true });
-          copyPluginFromNodeModules(npmPkgPath, targetDir, npmName);
+          replacePluginMirror(targetDir, (stagedDir) => copyPluginFromNodeModules(npmPkgPath, stagedDir, npmName));
           fixupPluginManifest(targetDir);
         } catch (err) {
           logger.warn(`[plugin] Failed to ${isInstalled ? 'auto-upgrade' : 'install'} ${channelType} plugin from node_modules:`, err);
@@ -312,7 +317,7 @@ function resolveImageGenerationPrimary(config: unknown): string | null {
   if (!agents || typeof agents !== 'object') return null;
   const defaults = (agents as { defaults?: unknown }).defaults;
   if (!defaults || typeof defaults !== 'object') return null;
-  const imageGenerationModel = (defaults as { imageGenerationModel?: unknown }).imageGenerationModel;
+  const imageGenerationModel = readImageGenerationModelValue(defaults as Record<string, unknown>);
   if (typeof imageGenerationModel === 'string') return imageGenerationModel.trim() || null;
   if (imageGenerationModel && typeof imageGenerationModel === 'object') {
     const primary = (imageGenerationModel as { primary?: unknown }).primary;
@@ -564,6 +569,10 @@ export async function syncGatewayConfigBeforeLaunch(
     ));
     maintenance['plugin-maintenance'] = result;
 
+    if (configuredChannels.includes('feishu')) {
+      await syncFeishuPluginRegistrationWithInstalledPlugin();
+    }
+
     // This legacy directory can coexist with ClawX's remapped `dingtalk`
     // mirror and create a second Stream client. Remove it on upgrade before
     // Gateway starts, but only after the canonical official mirror exists.
@@ -582,6 +591,17 @@ export async function syncGatewayConfigBeforeLaunch(
     });
   } catch (err) {
     logger.warn('Failed to auto-upgrade plugins:', err);
+  }
+
+  // Runs offline before Gateway start: with a Gateway up, the CLI would apply
+  // the change through the running runtime and restart the channel.
+  try {
+    await measureAsync(timingsMs, 'pluginCapabilityConsentMs', async () => {
+      const config = await readOpenClawConfig() as Record<string, unknown>;
+      await ensureClawXPluginCapabilityConsent(config);
+    });
+  } catch (err) {
+    logger.warn('[plugin] Failed to record capability consent for ClawX plugins:', err);
   }
 
   // Existing users do not pass through channels.saveConfig after an upgrade.
@@ -689,15 +709,9 @@ export async function prepareGatewayLaunchContext(port: number): Promise<Gateway
   }
 
   await measureAsync(timingsMs, 'upgradeSnapshotMs', async () => {
-    try {
-      const snapshot = await ensureOpenClaw2026_7_1UpgradeSnapshot();
-      if (snapshot.status === 'created') {
-        logger.info(`[upgrade] Created OpenClaw 2026.7.1 pre-migration snapshot (${snapshot.files.length} files): ${snapshot.snapshotDir}`);
-      }
-    } catch (error) {
-      // OpenClaw also maintains migration-specific backups. Keep startup
-      // available if the additional ClawX safety snapshot cannot be written.
-      logger.warn('[upgrade] Failed to create OpenClaw 2026.7.1 pre-migration snapshot:', error);
+    const snapshot = await ensureOpenClawUpgradeSnapshot();
+    if (snapshot.status === 'created') {
+      logger.info(`[upgrade] Created OpenClaw pre-migration snapshot (${snapshot.files.length} files): ${snapshot.snapshotDir}`);
     }
   });
 

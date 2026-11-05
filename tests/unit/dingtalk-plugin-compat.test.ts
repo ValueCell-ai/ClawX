@@ -9,6 +9,7 @@ import {
   migrateDingTalkChannelSection,
   migrateDingTalkPluginRegistrations,
   patchDingTalkChannelIdsInJs,
+  ensureDingTalkWsDirectDependency,
   remapDingTalkOfficialManifest,
   remapDingTalkOfficialPackageJson,
   sanitizeDingTalkChannelConfig,
@@ -188,6 +189,38 @@ describe('remapDingTalkOfficialManifest', () => {
     const manifest = { id: 'wecom', channels: ['wecom'] };
     expect(remapDingTalkOfficialManifest(manifest)).toBe(false);
     expect(manifest).toEqual({ id: 'wecom', channels: ['wecom'] });
+  });
+});
+
+describe('ensureDingTalkWsDirectDependency', () => {
+  it('adds ws so the plugin capture links it beside the connector', () => {
+    const pkg = {
+      name: DINGTALK_OFFICIAL_NPM,
+      dependencies: {
+        axios: '1.14.0',
+        'dingtalk-stream': '2.1.4',
+      },
+    };
+
+    expect(ensureDingTalkWsDirectDependency(pkg, '8.21.0')).toBe(true);
+    expect(pkg.dependencies).toEqual({
+      axios: '1.14.0',
+      'dingtalk-stream': '2.1.4',
+      ws: '8.21.0',
+    });
+  });
+
+  it('leaves an existing ws declaration and unrelated packages unchanged', () => {
+    const official = {
+      name: DINGTALK_OFFICIAL_NPM,
+      dependencies: { ws: '^8.13.0', 'dingtalk-stream': '2.1.4' },
+    };
+    const other = { name: '@wecom/wecom-openclaw-plugin', dependencies: {} };
+
+    expect(ensureDingTalkWsDirectDependency(official, '8.21.0')).toBe(false);
+    expect(official.dependencies.ws).toBe('^8.13.0');
+    expect(ensureDingTalkWsDirectDependency(other, '8.21.0')).toBe(false);
+    expect(other.dependencies).toEqual({});
   });
 });
 

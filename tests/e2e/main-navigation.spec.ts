@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { closeElectronApp, expect, getStableWindow, test } from './fixtures/electron';
+import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
 import { E2E_EXCLUSIVE_TAG } from './parallel-policy';
 
 async function readNativeMenuLabels(app: ElectronApplication) {
@@ -41,6 +41,29 @@ async function pressElectronNewChatShortcut(app: ElectronApplication) {
     win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'N', modifiers });
     win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'N', modifiers });
   });
+}
+
+async function openUsableChat(app: ElectronApplication) {
+  // E2E deliberately skips Gateway auto-start. These shortcut tests edit a
+  // draft, so install the standard running-Gateway/workspace boundary before
+  // reloading instead of depending on platform-specific realpath behavior.
+  // ACP loads would otherwise wait 15s on the absent Gateway and keep the
+  // composer disabled.
+  await installIpcMocks(app, {
+    emptyAcpSessions: ['agent:main:main'],
+    gatewayStatus: {
+      state: 'running',
+      gatewayReady: true,
+      port: 18789,
+      pid: 12345,
+      connectedAt: Date.now(),
+    },
+  });
+  const page = await getStableWindow(app);
+  await page.reload();
+  await expect(page.getByTestId('chat-page')).toBeVisible();
+  await expect(page.getByTestId('chat-composer-input')).toBeEnabled();
+  return page;
 }
 
 test.describe('ClawX main navigation without setup flow', () => {
@@ -135,8 +158,7 @@ test.describe('ClawX main navigation without setup flow', () => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
-      const page = await getStableWindow(app);
-      await expect(page.getByTestId('chat-page')).toBeVisible();
+      const page = await openUsableChat(app);
       const mainWindowId = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].id);
       const composer = page.getByTestId('chat-composer-input');
       await composer.fill('Draft before the shortcut');
@@ -176,8 +198,7 @@ test.describe('ClawX main navigation without setup flow', () => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
-      const page = await getStableWindow(app);
-      await expect(page.getByTestId('chat-page')).toBeVisible();
+      const page = await openUsableChat(app);
       const composer = page.getByTestId('chat-composer-input');
       await composer.fill('Draft before Electron key input');
       await page.getByTestId('sidebar-nav-models').click();

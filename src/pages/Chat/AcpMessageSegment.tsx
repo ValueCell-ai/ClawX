@@ -8,10 +8,12 @@ import {
   streamdownControls,
   streamdownLinkSafety,
   streamdownPlugins,
-  streamdownRehypePlugins,
+  chatStreamdownRehypePlugins,
 } from '@/components/markdown/streamdown-config';
 import type { MessageSegmentItem, RenderPart } from '@/lib/acp/timeline-types';
 import { cn } from '@/lib/utils';
+import { localFileReferenceFromHref } from '@/lib/markdown-file-links';
+import { AcpMarkdownFileLink } from './AcpMarkdownFileLink';
 import { AcpImagePart, isSafeAcpImageSource } from './AcpImagePart';
 import { AcpAttachmentPart } from './AcpAttachmentPart';
 
@@ -39,11 +41,11 @@ const chatMarkdownComponents: Components = {
       {children}
     </strong>
   ),
-  a: ({ href, children }) => href ? (
-    <BrowserLink href={href} className="break-all text-primary hover:underline">
-      {children}
-    </BrowserLink>
-  ) : <>{children}</>,
+  a: ({ href, children }) => {
+    const uri = localFileReferenceFromHref(href);
+    if (uri) return <AcpMarkdownFileLink uri={uri}>{children}</AcpMarkdownFileLink>;
+    return href ? <BrowserLink href={href}>{children}</BrowserLink> : <>{children}</>;
+  },
   img: ({ src, alt }) => (
     <AcpMarkdownImage
       src={typeof src === 'string' ? src : undefined}
@@ -104,7 +106,7 @@ function AcpMarkdownPart({ text, isAnimating = false }: { text: string; isAnimat
         mode="streaming"
         parseIncompleteMarkdown={isAnimating}
         plugins={streamdownPlugins}
-        rehypePlugins={streamdownRehypePlugins}
+        rehypePlugins={chatStreamdownRehypePlugins}
         remend={isAnimating ? chatRemend : undefined}
         translations={translations}
       >

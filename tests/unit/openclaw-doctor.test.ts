@@ -35,9 +35,10 @@ vi.mock('electron', () => ({
   app: {
     isPackaged: false,
   },
-  utilityProcess: {
-    fork: mockFork,
-  },
+}));
+
+vi.mock('@electron/utils/openclaw-utility-process', () => ({
+  forkOpenClawUtilityProcess: mockFork,
 }));
 
 vi.mock('@electron/utils/paths', () => ({

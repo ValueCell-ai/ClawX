@@ -401,4 +401,50 @@ describe('waitForGatewayReady', () => {
     }));
     expect(wsState.sockets.length).toBeGreaterThan(0);
   });
+
+  it('keeps waiting past the stall window while the Gateway keeps writing output', async () => {
+    let lastProgressAt = Date.now();
+    let settled = false;
+    const ready = waitForGatewayReady({
+      port: 18789,
+      getProcessExitCode: () => null,
+      getLastProgressAt: () => lastProgressAt,
+      stallTimeoutMs: 1_000,
+      timeoutMs: 10_000,
+      intervalMs: 100,
+    });
+    const error = ready.then(() => null, (value) => value).finally(() => { settled = true; });
+
+    for (let elapsed = 0; elapsed < 3_000; elapsed += 500) {
+      await vi.advanceTimersByTimeAsync(500);
+      lastProgressAt = Date.now();
+    }
+    expect(settled).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(1_100);
+    await expect(error).resolves.toEqual(expect.objectContaining({
+      message: expect.stringMatching(/Gateway failed to start after \d+ms .*no Gateway output for \d+ms/),
+    }));
+  });
+
+  it('stops at the hard deadline even while output continues', async () => {
+    let lastProgressAt = Date.now();
+    const ready = waitForGatewayReady({
+      port: 18789,
+      getProcessExitCode: () => null,
+      getLastProgressAt: () => lastProgressAt,
+      stallTimeoutMs: 1_000,
+      timeoutMs: 2_000,
+      intervalMs: 100,
+    });
+    const error = ready.then(() => null, (value) => value);
+
+    for (let elapsed = 0; elapsed < 2_500; elapsed += 250) {
+      await vi.advanceTimersByTimeAsync(250);
+      lastProgressAt = Date.now();
+    }
+    await expect(error).resolves.toEqual(expect.objectContaining({
+      message: expect.stringMatching(/Gateway failed to start after 2\d{3}ms/),
+    }));
+  });
 });

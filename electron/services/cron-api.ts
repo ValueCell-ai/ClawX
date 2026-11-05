@@ -15,6 +15,7 @@ interface GatewayCronJob {
   id: string;
   name: string;
   description?: string;
+  declarationKey?: string;
   enabled: boolean;
   createdAtMs: number;
   updatedAtMs: number;
@@ -475,6 +476,29 @@ function transformCronJob(job: GatewayCronJob): CronJob {
   };
 }
 
+/** System ownership markers, never display names alone: users may reuse names. */
+function isInternalCronJob(job: GatewayCronJob): boolean {
+  if (job.payload?.kind === 'heartbeat') return true;
+  if (job.declarationKey === 'memory-core:memory-dreaming-promotion') return true;
+  // Historical dreaming jobs predate declarationKey. Keep ambiguous authored
+  // payloads visible, matching OpenClaw Doctor's conservative ownership policy.
+  if (job.declarationKey != null) return false;
+  const kind = job.payload?.kind?.toLowerCase();
+  const token = (kind === 'agentturn' ? job.payload.message : kind === 'systemevent' ? job.payload.text : '')?.trim();
+  const promotion = '__openclaw_memory_core_short_term_promotion_dream__';
+  const description = job.description ?? '';
+  const name = job.name?.trim();
+  for (const [phaseName, tag, event] of [
+    ['Memory Light Dreaming', '[managed-by=memory-core.dreaming.light]', '__openclaw_memory_core_light_sleep__'],
+    ['Memory REM Dreaming', '[managed-by=memory-core.dreaming.rem]', '__openclaw_memory_core_rem_sleep__'],
+  ]) {
+    if (description.includes(tag) && (token === event || token === promotion)) return true;
+    if (name === phaseName && kind === 'systemevent' && token === event) return true;
+  }
+  return token === promotion && (name === 'Memory Dreaming Promotion'
+    || description.includes('[managed-by=memory-core.short-term-promotion]'));
+}
+
 async function listCronJobs(gatewayManager: GatewayManager): Promise<CronJob[]> {
   let jobs: GatewayCronJob[] = [];
   let usedFallback = false;
@@ -495,6 +519,9 @@ async function listCronJobs(gatewayManager: GatewayManager): Promise<CronJob[]> 
     }
   }
 
+  // Filter before repair as well as projection: merely opening ClawX's task
+  // list must not rewrite runtime-owned automations. Applies to offline lists too.
+  jobs = jobs.filter((job) => !isInternalCronJob(job));
   if (!usedFallback && jobs.length > 0) {
     repairCronJobsInBackground(gatewayManager, jobs);
   }

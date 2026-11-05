@@ -1,15 +1,23 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IssueReportExport } from '@/components/settings/IssueReportExport';
 import { hostApi } from '@/lib/host-api';
 import { useChatStore } from '@/stores/chat';
+import i18n from '@/i18n';
+import enSettings from '@shared/i18n/locales/en/settings.json';
 
 const initialChatState = useChatStore.getState();
+const initialLanguage = i18n.language;
 
-afterEach(() => {
+beforeEach(async () => {
+  await i18n.changeLanguage('en');
+});
+
+afterEach(async () => {
   cleanup();
   vi.restoreAllMocks();
   useChatStore.setState(initialChatState, true);
+  await i18n.changeLanguage(initialLanguage);
 });
 
 describe('IssueReportExport', () => {
@@ -46,8 +54,8 @@ describe('IssueReportExport', () => {
     render(<IssueReportExport trigger="sidebar" sidebarCollapsed />);
 
     const shortcut = screen.getByTestId('sidebar-issue-report-open');
-    expect(shortcut).toHaveAccessibleName('settings:issueReport.actionTitle');
-    expect(shortcut).not.toHaveTextContent('settings:issueReport.actionTitle');
+    expect(shortcut).toHaveAccessibleName(enSettings.issueReport.actionTitle);
+    expect(shortcut).not.toHaveTextContent(enSettings.issueReport.actionTitle);
     expect(screen.getByTestId('sidebar-issue-report-icon')).toBeInTheDocument();
     fireEvent.click(shortcut);
     expect(screen.getByTestId('issue-report-dialog')).toBeInTheDocument();

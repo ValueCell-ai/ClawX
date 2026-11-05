@@ -4,6 +4,7 @@ import electron from 'vite-plugin-electron';
 import renderer from 'vite-plugin-electron-renderer';
 import { resolve } from 'path';
 import { existsSync, readFileSync } from 'fs';
+import { getDevWatchIgnored } from './scripts/vite-dev-watch';
 
 function getExtensionPackages(): Set<string> {
   try {
@@ -94,6 +95,9 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    watch: {
+      ignored: [getDevWatchIgnored(__dirname)],
+    },
   },
   build: {
     outDir: 'dist',

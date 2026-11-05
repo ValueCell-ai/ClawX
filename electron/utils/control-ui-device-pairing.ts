@@ -1,10 +1,11 @@
-import { app, utilityProcess } from 'electron';
+import { app } from 'electron';
 import { existsSync } from 'fs';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { PORTS } from './config';
 import { prependPathEntry } from './env-path';
 import { logger } from './logger';
+import { forkOpenClawUtilityProcess } from './openclaw-utility-process';
 import { getOpenClawConfigDir, getOpenClawDir, getOpenClawEntryPath } from './paths';
 import { getSetting } from './store';
 import { getUvMirrorEnv } from './uv-env';
@@ -150,7 +151,7 @@ async function approveViaOpenClawCli(requestId: string, _port: number): Promise<
   const uvEnv = await getUvMirrorEnv();
 
   return await new Promise<boolean>((resolve) => {
-    const child = utilityProcess.fork(entryScript, args, {
+    const child = forkOpenClawUtilityProcess(entryScript, args, {
       cwd: openclawDir,
       stdio: 'pipe',
       env: {

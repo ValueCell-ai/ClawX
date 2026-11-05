@@ -10,6 +10,7 @@ import {
   OPENCLAW_HEARTBEAT_POLL_SENTINEL,
 } from '@shared/chat/openclaw-internal';
 import { useGatewayStore } from './gateway';
+import { useAcpChatSessionStore } from './acp-chat-session';
 import { pickStartupSessionFallback } from './chat/session-selection';
 import {
   applyGatewaySessionsChanged,
@@ -629,8 +630,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 (session) => !suppressedSessionKeys.has(session.key),
               );
             }
+            // During restart the first catalog can omit the still-running turn.
+            // Keep its row until ACP settles; explicit delete events below still win.
+            const acpState = useAcpChatSessionStore.getState();
+            const liveSessionKey = acpState.sending ? acpState.activeSessionKey : null;
             const pendingConfirmationSessions = localSessions.filter((session) => (
-              pendingCatalogConfirmationSessionKeys.has(session.key)
+              (pendingCatalogConfirmationSessionKeys.has(session.key) || session.key === liveSessionKey)
               && !normalizedSessionKeys.has(session.key)
             ));
             if (pendingConfirmationSessions.length > 0) {

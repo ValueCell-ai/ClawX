@@ -31,11 +31,25 @@ import {
     migrateDingTalkPluginRegistrations,
     sanitizeDingTalkChannelConfig,
 } from './dingtalk-plugin-compat';
+import {
+    QQBOT_CHANNEL_ID,
+    QQBOT_LEGACY_PLUGIN_IDS,
+    QQBOT_PLUGIN_ID,
+    liftQQBotChannelSection,
+    migrateQQBotChannelSection,
+    migrateQQBotPluginRegistrations,
+    resolveQQBotRootDefaultAccount,
+} from './qqbot-plugin-compat';
 
 const OPENCLAW_DIR = join(homedir(), '.openclaw');
 const WECOM_PLUGIN_ID = 'wecom';
 const WECHAT_PLUGIN_ID = OPENCLAW_WECHAT_CHANNEL_TYPE;
-const FEISHU_PLUGIN_ID_CANDIDATES = ['openclaw-lark', 'feishu-openclaw-plugin'] as const;
+// OpenClaw 2026.10.5 replaced @larksuite/openclaw-lark with the official
+// @openclaw/feishu plugin, whose manifest id is `feishu`. Keep the legacy ids
+// only for config cleanup and migration.
+const FEISHU_PLUGIN_DIR_CANDIDATES = ['feishu-openclaw-plugin', 'openclaw-lark'] as const;
+const FEISHU_PLUGIN_ID_CANDIDATES = ['feishu', 'openclaw-lark', 'feishu-openclaw-plugin'] as const;
+const DEFAULT_FEISHU_PLUGIN_ID = 'feishu';
 const DEFAULT_ACCOUNT_ID = 'default';
 // Channels whose top-level schema (additionalProperties:false) does NOT
 // include `defaultAccount`. Official DingTalk 0.8.25 accepts it, so the
@@ -74,6 +88,25 @@ const LEGACY_WECHAT_SYNC_DIR = join(OPENCLAW_DIR, 'agents', 'default', 'sessions
 // External plugins whose activation lives in plugins.entries while account
 // configuration remains exclusively under channels.<id>.
 const PLUGIN_CHANNELS: string[] = ['discord', 'qqbot', 'whatsapp'];
+// Plugin ids that differ from their channel id, plus retired ids to clean up.
+const PLUGIN_CHANNEL_PLUGIN_IDS: Record<string, string> = {
+    [QQBOT_CHANNEL_ID]: QQBOT_PLUGIN_ID,
+};
+const PLUGIN_CHANNEL_LEGACY_PLUGIN_IDS: Record<string, readonly string[]> = {
+    [QQBOT_CHANNEL_ID]: QQBOT_LEGACY_PLUGIN_IDS,
+};
+
+function resolvePluginChannelPluginId(channelType: string): string {
+    return PLUGIN_CHANNEL_PLUGIN_IDS[channelType] ?? channelType;
+}
+
+function pluginChannelRegistrationIds(channelType: string): string[] {
+    return [...new Set([
+        resolvePluginChannelPluginId(channelType),
+        channelType,
+        ...(PLUGIN_CHANNEL_LEGACY_PLUGIN_IDS[channelType] ?? []),
+    ])];
+}
 const LEGACY_BUILTIN_CHANNEL_PLUGIN_IDS = new Set<string>();
 // OpenClaw 2026.7.1 bundles only these channel extensions. All other ClawX
 // channels must retain their explicit external plugin allowlist entries.
@@ -157,16 +190,20 @@ function sanitizeDiscordGuilds(config: unknown): void {
  * Call before committing channel-config mutations.
  */
 function sanitizeChannelSectionsBeforeWrite(config: OpenClawConfig): void {
-    for (const pluginId of PLUGIN_CHANNELS) {
-        const pluginEntry = config.plugins?.entries?.[pluginId];
-        if (!pluginEntry) continue;
-        delete pluginEntry.accounts;
-        delete pluginEntry.defaultAccount;
+    for (const channelType of PLUGIN_CHANNELS) {
+        for (const pluginId of pluginChannelRegistrationIds(channelType)) {
+            const pluginEntry = config.plugins?.entries?.[pluginId];
+            if (!pluginEntry) continue;
+            delete pluginEntry.accounts;
+            delete pluginEntry.defaultAccount;
+        }
     }
+    migrateQQBotPluginRegistrations(config);
 
     if (!config.channels) return;
     migrateDingTalkChannelSection(config);
     migrateDingTalkPluginRegistrations(config);
+    migrateQQBotChannelSection(config);
     for (const channelType of CHANNELS_OMIT_DEFAULT_ACCOUNT_KEY) {
         const section = config.channels[channelType];
         if (section) {
@@ -196,7 +233,7 @@ function normalizeCredentialValue(value: string): string {
 
 async function resolveFeishuPluginId(): Promise<string> {
     const extensionRoot = join(homedir(), '.openclaw', 'extensions');
-    for (const dirName of FEISHU_PLUGIN_ID_CANDIDATES) {
+    for (const dirName of FEISHU_PLUGIN_DIR_CANDIDATES) {
         const manifestPath = join(extensionRoot, dirName, 'openclaw.plugin.json');
         try {
             const raw = await readFile(manifestPath, 'utf-8');
@@ -209,7 +246,7 @@ async function resolveFeishuPluginId(): Promise<string> {
         }
     }
     // Fallback to the modern id when extension manifests are not available yet.
-    return FEISHU_PLUGIN_ID_CANDIDATES[0];
+    return DEFAULT_FEISHU_PLUGIN_ID;
 }
 
 function resolveStoredChannelType(channelType: string): string {
@@ -380,15 +417,35 @@ function ensurePluginRegistration(currentConfig: OpenClawConfig, pluginId: strin
     pluginEntry.enabled = true;
 }
 
+function removePluginChannelRegistration(currentConfig: OpenClawConfig, channelType: string): boolean {
+    let modified = false;
+    for (const pluginId of pluginChannelRegistrationIds(channelType)) {
+        if (removePluginRegistration(currentConfig, pluginId)) modified = true;
+    }
+    return modified;
+}
+
+function ensurePluginChannelRegistration(currentConfig: OpenClawConfig, channelType: string): string {
+    const pluginId = resolvePluginChannelPluginId(channelType);
+    if (channelType === QQBOT_CHANNEL_ID) {
+        migrateQQBotPluginRegistrations(currentConfig);
+    }
+    for (const staleId of pluginChannelRegistrationIds(channelType)) {
+        if (staleId !== pluginId) removePluginRegistration(currentConfig, staleId);
+    }
+    ensurePluginRegistration(currentConfig, pluginId);
+    return pluginId;
+}
+
 function syncPluginChannelRegistration(currentConfig: OpenClawConfig, channelType: string): void {
     if (!PLUGIN_CHANNELS.includes(channelType)) return;
     const channelSection = currentConfig.channels?.[channelType];
     if (!channelSection) {
-        removePluginRegistration(currentConfig, channelType);
+        removePluginChannelRegistration(currentConfig, channelType);
         return;
     }
-    ensurePluginRegistration(currentConfig, channelType);
-    currentConfig.plugins!.entries![channelType].enabled = channelSection.enabled !== false;
+    const pluginId = ensurePluginChannelRegistration(currentConfig, channelType);
+    currentConfig.plugins!.entries![pluginId].enabled = channelSection.enabled !== false;
 }
 
 function cleanupLegacyBuiltInChannelPluginRegistration(
@@ -495,7 +552,7 @@ export async function readOpenClawConfig(): Promise<OpenClawConfig> {
 
 async function ensurePluginAllowlist(currentConfig: OpenClawConfig, channelType: string): Promise<void> {
     if (PLUGIN_CHANNELS.includes(channelType)) {
-        ensurePluginRegistration(currentConfig, channelType);
+        ensurePluginChannelRegistration(currentConfig, channelType);
     }
 
     if (channelType === 'feishu') {
@@ -515,7 +572,7 @@ async function ensurePluginAllowlist(currentConfig: OpenClawConfig, channelType:
                 : [];
             // Keep only one active feishu plugin id to avoid doctor validation conflicts.
             const normalizedAllow = allow.filter(
-                (pluginId) => pluginId !== 'feishu' && !FEISHU_PLUGIN_ID_CANDIDATES.includes(pluginId as typeof FEISHU_PLUGIN_ID_CANDIDATES[number])
+                (pluginId) => !FEISHU_PLUGIN_ID_CANDIDATES.includes(pluginId as typeof FEISHU_PLUGIN_ID_CANDIDATES[number])
             );
             if (!normalizedAllow.includes(feishuPluginId)) {
                 currentConfig.plugins.allow = [...normalizedAllow, feishuPluginId];
@@ -527,9 +584,8 @@ async function ensurePluginAllowlist(currentConfig: OpenClawConfig, channelType:
                 currentConfig.plugins.entries = {};
             }
             // Remove conflicting feishu plugin entries; keep only the resolved
-            // external plugin id. A disabled plugins.entries.feishu record
-            // blocks openclaw-lark in OpenClaw's gateway startup planner.
-            delete currentConfig.plugins.entries['feishu'];
+            // external plugin id. A stale record for another feishu id would
+            // compete for channel ownership in OpenClaw's startup planner.
             for (const candidateId of FEISHU_PLUGIN_ID_CANDIDATES) {
                 if (candidateId !== feishuPluginId) {
                     delete currentConfig.plugins.entries[candidateId];
@@ -753,6 +809,35 @@ function migrateLegacyChannelConfigToAccounts(
     }
 }
 
+/** Convert provider-owned section shapes back into ClawX's account model before a mutation. */
+function liftProviderChannelSection(channelType: string, channelSection: ChannelConfigData): void {
+    if (channelType === QQBOT_CHANNEL_ID) {
+        liftQQBotChannelSection(channelSection);
+    }
+}
+
+/** Whether `accountId` refers to an account that only exists at the section root. */
+function targetsRootDefaultAccount(
+    channelType: string,
+    channelSection: ChannelConfigData,
+    accountId: string,
+): boolean {
+    if (accountId !== DEFAULT_ACCOUNT_ID) return false;
+    if (channelType === QQBOT_CHANNEL_ID && typeof channelSection.defaultAccount !== 'string') {
+        return Boolean(resolveProviderRootDefaultAccount(channelType, channelSection));
+    }
+    return Object.keys(getLegacyChannelPayload(channelSection)).length > 0;
+}
+
+/** Account stored as the section root by provider-owned shapes (Tencent QQBot 2.0). */
+function resolveProviderRootDefaultAccount(
+    channelType: string,
+    channelSection: ChannelConfigData,
+): ChannelConfigData | undefined {
+    if (channelType !== QQBOT_CHANNEL_ID) return undefined;
+    return resolveQQBotRootDefaultAccount(channelSection) as ChannelConfigData | undefined;
+}
+
 /**
  * Throws if the unique credential (e.g. appId for Feishu) in `config` is
  * already registered under a *different* account in the same channel section.
@@ -825,6 +910,7 @@ export async function saveChannelConfig(
         }
 
         const channelSection = currentConfig.channels[resolvedChannelType];
+        liftProviderChannelSection(resolvedChannelType, channelSection);
         migrateLegacyChannelConfigToAccounts(channelSection, DEFAULT_ACCOUNT_ID);
 
         // Guard: reject if this bot/app credential is already used by another account.
@@ -903,6 +989,10 @@ export async function getChannelConfig(channelType: string, accountId?: string):
     if (accounts?.[resolvedAccountId]) {
         return accounts[resolvedAccountId];
     }
+    if (resolvedAccountId === DEFAULT_ACCOUNT_ID) {
+        const rootAccount = resolveProviderRootDefaultAccount(resolvedChannelType, channelSection);
+        if (rootAccount) return rootAccount;
+    }
 
     // Backward compat: fall back to flat top-level config (legacy format without accounts)
     if (!accounts || Object.keys(accounts).length === 0) {
@@ -978,6 +1068,10 @@ export async function getDurableChannelConfig(
     const resolvedAccountId = accountId || DEFAULT_ACCOUNT_ID;
     const accounts = getChannelAccountsMap(channelSection);
     if (accounts?.[resolvedAccountId]) return accounts[resolvedAccountId];
+    if (resolvedAccountId === DEFAULT_ACCOUNT_ID) {
+        const rootAccount = resolveProviderRootDefaultAccount(resolvedChannelType, channelSection);
+        if (rootAccount) return rootAccount;
+    }
     if (!accounts || Object.keys(accounts).length === 0) return channelSection;
     return undefined;
 }
@@ -997,15 +1091,15 @@ export async function deleteChannelAccountConfig(channelType: string, accountId:
                 removePluginRegistration(currentConfig, WECHAT_PLUGIN_ID);
                 deleteWeChatAccount = true;
             } else if (PLUGIN_CHANNELS.includes(resolvedChannelType)) {
-                removePluginRegistration(currentConfig, resolvedChannelType);
+                removePluginChannelRegistration(currentConfig, resolvedChannelType);
             }
             return;
         }
 
         const existingAccounts = getChannelAccountsMap(channelSection);
-        const targetsLegacyDefault = accountId === DEFAULT_ACCOUNT_ID
-            && Object.keys(getLegacyChannelPayload(channelSection)).length > 0;
+        const targetsLegacyDefault = targetsRootDefaultAccount(resolvedChannelType, channelSection, accountId);
         if (!existingAccounts?.[accountId] && !targetsLegacyDefault) return;
+        liftProviderChannelSection(resolvedChannelType, channelSection);
         const currentDefaultAccountId = typeof channelSection.defaultAccount === 'string'
             && channelSection.defaultAccount.trim()
             ? channelSection.defaultAccount.trim()
@@ -1022,7 +1116,7 @@ export async function deleteChannelAccountConfig(channelType: string, accountId:
             if (isWechatChannelType(resolvedChannelType)) {
                 removePluginRegistration(currentConfig, WECHAT_PLUGIN_ID);
             } else if (PLUGIN_CHANNELS.includes(resolvedChannelType)) {
-                removePluginRegistration(currentConfig, resolvedChannelType);
+                removePluginChannelRegistration(currentConfig, resolvedChannelType);
             }
         } else {
             if (channelSection.defaultAccount === accountId) {
@@ -1103,7 +1197,7 @@ export async function deleteChannelConfig(channelType: string): Promise<void> {
                 removePluginRegistration(currentConfig, WECOM_PLUGIN_ID);
             }
             if (PLUGIN_CHANNELS.includes(resolvedChannelType)) {
-                removePluginRegistration(currentConfig, resolvedChannelType);
+                removePluginChannelRegistration(currentConfig, resolvedChannelType);
             }
             syncBuiltinChannelsWithPluginAllowlist(currentConfig);
             if (isWechatChannelType(resolvedChannelType)) {
@@ -1111,8 +1205,11 @@ export async function deleteChannelConfig(channelType: string): Promise<void> {
             }
             deletedConfig = 'channel';
         } else if (PLUGIN_CHANNELS.includes(resolvedChannelType)) {
-            if (currentConfig.plugins?.entries?.[resolvedChannelType] || currentConfig.plugins?.allow?.includes(resolvedChannelType)) {
-                removePluginRegistration(currentConfig, resolvedChannelType);
+            const isRegistered = pluginChannelRegistrationIds(resolvedChannelType).some((pluginId) => (
+                currentConfig.plugins?.entries?.[pluginId] || currentConfig.plugins?.allow?.includes(pluginId)
+            ));
+            if (isRegistered) {
+                removePluginChannelRegistration(currentConfig, resolvedChannelType);
                 syncBuiltinChannelsWithPluginAllowlist(currentConfig);
                 deletedConfig = 'plugin';
             }
@@ -1219,6 +1316,17 @@ export function listConfiguredChannelAccountsFromConfig(config: OpenClawConfig):
         let defaultAccountId = typeof section.defaultAccount === 'string' && section.defaultAccount.trim()
             ? section.defaultAccount
             : DEFAULT_ACCOUNT_ID;
+        if (channelType === QQBOT_CHANNEL_ID && typeof section.defaultAccount !== 'string') {
+            // Tencent QQBot 2.0: the root is `default` when it has credentials,
+            // otherwise the first named account is the default.
+            if (resolveProviderRootDefaultAccount(channelType, section)) {
+                accountIds.push(DEFAULT_ACCOUNT_ID);
+            } else if (accountIds.length === 0) {
+                continue;
+            } else {
+                defaultAccountId = accountIds[0];
+            }
+        }
         if (accountIds.length > 0 && !accountIds.includes(defaultAccountId)) {
             defaultAccountId = accountIds.sort((a, b) => {
                 if (a === DEFAULT_ACCOUNT_ID) return -1;
@@ -1269,10 +1377,21 @@ export async function setChannelDefaultAccount(channelType: string, accountId: s
             throw new Error(`Channel "${resolvedChannelType}" is not configured`);
         }
 
+        liftProviderChannelSection(resolvedChannelType, channelSection);
         migrateLegacyChannelConfigToAccounts(channelSection, DEFAULT_ACCOUNT_ID);
         const accounts = getChannelAccountsMap(channelSection);
         if (!accounts || !accounts[trimmedAccountId]) {
             throw new Error(`Account "${trimmedAccountId}" is not configured for channel "${resolvedChannelType}"`);
+        }
+        if (
+            resolvedChannelType === QQBOT_CHANNEL_ID
+            && trimmedAccountId !== DEFAULT_ACCOUNT_ID
+            && accounts[DEFAULT_ACCOUNT_ID]
+        ) {
+            throw new Error(
+                `QQ Bot always uses the "${DEFAULT_ACCOUNT_ID}" account as default while it exists; `
+                + `remove it before making "${trimmedAccountId}" the default.`,
+            );
         }
 
         channelSection.defaultAccount = trimmedAccountId;
@@ -1335,9 +1454,9 @@ export async function deleteAgentChannelAccounts(agentId: string, ownedChannelAc
             if (ownedChannelAccounts && !ownedChannelAccounts.has(`${channelType}:${accountId}`)) continue;
             const section = channels[channelType];
             const existingAccounts = getChannelAccountsMap(section);
-            const targetsLegacyDefault = accountId === DEFAULT_ACCOUNT_ID
-                && Object.keys(getLegacyChannelPayload(section)).length > 0;
+            const targetsLegacyDefault = targetsRootDefaultAccount(channelType, section, accountId);
             if (!existingAccounts?.[accountId] && !targetsLegacyDefault) continue;
+            liftProviderChannelSection(channelType, section);
 
             const currentDefaultAccountId = typeof section.defaultAccount === 'string'
                 && section.defaultAccount.trim()
@@ -1406,8 +1525,8 @@ export async function setChannelEnabled(channelType: string, enabled: boolean): 
 
         if (PLUGIN_CHANNELS.includes(resolvedChannelType)) {
             pluginChannel = true;
-            ensurePluginRegistration(currentConfig, resolvedChannelType);
-            currentConfig.plugins!.entries![resolvedChannelType].enabled = enabled;
+            const pluginId = ensurePluginChannelRegistration(currentConfig, resolvedChannelType);
+            currentConfig.plugins!.entries![pluginId].enabled = enabled;
         }
 
         if (!currentConfig.channels) currentConfig.channels = {};
@@ -1655,7 +1774,7 @@ async function requestFeishuTenantAccessToken(
 }
 
 /**
- * The openclaw-lark plugin keeps its account "running" even when Feishu rejects
+ * The Feishu plugin keeps its account "running" even when Feishu rejects
  * the credentials (it only logs `app_id or app_secret is invalid`), so the
  * Channels view would show Connected for a bot that can never receive events.
  * Request a tenant_access_token before persisting so bad credentials are

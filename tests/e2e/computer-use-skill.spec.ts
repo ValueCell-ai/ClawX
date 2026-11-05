@@ -50,6 +50,7 @@ for (const language of ['en', 'zh', 'ja', 'ru']) {
 
       // Keep Chat available without a provider. Skill discovery and Computer Use status remain real.
       await installIpcMocks(app, {
+        emptyAcpSessions: ['agent:main:main'],
         gatewayStatus: { state: 'running', gatewayReady: true, port: 18789 },
         gatewayRpc: {
           '["sessions.list",{}]': { success: true, result: { sessions: [{ key: 'agent:main:main', displayName: 'main' }] } },

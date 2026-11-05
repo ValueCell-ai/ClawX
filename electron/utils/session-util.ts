@@ -4,6 +4,7 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { getOpenClawConfigDir } from './paths';
+import { readSqliteSessionEntriesForAgent } from './openclaw-transcript-sqlite';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -41,6 +42,18 @@ export async function resolveAccountIdFromSessionHistory(
 
   for (const entry of agentDirs) {
     if (!entry.isDirectory()) continue;
+
+    const sqliteEntries = await readSqliteSessionEntriesForAgent(entry.name);
+    if (sqliteEntries) {
+      for (const { entry: session } of sqliteEntries) {
+        const deliveryContext = session.deliveryContext as Record<string, unknown> | undefined;
+        if (deliveryContext?.to === toAddress && deliveryContext.channel === channelType && typeof deliveryContext.accountId === 'string') {
+          return deliveryContext.accountId;
+        }
+      }
+      // A migrated database is authoritative; do not fall back to stale JSONL.
+      continue;
+    }
 
     const sessionsPath = join(agentsDir, entry.name, 'sessions', 'sessions.json');
     let raw: string;

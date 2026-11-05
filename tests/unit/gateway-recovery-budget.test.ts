@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ACP_ACCEPTED_PROMPT_RECOVERY_GRACE_MS,
+  GATEWAY_AGENT_DATABASE_ADMISSION_WAIT_MS,
   GATEWAY_CONTROL_PROBE_TIMEOUT_MS,
   GATEWAY_HEARTBEAT_INTERVAL_MS,
   GATEWAY_HEARTBEAT_MAX_MISSES,
@@ -13,12 +14,13 @@ import {
 } from '@electron/gateway/recovery-budget';
 
 describe('managed Gateway recovery budget', () => {
-  it('derives the accepted ACP prompt grace from deadline verification and ready probing', () => {
+  it('derives the accepted ACP prompt grace from deadline verification, ready probing, and admission wait', () => {
     const readyProbeMs = GATEWAY_READY_FALLBACK_PROBE_DELAYS_MS.reduce((total, delay) => total + delay, 0);
 
     const rawRecoveryBudgetMs = (2 * GATEWAY_LIVENESS_DEADLINE_MS)
       + GATEWAY_CONTROL_PROBE_TIMEOUT_MS
-      + readyProbeMs;
+      + readyProbeMs
+      + GATEWAY_AGENT_DATABASE_ADMISSION_WAIT_MS;
 
     expect(ACP_ACCEPTED_PROMPT_RECOVERY_GRACE_MS).toBe(
       60_000 * Math.ceil(rawRecoveryBudgetMs / 60_000),

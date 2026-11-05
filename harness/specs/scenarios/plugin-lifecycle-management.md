@@ -25,6 +25,8 @@ ownedPaths:
   - patches/@wecom__wecom-openclaw-plugin@2026.8.17.patch
   - pnpm-workspace.yaml
   - pnpm-lock.yaml
+  - scripts/openclaw-plugin-compact.mjs
+  - tests/unit/openclaw-plugin-compact.test.ts
 requiredProfiles:
   - fast
 conditionalProfiles:
@@ -40,6 +42,7 @@ requiredRules:
   - capability-owner-resolution
   - active-config-guards
   - packaged-runtime-pruning-guards
+  - plugin-mirror-compaction-guards
 ---
 
 Plugin lifecycle management covers bundled and external plugins as one system with different source types. The core model has two layers:
@@ -56,6 +59,6 @@ Lifecycle stages:
 - Validate: ClawX verifies package manifests, dependencies, capability config, ownership uniqueness, and startup requirements.
 - Activate: only resolved and validated capabilities enter final OpenClaw runtime config.
 - Recover: failed upgrades, stale registrations, conflicts, and removed channels converge to a single diagnosable state with rollback or cleanup paths.
-- Package: cleanup and pruning keep packaged artifacts small without deleting target runtime assets; macOS universal packages keep both x64 and arm64 native payloads.
+- Package: cleanup and pruning keep packaged artifacts small without deleting target runtime assets; macOS universal packages keep both x64 and arm64 native payloads. Bundled channel plugin mirrors are compacted so OpenClaw's per-start source capture stays small.
 
 First-stage priority is integration safety: single-owner capability resolution, active config guards, direct regression tests for migration cases, and explicit task specs for resolution, validation, and recovery work. Bundled WeCom patches must preserve account isolation: account-less desktop sessions may resolve a sole configured account, while genuinely ambiguous multi-account sessions remain blocked.

@@ -111,6 +111,12 @@ test.describe('ClawX chat model picker', () => {
             return makeResponse(request.id, agentsSnapshot());
           }
           if (request?.module === 'agents' && request.action === 'updateModel') {
+            // Simulate Main's admission refusal independently of renderer status.
+            if ((globalThis as typeof globalThis & { __modelAdmissionPending?: boolean }).__modelAdmissionPending) {
+              return { id: request.id, ok: false, error: {
+                code: 'INTERNAL', message: 'Gateway is still preparing agents. Please wait before switching models.',
+              } };
+            }
             currentModelRef = typeof body?.modelRef === 'string' ? body.modelRef : refs.alphaModelRef;
             hostRequests.push({
               path: '/api/agents/main/model',
@@ -245,6 +251,21 @@ test.describe('ClawX chat model picker', () => {
       await expect(gptOption.getByTestId('chat-model-picker-option-icon')).toHaveAttribute('data-model-icon', 'openai');
       const kimiOption = page.getByTestId('chat-model-picker-menu').getByRole('button', { name: 'kimi-k2.7 Moonshot' });
       await expect(kimiOption.getByTestId('chat-model-picker-option-icon')).toHaveAttribute('data-model-icon', 'kimi');
+      await app.evaluate(() => {
+        (globalThis as typeof globalThis & { __modelAdmissionPending?: boolean }).__modelAdmissionPending = true;
+      });
+      await gptOption.click();
+      await expect(page.getByText(/Failed to switch model:.*Gateway is still preparing agents/)).toBeVisible();
+      await expect(page.getByTestId('chat-model-picker-button')).toHaveText(/model-alpha/);
+      expect(await app.evaluate(() => (
+        (globalThis as typeof globalThis & {
+          __chatModelPickerRequests?: Array<{ path: string }>;
+        }).__chatModelPickerRequests?.some((request) => request.path === '/api/agents/main/model') ?? false
+      ))).toBe(false);
+      await app.evaluate(() => {
+        (globalThis as typeof globalThis & { __modelAdmissionPending?: boolean }).__modelAdmissionPending = false;
+      });
+      await page.getByTestId('chat-model-picker-button').click();
       await gptOption.click();
       await expect(page.getByTestId('chat-model-picker-button')).toHaveText(/gpt-5.6/);
       await expect(page.getByTestId('chat-model-picker-current-icon')).toHaveAttribute('data-model-icon', 'openai');

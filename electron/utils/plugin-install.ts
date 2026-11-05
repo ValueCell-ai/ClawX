@@ -7,7 +7,8 @@
  */
 import { app } from 'electron';
 import path from 'node:path';
-import { existsSync, cpSync, copyFileSync, statSync, lstatSync, mkdirSync, readFileSync, readlinkSync, writeFileSync, readdirSync, realpathSync, symlinkSync, unlinkSync, type Dirent } from 'node:fs';
+import { createRequire } from 'node:module';
+import { existsSync, cpSync, copyFileSync, statSync, lstatSync, mkdirSync, readFileSync, readlinkSync, renameSync, writeFileSync, readdirSync, realpathSync, symlinkSync, unlinkSync, type Dirent } from 'node:fs';
 import { readdir, stat, copyFile, mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -18,10 +19,12 @@ import {
   DINGTALK_OFFICIAL_NPM,
   DINGTALK_OFFICIAL_PLUGIN_ID,
   DINGTALK_PLUGIN_ID,
+  ensureDingTalkWsDirectDependency,
   patchDingTalkChannelIdsInJs,
   remapDingTalkOfficialManifest,
   remapDingTalkOfficialPackageJson,
 } from './dingtalk-plugin-compat';
+import { QQBOT_LEGACY_PLUGIN_IDS, QQBOT_NPM, QQBOT_PLUGIN_ID } from './qqbot-plugin-compat';
 import { ensureDingTalkDwsInstalled } from './dingtalk-dws';
 import { safeRmSync } from './safe-fs';
 import {
@@ -76,6 +79,64 @@ function _copyDirSyncRecursive(src: string, dest: string): void {
       _copyDirSyncRecursive(srcChild, destChild);
     } else {
       copyFileSync(srcChild, destChild);
+    }
+  }
+}
+
+const PLUGIN_STAGING_DIR = '.clawx-plugin-staging';
+
+/**
+ * Replace the plugin mirror at `targetDir` without ever leaving a partial
+ * copy in `extensions/`. `populate` fills a staging directory next to
+ * `extensions/` (same volume, outside plugin discovery); it is swapped in
+ * only once it holds a manifest, and the previous mirror is restored if the
+ * swap fails.
+ */
+export function replacePluginMirror(targetDir: string, populate: (stagedDir: string) => void): void {
+  const extensionsRoot = path.dirname(targetDir);
+  const stagingDir = join(
+    path.dirname(extensionsRoot),
+    PLUGIN_STAGING_DIR,
+    `${path.basename(targetDir)}-${process.pid}-${Date.now()}`,
+  );
+  const stagedDir = join(stagingDir, 'next');
+  const previousDir = join(stagingDir, 'previous');
+  let movedPrevious = false;
+  let previousRestored = true;
+  try {
+    mkdirSync(fsPath(stagingDir), { recursive: true });
+    populate(stagedDir);
+    if (!existsSync(fsPath(join(stagedDir, 'openclaw.plugin.json')))) {
+      throw new Error(`Staged plugin mirror has no openclaw.plugin.json: ${stagedDir}`);
+    }
+    mkdirSync(fsPath(extensionsRoot), { recursive: true });
+    try {
+      renameSync(fsPath(targetDir), fsPath(previousDir));
+      movedPrevious = true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    try {
+      renameSync(fsPath(stagedDir), fsPath(targetDir));
+    } catch (error) {
+      if (movedPrevious) {
+        try {
+          renameSync(fsPath(previousDir), fsPath(targetDir));
+        } catch {
+          previousRestored = false;
+        }
+      }
+      throw error;
+    }
+  } finally {
+    if (!previousRestored) {
+      logger.warn(`[plugin] Retained previous plugin mirror for recovery: ${previousDir}`);
+    } else {
+      try {
+        safeRmSync(fsPath(stagingDir));
+      } catch (error) {
+        logger.warn(`[plugin] Failed to remove plugin staging directory ${stagingDir}:`, error);
+      }
     }
   }
 }
@@ -136,6 +197,46 @@ const MANIFEST_ID_FIXES: Record<string, string> = {
   'wecom-openclaw-plugin': 'wecom',
   'dingtalk-connector': 'dingtalk',
 };
+
+function resolveHostPackageDir(packageName: string): string | null {
+  const roots = [app.getAppPath(), process.cwd()];
+  for (const root of roots) {
+    try {
+      const require = createRequire(path.join(root, 'package.json'));
+      return path.dirname(require.resolve(`${packageName}/package.json`));
+    } catch {
+      // Try the next root. A packaged app resolves from app.asar; dev resolves
+      // from the repository working directory.
+    }
+  }
+  return null;
+}
+
+/**
+ * The flattened DingTalk mirror already contains `ws` as a transitive copy.
+ * Older mirrors that skipped it can still be repaired from ClawX's own `ws`
+ * dependency. Returns the installed version only when the package is readable.
+ */
+function ensureDingTalkWsPackage(targetDir: string): string | null {
+  const manifestPath = join(targetDir, 'node_modules', 'ws', 'package.json');
+  if (!existsSync(fsPath(manifestPath))) {
+    const hostDir = resolveHostPackageDir('ws');
+    if (!hostDir) {
+      logger.warn(`[plugin] DingTalk mirror is missing ws and no host copy was found at ${targetDir}`);
+      return null;
+    }
+    try {
+      mkdirSync(fsPath(join(targetDir, 'node_modules')), { recursive: true });
+      cpSyncSafe(hostDir, join(targetDir, 'node_modules', 'ws'));
+      logger.info(`[plugin] Copied ws into the DingTalk plugin mirror at ${targetDir}`);
+    } catch (error) {
+      logger.warn(`[plugin] Failed to copy ws into the DingTalk plugin mirror at ${targetDir}:`, error);
+      return null;
+    }
+  }
+  if (!existsSync(fsPath(manifestPath))) return null;
+  return readPluginVersion(manifestPath);
+}
 
 /**
  * After a plugin has been copied to ~/.openclaw/extensions/<dir>, fix any
@@ -212,6 +313,14 @@ export function fixupPluginManifest(targetDir: string): void {
     if (remapDingTalkOfficialPackageJson(pkg)) {
       modified = true;
       logger.info(`[plugin] Remapped official DingTalk package channel id in ${targetDir}`);
+    }
+
+    if (pkg.name === DINGTALK_OFFICIAL_NPM) {
+      const wsVersion = ensureDingTalkWsPackage(targetDir);
+      if (wsVersion && ensureDingTalkWsDirectDependency(pkg, wsVersion)) {
+        modified = true;
+        logger.info(`[plugin] Declared ws ${wsVersion} as a direct DingTalk runtime dependency`);
+      }
     }
 
     if (modified) {
@@ -378,9 +487,9 @@ function collectJsFiles(rootDir: string): string[] {
 const PLUGIN_NPM_NAMES: Record<string, string> = {
   dingtalk: DINGTALK_OFFICIAL_NPM,
   wecom: '@wecom/wecom-openclaw-plugin',
-  'feishu-openclaw-plugin': '@larksuite/openclaw-lark',
+  'feishu-openclaw-plugin': '@openclaw/feishu',
   discord: '@openclaw/discord',
-  qqbot: '@openclaw/qqbot',
+  qqbot: QQBOT_NPM,
   whatsapp: '@openclaw/whatsapp',
 
   'openclaw-weixin': '@tencent-weixin/openclaw-weixin',
@@ -417,19 +526,27 @@ const TRUSTED_OFFICIAL_EXTENSION_PLUGINS: Record<string, TrustedOfficialExtensio
     recordSource: 'path',
     legacyPluginIds: ['wecom-openclaw-plugin'],
   },
-  // @larksuite/openclaw-lark 2026.7.16 still declares ./dist/index.js as
-  // `main`, but publishes its runtime entry as ./index.js. OpenClaw 2026.7.1
-  // rejects old managed npm records during its post-core smoke check. Make
-  // ClawX's complete mirror the canonical path-owned payload instead.
+  // OpenClaw 2026.10.5 ships the official successor @openclaw/feishu under the
+  // `feishu` plugin id. It publishes a valid runtimeExtensions entry, so the
+  // ClawX mirror can stay the canonical path-owned payload without the legacy
+  // @larksuite/openclaw-lark main-entry workaround.
   'feishu-openclaw-plugin': {
-    npmName: '@larksuite/openclaw-lark',
-    pluginId: 'openclaw-lark',
+    npmName: '@openclaw/feishu',
+    pluginId: 'feishu',
     recordSource: 'path',
-    legacyPluginIds: ['feishu-openclaw-plugin', 'feishu'],
+    legacyPluginIds: ['openclaw-lark', 'feishu-openclaw-plugin'],
   },
   whatsapp: { npmName: '@openclaw/whatsapp' },
   discord: { npmName: '@openclaw/discord' },
-  qqbot: { npmName: '@openclaw/qqbot' },
+  // OpenClaw 2026.10.5 resolves the `qqbot` channel to Tencent QQBot 2.0 and
+  // lists @openclaw/qqbot as its legacy npm name. A path record under the new
+  // `openclaw-qqbot` id keeps startup migration from reinstalling it from npm.
+  qqbot: {
+    npmName: QQBOT_NPM,
+    pluginId: QQBOT_PLUGIN_ID,
+    recordSource: 'path',
+    legacyPluginIds: [...QQBOT_LEGACY_PLUGIN_IDS],
+  },
   'openclaw-weixin': { npmName: '@tencent-weixin/openclaw-weixin' },
   'clawx-openai-image': {
     npmName: 'clawx-openai-image-plugin',
@@ -728,6 +845,23 @@ export async function removeTrustedOfficialPluginInstallRecord(pluginDirName: st
   return jsonChanged || sqliteChanged;
 }
 
+export interface ClawXPathOwnedPluginMirror {
+  pluginDirName: string;
+  pluginId: string;
+  targetDir: string;
+}
+
+/** Mirrors recorded as path installs, which OpenClaw never treats as trusted official installs. */
+export function listClawXPathOwnedPluginMirrors(): ClawXPathOwnedPluginMirror[] {
+  return Object.entries(TRUSTED_OFFICIAL_EXTENSION_PLUGINS)
+    .filter(([, definition]) => definition.recordSource === 'path')
+    .map(([pluginDirName, definition]) => ({
+      pluginDirName,
+      pluginId: definition.pluginId ?? pluginDirName,
+      targetDir: join(homedir(), '.openclaw', 'extensions', pluginDirName),
+    }));
+}
+
 /** Repair managed install metadata and host peer links for all mirrors on disk. */
 export async function repairTrustedOfficialPluginInstallRecords(): Promise<void> {
   for (const pluginDirName of Object.keys(TRUSTED_OFFICIAL_EXTENSION_PLUGINS)) {
@@ -858,8 +992,10 @@ export function copyPluginFromNodeModules(npmPkgPath: string, targetDir: string,
   const SKIP_PACKAGES = new Set(['typescript', '@playwright/test']);
   try {
     const pluginPkg = JSON.parse(readFileSync(fsPath(join(targetDir, 'package.json')), 'utf-8'));
+    // A peer that is also a runtime dependency must still ship with the plugin.
+    const runtimeDeps = new Set(Object.keys(pluginPkg.dependencies || {}));
     for (const peer of Object.keys(pluginPkg.peerDependencies || {})) {
-      SKIP_PACKAGES.add(peer);
+      if (!runtimeDeps.has(peer)) SKIP_PACKAGES.add(peer);
     }
   } catch { /* ignore */ }
 
@@ -961,24 +1097,13 @@ export async function ensurePluginInstalled(
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         mkdirSync(fsPath(extensionsRoot), { recursive: true });
-        safeRmSync(fsPath(targetDir));
-        cpSyncSafe(sourceDir, targetDir);
-        if (!existsSync(fsPath(join(targetDir, 'openclaw.plugin.json')))) {
-          return { installed: false, warning: `Failed to install ${pluginLabel} plugin mirror (manifest missing).` };
-        }
+        replacePluginMirror(targetDir, (stagedDir) => cpSyncSafe(sourceDir, stagedDir));
         const installed = await finalizeInstalledMirror();
         logger.info(`Installed ${pluginLabel} plugin from bundled mirror: ${sourceDir}`);
         return installed;
       } catch (error) {
         const diagnostic = toErrorDiagnostic(error);
         attempts.push({ attempt, ...diagnostic });
-        if (attempt < maxAttempts) {
-          try {
-            safeRmSync(fsPath(targetDir));
-          } catch {
-            // Ignore cleanup failures before retry.
-          }
-        }
       }
     }
 
@@ -1012,10 +1137,8 @@ export async function ensurePluginInstalled(
           );
           try {
             mkdirSync(fsPath(join(homedir(), '.openclaw', 'extensions')), { recursive: true });
-            copyPluginFromNodeModules(npmPkgPath, targetDir, npmName);
-            if (existsSync(fsPath(join(targetDir, 'openclaw.plugin.json')))) {
-              return await finalizeInstalledMirror();
-            }
+            replacePluginMirror(targetDir, (stagedDir) => copyPluginFromNodeModules(npmPkgPath, stagedDir, npmName));
+            return await finalizeInstalledMirror();
           } catch (err) {
             logger.warn(
               `[plugin] Failed to install ${pluginLabel} plugin from node_modules`,

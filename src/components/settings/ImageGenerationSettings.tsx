@@ -1,5 +1,5 @@
 /**
- * Global image generation settings (agents.defaults.imageGenerationModel).
+ * Global image generation settings (agents.defaults.mediaModels.image).
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Eye, EyeOff, ImagePlus, Loader2, Play, RefreshCw, Trash2 } from 'lucide-react';

@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import type { BrowserWindow } from 'electron';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import { extractSessionRecords } from '../utils/session-util';
+import { readSqliteSessionEntriesForAgent } from '../utils/openclaw-transcript-sqlite';
 import {
   cleanupDanglingWeChatPluginState,
   deleteChannelAccountConfig,
@@ -783,6 +784,33 @@ async function listSessionDerivedTargetOptions(params: {
 
   for (const entry of agentDirs) {
     if (!entry.isDirectory()) continue;
+    const sqliteEntries = await readSqliteSessionEntriesForAgent(entry.name);
+    const sourceEntries = sqliteEntries
+      ? sqliteEntries.map(item => item.entry)
+      : null;
+    if (sourceEntries) {
+      for (const session of sourceEntries) {
+        const deliveryContext = session.deliveryContext && typeof session.deliveryContext === 'object'
+          ? session.deliveryContext as JsonRecord : undefined;
+        const origin = session.origin && typeof session.origin === 'object'
+          ? session.origin as JsonRecord : undefined;
+        const sessionChannelType = readNonEmptyString(deliveryContext?.channel)
+          || readNonEmptyString(session.lastChannel) || readNonEmptyString(session.channel)
+          || readNonEmptyString(origin?.provider) || readNonEmptyString(origin?.surface);
+        if (!sessionChannelType || resolveStoredChannelType(sessionChannelType) !== storedChannelType) continue;
+        const sessionAccountId = readNonEmptyString(deliveryContext?.accountId)
+          || readNonEmptyString(session.lastAccountId) || readNonEmptyString(origin?.accountId);
+        if (params.accountId && sessionAccountId !== params.accountId) continue;
+        const value = readNonEmptyString(deliveryContext?.to) || readNonEmptyString(session.lastTo) || readNonEmptyString(origin?.to);
+        if (!value || seen.has(value)) continue;
+        const labelBase = readNonEmptyString(session.displayName) || readNonEmptyString(session.subject) || readNonEmptyString(origin?.label) || value;
+        const label = buildChannelTargetLabel(labelBase, value);
+        if (q && !label.toLowerCase().includes(q) && !value.toLowerCase().includes(q)) continue;
+        seen.add(value);
+        candidates.push({ value, label, kind: inferTargetKindFromValue(storedChannelType, value, readNonEmptyString(session.chatType) || readNonEmptyString(origin?.chatType)), updatedAt: typeof session.updatedAt === 'number' ? session.updatedAt : 0 });
+      }
+      continue;
+    }
     const sessionsPath = join(agentsDir, entry.name, 'sessions', 'sessions.json');
     const raw = await readFile(sessionsPath, 'utf8').catch(() => '');
     if (!raw.trim()) continue;

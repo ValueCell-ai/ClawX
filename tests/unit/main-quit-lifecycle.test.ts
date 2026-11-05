@@ -3,6 +3,7 @@ import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  APP_QUIT_CLEANUP_TIMEOUT_MS,
   createQuitLifecycleState,
   markQuitCleanupCompleted,
   requestQuitLifecycleAction,
@@ -46,7 +47,7 @@ function setupQuit(isE2EMode = false, hasAcpService = true) {
   runInNewContext(ts.transpileModule(source.slice(start, end), {
     compilerOptions: { target: ts.ScriptTarget.ES2022 },
   }).outputText, {
-    app, gatewayManager, computerUseApi, logger, isE2EMode, setTimeout,
+    app, gatewayManager, computerUseApi, logger, isE2EMode, setTimeout, APP_QUIT_CLEANUP_TIMEOUT_MS,
     getActiveAcpChatService: () => hasAcpService ? acpChatService : null,
     setQuitting: vi.fn(),
     cancelDingTalkDwsOAuth: vi.fn(),
@@ -127,7 +128,24 @@ describe('Main before-quit cleanup', () => {
     expect(ctx.app.quit).toHaveBeenCalledOnce();
   });
 
-  it.each(['acp', 'gateway'] as const)('keeps the shared five-second deadline while %s is pending without restarting cleanup', async (pending) => {
+  it('allows normal Gateway cleanup beyond the old five-second app quit deadline', async () => {
+    vi.useFakeTimers();
+    const ctx = setupQuit();
+    ctx.quit();
+    await vi.advanceTimersByTimeAsync(4_000);
+    ctx.acp.resolve();
+    ctx.computerUse.resolve();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(ctx.gatewayManager.stop).toHaveBeenCalledOnce();
+    expect(ctx.app.quit).not.toHaveBeenCalled();
+    expect(ctx.gatewayManager.forceTerminateOwnedProcessForQuit).not.toHaveBeenCalled();
+    ctx.gateway.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ctx.app.quit).toHaveBeenCalledOnce();
+    expect(ctx.gatewayManager.forceTerminateOwnedProcessForQuit).not.toHaveBeenCalled();
+  });
+
+  it.each(['acp', 'gateway'] as const)('keeps the bounded shared deadline while %s is pending without restarting cleanup', async (pending) => {
     vi.useFakeTimers();
     const ctx = setupQuit();
     ctx.quit();
@@ -136,7 +154,7 @@ describe('Main before-quit cleanup', () => {
     expect(ctx.gatewayManager.stop).not.toHaveBeenCalled();
     expect(ctx.computerUseApi.stop).toHaveBeenCalledOnce();
     if (pending === 'gateway') ctx.acp.resolve();
-    await vi.advanceTimersByTimeAsync(4999);
+    await vi.advanceTimersByTimeAsync(APP_QUIT_CLEANUP_TIMEOUT_MS - 1);
     expect(ctx.app.quit).not.toHaveBeenCalled();
     expect(ctx.gatewayManager.forceTerminateOwnedProcessForQuit).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);

@@ -46,6 +46,10 @@ vi.mock('@electron/utils/paths', () => ({
   getOpenClawEntryPath: () => mockedEntryPath,
 }));
 
+vi.mock('@electron/utils/openclaw-utility-process', () => ({
+  ensureOpenClawRuntimeCompat: () => '/tmp/clawx-user-data/openclaw-runtime-compat.mjs',
+}));
+
 function setResourcesPath(resourcesPath: string | undefined) {
   Object.defineProperty(process, 'resourcesPath', {
     value: resourcesPath,
@@ -242,7 +246,7 @@ describe('getOpenClawEmbeddedForkSpec', () => {
       options: {
         cwd: '/tmp/openclaw',
         execPath: helperPath,
-        execArgv: [],
+        execArgv: ['--import', 'file:///tmp/clawx-user-data/openclaw-runtime-compat.mjs'],
         stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
         windowsHide: true,
         env: expect.objectContaining({
@@ -255,20 +259,15 @@ describe('getOpenClawEmbeddedForkSpec', () => {
     });
   });
 
-  it('uses a real Node executable from PATH for dev embedded launches instead of Electron', async () => {
+  it('does not launch Electron when no supported development Node is available', async () => {
     const execPath = '/Users/zhuoxu/workspace/ClawX/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron';
     setPlatform('darwin');
     setExecPath(execPath);
     process.env.PATH = '/opt/node/bin:/usr/bin';
-    process.env.ELECTRON_RUN_AS_NODE = '1';
     mockExistsSync.mockImplementation((p: string) => p === '/opt/node/bin/node');
 
     const { getOpenClawEmbeddedForkSpec } = await import('@electron/utils/openclaw-cli');
-    const spec = getOpenClawEmbeddedForkSpec(['acp']);
-
-    expect(spec.options.execPath).toBe('/opt/node/bin/node');
-    expect(spec.options.execPath).not.toBe(execPath);
-    expect(spec.options.env).not.toMatchObject({ ELECTRON_RUN_AS_NODE: '1' });
+    expect(() => getOpenClawEmbeddedForkSpec(['acp'])).toThrow('Supported Node executable not found');
   });
 
   it('fails packaged macOS embedded launch when the Helper executable is missing', async () => {

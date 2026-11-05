@@ -28,7 +28,7 @@ Function ClawXMoveLegacyInstallDir
     Goto _clawx_legacy_move_done
   ${endIf}
 
-  IfFileExists "$R6\" 0 _clawx_legacy_move_done
+  IfFileExists "$R6\*.*" 0 _clawx_legacy_move_done
     DetailPrint "Moving previous ClawX installation at $R6 out of the way..."
     SetOutPath $TEMP
     nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance -ClassName Win32_Process | Where-Object { $$_.ExecutablePath -and $$_.ExecutablePath.StartsWith('$R6', [System.StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"`
@@ -38,7 +38,7 @@ Function ClawXMoveLegacyInstallDir
     StrCpy $R8 0
 
   _clawx_legacy_find_free_stale:
-    IfFileExists "$R6._stale_$R8\" 0 _clawx_legacy_found_free_stale
+    IfFileExists "$R6._stale_$R8\*.*" 0 _clawx_legacy_found_free_stale
     IntOp $R8 $R8 + 1
     Goto _clawx_legacy_find_free_stale
 
@@ -225,17 +225,17 @@ FunctionEnd
   ; FILE_SHARE_DELETE sharing mode), whereas CopyFiles fails because it
   ; needs write/overwrite access which some AV products deny.
   ; Check if a previous installation exists ($INSTDIR is a directory).
-  ; Use trailing backslash — the correct NSIS idiom for directory existence.
-  ; (IfFileExists "$INSTDIR\*.*" only matches files containing a dot and
-  ;  would fail for extensionless files or pure-subdirectory layouts.)
-  IfFileExists "$INSTDIR\" 0 _instdir_clean
+  ; IfFileExists is a raw FindFirstFile call: a path ending in "\" never
+  ; matches, so directory checks must use "\*.*" (which also matches the "."
+  ; entry of an empty directory).
+  IfFileExists "$INSTDIR\*.*" 0 _instdir_clean
     DetailPrint "Moving previous installation out of the way..."
     ; Find the first available stale directory name (e.g. $INSTDIR._stale_0)
     ; This ensures we NEVER have to synchronously delete old leftovers before
     ; renaming the current $INSTDIR. We just move it out of the way instantly.
     StrCpy $R8 0
   _find_free_stale:
-    IfFileExists "$INSTDIR._stale_$R8\" 0 _found_free_stale
+    IfFileExists "$INSTDIR._stale_$R8\*.*" 0 _found_free_stale
     IntOp $R8 $R8 + 1
     Goto _find_free_stale
 
@@ -258,7 +258,7 @@ FunctionEnd
       Pop $1
       Sleep 2000
       RMDir "$INSTDIR"
-      IfFileExists "$INSTDIR\" 0 _recreate_clean_instdir
+      IfFileExists "$INSTDIR\*.*" 0 _recreate_clean_instdir
         DetailPrint "Failed to remove previous installation directory; aborting to avoid leaving the old version installed."
         MessageBox MB_OK|MB_ICONEXCLAMATION "Unable to replace the previous ClawX installation because files are still locked. Please close ClawX and retry installation." /SD IDOK
         SetErrorLevel 2
@@ -275,10 +275,10 @@ FunctionEnd
   ; installation directory was only partially removed after a locked-file
   ; fallback. Explicitly remove the bundled skills subtree so old skills
   ; (apple-notes, discord, etc.) do not remain under resources\openclaw\skills.
-  IfFileExists "$INSTDIR\resources\openclaw\skills\" 0 _openclaw_skills_clean
+  IfFileExists "$INSTDIR\resources\openclaw\skills\*.*" 0 _openclaw_skills_clean
     DetailPrint "Removing stale bundled OpenClaw skills from previous install..."
     RMDir /r "$INSTDIR\resources\openclaw\skills"
-    IfFileExists "$INSTDIR\resources\openclaw\skills\" 0 _openclaw_skills_clean
+    IfFileExists "$INSTDIR\resources\openclaw\skills\*.*" 0 _openclaw_skills_clean
       nsExec::ExecToStack 'cmd.exe /c rd /s /q "$INSTDIR\resources\openclaw\skills"'
       Pop $0
       Pop $1
@@ -346,7 +346,7 @@ FunctionEnd
   ; Wait 60s before starting deletion to avoid I/O contention with ClawX's
   ; first launch (Windows Defender scan, ASAR mapping, etc.).
   ; ExecShell SW_HIDE is completely detached from NSIS and avoids pipe blocking.
-  IfFileExists "$INSTDIR._stale_0\" 0 _ci_stale_cleaned
+  IfFileExists "$INSTDIR._stale_0\*.*" 0 _ci_stale_cleaned
     ; Use PowerShell to extract the basename of $INSTDIR so the glob works
     ; even when the user picked a custom install folder name.
     ; E.g. $INSTDIR = D:\Apps\MyClaw → glob = MyClaw._stale_*

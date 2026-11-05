@@ -1,6 +1,7 @@
 #!/usr/bin/env zx
 
 import 'zx/globals';
+import { downloadBufferWithRetry } from './download-with-retry.mjs';
 
 const ROOT_DIR = path.resolve(__dirname, '..');
 const UV_VERSION = '0.10.0';
@@ -65,10 +66,8 @@ async function setupTarget(id) {
   try {
     // Download
     echo`⬇️ Downloading: ${downloadUrl}`;
-    const response = await fetch(downloadUrl);
-    if (!response.ok) throw new Error(`Failed to download: ${response.statusText}`);
-    const buffer = await response.arrayBuffer();
-    await fs.writeFile(archivePath, Buffer.from(buffer));
+    const buffer = await downloadBufferWithRetry(downloadUrl, { label: target.filename });
+    await fs.writeFile(archivePath, buffer);
 
     // Extract
     echo`📂 Extracting...`;
