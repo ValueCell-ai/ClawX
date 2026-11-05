@@ -8,6 +8,7 @@ import { logger } from '../utils/logger';
 import { prependPathEntry } from '../utils/env-path';
 import { forkOpenClawUtilityProcess } from '../utils/openclaw-utility-process';
 import { probeGatewayReady } from './ws-client';
+import { LifecycleSupersededError } from './lifecycle-controller';
 
 // Doctor runs OpenClaw's offline state and agent database migrations, whose
 // duration scales with the size of the existing state tree.
@@ -272,19 +273,25 @@ export async function findExistingGatewayProcess(options: {
 
 // Doctor migrates the state database; an ACP child left over from a previous
 // Gateway would keep reading it during the repair.
-async function stopAcpBeforeDoctorRepair(): Promise<void> {
+async function stopAcpBeforeDoctorRepair(assertLifecycle?: () => void): Promise<void> {
   try {
     const { getActiveAcpChatService } = await import('../services/acp-chat-service');
+    assertLifecycle?.();
     const acp = getActiveAcpChatService();
     if (!acp) return;
     logger.info('Stopping ACP chat process before OpenClaw doctor repair');
     await acp.stop();
   } catch (error) {
+    if (error instanceof LifecycleSupersededError) throw error;
     logger.warn(`Failed to stop ACP chat process before OpenClaw doctor repair: ${String(error)}`);
   }
 }
 
-export async function runOpenClawDoctorRepair(): Promise<boolean> {
+export async function runOpenClawDoctorRepair(options: {
+  assertLifecycle?: () => void;
+} = {}): Promise<boolean> {
+  const { assertLifecycle } = options;
+  assertLifecycle?.();
   const openclawDir = getOpenClawDir();
   const entryScript = getOpenClawEntryPath();
   if (!existsSync(entryScript)) {
@@ -304,8 +311,12 @@ export async function runOpenClawDoctorRepair(): Promise<boolean> {
     ? prependPathEntry(baseProcessEnv, binPath).env
     : baseProcessEnv;
 
-  await stopAcpBeforeDoctorRepair();
+  await stopAcpBeforeDoctorRepair(assertLifecycle);
+  assertLifecycle?.();
   const uvEnv = await getUvMirrorEnv();
+  // Preparation can outlive the startup that requested this repair. Fence the
+  // launch, but let an already-running Doctor finish its database migrations.
+  assertLifecycle?.();
   const doctorArgs = ['doctor', '--fix', '--yes', '--non-interactive'];
   logger.info(
     `Running OpenClaw doctor repair (entry="${entryScript}", args="${doctorArgs.join(' ')}", cwd="${openclawDir}", bundledBin=${binPathExists ? 'yes' : 'no'})`,

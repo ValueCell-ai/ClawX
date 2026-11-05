@@ -12,7 +12,7 @@
  */
 import { access, mkdir, readFile, readdir, writeFile } from 'fs/promises';
 import { constants, readdirSync, readFileSync, existsSync } from 'fs';
-import { dirname, join } from 'path';
+import { dirname, isAbsolute, join, win32 } from 'path';
 import { homedir } from 'os';
 import { listConfiguredAgentIds, migrateLegacyAgentRosterInConfig } from './agent-config';
 import { getOpenClawResolvedDir } from './paths';
@@ -654,6 +654,12 @@ function expandProviderKeysForDeletion(provider: string): string[] {
 
 function normalizePluginPathForCompare(pluginPath: string): string {
   return pluginPath.replace(/\\/g, '/').replace(/\/+$/, '');
+}
+
+function isAbsolutePluginPath(pluginPath: string): boolean {
+  // Imported configs can retain Windows paths on another platform. Keep
+  // relative paths and npm package specifiers outside filesystem cleanup.
+  return isAbsolute(pluginPath) || win32.isAbsolute(pluginPath);
 }
 
 function isBundledOpenClawPluginPath(pluginPath: string): boolean {
@@ -3454,7 +3460,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       if (Array.isArray(plugins)) {
         const validPlugins: unknown[] = [];
         for (const p of plugins) {
-          if (typeof p === 'string' && p.startsWith('/')) {
+          if (typeof p === 'string' && isAbsolutePluginPath(p)) {
             if (isBundledOpenClawPluginPath(p) || !(await fileExists(p))) {
               console.log(`[sanitize] Removing stale/bundled plugin path "${p}" from openclaw.json`);
               modified = true;
@@ -3471,7 +3477,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
         if (Array.isArray(pluginsObj.load)) {
           const validLoad: unknown[] = [];
           for (const p of pluginsObj.load) {
-            if (typeof p === 'string' && p.startsWith('/')) {
+            if (typeof p === 'string' && isAbsolutePluginPath(p)) {
               if (isBundledOpenClawPluginPath(p) || !(await fileExists(p))) {
                 console.log(`[sanitize] Removing stale/bundled plugin path "${p}" from openclaw.json`);
                 modified = true;
@@ -3490,7 +3496,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
             const validPaths: unknown[] = [];
             const countBefore = loadObj.paths.length;
             for (const p of loadObj.paths) {
-              if (typeof p === 'string' && p.startsWith('/')) {
+              if (typeof p === 'string' && isAbsolutePluginPath(p)) {
                 if (isBundledOpenClawPluginPath(p) || !(await fileExists(p))) {
                   console.log(`[sanitize] Removing stale/bundled plugin path "${p}" from plugins.load.paths`);
                   modified = true;

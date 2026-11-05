@@ -112,11 +112,20 @@ Renderer code must not own transport selection, direct IPC channels, direct Gate
 
 Renderer code must not create direct Gateway WebSocket connections. Gateway frame diagnostics must be emitted by Main-process Gateway logging.
 
+Startup recovery must distinguish Gateway state-ownership contention from configuration
+or schema failures. An ownership failure cannot be repaired by running Doctor against
+the same occupied state. Stopping or superseding startup fences recovery, including
+Doctor preparation and completion, without killing an in-flight migration. See
+`harness/specs/tasks/fix-upgrade-state-ownership-recovery.md` and
+`harness/specs/rules/gateway-readiness-policy.md`.
+
 Agent startup admission is Main-owned: pending and failed `/readyz` refusals must not be reported ready, and model-switch config/auth writes are rejected during preparation. Only an explicitly superseded model publication permits one delayed, connection-fenced recovery restart of a ClawX-owned Gateway, with no other Agent pending; slow upgrade migrations and external Gateways are never restarted by this path. Valid older readiness responses and offline model configuration remain compatible. See `harness/specs/rules/gateway-readiness-policy.md` and task `fix-agent-startup-admission-race`.
 
 Typed generic Gateway RPC requests are validated by `electron/services/gateway-api.ts` and delegated directly to `GatewayManager.rpc`, including an optional positive finite timeout. This path has no Renderer Chat history/send specialization, polling queue, coalescing, or backpressure layer. ACP `session/load`, `session/prompt`, and `session/cancel` own ordinary Chat history and composer behavior independently.
 
 Channel/plugin migration behavior is also part of this scenario when ClawX rewrites OpenClaw config before Gateway launch. Upgrades must preserve single-owner channel registration for migrated plugin-backed channels such as Feishu/Lark. A desktop Chat session has no channel account context; a bundled WeCom business tool may fall back only when exactly one WeCom account is configured and must reject an ambiguous multi-account selection.
+
+Windows upgrade validation must use matching old/new runtime dependencies and isolated application/state directories. Retain old conversation and tool history, credentials, agents, workspaces and the pre-migration snapshot across restart and new activity. Record real readiness timings and distinguish unit coverage from runtime and installer coverage. The local 0.6.1 validation results and remaining limitations are recorded in `harness/reference/local-061-upgrade-validation.md`.
 
 ClawX's prelaunch config sanitizer also owns desktop tool policy. It must keep `web_search` in both the agent-level and Gateway-level deny lists without replacing existing deny entries or disabling managed browser automation and `web_fetch`. It must also deny the agent-facing `gateway`, `nodes`, `create_goal`, `get_goal`, and `update_goal` tools at both layers while preserving application-owned Gateway RPCs. Messaging, session orchestration, and agent discovery tools remain available unless another explicit policy denies them.
 

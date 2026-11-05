@@ -39,6 +39,15 @@ const STARTUP_MIGRATION_LOCK_PATTERNS: RegExp[] = [
   /\bretry after the other gateway finishes\b/i,
 ];
 
+// State ownership is shared by Gateway and offline Doctor. Doctor cannot repair
+// contention with another live owner, even when the Gateway exits with code 1.
+// Keep these specific: unrelated SQLite or file-lock failures need their own policy.
+const GATEWAY_STATE_OWNERSHIP_CONTENTION_PATTERNS: RegExp[] = [
+  /\bGatewayStateOwnerContentionError\b/i,
+  /\bfailed to acquire gateway state ownership\b/i,
+  /\bwaited \d+\s*ms for gateway state ownership\b/i,
+];
+
 const TRANSIENT_START_ERROR_PATTERNS: RegExp[] = [
   /WebSocket closed before handshake/i,
   /ECONNREFUSED/i,
@@ -113,6 +122,14 @@ export function hasStartupMigrationLockSignal(
 ): boolean {
   return startupFailureCandidates(startupError, startupStderrLines)
     .some((text) => STARTUP_MIGRATION_LOCK_PATTERNS.some((pattern) => pattern.test(text)));
+}
+
+export function hasGatewayStateOwnershipContentionSignal(
+  startupError: unknown,
+  startupStderrLines: string[],
+): boolean {
+  return startupFailureCandidates(startupError, startupStderrLines)
+    .some((text) => GATEWAY_STATE_OWNERSHIP_CONTENTION_PATTERNS.some((pattern) => pattern.test(text)));
 }
 
 /**
@@ -210,6 +227,7 @@ export function getGatewayStartupRecoveryAction(options: {
   if (
     hasFatalRuntimeFailureSignal(options.startupError, options.startupStderrLines)
     || hasStartupMigrationLockSignal(options.startupError, options.startupStderrLines)
+    || hasGatewayStateOwnershipContentionSignal(options.startupError, options.startupStderrLines)
   ) {
     return 'fail';
   }

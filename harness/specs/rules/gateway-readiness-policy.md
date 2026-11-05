@@ -10,6 +10,8 @@ requiredTests:
   - tests/unit/gateway-agent-database-admission.test.ts
   - tests/unit/gateway-ws-client.test.ts
   - tests/unit/gateway-startup-orchestrator.test.ts
+  - tests/unit/gateway-startup-recovery.test.ts
+  - tests/unit/gateway-supervisor.test.ts
 ---
 
 Gateway status handling must preserve `gatewayReady` semantics.
@@ -53,6 +55,18 @@ without any Gateway output, or after 10 minutes in total. A fixed deadline measu
 from spawn killed slow but progressing upgraded Windows starts. Terminating a Gateway
 that missed its deadline also exits with code 1 on Windows. That exit is not a config
 failure and must not trigger the startup Doctor repair.
+
+Explicit Gateway state-ownership contention must fail before the generic exit-code-1
+config-repair fallback, even if the error suggests running Doctor after the owner
+stops. Preserve the diagnostic and disable automatic reconnect for that failure.
+Do not infer a live Gateway identity from a PID alone, delete ownership locks, or
+kill an unverified holder. A mere waiting-progress message is not a terminal failure.
+
+Before handling any startup failure, including a normal child exit caused by stop,
+recheck the lifecycle epoch before scheduling repair or retry. Check it again after
+asynchronous Doctor preparation and before forking, and after Doctor returns before
+updating startup state. A superseded flow must not launch Doctor or another Gateway;
+an already-running migration is not forcibly interrupted by this cancellation fence.
 
 The ACP child is a Gateway client that also opens OpenClaw shared state. Main forks
 it only after the managed Gateway reports a connection, with a finite wait that fails

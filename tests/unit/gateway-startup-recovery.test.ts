@@ -3,6 +3,7 @@ import {
   connectGatewayWithStartupRetry,
   getGatewayStartupRecoveryAction,
   hasFatalRuntimeFailureSignal,
+  hasGatewayStateOwnershipContentionSignal,
   hasInvalidConfigFailureSignal,
   hasStartupMigrationLockSignal,
   isGatewayReadinessTimeoutError,
@@ -11,6 +12,8 @@ import {
   isTransientGatewayStartError,
   shouldAttemptConfigAutoRepair,
 } from '@electron/gateway/startup-recovery';
+
+const STATE_OWNERSHIP_REFUSAL = 'Gateway failed to start: failed to acquire gateway state ownership; waited 301732ms for Gateway state ownership: OpenClaw state database is busy at C:\\Users\\user\\.openclaw\\state\\openclaw.sqlite. holder 4324 at unknown host, last renewed 415345 s ago. The holder 4324 is alive on this host, stop it first. | file lock timeout for C:\\Users\\user\\AppData\\Local\\openclaw\\locks\\openclaw-state-owners\\state.example.lock | file_lock_timeout';
 
 describe('gateway startup recovery heuristics', () => {
   it('detects invalid-config signal from stderr lines', () => {
@@ -100,6 +103,29 @@ describe('gateway startup recovery heuristics', () => {
     expect(hasStartupMigrationLockSignal(new Error('gateway start failed'), [])).toBe(false);
   });
 
+  it.each([
+    STATE_OWNERSHIP_REFUSAL,
+    'Doctor could not enter maintenance. GatewayStateOwnerContentionError: OpenClaw state database is busy.',
+    'waited 301732ms for Gateway state ownership',
+  ])('recognizes state ownership contention in stderr and errors: %s', (diagnostic) => {
+    expect(hasGatewayStateOwnershipContentionSignal(undefined, [diagnostic])).toBe(true);
+    expect(hasGatewayStateOwnershipContentionSignal(new Error(diagnostic), [])).toBe(true);
+  });
+
+  it('recognizes the typed ownership error name', () => {
+    const error = new Error('The holder is alive on this host');
+    error.name = 'GatewayStateOwnerContentionError';
+    expect(hasGatewayStateOwnershipContentionSignal(error, [])).toBe(true);
+  });
+
+  it.each([
+    'SQLite database is busy',
+    'file lock timeout for C:\\Users\\user\\.openclaw\\sessions.lock | file_lock_timeout',
+    '[gateway] waiting for Gateway state ownership held by another OpenClaw process, up to 300 s',
+  ])('does not classify unrelated locks or waiting progress as an ownership failure: %s', (diagnostic) => {
+    expect(hasGatewayStateOwnershipContentionSignal(new Error(diagnostic), [diagnostic])).toBe(false);
+  });
+
   it('detects Node and SQLite failures that cannot be repaired by doctor', () => {
     expect(hasFatalRuntimeFailureSignal(undefined, [
       'System Node 24.14.0 at /usr/bin/node uses SQLite 3.49.1, which is not WAL-reset-safe. Install Node 24.15+ (recommended) or Node 22.22.3+.',
@@ -136,6 +162,37 @@ describe('getGatewayStartupRecoveryAction', () => {
       maxAttempts: 3,
     });
     expect(action).toBe('repair');
+  });
+
+  it.each(['stderr', 'error'] as const)(
+    'fails ownership contention from %s before exit-code repair or Doctor suggestions',
+    (source) => {
+      expect(getGatewayStartupRecoveryAction({
+        startupError: source === 'error' ? new Error(STATE_OWNERSHIP_REFUSAL) : transientError,
+        startupStderrLines: [
+          ...(source === 'stderr' ? [STATE_OWNERSHIP_REFUSAL] : []),
+          'Run: openclaw doctor --fix',
+        ],
+        processExitCode: 1,
+        configRepairAttempted: false,
+        attempt: 1,
+        maxAttempts: 3,
+      })).toBe('fail');
+    },
+  );
+
+  it('still repairs genuine config errors after an ownership-wait progress message', () => {
+    expect(getGatewayStartupRecoveryAction({
+      startupError: transientError,
+      startupStderrLines: [
+        '[gateway] waiting for Gateway state ownership held by another OpenClaw process, up to 300 s',
+        ...configInvalidStderr,
+      ],
+      processExitCode: 1,
+      configRepairAttempted: false,
+      attempt: 1,
+      maxAttempts: 3,
+    })).toBe('repair');
   });
 
   it('does not run doctor when ClawX terminated a Gateway that never became ready', () => {

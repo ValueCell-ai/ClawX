@@ -87,6 +87,8 @@ export async function runGatewayStartupSequence(hooks: StartupHooks): Promise<vo
         try {
           await hooks.waitForReady(hooks.port);
         } catch (error) {
+          if (error instanceof LifecycleSupersededError) throw error;
+          hooks.assertLifecycle('start/wait-ready-owned-failure');
           logger.warn('Owned Gateway process did not recover after an in-process restart; terminating the stale process');
           await hooks.terminateStaleOwnedProcess();
           throw new Error('Gateway process exited before becoming ready after an in-process restart', { cause: error });
@@ -121,6 +123,9 @@ export async function runGatewayStartupSequence(hooks: StartupHooks): Promise<vo
         throw error;
       }
 
+      // stop() can make waitForReady reject with an ordinary process-exit error.
+      // Verify the epoch before classifying that exit or starting recovery work.
+      hooks.assertLifecycle('start/recovery');
       const startupStderrLines = hooks.getStartupStderrLines();
       const failureReason = getGatewayStartupFailureReason(startupStderrLines);
       // Another Doctor run is useful only when the previous one made progress,
@@ -142,7 +147,14 @@ export async function runGatewayStartupSequence(hooks: StartupHooks): Promise<vo
         logger.warn(
           `Detected invalid OpenClaw config during Gateway startup; running doctor repair before retry (${doctorRepairs}/${MAX_DOCTOR_REPAIRS})`,
         );
-        const repaired = await hooks.runDoctorRepair();
+        let repaired: boolean;
+        try {
+          repaired = await hooks.runDoctorRepair();
+        } finally {
+          // A cancelled Doctor preparation may reject with an ordinary error.
+          // Supersession must win on both outcomes before Main updates status.
+          hooks.assertLifecycle('start/doctor-repair');
+        }
         if (repaired) {
           logger.info('OpenClaw doctor repair completed; retrying Gateway startup');
           hooks.onDoctorRepairSuccess();

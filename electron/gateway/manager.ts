@@ -67,6 +67,7 @@ import { runGatewayStartupSequence } from './startup-orchestrator';
 import { recordGatewayReadyForCapabilityConsent } from '../utils/plugin-capability-consent';
 import {
   hasFatalRuntimeFailureSignal,
+  hasGatewayStateOwnershipContentionSignal,
   hasInvalidConfigFailureSignal,
   hasStartupMigrationLockSignal,
 } from './startup-recovery';
@@ -618,6 +619,7 @@ export class GatewayManager extends EventEmitter {
                 : { getLastProgressAt: () => this.lastProcessOutputAt }),
             });
           } catch (error) {
+            this.lifecycleController.assert(startEpoch, 'start/wait-ready-failed');
             // A process that remains alive but never emits a challenge is
             // stale. Reclaim it before the outer startup recovery schedules a
             // new attempt; otherwise every retry would wait on the same PID.
@@ -660,7 +662,9 @@ export class GatewayManager extends EventEmitter {
             });
           }
         },
-        runDoctorRepair: async () => await runOpenClawDoctorRepair(),
+        runDoctorRepair: async () => await runOpenClawDoctorRepair({
+          assertLifecycle: () => this.lifecycleController.assert(startEpoch, 'start/doctor-prepare'),
+        }),
         onDoctorRepairSuccess: () => {
           this.setStatus({ state: 'starting', error: undefined, reconnectAttempts: 0 });
         },
@@ -683,6 +687,7 @@ export class GatewayManager extends EventEmitter {
       const fatalStartupFailure = isOpenClawFatalConfigExitCode(this.processExitCode)
         || this.processExitCode === 1
         || hasFatalRuntimeFailureSignal(error, this.recentStartupStderrLines)
+        || hasGatewayStateOwnershipContentionSignal(error, this.recentStartupStderrLines)
         || hasStartupMigrationLockSignal(error, this.recentStartupStderrLines)
         || hasInvalidConfigFailureSignal(error, this.recentStartupStderrLines);
       if (fatalStartupFailure) {
@@ -938,6 +943,12 @@ export class GatewayManager extends EventEmitter {
       try {
         await this.start();
       } catch (err) {
+        if (this.status.state === 'error' && !this.shouldReconnect) {
+          // start() deliberately disables recovery for fatal startup failures.
+          // A restart must preserve that decision instead of recreating a loop.
+          logger.warn('Gateway restart: start() failed with automatic recovery disabled', err);
+          throw err;
+        }
         // stop() set shouldReconnect=false. Restore it so the gateway
         // can self-heal via scheduleReconnect() instead of dying permanently.
         logger.warn('Gateway restart: start() failed after stop(), enabling auto-reconnect recovery', err);
@@ -1496,6 +1507,7 @@ export class GatewayManager extends EventEmitter {
         const orchestratedStartupFailure = isOpenClawFatalConfigExitCode(code)
           || (this.status.state === 'starting' && code === 1)
           || hasFatalRuntimeFailureSignal(undefined, this.recentStartupStderrLines)
+          || hasGatewayStateOwnershipContentionSignal(undefined, this.recentStartupStderrLines)
           || hasStartupMigrationLockSignal(undefined, this.recentStartupStderrLines)
           || hasInvalidConfigFailureSignal(undefined, this.recentStartupStderrLines);
         if (orchestratedStartupFailure) {

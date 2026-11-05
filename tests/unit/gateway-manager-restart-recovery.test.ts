@@ -235,6 +235,110 @@ describe('GatewayManager restart recovery', () => {
     expect(scheduleReconnectSpy).not.toHaveBeenCalled();
   });
 
+  it.each([1, 2])('preserves the fatal ownership decision during restart with exit code %s', async (exitCode) => {
+    const ownershipError = 'failed to acquire gateway state ownership; waited 301732ms for Gateway state ownership';
+    const runDoctorRepair = vi.fn();
+    vi.doMock('@electron/gateway/supervisor', async (importOriginal) => ({
+      ...await importOriginal<typeof import('@electron/gateway/supervisor')>(),
+      findExistingGatewayProcess: vi.fn(async () => null),
+      waitForPortFree: vi.fn(async () => {}),
+      warmupManagedPythonReadiness: vi.fn(),
+      runOpenClawDoctorRepair: runDoctorRepair,
+    }));
+    vi.doMock('@electron/gateway/ws-client', async (importOriginal) => ({
+      ...await importOriginal<typeof import('@electron/gateway/ws-client')>(),
+      waitForGatewayReady: vi.fn(async () => {
+        throw new Error(`Gateway process exited before becoming ready (code=${exitCode})`);
+      }),
+    }));
+
+    const { GatewayManager } = await import('@electron/gateway/manager');
+    const manager = new GatewayManager();
+    const internals = manager as unknown as {
+      shouldReconnect: boolean;
+      processExitCode: number | null;
+      recentStartupStderrLines: string[];
+      status: { state: string; port: number };
+      initDeviceIdentity: () => Promise<void>;
+      startProcess: () => Promise<void>;
+      scheduleReconnect: () => void;
+    };
+    internals.status = { state: 'running', port: 18789 };
+    vi.spyOn(internals, 'initDeviceIdentity').mockResolvedValue();
+    const startProcessSpy = vi.spyOn(internals, 'startProcess').mockImplementation(async () => {
+      internals.processExitCode = exitCode;
+      internals.recentStartupStderrLines = [ownershipError];
+    });
+    const reconnectSpy = vi.spyOn(internals, 'scheduleReconnect');
+
+    await expect(manager.restart()).rejects.toThrow('Gateway process exited before becoming ready');
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(manager.getStatus().state).toBe('error');
+    expect(internals.shouldReconnect).toBe(false);
+    expect(startProcessSpy).toHaveBeenCalledOnce();
+    expect(runDoctorRepair).not.toHaveBeenCalled();
+    expect(reconnectSpy).not.toHaveBeenCalled();
+  });
+
+  it('does not force-terminate from a stale readiness failure while stop is awaiting graceful exit', async () => {
+    let rejectReadiness!: (error: Error) => void;
+    let readinessStarted!: () => void;
+    const readinessStart = new Promise<void>((resolve) => { readinessStarted = resolve; });
+    vi.doMock('@electron/gateway/supervisor', async (importOriginal) => ({
+      ...await importOriginal<typeof import('@electron/gateway/supervisor')>(),
+      findExistingGatewayProcess: vi.fn(async () => null),
+      waitForPortFree: vi.fn(async () => {}),
+      warmupManagedPythonReadiness: vi.fn(),
+    }));
+    vi.doMock('@electron/gateway/ws-client', async (importOriginal) => ({
+      ...await importOriginal<typeof import('@electron/gateway/ws-client')>(),
+      waitForGatewayReady: vi.fn(() => new Promise<void>((_resolve, reject) => {
+        rejectReadiness = reject;
+        readinessStarted();
+      })),
+    }));
+
+    const { GatewayManager } = await import('@electron/gateway/manager');
+    const manager = new GatewayManager();
+    const child = Object.assign(new EventEmitter(), { pid: 42 });
+    const ws = { readyState: 1, terminate: vi.fn() };
+    const internals = manager as unknown as {
+      process: Electron.UtilityProcess | null;
+      processExitCode: number | null;
+      ownsProcess: boolean;
+      ws: typeof ws | null;
+      shouldReconnect: boolean;
+      initDeviceIdentity: () => Promise<void>;
+      startProcess: () => Promise<void>;
+      scheduleReconnect: () => void;
+    };
+    vi.spyOn(internals, 'initDeviceIdentity').mockResolvedValue();
+    vi.spyOn(internals, 'startProcess').mockImplementation(async () => {
+      internals.process = child as unknown as Electron.UtilityProcess;
+      internals.ownsProcess = true;
+      internals.processExitCode = null;
+    });
+    const forceTerminateSpy = vi.spyOn(manager, 'forceTerminateOwnedProcessForQuit').mockResolvedValue(false);
+    const reconnectSpy = vi.spyOn(internals, 'scheduleReconnect');
+    vi.spyOn(manager, 'rpc').mockImplementation(() => new Promise(() => {}));
+
+    const startPromise = manager.start();
+    await readinessStart;
+    internals.ws = ws;
+    const stopPromise = manager.stop();
+    rejectReadiness(new Error('WebSocket closed before handshake'));
+    await startPromise;
+
+    expect(forceTerminateSpy).not.toHaveBeenCalled();
+    expect(internals.process).toBe(child);
+    expect(reconnectSpy).not.toHaveBeenCalled();
+    child.emit('exit', 0);
+    await stopPromise;
+    expect(manager.getStatus().state).toBe('stopped');
+    expect(internals.shouldReconnect).toBe(false);
+  });
+
   it('cancels deadline recovery on a code-1012 socket reload without restarting the owned process', async () => {
     let onCloseAfterHandshake: ((code: number) => void) | undefined;
     const ws = {

@@ -24,7 +24,7 @@ describe('OpenClaw 2026.10.5 upgrade snapshot', () => {
     const first = await ensureOpenClawUpgradeSnapshot(options);
     expect(first.status).toBe('created');
     expect(first.snapshotDir).toContain('2026.10.5');
-    expect(first.files).toEqual(expect.arrayContaining(['config/openclaw.json', 'agents/main/sessions/sessions.json', 'agents/main/sessions/history.jsonl', 'agents/main/agent/auth-profiles.json', 'state-files/credentials/channel/token.json', 'state-files/media/inbound/image.png']));
+    expect(first.files.map(file => file.replace(/\\/g, '/'))).toEqual(expect.arrayContaining(['config/openclaw.json', 'agents/main/sessions/sessions.json', 'agents/main/sessions/history.jsonl', 'agents/main/agent/auth-profiles.json', 'state-files/credentials/channel/token.json', 'state-files/media/inbound/image.png']));
     if (process.platform !== 'win32') {
       expect((await stat(join(first.snapshotDir, 'snapshot.json'))).mode & 0o777).toBe(0o600);
       expect((await stat(join(first.snapshotDir, 'agents/main/sessions/history.jsonl'))).mode & 0o777).toBe(0o600);
@@ -71,12 +71,25 @@ describe('OpenClaw 2026.10.5 upgrade snapshot', () => {
   });
   it('never follows external symlinks or copies runtime binaries and existing backups', async () => {
     const options = await fixture();
-    await mkdir(join(options.stateDir, 'agents/main/agent'), { recursive: true });
-    await symlink(options.configPath, join(options.stateDir, 'agents/main/agent/auth-profiles.json'));
+    const external = await fixture();
+    const externalAuthPath = join(external.stateDir, 'auth-profiles.json');
+    await writeFile(externalAuthPath, 'external credentials');
+    if (process.platform === 'win32') {
+      // Directory junctions exercise the same no-follow guard without requiring
+      // Windows Developer Mode or the file-symlink privilege.
+      await mkdir(join(options.stateDir, 'agents/main'), { recursive: true });
+      await symlink(external.stateDir, join(options.stateDir, 'agents/main/agent'), 'junction');
+    } else {
+      await mkdir(join(options.stateDir, 'agents/main/agent'), { recursive: true });
+      await symlink(externalAuthPath, join(options.stateDir, 'agents/main/agent/auth-profiles.json'));
+    }
     await mkdir(join(options.stateDir, 'extensions'));
     await writeFile(join(options.stateDir, 'extensions/plugin.js'), 'runtime');
+    await mkdir(join(options.stateDir, 'backups/previous'), { recursive: true });
+    await writeFile(join(options.stateDir, 'backups/previous/snapshot.json'), 'previous backup');
     const snapshot = await ensureOpenClawUpgradeSnapshot(options);
     expect(snapshot.files.some(f => /auth-profiles|extensions|backups/.test(f))).toBe(false);
+    expect(await readFile(externalAuthPath, 'utf8')).toBe('external credentials');
   });
   it('retains the snapshot until explicit maintenance removes it', async () => {
     const options = await fixture();

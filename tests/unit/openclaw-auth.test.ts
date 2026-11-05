@@ -1363,6 +1363,45 @@ describe('sanitizeOpenClawConfig', () => {
     expect((plugins.entries as Record<string, unknown>).acpx).toEqual({ enabled: true });
   });
 
+  it.each(['plugins', 'plugins.load', 'plugins.load.paths'])(
+    'cleans absolute legacy plugin paths in %s while retaining local plugins and relative package paths',
+    async (shape) => {
+      const localPluginPath = join(testHome, 'local-plugins', 'keep');
+      await mkdir(localPluginPath, { recursive: true });
+      const retainedPaths = [
+        localPluginPath,
+        './plugins/custom',
+        'plugins/custom',
+        './node_modules/openclaw/dist/extensions/custom',
+        '@example/custom-plugin',
+        'custom-plugin',
+        'C:relative\\custom-plugin',
+      ];
+      const stalePaths = [
+        'C:\\old-clawx\\node_modules\\openclaw\\dist\\extensions\\acpx',
+        'C:/old-clawx/node_modules/openclaw/extensions/acpx',
+        '\\\\legacy-host\\share\\node_modules\\openclaw\\dist\\extensions\\acpx',
+        '/opt/old-clawx/node_modules/.pnpm/openclaw@2026.4.11_hash/node_modules/openclaw/dist/extensions/acpx',
+        join(testHome, 'missing-plugin'),
+      ];
+      const paths = [...stalePaths, ...retainedPaths];
+      await writeOpenClawJson({
+        plugins: shape === 'plugins' ? paths
+          : { load: shape === 'plugins.load' ? paths : { paths } },
+      });
+
+      const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+      await sanitizeOpenClawConfig();
+
+      const result = await readOpenClawJson();
+      const plugins = result.plugins as Record<string, unknown> | string[];
+      const remainingPaths = Array.isArray(plugins) ? plugins
+        : Array.isArray(plugins.load) ? plugins.load
+          : (plugins.load as Record<string, unknown>).paths;
+      expect(remainingPaths).toEqual(retainedPaths);
+    },
+  );
+
   it('removes missing external plugin ids from plugins.allow while preserving installed and configured plugins', async () => {
     const installedPluginDir = join(testHome, '.openclaw', 'extensions', 'custom-installed');
     await mkdir(installedPluginDir, { recursive: true });

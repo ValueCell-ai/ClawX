@@ -199,6 +199,24 @@ otherwise the only place an issue report shows which step a long repair is in.
 
 ### Slow upgraded starts and the readiness deadline
 
+The 2026-11-04 09:20 UTC report shows a separate upgrade failure: the Gateway
+waited 301732 ms for state ownership after about 207 seconds of initialization,
+then exited 1. The holder lease had not renewed for about 4.8 days, but the report
+lacked process identity and original lock metadata; it cannot establish whether
+the owner was a hung old process or a stale record colliding with a reused PID.
+Doctor also failed on the same ownership lock. ClawX's generic exit-code-1 repair
+fallback then repeated startup. A later stop produced an expected code-1 exit,
+which incorrectly launched another Doctor from the cancelled startup flow.
+
+Explicit state-ownership failures now bypass Doctor and automatic reconnect.
+Startup recovery checks the lifecycle before handling failures, before spawning
+Doctor after asynchronous preparation, and after Doctor returns. An already
+running migration may finish, but its superseded flow cannot restart Gateway or
+update startup state. Lock files and unverified holder processes are untouched.
+This prevents ineffective repair/retry work; it does not reclaim the reported
+owner or optimize the runtime initialization before the lock wait. The report
+contains no successful Gateway start during its approximately 23-minute window.
+
 The 2026-10-29 report came from the same laptop after a clean overwrite
 install. Every Gateway start was slow before plugin loading:
 
@@ -599,6 +617,17 @@ installed through ClawX's own install code:
    consent diagnostics.
 
 ## Channel plugin migration for 0.6.1 upgrades
+
+Windows cleanup of legacy plugin load paths must recognize drive-letter and UNC
+absolute paths as well as POSIX paths. Checking only a leading slash left old
+installation paths in all three supported config shapes (`plugins`, `plugins.load`,
+and `plugins.load.paths`). The local Windows upgrade validation covers these forms
+while preserving existing custom plugins, relative paths and npm package names.
+
+The Main TypeScript configuration explicitly includes Node ambient types. The
+new dependency tree exposes optional Bun types through hoisting; loading them
+implicitly without the DOM library collapses Node's fetch Response/Headers types.
+This build-time boundary does not change the runtime's fetch implementation.
 
 - **QQ Bot.** The 2026.10.5 catalog serves `qqbot` from Tencent QQBot 2.0
   (`legacyNpmPackageNames: ["@openclaw/qqbot"]`). The host schema forbids

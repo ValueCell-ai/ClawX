@@ -34,6 +34,7 @@ For OpenClaw capability consent:
 
 For plugin loading on Windows:
 
+- stale plugin-path cleanup must recognize drive-qualified and UNC absolute paths, including imported configs. Cover the legacy `plugins` array, `plugins.load` array and `plugins.load.paths`; retain existing external plugins, relative paths and npm specifiers. Keep direct regression coverage in `tests/unit/openclaw-auth.test.ts`
 - OpenClaw plugin captures link directories with junctions, which store absolute targets. Any copy of a capture tree must recreate directory links as junctions and relocate in-tree targets; `fs.cpSync` with `verbatimSymlinks` creates untyped symlinks that standard Windows users cannot create (`EPERM`). Keep `tests/unit/openclaw-windows-recovery-junction-patch.test.ts` covering the ClawX OpenClaw patch for this
 - macOS cannot reproduce Windows link failures natively. Validate changes to capture linking with a preload that stores junction targets as absolute paths and rejects untyped capture symlinks with `EPERM`
 
