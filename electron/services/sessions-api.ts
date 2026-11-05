@@ -631,7 +631,21 @@ async function mutateMigratedSessionDirectly(sessionKey: string, mutation: 'dele
         db.exec('ROLLBACK'); return { handled: true, success: true };
       }
       if (mutation === 'delete') db.prepare('DELETE FROM session_nodes WHERE session_key = ?').run(sessionKey);
-      else db.prepare('UPDATE session_nodes SET label = ?, updated_at = ? WHERE session_key = ?').run(label ?? '', Date.now(), sessionKey);
+      else {
+        const row = db.prepare('SELECT current_session_id, entry_json, updated_at FROM session_nodes WHERE session_key = ?')
+          .get(sessionKey) as { current_session_id: string; entry_json: string; updated_at: number };
+        const entry: unknown = JSON.parse(row.entry_json);
+        if (!isRecord(entry) || typeof entry.sessionId !== 'string' || entry.sessionId !== row.current_session_id
+          || typeof entry.updatedAt !== 'number' || !Number.isFinite(entry.updatedAt) || entry.updatedAt !== row.updated_at) {
+          throw new Error('Cannot rename a session with inconsistent persisted metadata');
+        }
+        // entry_json owns the logical session; label and updated_at are indexes.
+        // Updating only the indexes makes OpenClaw reject the session identity.
+        const updatedAt = Date.now();
+        const nextLabel = label ?? '';
+        db.prepare('UPDATE session_nodes SET entry_json = ?, label = ?, updated_at = ? WHERE session_key = ?')
+          .run(JSON.stringify({ ...entry, label: nextLabel, updatedAt }), nextLabel, updatedAt, sessionKey);
+      }
       db.exec('COMMIT'); return { handled: true, success: true };
     } catch (error) {
       try { db.exec('ROLLBACK'); } catch { /* ignore */ }

@@ -332,3 +332,155 @@ load. It used real package initialization and Gateway behavior through a
 purpose-built isolation bootstrap and Main-manager RPC, with a deterministic
 localhost model. Those boundaries must remain explicit when using this report
 for release decisions.
+
+## 2026-11-05 follow-up: multi-Agent workspace and ownership consistency
+
+Related task:
+[Preserve 0.6.1 workspace consistency](../specs/tasks/fix-061-upgrade-workspace-consistency.md).
+Workspace reproduction and package artifacts are retained separately under
+`D:/ClawX-workspace-upgrade-review-20261105/`. This follow-up does not replace
+the earlier fixture's provenance or extend its pass result to untested settings.
+
+The confirmed workspace regression occurs when ClawX converts a legacy
+`agents.list` roster and retires its default marker before the runtime can
+preserve the old effective directory. An implicit legacy default workspace
+can then resolve to a different directory under the current multi-Agent
+ownership rules. Existing files can remain intact while the Agent and UI use a
+new empty directory; preserved hashes and Gateway readiness alone do not rule
+out this regression.
+
+The repair pins an implicit workspace only when the roster transition would
+change its effective path. It preserves explicit workspace paths, including
+external directories, without moving or merging their files. The same comparison
+applies to current Agent creation, update and deletion so a later mutation cannot
+move another Agent's inherited workspace. Agent snapshots and workspace
+identity/bootstrap maintenance read the canonical keyed roster first and share
+the current runtime's path rules. Already-current configurations are not
+reinterpreted as historical ownership based on directory existence.
+
+Retiring a unique true default marker in a valid legacy multi-Agent roster also
+materializes the pinned runtime's existing responsibilities: missing
+channel-wide wildcard fallbacks, heartbeat, systemAgent, authInheritance,
+fixed sessionStore and talk. Scoped bindings remain in place; disabled channels,
+explicit owners, disabled role settings, existing heartbeat policy and per-agent
+session-store paths are preserved. An unmarked first Agent only receives a
+workspace pin when needed, not invented runtime roles. Malformed or ambiguous
+rosters remain for Doctor. The existing systemAgent selection is retained for
+unmarked rosters; no additional heartbeat or talk role is invented for them.
+
+Deletion refuses the sole configured Agent and explicit inherited-auth or
+session-store owners. Managed workspace cleanup resolves directory links and
+keeps a directory that overlaps another surviving Agent's workspace.
+
+A separate migrated-session defect was reproduced against the bundled v25
+schema and runtime entry parser: offline rename changed indexed `label` and
+`updated_at` while leaving `entry_json` stale, so the runtime rejected the row.
+The repair validates existing source/projection consistency and updates the
+logical entry and indexed metadata in the same transaction. It retains unrelated
+entry fields and refuses inconsistent rows without mutation or schema changes.
+
+Focused evidence available during implementation:
+
+- Legacy role regression suite: 12 tests passed; the helper also matched the
+  actual OpenClaw 2026.10.5 `materializeLegacyDefaultAgentRoles` result for 64
+  synthetic combinations of old owner, heartbeat, fixed/per-agent store and
+  explicit role settings.
+- Session workspace/persistence suite: 17 tests passed, including offline rename
+  source/projection consistency and refusal of damaged metadata. The actual
+  bundled runtime parser accepted the corrected entry.
+- Complete migration differential: 70 synthetic configurations and 126 Agent
+  paths matched the official 0.6.1 and current runtime resolvers before/after
+  migration. The run also checked role materialization, source preservation
+  and idempotence. The shared path helper separately matched 2,208 old/current
+  runtime resolver comparisons.
+- Combined focused regression: 8 suites, 276 tests passed. TypeScript and full
+  repository lint passed (7 existing React Fast Refresh warnings). Harness task
+  validation/dry-run, harness CI and communication replay/compare passed. The
+  existing Windows harness newline and comms URL workarounds were temporary;
+  all transformed source files were restored byte-for-byte.
+- All 3 focused Electron E2E cases passed: legacy workspace preservation during
+  Agent creation, inherited SQLite credentials, and preserving a shared workspace
+  when another Agent is deleted. Three existing exclusive prerequisite tests
+  also passed in the initial E2E run.
+
+The repaired package was then tested against a fresh official 0.6.1 profile,
+with three real Agents, three ACP-bound workspaces, a local deterministic model
+and old assistant replies. Upgrade and a subsequent target restart both passed:
+the old runtime, new runtime and Main Agent snapshots reported identical paths
+for main, research and coder. All three histories and cwd ledger entries loaded;
+workspace selection, recent paths, labels and marker-file hashes were retained.
+This includes an implicit main workspace, an external Chinese path with spaces,
+and a second external workspace. Test apps closed and both owned ports were
+released after every phase.
+
+The target is a local directory build of `codex/fix-061-upgrade-workspace` on
+base commit `44a43113eee9901f0070ff2fee864509d56ba51b`, with app version 0.6.2
+and OpenClaw 2026.10.5; it is not the published v0.6.2 release. Its `app.asar`
+SHA-256 is `3c92d6e70ea8bed75fcfeb39939df457e50c43874e8dc8a721bb4beb9849d623`.
+The packaged Main entry exactly matched the current compiled Main entry
+(`b0d808bb961386741028442d0b4f2999958b6ea664ddf67d4d1a28b771c47f1a`).
+Gateway ready time in this one fixture was 8.2 s on old 0.6.1, 64.7 s on first
+upgrade and 19.4 s on the subsequent target launch. These are observations,
+not a performance benchmark or a startup-speed guarantee.
+
+Evidence: `D:/ClawX-workspace-upgrade-fix-verified-20261105/`, especially
+`verified-upgrade-summary.json`, `migration-resolver-parity.json`, the phase
+results, and validation logs. An initial test-bootstrap attempt rejected its
+copied isolation root before app initialization; it was retained separately at
+`D:/ClawX-workspace-upgrade-fix-20261105/` and is not counted as an app result.
+
+### Confirmed remaining compatibility boundaries
+
+The following findings are **not repaired by the workspace/ownership change**:
+
+- Configurations already converted by an affected version cannot reliably be
+  identified from keyed entries alone. This repair does not guess and move their
+  current workspace; recovering their original path requires comparing the old
+  config/snapshot with their actual data.
+
+- Feishu advanced group policy: the old `openclaw-lark` plugin can interpret
+  non-`oc_*` entries in `groupAllowFrom` as sender restrictions. The current
+  migration does not move that meaning to `groupSenderAllowFrom`. With an
+  explicitly configured group, the real new ingress functions selected an open
+  sender gate where the old plugin selected an allowlist. Both schemas accepted
+  the fixture, so schema validation alone misses this access-policy regression.
+- Feishu old field types: old-valid boolean `replyInThread`, string
+  `allowFrom`, and object `capabilities` remain incompatible with the new
+  schema. The current migration and real new Doctor contract did not convert
+  these fixture fields.
+- Feishu dictionary entries: the schema-pruning helper does not recurse into
+  `additionalProperties` maps, leaving old group fields such as `groupPolicy`
+  and `respondToMentionAll` that the new strict schema rejects. A future repair
+  must translate access semantics before pruning; deleting policy fields alone
+  can broaden access.
+- Failed plugin mirror replacement: the install-record repair chooses the new
+  Feishu/QQ plugin ID even when the actual retained payload still has the old
+  manifest ID. A read-only probe of the current repair functions captured
+  deletion of the old index IDs and insertion of the new IDs pointing to the
+  old payload. This proves metadata inconsistency after copy failure, not that
+  every such failure prevents the entire Gateway from starting.
+- Custom `agents.entries.<id>.agentDir`: the runtime respects the configured
+  auth directory, while ClawX's auth SQLite helper still assumes the standard
+  agent directory. UI credential reads/writes/deletions can target another
+  database; this is a pre-existing path assumption, not a newly established
+  workspace-migration regression.
+- Custom `session.store`: the runtime supports both fixed paths and
+  `{agentId}` templates, but some ClawX offline transcript, session mutation and
+  usage paths still assume the standard agent database. Those views or fallback
+  operations can miss the configured store. Preserving the fixed store's owner
+  does not add custom-path support to these consumers. The old JSON readers
+  already had the path assumption; ordinary custom workspaces alone do not
+  trigger either this issue or the custom-auth-directory issue.
+- Installer coverage remains separate: the official old installer was extracted,
+  and target tests use a directory package with isolated profile paths. They do
+  not exercise installation over an existing Windows installation, a changed
+  installation/data directory, registry/shortcut ownership, uninstall, or rollback.
+  No installer-directory compatibility pass is claimed.
+
+Safe Feishu schema/policy evidence is in
+`D:/ClawX-channel-upgrade-review-20261105/results/feishu-policy-review.json`;
+the probe uses synthetic credentials and no channel network operations. QQ's
+restriction on selecting a named default while a root default account exists is
+an explicitly documented Tencent 2.0 compatibility constraint. Cleanup of
+disabled channels as unconfigured predates this kernel upgrade; neither should
+be presented as a newly discovered regression from this workspace repair.

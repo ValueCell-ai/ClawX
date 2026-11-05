@@ -140,6 +140,8 @@ pnpm dev
 
 Windows 升级会识别旧安装遗留的盘符路径和网络插件路径，从旧版加载列表中清理已失效或指向内置插件的路径，并保留仍存在的外部插件和相对包引用。
 
+从 ClawX 0.6.1 升级时，有效的多 Agent 配置会保留各 Agent 原先实际使用的工作区，以及配置中旧默认 Agent 的职责。Agent 设置、后续 Agent 编辑和工作区准备使用一致的运行时路径规则；显式配置的外部工作区保留原路径。
+
 ClawX 会在启动写入前，在 OpenClaw 状态目录下保留私有快照 `backups/clawx-openclaw-2026.10.5-pre-migration`。快照包含旧会话文件、认证和媒体，并通过 SQLite 在线备份纳入已提交的 WAL 数据。无法完成快照时停止启动；Gateway 就绪不会自动删除快照。OpenClaw 会先自行处理待完成的 schema 和旧版认证迁移，之后 ClawX 才同步供应商凭据，因此中断后可重试而不会先被 ClawX 改写迁移源文件。请在确认升级正常后再手动删除快照以回收空间。快照包含密钥，请勿分享。运行时二进制、符号链接目标和外部工作区不在快照范围内，手动回退前请另行备份。
 
 OpenClaw 2026.10.5 更换了两个渠道插件，ClawX 会在首次启动 Gateway 前完成迁移。QQ 机器人从 `@openclaw/qqbot` 切换到腾讯 QQBot 2.0（`@tencent-connect/openclaw-qqbot`，插件 id `openclaw-qqbot`），默认账号移到 `channels.qqbot` 顶层，原本开放的私聊保持开放（使用审批标记 `openclaw:approval-disabled`）。带审批、密钥文件或群命令策略的 QQ 机器人配置交给 OpenClaw Doctor 处理。飞书从 `@larksuite/openclaw-lark` 切换到官方 `@openclaw/feishu`，应用凭据保持不变；官方插件提供 14 个飞书工具（原为 39 个），不再提供日历、任务、用户 OAuth、表格和搜索类工具。

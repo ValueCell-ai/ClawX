@@ -9,7 +9,11 @@ import { constants } from 'fs';
 import { join, resolve, sep } from 'path';
 import { homedir } from 'os';
 import { logger } from './logger';
-import { listOpenClawAgentRosterEntries } from './openclaw-agent-roster';
+import {
+  listOpenClawAgentRosterEntries,
+  resolveOpenClawAgentWorkspaceDir,
+  resolveOpenClawLegacyDataOwnerAgentId,
+} from './openclaw-agent-roster';
 import { getResourcesDir } from './paths';
 
 const CLAWX_BEGIN = '<!-- clawx:begin -->';
@@ -221,41 +225,35 @@ async function resolveAllWorkspaceDirs(): Promise<WorkspaceDir[]> {
   };
 
   const configPath = join(openclawDir, 'openclaw.json');
+  let agents;
   try {
     if (await fileExists(configPath)) {
       const config = JSON.parse(await readFile(configPath, 'utf-8'));
-
-      const defaultWs = config?.agents?.defaults?.workspace;
-      let hasDefaultWorkspace = false;
-      if (typeof defaultWs === 'string' && defaultWs.trim()) {
-        addDir(defaultWs.replace(/^~/, homedir()), true);
-        hasDefaultWorkspace = true;
-      }
-
-      const systemAgentId = config?.agents?.defaults?.systemAgent?.agentId;
-      for (const { id, entry } of listOpenClawAgentRosterEntries(config?.agents)) {
-        const ws = entry.workspace;
-        if (typeof ws === 'string' && ws.trim()) {
-          const isMainDefault = entry.default === true
-            || (typeof systemAgentId === 'string' && systemAgentId.trim() === id)
-            || (id === 'main' && !hasDefaultWorkspace);
-          addDir(ws.replace(/^~/, homedir()), isMainDefault);
-        }
-      }
+      agents = config?.agents;
     }
   } catch {
     // ignore config parse errors
+  }
+
+  const roster = listOpenClawAgentRosterEntries(agents);
+  const inheritedOwner = resolveOpenClawLegacyDataOwnerAgentId(agents);
+  const configuredOwner = agents?.defaults?.systemAgent?.agentId;
+  const startupOwner = typeof configuredOwner === 'string' && configuredOwner.trim()
+    ? configuredOwner.trim().toLowerCase() : inheritedOwner;
+  for (const { id } of roster) {
+    addDir(resolveOpenClawAgentWorkspaceDir(agents, id, { homeDir: homedir() }), id.toLowerCase() === startupOwner);
+  }
+  // An absent roster has an implicit main Agent; an explicitly empty roster does not.
+  if (roster.length === 0 && inheritedOwner === 'main') {
+    addDir(resolveOpenClawAgentWorkspaceDir(agents, 'main', { homeDir: homedir() }), true);
   }
 
   // We intentionally do NOT scan ~/.openclaw/ for any directory starting
   // with 'workspace'. Doing so causes a race condition where a recently deleted
   // agent's workspace (e.g., workspace-code23) is found and resuscitated by
   // the context merge routine before its deletion finishes. Only workspaces
-  // explicitly declared in openclaw.json should be seeded.
-
-  if (dirs.size === 0) {
-    addDir(join(openclawDir, 'workspace'), true);
-  }
+  // belonging to configured agents should be seeded. defaults.workspace is a
+  // base for multi-agent fleets, not an additional workspace of its own.
 
   return [...dirs.values()];
 }
