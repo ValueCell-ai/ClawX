@@ -46,6 +46,7 @@ import {
   requestSecondInstanceFocus,
 } from './main-window-focus';
 import {
+  APP_QUIT_CLEANUP_TIMEOUT_MS,
   createQuitLifecycleState,
   markQuitCleanupCompleted,
   requestQuitLifecycleAction,
@@ -757,7 +758,7 @@ if (gotTheLock) {
       })(),
     ]);
     const timeoutPromise = new Promise<'timeout'>((resolve) => {
-      setTimeout(() => resolve('timeout'), 5000);
+      setTimeout(() => resolve('timeout'), APP_QUIT_CLEANUP_TIMEOUT_MS);
     });
 
     void Promise.race([stopPromise.then(() => 'stopped' as const), timeoutPromise]).then((result) => {

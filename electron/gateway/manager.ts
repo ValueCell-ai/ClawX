@@ -92,12 +92,14 @@ import {
   GATEWAY_HEARTBEAT_MAX_MISSES,
   GATEWAY_HEARTBEAT_TIMEOUT_MS,
   GATEWAY_CONTROL_PROBE_TIMEOUT_MS,
+  GATEWAY_GRACEFUL_EXIT_TIMEOUT_MS,
   GATEWAY_READY_FALLBACK_PROBE_DELAYS_MS,
   GATEWAY_AGENT_DATABASE_ADMISSION_POLL_MS,
   GATEWAY_AGENT_DATABASE_ADMISSION_WAIT_MS,
 } from './recovery-budget';
 import { probeAgentDatabaseAdmissions } from './agent-database-admission';
 import { collectGatewayProcessDiagnostics, getGatewayDiagnosticEnvironment } from './process-diagnostics';
+import { OPENCLAW_GATEWAY_SHUTDOWN_REQUEST, OPENCLAW_GATEWAY_SHUTDOWN_RESULT } from '../utils/openclaw-utility-process';
 
 export interface GatewayStatus {
   state: GatewayLifecycleState;
@@ -170,7 +172,6 @@ function classifyCapabilityMethod(method: string): GatewayCapabilityName | null 
 }
 
 const GATEWAY_SHUTDOWN_RPC_TIMEOUT_MS = 5_000;
-const GATEWAY_GRACEFUL_EXIT_TIMEOUT_MS = 8_000;
 const GATEWAY_DIAGNOSTIC_INTERVAL_MS = 30_000;
 
 type GatewayDiagnosticAttempt = {
@@ -722,79 +723,52 @@ export class GatewayManager extends EventEmitter {
   /**
    * Ask an owned Gateway to release its databases and leases before the
    * process is terminated. The exit listener is installed before sending the
-   * RPC so a fast shutdown cannot be missed between the request and wait.
+   * private parent-port request so even a synchronous exit cannot be missed.
    */
-  private async requestOwnedGatewayShutdown(child: Electron.UtilityProcess): Promise<boolean> {
-    if (this.ws?.readyState !== WebSocket.OPEN) {
-      return false;
-    }
-
-    const startedAt = Date.now();
-    let exited = false;
-    let resolveExit!: (value: { kind: 'exit' }) => void;
-    const exitPromise = new Promise<{ kind: 'exit' }>((resolve) => {
-      resolveExit = resolve;
+  private async requestOwnedGatewayShutdown(child: Electron.UtilityProcess): Promise<'graceful' | 'exited' | 'failed'> {
+    const pid = child.pid ?? 'unknown';
+    const requestId = randomUUID();
+    type Outcome = { kind: 'exit'; code: number } | { kind: 'rejected'; reason: unknown } | { kind: 'timeout' };
+    let settle!: (outcome: Outcome) => void;
+    const outcomePromise = new Promise<Outcome>((resolve) => {
+      settle = resolve;
     });
-    const onExit = () => {
-      exited = true;
-      resolveExit({ kind: 'exit' });
+    const onExit = (code: number) => settle({ kind: 'exit', code });
+    const onMessage = (message: unknown) => {
+      if (!message || typeof message !== 'object') return;
+      const result = message as { type?: unknown; requestId?: unknown; accepted?: unknown; reason?: unknown };
+      if (result.type === OPENCLAW_GATEWAY_SHUTDOWN_RESULT && result.requestId === requestId && result.accepted === false) {
+        settle({ kind: 'rejected', reason: result.reason });
+      }
     };
     child.once('exit', onExit);
+    child.on('message', onMessage);
+    const timeout = setTimeout(() => settle({ kind: 'timeout' }), GATEWAY_GRACEFUL_EXIT_TIMEOUT_MS);
 
     try {
-      logger.info(`Requesting graceful Gateway shutdown (pid=${child.pid ?? 'unknown'})`);
-      const rpcOutcome = this.rpc('shutdown', undefined, GATEWAY_SHUTDOWN_RPC_TIMEOUT_MS).then(
-        () => ({ kind: 'rpc' as const }),
-        (error: unknown) => ({ kind: 'rpc-error' as const, error }),
-      );
-      const firstOutcome = await Promise.race([exitPromise, rpcOutcome]);
-
-      if (firstOutcome.kind === 'exit') {
-        logger.info(`Gateway exited after graceful shutdown request (pid=${child.pid ?? 'unknown'})`);
-        return true;
+      logger.info(`Requesting graceful Gateway shutdown through parent port (pid=${pid})`);
+      try {
+        child.postMessage({ type: OPENCLAW_GATEWAY_SHUTDOWN_REQUEST, requestId });
+      } catch (error) {
+        settle({ kind: 'rejected', reason: error });
       }
-
-      if (firstOutcome.kind === 'rpc-error') {
-        if (this.isUnsupportedShutdownError(firstOutcome.error)) {
-          logger.info('Owned Gateway does not support "shutdown"; falling back to process termination');
-          return false;
-        }
-        if (!exited) {
-          logger.warn('Graceful Gateway shutdown RPC did not complete:', firstOutcome.error);
-        }
-      }
-
-      if (exited) {
-        return true;
-      }
-
-      const remainingMs = Math.max(
-        0,
-        GATEWAY_GRACEFUL_EXIT_TIMEOUT_MS - (Date.now() - startedAt),
-      );
-      if (remainingMs === 0) {
-        logger.warn(`Gateway did not exit within graceful shutdown budget (pid=${child.pid ?? 'unknown'})`);
-        return false;
-      }
-
-      let timeout: NodeJS.Timeout | undefined;
-      const outcome = await Promise.race([
-        exitPromise,
-        new Promise<{ kind: 'timeout' }>((resolve) => {
-          timeout = setTimeout(() => resolve({ kind: 'timeout' }), remainingMs);
-        }),
-      ]);
-      if (timeout) clearTimeout(timeout);
-
+      // Acceptance only confirms dispatch. Success requires the actual exit.
+      const outcome = await outcomePromise;
       if (outcome.kind === 'exit') {
-        logger.info(`Gateway exited gracefully (pid=${child.pid ?? 'unknown'})`);
-        return true;
+        if (outcome.code === 0) {
+          logger.info(`Gateway exited gracefully (pid=${pid})`);
+          return 'graceful';
+        }
+        logger.warn(`Gateway exited with code=${outcome.code} during graceful shutdown (pid=${pid})`);
+        return 'exited';
       }
-
-      logger.warn(`Gateway did not exit within graceful shutdown budget (pid=${child.pid ?? 'unknown'})`);
-      return false;
+      if (outcome.kind === 'rejected') logger.warn(`Gateway graceful shutdown request was unavailable (pid=${pid}):`, outcome.reason);
+      else logger.warn(`Gateway did not exit within graceful shutdown budget (pid=${pid})`);
+      return 'failed';
     } finally {
+      clearTimeout(timeout);
       child.removeListener('exit', onExit);
+      child.removeListener('message', onMessage);
     }
   }
 
@@ -817,10 +791,10 @@ export class GatewayManager extends EventEmitter {
     // Ask an owned Gateway to close SQLite readers, checkpoint WAL state, and
     // release leases before resorting to process termination. A hard kill here
     // makes the next startup pay the stale-lease integrity recovery cost.
-    let ownedProcessExitedGracefully = false;
+    let ownedShutdownResult: 'graceful' | 'exited' | 'failed' = 'failed';
     const ownedChild = this.process && this.ownsProcess ? this.process : null;
     if (ownedChild) {
-      ownedProcessExitedGracefully = await this.requestOwnedGatewayShutdown(ownedChild);
+      ownedShutdownResult = await this.requestOwnedGatewayShutdown(ownedChild);
     } else if (this.ws?.readyState === WebSocket.OPEN && this.externalShutdownSupported !== false) {
       // If this manager is attached to an external gateway process, ask it to
       // shut down over protocol before closing the socket.
@@ -850,7 +824,7 @@ export class GatewayManager extends EventEmitter {
 
     // Fall back to process termination only when the owned Gateway did not
     // leave within the graceful shutdown budget.
-    if (ownedChild && !ownedProcessExitedGracefully && this.process === ownedChild && this.ownsProcess) {
+    if (ownedChild && ownedShutdownResult === 'failed' && this.process === ownedChild && this.ownsProcess) {
       await terminateOwnedGatewayProcess(ownedChild);
     }
     if (this.process === ownedChild) {
@@ -867,7 +841,7 @@ export class GatewayManager extends EventEmitter {
     if (diagnosticAttempt && diagnosticAttempt === this.diagnosticAttempt && !diagnosticAttempt.outcome) {
       diagnosticAttempt.stopCompletedAt = Date.now();
       this.logGatewayDiagnostic('stop-completed', {
-        shutdownMethod: ownedChild ? (ownedProcessExitedGracefully ? 'graceful' : 'forced') : 'no-owned-process',
+        shutdownMethod: ownedChild ? (ownedShutdownResult === 'failed' ? 'forced' : ownedShutdownResult) : 'no-owned-process',
       });
       if (diagnosticAttempt !== this.restartDiagnosticAttempt) this.finishGatewayDiagnostics('stopped', diagnosticAttempt);
     }

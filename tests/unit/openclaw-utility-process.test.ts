@@ -1,10 +1,12 @@
 // @vitest-environment node
 
 import { spawnSync } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { runInNewContext } from 'node:vm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { mockFork, userDataDir } = vi.hoisted(() => ({
@@ -65,6 +67,7 @@ syncBuiltinESMExports();
 
 const FORK_ENTRY_SOURCE = `
 import { fork } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const forkChild = (modulePath) => new Promise((resolve) => {
   const child = fork(modulePath, [], {
@@ -80,7 +83,7 @@ const forkChild = (modulePath) => new Promise((resolve) => {
 const childUrl = new URL('./fork-child.mjs', import.meta.url);
 process.stdout.write(JSON.stringify({
   url: await forkChild(childUrl),
-  path: await forkChild(childUrl.pathname),
+  path: await forkChild(fileURLToPath(childUrl)),
 }));
 `;
 
@@ -515,7 +518,7 @@ describe('OpenClaw utility-process bootstrap', () => {
       stdio: 'pipe',
       env: { PATH: '/usr/bin', OPENCLAW_NO_RESPAWN: '1' },
       serviceName: 'OpenClaw Gateway',
-    });
+    }, { gatewayShutdownControl: true });
 
     expect(result).toBe(child);
     expect(mockFork).toHaveBeenCalledWith(
@@ -529,9 +532,89 @@ describe('OpenClaw utility-process bootstrap', () => {
           OPENCLAW_NO_RESPAWN: '1',
           OPENCLAW_DEBUG: '1',
           CLAWX_OPENCLAW_ENTRY: '/opt/openclaw/openclaw.mjs',
+          CLAWX_OPENCLAW_GATEWAY_CONTROL: '1',
         },
         serviceName: 'OpenClaw Gateway',
       },
     );
+  });
+
+  it('dispatches the private parent-port request to SIGTERM handlers only once', async () => {
+    const {
+      OPENCLAW_GATEWAY_CONTROL_SOURCE, OPENCLAW_GATEWAY_CONTROL_ENV,
+      OPENCLAW_GATEWAY_SHUTDOWN_REQUEST, OPENCLAW_GATEWAY_SHUTDOWN_RESULT,
+    } = await import('@electron/utils/openclaw-utility-process');
+    const parentPort = Object.assign(new EventEmitter(), { postMessage: vi.fn() });
+    const child = Object.assign(new EventEmitter(), {
+      env: { [OPENCLAW_GATEWAY_CONTROL_ENV]: '1' }, parentPort,
+    });
+    const shutdown = vi.fn();
+    child.once('SIGTERM', shutdown);
+    runInNewContext(OPENCLAW_GATEWAY_CONTROL_SOURCE, { process: child });
+
+    expect(child.env[OPENCLAW_GATEWAY_CONTROL_ENV]).toBeUndefined();
+    parentPort.emit('message', { data: { type: 'unrelated', requestId: 'ignore' } });
+    expect(shutdown).not.toHaveBeenCalled();
+    for (const requestId of ['first', 'duplicate']) {
+      parentPort.emit('message', { data: { type: OPENCLAW_GATEWAY_SHUTDOWN_REQUEST, requestId } });
+      expect(parentPort.postMessage).toHaveBeenLastCalledWith({
+        type: OPENCLAW_GATEWAY_SHUTDOWN_RESULT, requestId, accepted: true, reason: undefined,
+      });
+    }
+    expect(shutdown).toHaveBeenCalledOnce();
+  });
+
+  it.each(['missing', 'throwing'])('rejects shutdown when its SIGTERM handler is %s', async (handler) => {
+    const { OPENCLAW_GATEWAY_CONTROL_SOURCE, OPENCLAW_GATEWAY_CONTROL_ENV, OPENCLAW_GATEWAY_SHUTDOWN_REQUEST } =
+      await import('@electron/utils/openclaw-utility-process');
+    const parentPort = Object.assign(new EventEmitter(), { postMessage: vi.fn() });
+    const child = Object.assign(new EventEmitter(), {
+      env: { [OPENCLAW_GATEWAY_CONTROL_ENV]: '1' }, parentPort,
+    });
+    const shutdown = vi.fn(() => { throw new Error('cleanup failed'); });
+    if (handler === 'throwing') child.on('SIGTERM', shutdown);
+    runInNewContext(OPENCLAW_GATEWAY_CONTROL_SOURCE, { process: child });
+    for (const requestId of ['first', 'duplicate']) {
+      parentPort.emit('message', { data: { type: OPENCLAW_GATEWAY_SHUTDOWN_REQUEST, requestId } });
+      expect(parentPort.postMessage).toHaveBeenLastCalledWith(expect.objectContaining({
+        requestId, accepted: false,
+        reason: handler === 'missing' ? 'SIGTERM handler is not installed' : 'SIGTERM handler failed',
+      }));
+    }
+    expect(shutdown).toHaveBeenCalledTimes(handler === 'missing' ? 0 : 1);
+  });
+
+  it('continues runtime shutdown when the parent port can no longer acknowledge it', async () => {
+    const { OPENCLAW_GATEWAY_CONTROL_SOURCE, OPENCLAW_GATEWAY_CONTROL_ENV, OPENCLAW_GATEWAY_SHUTDOWN_REQUEST } =
+      await import('@electron/utils/openclaw-utility-process');
+    const parentPort = Object.assign(new EventEmitter(), {
+      postMessage: vi.fn(() => { throw new Error('parent port is closed'); }),
+    });
+    const child = Object.assign(new EventEmitter(), {
+      env: { [OPENCLAW_GATEWAY_CONTROL_ENV]: '1' }, parentPort,
+    });
+    const shutdown = vi.fn();
+    child.once('SIGTERM', shutdown);
+    runInNewContext(OPENCLAW_GATEWAY_CONTROL_SOURCE, { process: child });
+    for (const requestId of ['first', 'duplicate']) {
+      expect(() => parentPort.emit('message', {
+        data: { type: OPENCLAW_GATEWAY_SHUTDOWN_REQUEST, requestId },
+      })).not.toThrow();
+    }
+    expect(shutdown).toHaveBeenCalledOnce();
+    expect(parentPort.postMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([['doctor'], ['gateway', 'status']])('does not inherit shutdown control for %j', async (...args) => {
+    const { forkOpenClawUtilityProcess, OPENCLAW_GATEWAY_CONTROL_SOURCE, OPENCLAW_GATEWAY_CONTROL_ENV } =
+      await import('@electron/utils/openclaw-utility-process');
+    const inheritedEnv = { [OPENCLAW_GATEWAY_CONTROL_ENV]: '1' };
+    forkOpenClawUtilityProcess('/opt/openclaw/openclaw.mjs', args, { env: inheritedEnv });
+    const launchedEnv = mockFork.mock.calls[0][2].env;
+    expect(launchedEnv[OPENCLAW_GATEWAY_CONTROL_ENV]).toBeUndefined();
+    expect(inheritedEnv[OPENCLAW_GATEWAY_CONTROL_ENV]).toBe('1');
+    const parentPort = Object.assign(new EventEmitter(), { postMessage: vi.fn() });
+    runInNewContext(OPENCLAW_GATEWAY_CONTROL_SOURCE, { process: { env: launchedEnv, parentPort } });
+    expect(parentPort.listenerCount('message')).toBe(0);
   });
 });

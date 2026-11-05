@@ -127,6 +127,14 @@ Channel/plugin migration behavior is also part of this scenario when ClawX rewri
 
 Windows upgrade validation must use matching old/new runtime dependencies and isolated application/state directories. Retain old conversation and tool history, credentials, agents, workspaces and the pre-migration snapshot across restart and new activity. Record real readiness timings and distinguish unit coverage from runtime and installer coverage. The local 0.6.1 validation results and remaining limitations are recorded in `harness/reference/local-061-upgrade-validation.md`.
 
+Restart performance investigations must distinguish complete app launches from in-app Gateway restarts and separate the old process's stop duration from new-process readiness. Windows process-identity probes, stale ownership records and repeated configuration validation can dominate the runtime bootstrap. Controlled profiling evidence and the boundaries of safe stale-owner optimization are recorded in `harness/reference/windows-gateway-restart-latency.md`.
+
+Owned Gateway restarts must request the runtime's actual graceful shutdown handler
+over the private utility-process channel and wait for exit before replacement.
+Keep a bounded fallback and leave external ownership handling unchanged. Startup
+may fast-path definitely dead owners and reuse safe machine-state webhook
+completion, while retaining PID-reuse checks and restored-config migration guards.
+
 ClawX's prelaunch config sanitizer also owns desktop tool policy. It must keep `web_search` in both the agent-level and Gateway-level deny lists without replacing existing deny entries or disabling managed browser automation and `web_fetch`. It must also deny the agent-facing `gateway`, `nodes`, `create_goal`, `get_goal`, and `update_goal` tools at both layers while preserving application-owned Gateway RPCs. Messaging, session orchestration, and agent discovery tools remain available unless another explicit policy denies them.
 
 ClawX disables memory-core dreaming during prelaunch config synchronization while preserving memory search and existing memory data. Main excludes system-owned heartbeat and managed dreaming jobs from the user scheduled-task list before repairs and projection; same-name user jobs remain visible. Heartbeat execution is not disabled. See `harness/specs/rules/clawx-system-automations.md`.

@@ -29,5 +29,5 @@
       "@shared/*": ["shared/*"]
     }
   },
-  "include": ["electron", "shared", "shared/**/*.json", "vite.config.ts"]
+  "include": ["electron", "shared", "shared/**/*.json", "vite.config.ts", "scripts/vite-dev-watch.ts"]
 }

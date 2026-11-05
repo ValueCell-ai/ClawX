@@ -54,6 +54,7 @@ describe('Gateway process output capture', () => {
     });
     child.emit('spawn');
     await started;
+    expect(vi.mocked(forkOpenClawUtilityProcess).mock.calls[0][3]).toEqual({ gatewayShutdownControl: true });
     return { child, onStderrLine, onStdoutLine, onExit };
   }
 

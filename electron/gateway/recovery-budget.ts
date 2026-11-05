@@ -3,6 +3,10 @@ export const GATEWAY_HEARTBEAT_TIMEOUT_MS = 30_000;
 export const GATEWAY_HEARTBEAT_MAX_MISSES = 4;
 export const GATEWAY_LIVENESS_DEADLINE_MS = 180_000;
 export const GATEWAY_CONTROL_PROBE_TIMEOUT_MS = 5_000;
+// Packaged Windows shutdown exceeded 8s even with no active runs: database and
+// singleton cleanup must finish before ownership release and process exit.
+// Keep a bounded 20s exit window; an acknowledgement alone never completes it.
+export const GATEWAY_GRACEFUL_EXIT_TIMEOUT_MS = 20_000;
 // OpenClaw emits compaction lifecycle diagnostics. A missing end diagnostic
 // must not suppress a real Gateway recovery indefinitely.
 export const GATEWAY_COMPACTION_RECOVERY_GRACE_MS = 5 * 60_000;

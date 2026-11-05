@@ -16,6 +16,25 @@ requiredTests:
 
 Gateway status handling must preserve `gatewayReady` semantics.
 
+Restart performance validation must measure actual packaged-runtime behavior,
+including whether the requested shutdown method exists, and must not count
+overlapping startup phases or replayed trace records twice. An optimization of
+stale-owner checks must retain PID-reuse detection and fail-closed behavior for
+permission-denied or unknown process state. A confirmed dead owner can take a
+fast path; unknown ownership must never be treated as death for performance.
+See `harness/reference/windows-gateway-restart-latency.md` for measured evidence.
+
+Owned Gateway shutdown uses an explicitly enabled private utility-process
+channel, independent of WebSocket readiness. Acknowledgement is not completion:
+wait for process exit, distinguish clean from abnormal exit, and retain a bounded
+fallback when the handler is missing, rejects the request or hangs. Do not enable
+this control channel for Doctor, other CLI commands or externally owned Gateways.
+The app-quit deadline must allow the same graceful cleanup plus the ordered ACP
+stop and forced-stop fallback, rather than truncating healthy runtime cleanup.
+An empty Windows spawn broker may skip unsupported Unix process-group discovery
+and its advisory retirement delay. Never skip cleanup for tracked child processes,
+pending starts or native resources, or reinterpret unknown Unix ownership as empty.
+
 `gatewayReady: false` means runtime-dependent refreshes should wait. `gatewayReady: true` means the Gateway reported readiness. `gatewayReady: undefined` is backward-compatible with older Gateway versions and must be treated as ready when the Gateway state is running.
 
 Gateway manager fallback must not emit duplicate ready transitions or override an explicit pending/failed Agent admission merely because a timeout elapsed.

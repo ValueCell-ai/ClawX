@@ -3,6 +3,9 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 export const OPENCLAW_UTILITY_ENTRY_ENV = 'CLAWX_OPENCLAW_ENTRY';
+export const OPENCLAW_GATEWAY_CONTROL_ENV = 'CLAWX_OPENCLAW_GATEWAY_CONTROL';
+export const OPENCLAW_GATEWAY_SHUTDOWN_REQUEST = 'clawx:gateway:shutdown';
+export const OPENCLAW_GATEWAY_SHUTDOWN_RESULT = 'clawx:gateway:shutdown-result';
 
 const OPENCLAW_UTILITY_BOOTSTRAP_FILE = 'openclaw-utility-bootstrap.mjs';
 export const OPENCLAW_RUNTIME_COMPAT_FILE = 'openclaw-runtime-compat.mjs';
@@ -213,6 +216,47 @@ if (process.env.OPENCLAW_DEBUG === '1') {
 }
 `;
 
+/** Private to the explicitly opted-in Gateway child; never inherited by runtime children. */
+export const OPENCLAW_GATEWAY_CONTROL_SOURCE = `
+const gatewayControlEnabled = process.env.${OPENCLAW_GATEWAY_CONTROL_ENV} === '1';
+delete process.env.${OPENCLAW_GATEWAY_CONTROL_ENV};
+if (gatewayControlEnabled && process.parentPort) {
+  const parentPort = process.parentPort;
+  let shutdownRequested = false;
+  let shutdownError;
+  parentPort.on('message', ({ data }) => {
+    if (data?.type !== '${OPENCLAW_GATEWAY_SHUTDOWN_REQUEST}' || typeof data.requestId !== 'string') return;
+    const reply = (accepted, reason) => {
+      try {
+        parentPort.postMessage({
+          type: '${OPENCLAW_GATEWAY_SHUTDOWN_RESULT}', requestId: data.requestId, accepted, reason,
+        });
+      } catch {
+        // The parent may already be gone. Do not interrupt runtime cleanup
+        // because the optional acknowledgement can no longer be delivered.
+      }
+    };
+    if (shutdownRequested) {
+      reply(!shutdownError, shutdownError);
+      return;
+    }
+    if (process.listenerCount('SIGTERM') === 0) {
+      reply(false, 'SIGTERM handler is not installed');
+      return;
+    }
+    shutdownRequested = true;
+    try {
+      // Windows process.kill/UtilityProcess.kill terminates without invoking
+      // the runtime's JS cleanup. Emit to its installed signal handlers instead.
+      process.emit('SIGTERM');
+    } catch {
+      shutdownError = 'SIGTERM handler failed';
+    }
+    reply(!shutdownError, shutdownError);
+  });
+}
+`;
+
 export const OPENCLAW_UTILITY_BOOTSTRAP_SOURCE = [
   `import './${OPENCLAW_RUNTIME_COMPAT_FILE}';`,
   "import { pathToFileURL } from 'node:url';",
@@ -223,6 +267,7 @@ export const OPENCLAW_UTILITY_BOOTSTRAP_SOURCE = [
   '  process.exit(1);',
   '}',
   'process.argv[1] = entry;',
+  OPENCLAW_GATEWAY_CONTROL_SOURCE,
   'await import(pathToFileURL(entry).href);',
   '',
 ].join('\n');
@@ -260,13 +305,19 @@ export function forkOpenClawUtilityProcess(
   entryScript: string,
   args: string[],
   options: Electron.ForkOptions,
+  control: { gatewayShutdownControl?: boolean } = {},
 ): Electron.UtilityProcess {
+  const env: NodeJS.ProcessEnv = {
+    ...(options.env ?? process.env),
+    OPENCLAW_DEBUG: '1',
+    [OPENCLAW_UTILITY_ENTRY_ENV]: entryScript,
+  };
+  // Only the owned Gateway launcher opts in. Doctor and other commands must
+  // not acquire a control listener from an inherited environment variable.
+  delete env[OPENCLAW_GATEWAY_CONTROL_ENV];
+  if (control.gatewayShutdownControl) env[OPENCLAW_GATEWAY_CONTROL_ENV] = '1';
   return utilityProcess.fork(ensureOpenClawUtilityBootstrap(), args, {
     ...options,
-    env: {
-      ...(options.env ?? process.env),
-      OPENCLAW_DEBUG: '1',
-      [OPENCLAW_UTILITY_ENTRY_ENV]: entryScript,
-    },
+    env,
   });
 }

@@ -237,10 +237,15 @@ same way. That cost over an hour.
 
 The readiness deadline now follows Gateway output: 180 s without output, or
 10 minutes in total. A readiness-timeout exit never triggers Doctor
-(`isGatewayReadinessTimeoutError`). The slow module import is not yet
-explained. A likely contributor is Defender real-time scanning: the per-user
-installer cannot add its Defender exclusion, which needs elevation, and the
-bundle holds about 54k files. That has not been measured.
+(`isGatewayReadinessTimeoutError`). The field report alone does not establish the
+cause of all module-loading delays. Later isolated profiling identified repeated
+process-start queries for an already-dead owner as a separate, measured Windows
+startup bottleneck. The runtime patch checks definitive death first while keeping
+PID-reuse and final death checks. ClawX also requests owned-process shutdown over
+Electron's private parent port, and webhook preflight reuses safe machine-state
+completion for absent channels. See [Windows Gateway restart latency](windows-gateway-restart-latency.md)
+for evidence, final package validation and limitations. Defender scanning has not
+been measured as a cause; no security exclusions were changed.
 
 ### Windows: stale 2026.7.1 extensions after an overwrite install
 

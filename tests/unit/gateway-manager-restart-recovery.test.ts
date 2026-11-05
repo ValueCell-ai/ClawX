@@ -2,6 +2,8 @@
 
 import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { OPENCLAW_GATEWAY_SHUTDOWN_REQUEST, OPENCLAW_GATEWAY_SHUTDOWN_RESULT } from '@electron/utils/openclaw-utility-process';
+import { GATEWAY_GRACEFUL_EXIT_TIMEOUT_MS } from '@electron/gateway/recovery-budget';
 
 vi.mock('electron', () => ({
   app: {
@@ -47,7 +49,7 @@ describe('GatewayManager restart recovery', () => {
 
     const { GatewayManager } = await import('@electron/gateway/manager');
     const manager = new GatewayManager();
-    const child = Object.assign(new EventEmitter(), { pid: 42 });
+    const child = Object.assign(new EventEmitter(), { pid: 42, postMessage: vi.fn() });
     const ws = {
       readyState: 1,
       terminate: vi.fn(),
@@ -61,15 +63,19 @@ describe('GatewayManager restart recovery', () => {
     internals.ownsProcess = true;
     internals.ws = ws;
 
-    const rpcSpy = vi.spyOn(manager, 'rpc').mockImplementation(async (method) => {
-      expect(method).toBe('shutdown');
+    const rpcSpy = vi.spyOn(manager, 'rpc');
+    child.postMessage.mockImplementation((request) => {
+      expect(request.type).toBe(OPENCLAW_GATEWAY_SHUTDOWN_REQUEST);
+      expect(child.listenerCount('exit')).toBe(1);
       child.emit('exit', 0);
-      return {};
     });
 
     await manager.stop();
 
-    expect(rpcSpy).toHaveBeenCalledWith('shutdown', undefined, 5_000);
+    expect(rpcSpy).not.toHaveBeenCalled();
+    expect(child.postMessage).toHaveBeenCalledOnce();
+    expect(child.listenerCount('exit')).toBe(0);
+    expect(child.listenerCount('message')).toBe(0);
     expect(terminateOwnedGatewayProcess).not.toHaveBeenCalled();
     expect(ws.terminate).toHaveBeenCalledOnce();
     expect(manager.getStatus().state).toBe('stopped');
@@ -84,7 +90,7 @@ describe('GatewayManager restart recovery', () => {
 
     const { GatewayManager } = await import('@electron/gateway/manager');
     const manager = new GatewayManager();
-    const child = Object.assign(new EventEmitter(), { pid: 43 });
+    const child = Object.assign(new EventEmitter(), { pid: 43, postMessage: vi.fn() });
     const ws = {
       readyState: 1,
       terminate: vi.fn(),
@@ -97,10 +103,12 @@ describe('GatewayManager restart recovery', () => {
     internals.process = child as unknown as Electron.UtilityProcess;
     internals.ownsProcess = true;
     internals.ws = ws;
-    vi.spyOn(manager, 'rpc').mockResolvedValue({});
+    child.postMessage.mockImplementation((request) => {
+      child.emit('message', { type: OPENCLAW_GATEWAY_SHUTDOWN_RESULT, requestId: request.requestId, accepted: true });
+    });
 
     const stopPromise = manager.stop();
-    await vi.advanceTimersByTimeAsync(7_999);
+    await vi.advanceTimersByTimeAsync(GATEWAY_GRACEFUL_EXIT_TIMEOUT_MS - 1);
     expect(terminateOwnedGatewayProcess).not.toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(1);
@@ -108,9 +116,40 @@ describe('GatewayManager restart recovery', () => {
 
     expect(terminateOwnedGatewayProcess).toHaveBeenCalledOnce();
     expect(terminateOwnedGatewayProcess).toHaveBeenCalledWith(child);
+    expect(child.listenerCount('exit')).toBe(0);
+    expect(child.listenerCount('message')).toBe(0);
   });
 
-  it('treats an RPC disconnect followed by process exit as a graceful shutdown', async () => {
+  it('allows a ten-second resource cleanup to exit naturally without force termination', async () => {
+    const terminateOwnedGatewayProcess = vi.fn(async () => {});
+    vi.doMock('@electron/gateway/supervisor', async (importOriginal) => ({
+      ...await importOriginal<typeof import('@electron/gateway/supervisor')>(),
+      terminateOwnedGatewayProcess,
+    }));
+    const { GatewayManager } = await import('@electron/gateway/manager');
+    const manager = new GatewayManager();
+    const child = Object.assign(new EventEmitter(), { pid: 47, postMessage: vi.fn() });
+    Object.assign(manager, { process: child, ownsProcess: true });
+    child.postMessage.mockImplementation((request) => {
+      child.emit('message', { type: OPENCLAW_GATEWAY_SHUTDOWN_RESULT, requestId: request.requestId, accepted: true });
+      setTimeout(() => child.emit('exit', 0), 10_000);
+    });
+    let stopped = false;
+    const stopPromise = manager.stop().then(() => { stopped = true; });
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(stopped).toBe(false);
+    expect(terminateOwnedGatewayProcess).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await stopPromise;
+    expect(stopped).toBe(true);
+    expect(manager.getStatus().state).toBe('stopped');
+    expect(child.listenerCount('exit')).toBe(0);
+    expect(child.listenerCount('message')).toBe(0);
+    await vi.advanceTimersByTimeAsync(GATEWAY_GRACEFUL_EXIT_TIMEOUT_MS);
+    expect(terminateOwnedGatewayProcess).not.toHaveBeenCalled();
+  });
+
+  it('gracefully stops an owned process even without a WebSocket connection', async () => {
     const terminateOwnedGatewayProcess = vi.fn(async () => {});
     vi.doMock('@electron/gateway/supervisor', async (importOriginal) => ({
       ...await importOriginal<typeof import('@electron/gateway/supervisor')>(),
@@ -119,20 +158,16 @@ describe('GatewayManager restart recovery', () => {
 
     const { GatewayManager } = await import('@electron/gateway/manager');
     const manager = new GatewayManager();
-    const child = Object.assign(new EventEmitter(), { pid: 44 });
-    const ws = {
-      readyState: 1,
-      terminate: vi.fn(),
-    };
+    const child = Object.assign(new EventEmitter(), { pid: 44, postMessage: vi.fn() });
     const internals = manager as unknown as {
       process: Electron.UtilityProcess | null;
       ownsProcess: boolean;
-      ws: typeof ws | null;
+      ws: null;
     };
     internals.process = child as unknown as Electron.UtilityProcess;
     internals.ownsProcess = true;
-    internals.ws = ws;
-    vi.spyOn(manager, 'rpc').mockRejectedValue(new Error('WebSocket closed'));
+    internals.ws = null;
+    const rpcSpy = vi.spyOn(manager, 'rpc');
 
     const stopPromise = manager.stop();
     await vi.advanceTimersByTimeAsync(1_000);
@@ -140,6 +175,50 @@ describe('GatewayManager restart recovery', () => {
     await stopPromise;
 
     expect(terminateOwnedGatewayProcess).not.toHaveBeenCalled();
+    expect(child.postMessage).toHaveBeenCalledOnce();
+    expect(rpcSpy).not.toHaveBeenCalled();
+  });
+
+  it.each(['unavailable-handler', 'send-failure', 'abnormal-exit'])(
+    'handles %s without waiting for an impossible graceful exit', async (failure) => {
+      const terminateOwnedGatewayProcess = vi.fn(async () => {});
+      vi.doMock('@electron/gateway/supervisor', async (importOriginal) => ({
+        ...await importOriginal<typeof import('@electron/gateway/supervisor')>(),
+        terminateOwnedGatewayProcess,
+      }));
+      const { GatewayManager } = await import('@electron/gateway/manager');
+      const { logger } = await import('@electron/utils/logger');
+      const manager = new GatewayManager();
+      const child = Object.assign(new EventEmitter(), { pid: 45, postMessage: vi.fn() });
+      Object.assign(manager, { process: child, ownsProcess: true });
+      child.postMessage.mockImplementation((request) => {
+        if (failure === 'send-failure') throw new Error('parent port closed');
+        if (failure === 'abnormal-exit') child.emit('exit', 1);
+        else child.emit('message', {
+          type: OPENCLAW_GATEWAY_SHUTDOWN_RESULT, requestId: request.requestId,
+          accepted: false, reason: 'SIGTERM handler is not installed',
+        });
+      });
+      await manager.stop();
+      expect(terminateOwnedGatewayProcess).toHaveBeenCalledTimes(failure === 'abnormal-exit' ? 0 : 1);
+      expect(JSON.stringify(vi.mocked(logger.info).mock.calls)).not.toContain('Gateway exited gracefully');
+      expect(child.listenerCount('exit')).toBe(0);
+      expect(child.listenerCount('message')).toBe(0);
+      expect(manager.getStatus().state).toBe('stopped');
+    },
+  );
+
+  it('ignores unrelated private shutdown responses until the owned process exits', async () => {
+    const { GatewayManager } = await import('@electron/gateway/manager');
+    const manager = new GatewayManager();
+    const child = Object.assign(new EventEmitter(), { pid: 46, postMessage: vi.fn() });
+    Object.assign(manager, { process: child, ownsProcess: true });
+    const stopPromise = manager.stop();
+    child.emit('message', { type: OPENCLAW_GATEWAY_SHUTDOWN_RESULT, requestId: 'unrelated', accepted: false });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(child.listenerCount('exit')).toBe(1);
+    child.emit('exit', 0);
+    await stopPromise;
   });
 
   it('re-enables auto-reconnect when start() fails during restart', async () => {
@@ -301,7 +380,7 @@ describe('GatewayManager restart recovery', () => {
 
     const { GatewayManager } = await import('@electron/gateway/manager');
     const manager = new GatewayManager();
-    const child = Object.assign(new EventEmitter(), { pid: 42 });
+    const child = Object.assign(new EventEmitter(), { pid: 42, postMessage: vi.fn() });
     const ws = { readyState: 1, terminate: vi.fn() };
     const internals = manager as unknown as {
       process: Electron.UtilityProcess | null;
@@ -321,7 +400,6 @@ describe('GatewayManager restart recovery', () => {
     });
     const forceTerminateSpy = vi.spyOn(manager, 'forceTerminateOwnedProcessForQuit').mockResolvedValue(false);
     const reconnectSpy = vi.spyOn(internals, 'scheduleReconnect');
-    vi.spyOn(manager, 'rpc').mockImplementation(() => new Promise(() => {}));
 
     const startPromise = manager.start();
     await readinessStart;

@@ -224,7 +224,7 @@ export async function launchGatewayProcess(options: {
       stdio: 'pipe',
       env: runtimeEnv as NodeJS.ProcessEnv,
       serviceName: 'OpenClaw Gateway',
-    });
+    }, { gatewayShutdownControl: true });
     const stderrLines = createGatewayOutputLineBuffer(options.onStderrLine);
     // stdout contains OpenClaw runtime startup traces absent from stderr. Let
     // the manager select safe diagnostics rather than logging raw stdout here.

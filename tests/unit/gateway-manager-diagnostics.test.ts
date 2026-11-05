@@ -494,19 +494,25 @@ describe('GatewayManager diagnostics', () => {
       }),
     }));
     const { manager, internals, records } = await createDiagnosticManager();
-    const child = Object.assign(new EventEmitter(), { pid: 42 });
+    const { OPENCLAW_GATEWAY_SHUTDOWN_REQUEST, OPENCLAW_GATEWAY_SHUTDOWN_RESULT } =
+      await import('@electron/utils/openclaw-utility-process');
+    const child = Object.assign(new EventEmitter(), { pid: 42, postMessage: vi.fn() });
     internals.process = child as unknown as Electron.UtilityProcess;
     internals.ownsProcess = true;
     internals.ws = { readyState: 1, terminate: vi.fn() };
-    vi.spyOn(manager, 'rpc').mockImplementation(async (method) => {
-      if (method === 'shutdown') setTimeout(() => child.emit('exit', 0), 500);
-      return {};
+    const rpc = vi.spyOn(manager, 'rpc').mockResolvedValue({});
+    child.postMessage.mockImplementation((request) => {
+      expect(request.type).toBe(OPENCLAW_GATEWAY_SHUTDOWN_REQUEST);
+      child.emit('message', { type: OPENCLAW_GATEWAY_SHUTDOWN_RESULT, requestId: request.requestId, accepted: true });
+      setTimeout(() => child.emit('exit', 0), 500);
     });
     const attempt = internals.beginGatewayDiagnostics('restart');
     internals.restartDiagnosticAttempt = attempt;
     const stopping = manager.stop();
     await vi.advanceTimersByTimeAsync(500);
     await stopping;
+    expect(child.postMessage).toHaveBeenCalledOnce();
+    expect(rpc).not.toHaveBeenCalled();
     expect(records('ready')).toHaveLength(0);
     internals.startDiagnosticTimer();
     const launching = internals.startProcess();

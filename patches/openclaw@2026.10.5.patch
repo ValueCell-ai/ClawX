@@ -1,5 +1,5 @@
 diff --git a/dist/agent-core-B94tJ7dr.mjs b/dist/agent-core-B94tJ7dr.mjs
-index 2a53cb90fe7b096afa825c2086dfc4d38b247b57..d6b7c68038521b42e723109358cc29979dd13309 100644
+index 2a53cb90fe7b096afa825c2086dfc4d38b247b57..db5cc32b786a593329197a576920a780e3357904 100644
 --- a/dist/agent-core-B94tJ7dr.mjs
 +++ b/dist/agent-core-B94tJ7dr.mjs
 @@ -2983,15 +2983,23 @@ function prepareCompaction(pathEntries, settings, requestState, constraints) {
@@ -31,7 +31,7 @@ index 2a53cb90fe7b096afa825c2086dfc4d38b247b57..d6b7c68038521b42e723109358cc2997
  		const msg = entry ? getMessageFromEntryForCompaction(entry) : void 0;
  		if (msg) (i < historyEnd ? messagesToSummarize : turnPrefixMessages).push(msg);
 diff --git a/dist/agent-events-CCeMHYh0.mjs b/dist/agent-events-CCeMHYh0.mjs
-index bce202b4e7f0d3f9e08104586ad31254f88aa738..b264108d35b99cc88a7f51f4744488de51e651f5 100644
+index bce202b4e7f0d3f9e08104586ad31254f88aa738..8b05c459a94c013802985b60d421af53db19693d 100644
 --- a/dist/agent-events-CCeMHYh0.mjs
 +++ b/dist/agent-events-CCeMHYh0.mjs
 @@ -297,6 +297,8 @@ function enrichAgentEvent(state, event, claimId, expectedContext, reservedPublic
@@ -44,7 +44,7 @@ index bce202b4e7f0d3f9e08104586ad31254f88aa738..b264108d35b99cc88a7f51f4744488de
  		sessionKey,
  		...sessionId ? { sessionId } : {},
 diff --git a/dist/agent-job-DleplIFW.mjs b/dist/agent-job-DleplIFW.mjs
-index b449c635637822c59a4ec9464986704f81e24731..6161a5d2fe2cbb7bee045f59911ba4a81ac2eb56 100644
+index b449c635637822c59a4ec9464986704f81e24731..387c8cd3fa0d546cdfeef937d10a7097f3b8c560 100644
 --- a/dist/agent-job-DleplIFW.mjs
 +++ b/dist/agent-job-DleplIFW.mjs
 @@ -5,7 +5,7 @@ import { r as getAsyncWorkSignal } from "./async-work-scope-DDiH0P7W.mjs";
@@ -115,7 +115,7 @@ index b449c635637822c59a4ec9464986704f81e24731..6161a5d2fe2cbb7bee045f59911ba4a8
 -export { waitForAgentJob as a, setGatewayDedupeEntry as i, getAgentJobSession as n, projectAgentJobObservation as r, captureAgentJobSession as t };
 +export { resolveAgentRecoveryWaitTarget, waitForAgentJob as a, setGatewayDedupeEntry as i, getAgentJobSession as n, projectAgentJobObservation as r, captureAgentJobSession as t };
 diff --git a/dist/agent-run-registry-zReSioYT.mjs b/dist/agent-run-registry-zReSioYT.mjs
-index b2e5a2e78ba9d9d75a909c17e609c612192524f8..66ba81fe69718ecba6a6698ddca3abb299ee4ff7 100644
+index b2e5a2e78ba9d9d75a909c17e609c612192524f8..d8f54feb2804b55f6b6dbc170fb5c131bbcfd976 100644
 --- a/dist/agent-run-registry-zReSioYT.mjs
 +++ b/dist/agent-run-registry-zReSioYT.mjs
 @@ -24,6 +24,7 @@ function recordAgentEventRouting(runId, context, predecessor) {
@@ -137,7 +137,7 @@ index b2e5a2e78ba9d9d75a909c17e609c612192524f8..66ba81fe69718ecba6a6698ddca3abb2
  	if (context.verboseLevel && existing.verboseLevel !== context.verboseLevel) existing.verboseLevel = context.verboseLevel;
  	existing.completionSource ??= context.completionSource;
 diff --git a/dist/agent-settings-CZ8x5-4D.mjs b/dist/agent-settings-CZ8x5-4D.mjs
-index 2869acd0aca88e2affbbee97965b9524f6693586..a1d6ab97e24e38e564e86ceb88a8c0379b086978 100644
+index 2869acd0aca88e2affbbee97965b9524f6693586..76a4757a51913b9ed60d96e76b3defcb852bd24b 100644
 --- a/dist/agent-settings-CZ8x5-4D.mjs
 +++ b/dist/agent-settings-CZ8x5-4D.mjs
 @@ -8,13 +8,17 @@ function toPositiveInt(value) {
@@ -160,7 +160,7 @@ index 2869acd0aca88e2affbbee97965b9524f6693586..a1d6ab97e24e38e564e86ceb88a8c037
  	const requestedReserveTokens = Math.max(currentReserveTokens, DEFAULT_AGENT_COMPACTION_RESERVE_TOKENS_FLOOR);
  	const targetReserveTokens = contextTokenBudget === void 0 ? requestedReserveTokens : resolveEffectiveCompactionReserveTokens({
 diff --git a/dist/agent-turn-service-C_6ZJjkm.mjs b/dist/agent-turn-service-C_6ZJjkm.mjs
-index ea3f85d096ec999230b508b9596f8d5745020166..46cc255e4df802dbc71ac358abecffc009f0100d 100644
+index ea3f85d096ec999230b508b9596f8d5745020166..b64a0c585eb6209cf0fa63958d20a661f28a114f 100644
 --- a/dist/agent-turn-service-C_6ZJjkm.mjs
 +++ b/dist/agent-turn-service-C_6ZJjkm.mjs
 @@ -20,7 +20,7 @@ import { i as resolveProviderIdForAuth } from "./provider-auth-aliases-K2SVB2uU.
@@ -188,7 +188,7 @@ index ea3f85d096ec999230b508b9596f8d5745020166..46cc255e4df802dbc71ac358abecffc0
  	return async () => {
  		if (restored) return;
 diff --git a/dist/builtin-openclaw-CLelpwAr.mjs b/dist/builtin-openclaw-CLelpwAr.mjs
-index 12e2cacc6c8159530178d84bd44765ee8f7babc2..be3c140e975a10a184df7570e0047b58b916bd3c 100644
+index 12e2cacc6c8159530178d84bd44765ee8f7babc2..088f1c5cd132ca0bd0afce27dc5ccfff34b38e76 100644
 --- a/dist/builtin-openclaw-CLelpwAr.mjs
 +++ b/dist/builtin-openclaw-CLelpwAr.mjs
 @@ -4892,8 +4892,19 @@ function handleCompactionStart(ctx, evt) {
@@ -229,7 +229,7 @@ index 12e2cacc6c8159530178d84bd44765ee8f7babc2..be3c140e975a10a184df7570e0047b58
  		willRetry,
  		outcome: outcome.status,
 diff --git a/dist/embedded-agent-w-EKmRVf.mjs b/dist/embedded-agent-w-EKmRVf.mjs
-index 9b9128c5c8d1c1a3d451a211fd0b4801b149a852..77e724d68f29c9d346e2a6a4a00943db6e2d310d 100644
+index 9b9128c5c8d1c1a3d451a211fd0b4801b149a852..dc78fd38772e7f61ca347ace703d41e872a2667b 100644
 --- a/dist/embedded-agent-w-EKmRVf.mjs
 +++ b/dist/embedded-agent-w-EKmRVf.mjs
 @@ -259,7 +259,7 @@ import { t as buildEmbeddedRunPayloads } from "./payloads-BUFeh5w2.mjs";
@@ -314,7 +314,7 @@ index 9b9128c5c8d1c1a3d451a211fd0b4801b149a852..77e724d68f29c9d346e2a6a4a00943db
  	const owner = input.prepareRecoveryOwner();
  	const activeSession = owner.session;
 diff --git a/dist/error-coercion-W9BtigRm.mjs b/dist/error-coercion-W9BtigRm.mjs
-index 12fddaf22c215a45b11765098fa42da4d213c478..4fa229fbed16ed248cd742410212f1a3777351df 100644
+index 12fddaf22c215a45b11765098fa42da4d213c478..1ddb95bf6bc4b07bb35b326f398b133e4c8e9877 100644
 --- a/dist/error-coercion-W9BtigRm.mjs
 +++ b/dist/error-coercion-W9BtigRm.mjs
 @@ -115,8 +115,19 @@ function formatErrorMessage(value, options) {
@@ -338,7 +338,7 @@ index 12fddaf22c215a45b11765098fa42da4d213c478..4fa229fbed16ed248cd742410212f1a3
  * Normalizes an unknown thrown value into an Error. Non-Error objects become
  * the `cause` and have their enumerable fields copied so structured details
 diff --git a/dist/exec-approval-DbnOAIQO.mjs b/dist/exec-approval-DbnOAIQO.mjs
-index 2f891103a260a63465790be0bb057b809f816372..708a8fb319af11d56beed05b333d646483b5359b 100644
+index 2f891103a260a63465790be0bb057b809f816372..84600290cdb4016a414b5c60c2c341dec10f5d9c 100644
 --- a/dist/exec-approval-DbnOAIQO.mjs
 +++ b/dist/exec-approval-DbnOAIQO.mjs
 @@ -27,6 +27,7 @@ import { t as handlePendingApprovalRequestWithDelivery } from "./approval-reques
@@ -357,8 +357,142 @@ index 2f891103a260a63465790be0bb057b809f816372..708a8fb319af11d56beed05b333d6464
  				toolCallId: normalizeOptionalString(p.toolCallId) ?? null,
  				turnSourceChannel: trustedAgentRuntime ? trustedAgentRuntime.turnSourceChannel ?? null : normalizeOptionalString(p.turnSourceChannel) ?? null,
  				turnSourceTo: trustedAgentRuntime ? trustedAgentRuntime.turnSourceTo ?? null : normalizeOptionalString(p.turnSourceTo) ?? null,
+diff --git a/dist/infra/sqlite-readonly-location.worker.js b/dist/infra/sqlite-readonly-location.worker.js
+index 427fc417bfc45cfbe5b8090092b5776db976edce..4b84e49828bd9015f2ac20f307b2c747917bba49 100644
+--- a/dist/infra/sqlite-readonly-location.worker.js
++++ b/dist/infra/sqlite-readonly-location.worker.js
+@@ -41445,6 +41445,12 @@ function readLockFileOwnerPayload(payload) {
+ function inspectStaleLockOwner(params) {
+ 	const payload = readLockFileOwnerPayload(params.payload);
+ 	if (!payload?.pid) return null;
++	if ((params.isPidDefinitelyDead ?? isPidDefinitelyDead)(payload.pid)) return {
++		reason: "owner-process-exited",
++		pid: payload.pid,
++		recordedStarttime: payload.starttime ?? null,
++		observedStarttime: null
++	};
+ 	const observedStarttime = payload.starttime === void 0 ? null : (params.getProcessStartTime ?? getFileLockProcessStartTime)(payload.pid);
+ 	const identity = {
+ 		pid: payload.pid,
+diff --git a/dist/legacy-webhook-pins-Bn7D4Mti.mjs b/dist/legacy-webhook-pins-Bn7D4Mti.mjs
+index 9a8779e0660962703e7b755eca543c53e4d44993..7c2b5580e5f03a2395d2a54ad30e55e49329aac4 100644
+--- a/dist/legacy-webhook-pins-Bn7D4Mti.mjs
++++ b/dist/legacy-webhook-pins-Bn7D4Mti.mjs
+@@ -1,2 +1,2 @@
+-import { r as recordUnwrittenWebhookCompletion, t as HISTORICAL_WEBHOOK_CHANNELS } from "./legacy-webhook-pins-Bucp571j.mjs";
+-export { HISTORICAL_WEBHOOK_CHANNELS, recordUnwrittenWebhookCompletion };
++import { r as recordUnwrittenWebhookCompletion, s as shouldRunHistoricalWebhookMigration, t as HISTORICAL_WEBHOOK_CHANNELS } from "./legacy-webhook-pins-Bucp571j.mjs";
++export { HISTORICAL_WEBHOOK_CHANNELS, shouldRunHistoricalWebhookMigration, recordUnwrittenWebhookCompletion };
+diff --git a/dist/legacy-webhook-pins-Bucp571j.mjs b/dist/legacy-webhook-pins-Bucp571j.mjs
+index b40e69e7a094ffea9a59f5c829f480e989c7bd91..f526f6735e33b2939bc4aa54d372cf3af7f69e82 100644
+--- a/dist/legacy-webhook-pins-Bucp571j.mjs
++++ b/dist/legacy-webhook-pins-Bucp571j.mjs
+@@ -23,6 +23,37 @@ const HISTORICAL_WEBHOOK_CHANNELS = [
+ function webhookCompletionKey(env) {
+ 	return `webhookListeners:${resolveConfigPath(env)}`;
+ }
++/** Reuse only marker-only decisions that cannot hide a restored channel config. */
++function readHistoricalWebhookCompletion(config, env) {
++	const configured = config.meta?.migrations?.webhookListeners;
++	if (configured === true || HISTORICAL_WEBHOOK_CHANNELS.every((id) => Object.hasOwn(configured ?? {}, id))) return configured;
++	if (configured == null) return readConfigMachineState(webhookCompletionKey(env), { env });
++	if (!asNullableRecord(configured)) return configured;
++	let persisted;
++	try {
++		persisted = readConfigMachineState(webhookCompletionKey(env), { env });
++	} catch {
++		return configured;
++	}
++	const machine = asNullableRecord(persisted);
++	if (!machine) return configured;
++	const supplemental = {};
++	for (const id of HISTORICAL_WEBHOOK_CHANNELS) {
++		if (Object.hasOwn(configured, id) || Object.hasOwn(config.channels ?? {}, id) || Object.hasOwn(config.plugins?.entries?.[id] ?? {}, "config")) continue;
++		// MSTeams can restore historical listeners from ambient credentials alone.
++		if (id === "msteams" && [env, process.env].some((source) => Object.keys(source ?? {}).some((key) => /^MSTEAMS_/i.test(key)))) continue;
++		if (Array.isArray(machine[id]) && machine[id].length === 0) supplemental[id] = [];
++	}
++	return Object.keys(supplemental).length ? { ...supplemental, ...configured } : configured;
++}
++/** Machine-only completion must not skip compatibility normalizers for authored config. */
++function shouldRunHistoricalWebhookMigration(config, env) {
++	const configured = config.meta?.migrations?.webhookListeners;
++	if (configured === true || HISTORICAL_WEBHOOK_CHANNELS.every((id) => Object.hasOwn(configured ?? {}, id))) return false;
++	if (configured == null || HISTORICAL_WEBHOOK_CHANNELS.some((id) => Object.hasOwn(config.channels ?? {}, id) || Object.hasOwn(config.plugins?.entries?.[id] ?? {}, "config"))) return true;
++	const completed = readHistoricalWebhookCompletion(config, env);
++	return completed !== true && !HISTORICAL_WEBHOOK_CHANNELS.every((id) => Object.hasOwn(completed ?? {}, id));
++}
+ /** No config bytes changed, so this completion does not depend on config rollback. */
+ function recordUnwrittenWebhookCompletion(snapshot, mutation, env) {
+ 	const readOnly = resolveIsConfigReadOnly(env);
+@@ -40,7 +71,7 @@ function recordUnwrittenWebhookCompletion(snapshot, mutation, env) {
+ /** Pins and completion travel together through Doctor's config backup and publication. */
+ function applyHistoricalWebhookPins(mutation, declaration, context = {}) {
+ 	const env = context.env ?? process.env;
+-	const marker = mutation.config.meta?.migrations?.webhookListeners ?? readConfigMachineState(webhookCompletionKey(env), { env });
++	const marker = readHistoricalWebhookCompletion(mutation.config, env);
+ 	if (marker === true || mutation.warnings?.length) return mutation;
+ 	const accountIds = context.startup && mutation.historicalWebhookAccountIds === null || context.pluginId && !passesManifestOwnerBasePolicy({
+ 		plugin: { id: context.pluginId },
+@@ -103,4 +134,4 @@ function applyHistoricalWebhookPins(mutation, declaration, context = {}) {
+ 	return result;
+ }
+ //#endregion
+-export { applyHistoricalWebhookPins as n, recordUnwrittenWebhookCompletion as r, HISTORICAL_WEBHOOK_CHANNELS as t };
++export { readHistoricalWebhookCompletion as i, applyHistoricalWebhookPins as n, recordUnwrittenWebhookCompletion as r, shouldRunHistoricalWebhookMigration as s, HISTORICAL_WEBHOOK_CHANNELS as t };
+diff --git a/dist/managed-handoff-runtime.mjs b/dist/managed-handoff-runtime.mjs
+index 703c02cd93951c618cf51c4ca77ae42dd5da778f..0fca4be2697facbc3f5496cd48d2d76139178588 100644
+--- a/dist/managed-handoff-runtime.mjs
++++ b/dist/managed-handoff-runtime.mjs
+@@ -43007,6 +43007,12 @@ function readLockFileOwnerPayload(payload) {
+ function inspectStaleLockOwner(params) {
+ 	const payload = readLockFileOwnerPayload(params.payload);
+ 	if (!payload?.pid) return null;
++	if ((params.isPidDefinitelyDead ?? isPidDefinitelyDead)(payload.pid)) return {
++		reason: "owner-process-exited",
++		pid: payload.pid,
++		recordedStarttime: payload.starttime ?? null,
++		observedStarttime: null
++	};
+ 	const observedStarttime = payload.starttime === void 0 ? null : (params.getProcessStartTime ?? getFileLockProcessStartTime)(payload.pid);
+ 	const identity = {
+ 		pid: payload.pid,
+diff --git a/dist/native-hook-relay/sqlite-snapshot-staging-owner-Coa4BeBx.mjs b/dist/native-hook-relay/sqlite-snapshot-staging-owner-Coa4BeBx.mjs
+index 1538dd7b49bc95c4efb4515819df998a334745e1..65d048124f44a5e6362344bc926f3757fe309184 100644
+--- a/dist/native-hook-relay/sqlite-snapshot-staging-owner-Coa4BeBx.mjs
++++ b/dist/native-hook-relay/sqlite-snapshot-staging-owner-Coa4BeBx.mjs
+@@ -6358,6 +6358,12 @@ function readLockFileOwnerPayload(payload) {
+ function inspectStaleLockOwner(params) {
+ 	const payload = readLockFileOwnerPayload(params.payload);
+ 	if (!payload?.pid) return null;
++	if ((params.isPidDefinitelyDead ?? isPidDefinitelyDead)(payload.pid)) return {
++		reason: "owner-process-exited",
++		pid: payload.pid,
++		recordedStarttime: payload.starttime ?? null,
++		observedStarttime: null
++	};
+ 	const observedStarttime = payload.starttime === void 0 ? null : (params.getProcessStartTime ?? getFileLockProcessStartTime)(payload.pid);
+ 	const identity = {
+ 		pid: payload.pid,
+diff --git a/dist/package-update-activation-recovery.mjs b/dist/package-update-activation-recovery.mjs
+index ae4446a8861cbc2b6c722b22e890a9b7b50bff19..f1b43865bdb9666395547cda5c38a8d03634ea68 100644
+--- a/dist/package-update-activation-recovery.mjs
++++ b/dist/package-update-activation-recovery.mjs
+@@ -72315,6 +72315,12 @@ function readLockFileOwnerPayload(payload) {
+ function inspectStaleLockOwner(params) {
+ 	const payload = readLockFileOwnerPayload(params.payload);
+ 	if (!payload?.pid) return null;
++	if ((params.isPidDefinitelyDead ?? isPidDefinitelyDead)(payload.pid)) return {
++		reason: "owner-process-exited",
++		pid: payload.pid,
++		recordedStarttime: payload.starttime ?? null,
++		observedStarttime: null
++	};
+ 	const observedStarttime = payload.starttime === void 0 ? null : (params.getProcessStartTime ?? getFileLockProcessStartTime)(payload.pid);
+ 	const identity = {
+ 		pid: payload.pid,
 diff --git a/dist/plugin-generation-source-lookup-Dg6DuWgm.mjs b/dist/plugin-generation-source-lookup-Dg6DuWgm.mjs
-index 19956c366dfa4a3c3037e2d2e6b42905e31014a0..478781584ccf12f8faa70a4e1ac21a8da7790dc2 100644
+index 19956c366dfa4a3c3037e2d2e6b42905e31014a0..5efd5698acd25520b83a2a689a6b8437b5a0b399 100644
 --- a/dist/plugin-generation-source-lookup-Dg6DuWgm.mjs
 +++ b/dist/plugin-generation-source-lookup-Dg6DuWgm.mjs
 @@ -3,7 +3,7 @@ import { k as PluginSourceRecoveryUnavailableError, o as getPluginCache } from "
@@ -397,8 +531,39 @@ index 19956c366dfa4a3c3037e2d2e6b42905e31014a0..478781584ccf12f8faa70a4e1ac21a8d
  				const retained = {
  					...fact,
  					sourceIdentity: fact.capturedIdentity
+diff --git a/dist/process/spawn-broker/worker.js b/dist/process/spawn-broker/worker.js
+index f7c5c13e9c6be532408d6bb4cd53b664f1372d5e..90ff28d5afaefb150d3646e32048056c3db201ef 100644
+--- a/dist/process/spawn-broker/worker.js
++++ b/dist/process/spawn-broker/worker.js
+@@ -1678,7 +1678,8 @@ function shutdown() {
+ 		process.exit(0);
+ 	};
+ 	signalGroup("SIGTERM");
+-	if (owned.size === 0 && starting.size === 0 && !resources?.size && hasLiveOwnedProcessGroupMembers() === false) {
++	// Windows has no POSIX process groups; an empty broker must not wait for the Unix census.
++	if (owned.size === 0 && starting.size === 0 && !resources?.size && (process.platform === "win32" || hasLiveOwnedProcessGroupMembers() === false)) {
+ 		finish();
+ 		return;
+ 	}
+diff --git a/dist/process/supervisor/service-child-group-anchor.js b/dist/process/supervisor/service-child-group-anchor.js
+index b610adb18a916b7a95c99ff22f950b1624c96c29..17ba52a9ca222210466d6bc285757cf9ddfd2048 100644
+--- a/dist/process/supervisor/service-child-group-anchor.js
++++ b/dist/process/supervisor/service-child-group-anchor.js
+@@ -35458,6 +35458,12 @@ function readLockFileOwnerPayload(payload) {
+ function inspectStaleLockOwner(params) {
+ 	const payload = readLockFileOwnerPayload(params.payload);
+ 	if (!payload?.pid) return null;
++	if ((params.isPidDefinitelyDead ?? isPidDefinitelyDead)(payload.pid)) return {
++		reason: "owner-process-exited",
++		pid: payload.pid,
++		recordedStarttime: payload.starttime ?? null,
++		observedStarttime: null
++	};
+ 	const observedStarttime = payload.starttime === void 0 ? null : (params.getProcessStartTime ?? getFileLockProcessStartTime)(payload.pid);
+ 	const identity = {
+ 		pid: payload.pid,
 diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
-index 543e336a26fb1b13b08fe2ee745cc6123f95364a..bf6bb662a31310b565bca652079440067dc4650a 100644
+index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb0453680704430 100644
 --- a/dist/server-DkfYuk25.mjs
 +++ b/dist/server-DkfYuk25.mjs
 @@ -6,6 +6,7 @@ import { a as asOptionalRecord, c as isRecord, o as asRecord } from "./record-co
@@ -1896,7 +2061,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..bf6bb662a31310b565bca65207944006
  			sessionStore: sessionStore ?? void 0
  		});
 diff --git a/dist/server-chat-M7FtQZJ3.mjs b/dist/server-chat-M7FtQZJ3.mjs
-index c15a706d139ffaae89c5742a5d8c6d9090926a95..c6fe14c6c995faea3850bf57c9171c1ee8292eff 100644
+index c15a706d139ffaae89c5742a5d8c6d9090926a95..6f63bbe7fad6cfef531ca57eba5631f43490e50e 100644
 --- a/dist/server-chat-M7FtQZJ3.mjs
 +++ b/dist/server-chat-M7FtQZJ3.mjs
 @@ -742,6 +742,7 @@ function createAgentEventHandler({ broadcast, broadcastToConnIds, nodeSendToSess
@@ -1955,7 +2120,7 @@ index c15a706d139ffaae89c5742a5d8c6d9090926a95..c6fe14c6c995faea3850bf57c9171c1e
  				agentId: sessionAgentId,
  				controlUiVisible: isControlUiVisible,
 diff --git a/dist/server-request-context-DMwOlR6u.mjs b/dist/server-request-context-DMwOlR6u.mjs
-index aa0619947a03845ba844a68548bb47f92a758ac1..99fde47a8410a4f49365fa3d3a21266180808ded 100644
+index aa0619947a03845ba844a68548bb47f92a758ac1..be0e64a150536a1e1db2c9661042157316bb01e8 100644
 --- a/dist/server-request-context-DMwOlR6u.mjs
 +++ b/dist/server-request-context-DMwOlR6u.mjs
 @@ -403,6 +403,7 @@ function createGatewayRequestContext(params) {
@@ -1967,7 +2132,7 @@ index aa0619947a03845ba844a68548bb47f92a758ac1..99fde47a8410a4f49365fa3d3a212661
  		dedupe: runtime.dedupe,
  		wizardSessions: runtime.wizardSessions,
 diff --git a/dist/session-request-targets-BAGtAj-T.mjs b/dist/session-request-targets-BAGtAj-T.mjs
-index 91d059287a8e37e382d0be7510868a7885aaba12..cc17db8fad643cc1d0742ecd286b4020e1ec2604 100644
+index 91d059287a8e37e382d0be7510868a7885aaba12..078d1bcaebbc454846a32d04e5ffd6759eded39e 100644
 --- a/dist/session-request-targets-BAGtAj-T.mjs
 +++ b/dist/session-request-targets-BAGtAj-T.mjs
 @@ -5,11 +5,30 @@ import { d as getAgentEventLifecycleGeneration } from "./agent-events-CCeMHYh0.m
@@ -2036,7 +2201,7 @@ index 91d059287a8e37e382d0be7510868a7885aaba12..cc17db8fad643cc1d0742ecd286b4020
  		};
  	};
 diff --git a/dist/sessions-compact-BHqjQkq-.mjs b/dist/sessions-compact-BHqjQkq-.mjs
-index 8ea14aae3da0f6480841ce7108e83b94733ceedc..9f0d69d8677a04d359a25494dd6cced9d4519454 100644
+index 8ea14aae3da0f6480841ce7108e83b94733ceedc..17166e4db9e8958f768ea45f9ab30fcafc79bbd2 100644
 --- a/dist/sessions-compact-BHqjQkq-.mjs
 +++ b/dist/sessions-compact-BHqjQkq-.mjs
 @@ -45,6 +45,7 @@ import { t as assertValidParams } from "./validation-CX4u4B7f.mjs";
@@ -2120,7 +2285,7 @@ index 8ea14aae3da0f6480841ce7108e83b94733ceedc..9f0d69d8677a04d359a25494dd6cced9
  				}
  				if (result.ok && result.compacted) {
 diff --git a/dist/sessions-shared-Dr0eLQJX.mjs b/dist/sessions-shared-Dr0eLQJX.mjs
-index 44fe0dfa5f272229fae9e14e79a6965fba93f939..7d5f4e59a0b20b17a24d4de16d9927e7d7228fb8 100644
+index 44fe0dfa5f272229fae9e14e79a6965fba93f939..f6b729cbd012b2db983ce936e9c7139413bfd741 100644
 --- a/dist/sessions-shared-Dr0eLQJX.mjs
 +++ b/dist/sessions-shared-Dr0eLQJX.mjs
 @@ -67,12 +67,13 @@ function loadAccessorSessionEntryForGatewayTarget(params) {
@@ -2140,7 +2305,7 @@ index 44fe0dfa5f272229fae9e14e79a6965fba93f939..7d5f4e59a0b20b17a24d4de16d9927e7
  function isWorkerDispatchInputError(error) {
  	if (typeof error !== "object" || error === null || !("code" in error)) return false;
 diff --git a/dist/src-yRoHchex.mjs b/dist/src-yRoHchex.mjs
-index e0465d9952603588ad8e666f2361c6d545cd0eca..95edf06fe3b153296dc38add5ebd0ba9a2c6d42c 100644
+index e0465d9952603588ad8e666f2361c6d545cd0eca..2effaf68b6f2e9585f8b6be6c71ebeae12c50f60 100644
 --- a/dist/src-yRoHchex.mjs
 +++ b/dist/src-yRoHchex.mjs
 @@ -2486,6 +2486,7 @@ const AgentInternalEventSchema = closedObject({
@@ -2159,8 +2324,75 @@ index e0465d9952603588ad8e666f2361c6d545cd0eca..95edf06fe3b153296dc38add5ebd0ba9
  	timeoutMs: Type.Optional(Type.Integer({ minimum: 0 }))
  });
  /** Wake request from external schedulers or devices into an agent session. */
+diff --git a/dist/stale-lock-file-BXwDVcTj.mjs b/dist/stale-lock-file-BXwDVcTj.mjs
+index 4b3f3ecfbf822335736f30d7af7c07910ec85862..28c1ea60a6d9e7de15b4aa4a985aac96179103a9 100644
+--- a/dist/stale-lock-file-BXwDVcTj.mjs
++++ b/dist/stale-lock-file-BXwDVcTj.mjs
+@@ -13,6 +13,12 @@ function readLockFileOwnerPayload(payload) {
+ function inspectStaleLockOwner(params) {
+ 	const payload = readLockFileOwnerPayload(params.payload);
+ 	if (!payload?.pid) return null;
++	if ((params.isPidDefinitelyDead ?? isPidDefinitelyDead)(payload.pid)) return {
++		reason: "owner-process-exited",
++		pid: payload.pid,
++		recordedStarttime: payload.starttime ?? null,
++		observedStarttime: null
++	};
+ 	const observedStarttime = payload.starttime === void 0 ? null : (params.getProcessStartTime ?? getFileLockProcessStartTime)(payload.pid);
+ 	const identity = {
+ 		pid: payload.pid,
+diff --git a/dist/startup-config-preflight-C4G3Hbkd.mjs b/dist/startup-config-preflight-C4G3Hbkd.mjs
+index 55b5b4b01b6b417387363f37b01ca071667794e6..e9ec6cf9e8b9e4e6b59484dce7a9c551628e428c 100644
+--- a/dist/startup-config-preflight-C4G3Hbkd.mjs
++++ b/dist/startup-config-preflight-C4G3Hbkd.mjs
+@@ -152,9 +152,8 @@ async function prepareStartupConfig(options) {
+ 		await beforeStatePreparation(read.snapshot);
+ 		assertLeaseCurrent();
+ 		initializeNativeOpenClawStateDatabase({ env });
+-		const { HISTORICAL_WEBHOOK_CHANNELS, recordUnwrittenWebhookCompletion } = await import("./legacy-webhook-pins-Bn7D4Mti.mjs");
+-		const webhookCompletion = read.snapshot.sourceConfig.meta?.migrations?.webhookListeners;
+-		if (webhookCompletion !== true && !HISTORICAL_WEBHOOK_CHANNELS.every((id) => Object.hasOwn(webhookCompletion ?? {}, id))) {
++		const { HISTORICAL_WEBHOOK_CHANNELS, shouldRunHistoricalWebhookMigration, recordUnwrittenWebhookCompletion } = await import("./legacy-webhook-pins-Bn7D4Mti.mjs");
++		if (shouldRunHistoricalWebhookMigration(read.snapshot.sourceConfig, env)) {
+ 			const migration = await measureDoctorConfigPreflightStep("webhook-readiness", async () => {
+ 				const { applyPluginDoctorCompatibilityMigrations } = await import("./doctor-contract-registry-B6owxf6p.mjs");
+ 				return applyPluginDoctorCompatibilityMigrations(read.snapshot.sourceConfig, {
+diff --git a/dist/state/openclaw-state-lease-heartbeat.worker.js b/dist/state/openclaw-state-lease-heartbeat.worker.js
+index bca369557d5ab54ac107df5096779caad1f14632..be28bf78e088a0e48dea083e9a7c596fa0798dcd 100644
+--- a/dist/state/openclaw-state-lease-heartbeat.worker.js
++++ b/dist/state/openclaw-state-lease-heartbeat.worker.js
+@@ -13019,6 +13019,12 @@ function readLockFileOwnerPayload(payload) {
+ function inspectStaleLockOwner(params) {
+ 	const payload = readLockFileOwnerPayload(params.payload);
+ 	if (!payload?.pid) return null;
++	if ((params.isPidDefinitelyDead ?? isPidDefinitelyDead)(payload.pid)) return {
++		reason: "owner-process-exited",
++		pid: payload.pid,
++		recordedStarttime: payload.starttime ?? null,
++		observedStarttime: null
++	};
+ 	const observedStarttime = payload.starttime === void 0 ? null : (params.getProcessStartTime ?? getFileLockProcessStartTime)(payload.pid);
+ 	const identity = {
+ 		pid: payload.pid,
+diff --git a/dist/state/openclaw-state-read.worker.js b/dist/state/openclaw-state-read.worker.js
+index b9372e56cee980d3f075bc1b90f9916410638fcd..af0bd18d183ea3c458b552bc9de436f60a061a3e 100644
+--- a/dist/state/openclaw-state-read.worker.js
++++ b/dist/state/openclaw-state-read.worker.js
+@@ -43956,6 +43956,12 @@ function readLockFileOwnerPayload(payload) {
+ function inspectStaleLockOwner(params) {
+ 	const payload = readLockFileOwnerPayload(params.payload);
+ 	if (!payload?.pid) return null;
++	if ((params.isPidDefinitelyDead ?? isPidDefinitelyDead)(payload.pid)) return {
++		reason: "owner-process-exited",
++		pid: payload.pid,
++		recordedStarttime: payload.starttime ?? null,
++		observedStarttime: null
++	};
+ 	const observedStarttime = payload.starttime === void 0 ? null : (params.getProcessStartTime ?? getFileLockProcessStartTime)(payload.pid);
+ 	const identity = {
+ 		pid: payload.pid,
 diff --git a/dist/zod-schema-BVpLKnmq.mjs b/dist/zod-schema-BVpLKnmq.mjs
-index 65b5da005ee3290812423c1d898ba88c4db1d6f0..05ed281c3774a8389b67166d8cda3a3064145272 100644
+index 65b5da005ee3290812423c1d898ba88c4db1d6f0..d92cdcd1edcb82f69ad529b8760b0ffee3bbb7a9 100644
 --- a/dist/zod-schema-BVpLKnmq.mjs
 +++ b/dist/zod-schema-BVpLKnmq.mjs
 @@ -135,7 +135,7 @@ const AgentDefaultsSchema = strictObject({

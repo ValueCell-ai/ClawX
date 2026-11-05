@@ -12,6 +12,10 @@ still had unresolved failures, and subsequent Gateway starts still took about
 44–51 seconds. The original user-reported freeze and the identity of the field
 report's lock holder were not established by this experiment.
 
+Follow-up profiling on 2026-11-05 distinguishes these full application launches
+from in-app restarts and identifies repeated Windows process-identity probes in
+the stale-owner path. See [Windows Gateway restart latency](windows-gateway-restart-latency.md).
+
 ## Build and artifact provenance
 
 All local evidence is under
@@ -116,14 +120,15 @@ targets and skip traversal. A separate old-runtime verification run produced the
 canonical baseline evidence, `old-verify-result.json`; no failed serialization
 was counted as a successful check.
 
-Reusable scripts in the artifact root:
+Reusable scripts retained in the artifact root after the restart-fix cleanup:
 
-- `run-old-baseline.mjs`: initial empty-profile old-package startup.
 - `upgrade-validation-bootstrap.cjs`: package selection and isolation hooks.
 - `run-upgrade-validation.mjs`: old seeding/verification, target upgrade, two
   subsequent starts, and concurrent new turns.
-- `inspect-upgrade-fixture.mjs`: read-only SQLite checks and file manifests.
-- `summarize-upgrade-validation.mjs`: preservation, timing and backup comparisons.
+
+The one-off empty-profile baseline, inspection and summary scripts were removed
+after their results were retained. The final restart runner is separate because
+it does not replace this complete old-to-new migration validation.
 
 ## Startup and automatic migration
 
@@ -222,7 +227,7 @@ and database/file inventories in `old-golden-inspection.json` and the
 
 ## Controlled stale-owner identity experiment
 
-`owner-identity-results.json` and `probe-owner-identity.mjs` record a separate
+`owner-identity-results.json` records a separate
 isolated experiment against OpenClaw `2026.10.5`, Node `24.18.0`, Windows:
 
 | Constructed ownership record | Observed result |
