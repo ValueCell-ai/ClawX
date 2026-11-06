@@ -2131,18 +2131,6 @@ index aa0619947a03845ba844a68548bb47f92a758ac1..be0e64a150536a1e1db2c96610421573
  		registerToolEventRecipient: runtime.toolEventRecipients.add,
  		dedupe: runtime.dedupe,
  		wizardSessions: runtime.wizardSessions,
-diff --git a/dist/session-method-scopes-base-CuhU2F_D.mjs b/dist/session-method-scopes-base-CuhU2F_D.mjs
-index 5a07641113ee4094cc1b413f4a11b92f4b605667..c85e837330bd19531a1d3e160d4f4cb8383e7b84 100644
---- a/dist/session-method-scopes-base-CuhU2F_D.mjs
-+++ b/dist/session-method-scopes-base-CuhU2F_D.mjs
-@@ -85,6 +85,7 @@
- ]);
- const SESSIONS_PATCH_WRITE_SCOPE_ENVELOPE_FIELDS = /* @__PURE__ */ new Set([
- 	"key",
-+	"modelScope",
- 	"agentId",
- 	"expectedSessionId",
- 	"expectedLifecycleRevision",
 diff --git a/dist/session-request-targets-BAGtAj-T.mjs b/dist/session-request-targets-BAGtAj-T.mjs
 index 91d059287a8e37e382d0be7510868a7885aaba12..078d1bcaebbc454846a32d04e5ffd6759eded39e 100644
 --- a/dist/session-request-targets-BAGtAj-T.mjs
@@ -2212,18 +2200,6 @@ index 91d059287a8e37e382d0be7510868a7885aaba12..078d1bcaebbc454846a32d04e5ffd675
  			}
  		};
  	};
-diff --git a/dist/session-utils-model-BlhsDR0j.mjs b/dist/session-utils-model-BlhsDR0j.mjs
-index b497a21e5a6a6ae0d45a1ebd052e92b571cd215e..2b10aa6d1e9a18659762581752e0d22ddaa1c7a6 100644
---- a/dist/session-utils-model-BlhsDR0j.mjs
-+++ b/dist/session-utils-model-BlhsDR0j.mjs
-@@ -379,6 +379,7 @@
- 			runtimeSelectionLocked: thinking.runtimeSelectionLocked,
- 			...modelCatalog ? {
- 				contextWindow: contextWindow.contextWindow,
-+				contextTokens: contextWindow.contextTokens,
- 				contextWindows: contextWindow.contextWindows,
- 				thinkingLevel: thinking.effectiveThinkingLevel,
- 				thinkingLevels: thinking.thinkingLevels
 diff --git a/dist/sessions-compact-BHqjQkq-.mjs b/dist/sessions-compact-BHqjQkq-.mjs
 index 8ea14aae3da0f6480841ce7108e83b94733ceedc..17166e4db9e8958f768ea45f9ab30fcafc79bbd2 100644
 --- a/dist/sessions-compact-BHqjQkq-.mjs
@@ -2308,20 +2284,6 @@ index 8ea14aae3da0f6480841ce7108e83b94733ceedc..17166e4db9e8958f768ea45f9ab30fca
  					throw err;
  				}
  				if (result.ok && result.compacted) {
-diff --git a/dist/sessions-patch-model-selection-CzvkKtKF.mjs b/dist/sessions-patch-model-selection-CzvkKtKF.mjs
-index d9835a63cd166c82bbbd3fbdc48556c2f61ef3ef..4ec6c30ea212566de941098222f3bf10add30fc9 100644
---- a/dist/sessions-patch-model-selection-CzvkKtKF.mjs
-+++ b/dist/sessions-patch-model-selection-CzvkKtKF.mjs
-@@ -30,7 +30,8 @@
- 	if (isSessionStatusModelPatchOrigin() || typeof params.patch.model !== "string" || params.patch.sandboxMode !== void 0 || params.patch.nativeRuntimeConsent !== void 0 || params.entry.nativeRuntimeConsent !== void 0) return;
- 	const policy = resolveGatewayModelSelectionPolicy({
- 		callerScopes: params.callerScopes,
--		cfg: params.cfg
-+		cfg: params.cfg,
-+		scope: params.patch.modelScope
- 	});
- 	if (policy.target === "session") return;
- 	const agentId = resolveSessionAgentId({
 diff --git a/dist/sessions-shared-Dr0eLQJX.mjs b/dist/sessions-shared-Dr0eLQJX.mjs
 index 44fe0dfa5f272229fae9e14e79a6965fba93f939..f6b729cbd012b2db983ce936e9c7139413bfd741 100644
 --- a/dist/sessions-shared-Dr0eLQJX.mjs
@@ -2343,18 +2305,10 @@ index 44fe0dfa5f272229fae9e14e79a6965fba93f939..f6b729cbd012b2db983ce936e9c71394
  function isWorkerDispatchInputError(error) {
  	if (typeof error !== "object" || error === null || !("code" in error)) return false;
 diff --git a/dist/src-yRoHchex.mjs b/dist/src-yRoHchex.mjs
-index e0465d9952603588ad8e666f2361c6d545cd0eca..5ac5996ab22e7ca83b530bf9975ccea2de0dbd89 100644
+index e0465d9952603588ad8e666f2361c6d545cd0eca..2effaf68b6f2e9585f8b6be6c71ebeae12c50f60 100644
 --- a/dist/src-yRoHchex.mjs
 +++ b/dist/src-yRoHchex.mjs
-@@ -1737,6 +1737,7 @@
- /** Mutable per-session preferences and routing metadata. */
- const SessionsPatchParamsSchema = closedObject({
- 	key: NonEmptyString,
-+	modelScope: Type.Optional(Type.Literal("session")),
- 	agentId: Type.Optional(NonEmptyString),
- 	/** Reject the mutation if the session was reset or replaced before it commits. */
- 	expectedSessionId: Type.Optional(NonEmptyString),
-@@ -2486,6 +2487,7 @@
+@@ -2486,6 +2486,7 @@ const AgentInternalEventSchema = closedObject({
  /** Stream event emitted by the agent runtime over the gateway protocol. */
  const AgentEventSchema = closedObject({
  	runId: NonEmptyString,
@@ -2362,7 +2316,7 @@ index e0465d9952603588ad8e666f2361c6d545cd0eca..5ac5996ab22e7ca83b530bf9975ccea2
  	seq: Type.Integer({ minimum: 0 }),
  	stream: NonEmptyString,
  	ts: Type.Integer({ minimum: 0 }),
-@@ -2790,6 +2792,7 @@
+@@ -2790,6 +2791,7 @@ const AgentIdentityResultSchema = closedObject({
  /** Waits for a submitted agent run to complete or time out. */
  const AgentWaitParamsSchema = closedObject({
  	runId: NonEmptyString,

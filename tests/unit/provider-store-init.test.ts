@@ -70,25 +70,6 @@ describe('useProviderStore – init()', () => {
     expect(state.statuses).toEqual([]);
   });
 
-  it.each(['success', 'failure'])('ignores stale %s after an account change refreshes the provider list', async (outcome) => {
-    let completeOldRequest!: () => void;
-    const oldSnapshot = new Promise((resolve, reject) => {
-      completeOldRequest = outcome === 'success'
-        ? () => resolve({ accounts: [{ id: 'old' }], defaultAccountId: 'old' })
-        : () => reject(new Error('Previous login expired'));
-    });
-    mockFetchProviderSnapshot.mockReturnValueOnce(oldSnapshot).mockResolvedValueOnce({
-      accounts: [{ id: 'new' }], defaultAccountId: 'new',
-    });
-    const oldRequest = useProviderStore.getState().refreshProviderSnapshot();
-    await useProviderStore.getState().refreshProviderSnapshot();
-    completeOldRequest();
-    await oldRequest;
-    expect(useProviderStore.getState()).toMatchObject({
-      accounts: [{ id: 'new' }], defaultAccountId: 'new', loading: false, error: null,
-    });
-  });
-
   it('init() handles snapshot with missing fields gracefully', async () => {
     // Backend might return partial data
     mockFetchProviderSnapshot.mockResolvedValueOnce({

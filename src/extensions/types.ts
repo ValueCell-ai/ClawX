@@ -52,12 +52,6 @@ export interface ChatBeforeSendContext {
   text: string;
   attachments?: unknown[];
   targetAgentId?: string | null;
-  /** Exact conversation receiving this prompt, including an explicitly routed Agent. */
-  sessionKey?: string;
-  /** Explicit selection for this conversation. Null follows its Agent's model. */
-  sessionModelRef?: string | null;
-  /** Runtime-resolved model for the destination, when available. */
-  sessionEffectiveModelRef?: string;
 }
 
 export interface ChatBeforeSendResult {

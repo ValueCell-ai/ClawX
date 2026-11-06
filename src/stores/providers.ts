@@ -68,27 +68,6 @@ interface ProviderState {
   getApiKey: (providerId: string) => Promise<string | null>;
 }
 
-let latestSnapshotRequest = 0;
-
-async function refreshSnapshot(set: (state: Partial<ProviderState>) => void, silent = false): Promise<void> {
-  const request = ++latestSnapshotRequest;
-  if (!silent) set({ loading: true, error: null });
-  try {
-    const snapshot = await fetchProviderSnapshot();
-    if (request !== latestSnapshotRequest) return;
-    set({
-      statuses: snapshot.statuses ?? [],
-      accounts: snapshot.accounts ?? [],
-      vendors: snapshot.vendors ?? [],
-      defaultAccountId: snapshot.defaultAccountId ?? null,
-      loading: false,
-      error: null,
-    });
-  } catch (error) {
-    if (request === latestSnapshotRequest) set({ error: String(error), loading: false });
-  }
-}
-
 export const useProviderStore = create<ProviderState>((set, get) => ({
   statuses: [],
   accounts: [],
@@ -101,7 +80,23 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
     await get().refreshProviderSnapshot();
   },
 
-  refreshProviderSnapshot: () => refreshSnapshot(set),
+  refreshProviderSnapshot: async () => {
+    set({ loading: true, error: null });
+    
+    try {
+      const snapshot = await fetchProviderSnapshot();
+      
+      set({ 
+        statuses: snapshot.statuses ?? [],
+        accounts: snapshot.accounts ?? [],
+        vendors: snapshot.vendors ?? [],
+        defaultAccountId: snapshot.defaultAccountId ?? null,
+        loading: false 
+      });
+    } catch (error) {
+      set({ error: String(error), loading: false });
+    }
+  },
 
   fetchProviders: async () => get().refreshProviderSnapshot(),
 
@@ -218,7 +213,18 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
 
       // Reconcile silently so the optimistic removal is not replaced by a
       // full-page loading state while Main chooses a replacement default.
-      await refreshSnapshot(set, true);
+      try {
+        const snapshot = await fetchProviderSnapshot();
+        set({
+          statuses: snapshot.statuses ?? [],
+          accounts: snapshot.accounts ?? [],
+          vendors: snapshot.vendors ?? [],
+          defaultAccountId: snapshot.defaultAccountId ?? null,
+          loading: false,
+        });
+      } catch (refreshError) {
+        set({ error: String(refreshError), loading: false });
+      }
     } catch (error) {
       set({ ...previous, loading: false, error: String(error) });
       console.error('Failed to delete account:', error);

@@ -21,7 +21,6 @@ const STRING_FIELDS = [
   'lastMessagePreview',
   'thinkingLevel',
   'model',
-  'sessionModelRevision',
   'workspacePath',
 ] as const satisfies readonly SessionField[];
 

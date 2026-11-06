@@ -1,7 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Chat } from '@/pages/Chat';
-import { useComposerDraftStore } from '@/stores/composer-drafts';
 import type { AcpTimelineSnapshot } from '@/lib/acp/timeline-types';
 
 vi.mock('react-router-dom', () => ({
@@ -96,12 +95,9 @@ const { acpState, agentsState, artifactPanelState, artifactPanelProps, chatState
 const ensureAcpChatSubscriptions = vi.hoisted(() => vi.fn());
 const resolveWorkspaceContext = vi.hoisted(() => vi.fn());
 const openDialog = vi.hoisted(() => vi.fn());
-const setSessionModel = vi.hoisted(() => vi.fn());
-const targetPromptAdmitted = vi.hoisted(() => vi.fn());
 
 vi.mock('@/lib/host-api', () => ({
   hostApi: {
-    sessions: { setModel: setSessionModel },
     chat: {
       getAcpSessionFamily: vi.fn(async () => ({ success: true, current: null, children: [] })),
     },
@@ -116,9 +112,7 @@ vi.mock('sonner', () => ({
 
 vi.mock('@/stores/acp-chat-session', () => ({
   ensureAcpChatSubscriptions,
-  useAcpChatSessionStore: Object.assign((selector: (state: typeof acpState) => unknown) => selector(acpState), {
-    getState: () => acpState,
-  }),
+  useAcpChatSessionStore: (selector: (state: typeof acpState) => unknown) => selector(acpState),
 }));
 
 vi.mock('@/stores/agents', () => ({
@@ -130,9 +124,7 @@ vi.mock('@/stores/artifact-panel', () => ({
 }));
 
 vi.mock('@/stores/chat', () => ({
-  useChatStore: Object.assign((selector: (state: typeof chatState) => unknown) => selector(chatState), {
-    getState: () => chatState,
-  }),
+  useChatStore: (selector: (state: typeof chatState) => unknown) => selector(chatState),
 }));
 
 vi.mock('@/stores/settings', () => ({
@@ -167,7 +159,7 @@ vi.mock('@/pages/Chat/ChatInput', () => ({
     workspaceReadOnly,
   }: {
     disabled?: boolean;
-    onSend: (text: string, attachments?: Array<Record<string, unknown>>, targetAgentId?: string | null) => Promise<boolean>;
+    onSend: (text: string, attachments?: Array<Record<string, unknown>>, targetAgentId?: string | null) => void;
     onStop?: () => void;
     sending?: boolean;
     workspaceLabel?: string;
@@ -204,9 +196,7 @@ vi.mock('@/pages/Chat/ChatInput', () => ({
         send
       </button>
       <button type="button" data-testid="mock-stop" onClick={onStop}>stop</button>
-      <button type="button" data-testid="mock-send-target" onClick={() => {
-        void onSend('Ask research', undefined, 'research').then(targetPromptAdmitted);
-      }}>send target</button>
+      <button type="button" data-testid="mock-send-target" onClick={() => onSend('Ask research', undefined, 'research')}>send target</button>
     </div>
   ),
 }));
@@ -302,7 +292,6 @@ function deferredPromise() {
 
 describe('ACP Chat page', () => {
   beforeEach(() => {
-    targetPromptAdmitted.mockReset();
     ensureAcpChatSubscriptions.mockReset();
     acpState.loading = false;
     acpState.sending = false;
@@ -941,58 +930,12 @@ describe('ACP Chat page', () => {
     expect(acpState.loadSession).toHaveBeenCalledTimes(1);
   });
 
-  it('patches a draft model only after ACP load and before its first prompt, preserving it on failure', async () => {
-    const key = 'agent:main:session-with-model';
-    chatState.currentSessionKey = key;
-    chatState.sessions = [{ key, createdLocally: true }];
-    acpState.activeSessionKey = null;
-    useComposerDraftStore.getState().setModelRef(key, 'custom-id/model');
-    setSessionModel.mockRejectedValueOnce(new Error('denied')).mockResolvedValueOnce({ modelRef: 'custom-id/model' });
-    render(<Chat />);
-    await waitFor(() => expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-disabled', 'false'));
-    expect(setSessionModel).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByTestId('mock-send'));
-    await waitFor(() => expect(setSessionModel).toHaveBeenCalledWith(key, 'custom-id/model', { createIfMissing: true }));
-    expect(acpState.sendPrompt).not.toHaveBeenCalled();
-    expect(useComposerDraftStore.getState().modelRefs[key]).toBe('custom-id/model');
-    fireEvent.click(screen.getByTestId('mock-send'));
-    await waitFor(() => expect(acpState.sendPrompt).toHaveBeenCalled());
-    expect(acpState.loadSession.mock.invocationCallOrder.at(-1)!).toBeLessThan(setSessionModel.mock.invocationCallOrder.at(-1)!);
-    expect(setSessionModel.mock.invocationCallOrder.at(-1)!).toBeLessThan(acpState.sendPrompt.mock.invocationCallOrder[0]);
-    expect(useComposerDraftStore.getState().modelRefs[key]).toBeUndefined();
-  });
-
   it('disables the composer while ACP session load is in progress', () => {
     acpState.loading = true;
 
     render(<Chat />);
 
     expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-disabled', 'true');
-  });
-
-  it('does not materialize a draft model if the user navigates away during first-send load', async () => {
-    const key = 'agent:main:abandoned-draft';
-    chatState.currentSessionKey = key;
-    chatState.sessions = [{ key, createdLocally: true }, { key: 'agent:main:sibling', workspacePath: '/workspace' }];
-    useComposerDraftStore.getState().setModelRef(key, 'custom-id/pending');
-    const waiting = deferredPromise();
-    acpState.loadSession.mockImplementation(async (input) => {
-      acpState.activeSessionKey = input.sessionKey;
-      acpState.workspaceRoot = input.workspaceRoot;
-      acpState.cwd = input.cwd;
-      await waiting.promise;
-      return true;
-    });
-    setSessionModel.mockClear();
-    render(<Chat />);
-    await waitFor(() => expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-disabled', 'false'));
-    fireEvent.click(screen.getByTestId('mock-send'));
-    await waitFor(() => expect(acpState.loadSession).toHaveBeenCalledWith(expect.objectContaining({ sessionKey: key })));
-    chatState.currentSessionKey = 'agent:main:sibling';
-    await act(async () => { waiting.resolve(); });
-    expect(setSessionModel).not.toHaveBeenCalled();
-    expect(acpState.sendPrompt).not.toHaveBeenCalled();
-    expect(chatState.acknowledgeAcpSessionCreated).not.toHaveBeenCalled();
   });
 
   it('optimistically binds an absent current session before first-send ACP creation', async () => {
@@ -1042,7 +985,7 @@ describe('ACP Chat page', () => {
     });
   });
 
-  it('loads and admits the target prompt before leaving the source conversation', async () => {
+  it('selects and loads the target ACP session before routing target-agent sends', async () => {
     agentsState.agents = [
       { id: 'main', name: 'Main', workspace: '/workspace', mainSessionKey: 'agent:main:main' },
       { id: 'research', name: 'Research', workspace: '/research-workspace', mainSessionKey: 'agent:research:desk' },
@@ -1082,39 +1025,9 @@ describe('ACP Chat page', () => {
     expect(acpState.loadSession.mock.invocationCallOrder[targetLoadIndex]!).toBeLessThan(
       acpState.sendPrompt.mock.invocationCallOrder.at(-1)!,
     );
-    expect(acpState.sendPrompt.mock.invocationCallOrder.at(-1)!).toBeLessThan(
-      chatState.selectAcpSession.mock.invocationCallOrder.at(-1)!,
+    expect(chatState.selectAcpSession.mock.invocationCallOrder.at(-1)!).toBeLessThan(
+      acpState.loadSession.mock.invocationCallOrder[targetLoadIndex]!,
     );
-  });
-
-  it('keeps the original unsent draft when a routed target resumes a busy prompt', async () => {
-    const origin = 'agent:main:local-draft';
-    const target = 'agent:research:desk';
-    chatState.currentSessionKey = origin;
-    chatState.sessions = [{ key: origin, createdLocally: true }, { key: target, workspacePath: '/research-workspace' }];
-    agentsState.agents.push({ id: 'research', name: 'Research', workspace: '/research-workspace', mainSessionKey: target });
-    useComposerDraftStore.getState().setDraft(origin, 'Ask research');
-    useComposerDraftStore.getState().setModelRef(origin, 'custom-id/source-model');
-    chatState.selectAcpSession.mockImplementation((key: string) => {
-      useComposerDraftStore.getState().clearDraft(origin);
-      chatState.currentSessionKey = key;
-    });
-    acpState.loadSession.mockImplementation(async (input) => {
-      acpState.activeSessionKey = input.sessionKey;
-      acpState.workspaceRoot = input.workspaceRoot;
-      acpState.cwd = input.cwd;
-      acpState.sending = input.sessionKey === target;
-      return true;
-    });
-    render(<Chat />);
-    await waitFor(() => expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-disabled', 'false'));
-    fireEvent.click(screen.getByTestId('mock-send-target'));
-    await waitFor(() => expect(targetPromptAdmitted).toHaveBeenCalledWith(false));
-    expect(acpState.sendPrompt).not.toHaveBeenCalled();
-    expect(chatState.selectAcpSession).not.toHaveBeenCalled();
-    expect(chatState.currentSessionKey).toBe(origin);
-    expect(useComposerDraftStore.getState().drafts[origin]).toBe('Ask research');
-    expect(useComposerDraftStore.getState().modelRefs[origin]).toBe('custom-id/source-model');
   });
 
   it('creates a new target agent session in its workspace before the first prompt', async () => {
@@ -1224,7 +1137,7 @@ describe('ACP Chat page', () => {
         sessionKey: 'agent:research:desk', workspaceRoot: '/research-workspace', cwd: '/research-workspace',
       });
     });
-    expect(chatState.selectAcpSession).not.toHaveBeenCalled();
+    expect(chatState.selectAcpSession).toHaveBeenCalledWith('agent:research:desk', '/research-workspace');
     expect(acpState.sendPrompt).not.toHaveBeenCalled();
   });
 
