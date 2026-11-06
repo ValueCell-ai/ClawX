@@ -92,6 +92,8 @@ export interface ChatSession {
   lastMessagePreview?: string;
   thinkingLevel?: string;
   model?: string;
+  /** Gateway revision for the session's model selection, including a pin to the current default. */
+  sessionModelRevision?: string;
   updatedAt?: number;
   status?: string;
   hasActiveRun?: boolean;

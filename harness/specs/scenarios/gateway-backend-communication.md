@@ -103,6 +103,12 @@ forbiddenPatterns:
 
 Gateway backend communication covers all ClawX paths that move data between the visual desktop UI and OpenClaw runtime/backend services.
 
+The chat composer reads and updates session model selections through Main.
+Conversation switches, workspace changes and Agent routing must preserve the
+identity of both the selection and the next prompt. After a 0.6.1 upgrade,
+sessions without an explicit selection inherit the migrated Agent configuration.
+See [Conversation model selection](../../reference/acp-chat.md#conversation-model-selection).
+
 Coordinator-owned OpenClaw config mutations, including model-switch retries after a confirmed publication rollback, and their `config.get`/`config.set` transaction contract are documented in `harness/reference/openclaw-config-delivery.md`.
 
 Allowed flow:
