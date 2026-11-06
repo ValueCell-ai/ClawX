@@ -29,4 +29,7 @@ inherited default. A model reported for a previous response is usage history
 and cannot establish an override on upgrade. Apply a draft's choice to its own
 session before dispatching its first prompt.
 
+Resolve an Agent mention to its main session for model reads, writes and prompt
+dispatch. The source conversation continues to own the message draft.
+
 See [Conversation model selection](../../reference/acp-chat.md#conversation-model-selection).

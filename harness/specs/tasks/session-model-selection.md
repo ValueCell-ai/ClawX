@@ -19,6 +19,7 @@ touchedAreas:
   - src/pages/Chat/session-model.ts
   - src/stores/composer-drafts.ts
   - src/stores/chat/session-catalog.ts
+  - src/stores/chat/session-key-utils.ts
   - src/stores/providers.ts
   - src/extensions/types.ts
   - shared/i18n/locales/**
@@ -36,6 +37,7 @@ expectedUserBehavior:
   - Selecting a model affects subsequent turns in just the selected conversation, including its first turn in a new workspace.
   - Following the Agent uses its current model and retains existing 0.6.1 Agent and enterprise preferences on upgrade.
   - An explicitly selected model survives reopening the conversation. A sibling chat can use a different model in the same workspace or another workspace.
+  - Selecting an @Agent shows and edits the receiving Agent's main session model. Removing the mention restores the source session's selection.
 requiredProfiles:
   - fast
   - comms
@@ -56,6 +58,7 @@ acceptance:
   - The Main-owned session model mutation identifies the exact session, supports inheritance, and precedes the affected prompt.
   - Existing Agent choices and session overrides survive upgrade; historical model usage never becomes a user preference.
   - A failed selection or an in-flight update during navigation cannot apply a model to a different session.
+  - A routed model selection reads the exact Gateway destination even when it is absent from the sidebar. A confirmed new destination keeps its choice until its first prompt.
   - Enterprise reauthentication preserves allowed choices and enforces current policy before dispatch.
 docs:
   required: true

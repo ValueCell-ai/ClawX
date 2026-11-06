@@ -826,7 +826,8 @@ export function createSessionsApi(ctx: SessionsApiContext = {}): CompleteHostSer
   return {
     getModel: async (payload) => {
       const row = await describeSessionModel(ctx, getSessionKey(payload));
-      if (!row || row.modelOverrideSource === undefined) return { modelRef: null };
+      if (!row) return { modelRef: null, exists: false };
+      if (row.modelOverrideSource === undefined) return { modelRef: null };
       // Older transcripts may name the model that produced the last reply. Only
       // the Gateway's projected user override represents a deliberate choice.
       return projectSessionModel(row.modelOverrideSource === 'user', row.modelProvider, row.model, row.contextTokens);

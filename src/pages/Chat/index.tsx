@@ -44,7 +44,7 @@ import { ChatToolbar } from './ChatToolbar';
 import { AcpTimeline } from './AcpTimeline';
 import { AcpErrorBanner } from './AcpErrorBanner';
 import { projectSessionRunState } from '@/stores/chat/session-status';
-import { formatSubagentSessionTitle, isNativeSubagentSessionKey } from '@/stores/chat/session-key-utils';
+import { formatSubagentSessionTitle, getPromptSessionKey, isNativeSubagentSessionKey } from '@/stores/chat/session-key-utils';
 import type { AcpSubagentSession } from './AcpSubagentSessions';
 
 const ArtifactPanelLazy = lazy(() =>
@@ -862,9 +862,8 @@ export function Chat() {
             const targetAgent = targetAgentId
               ? agents.find((agent) => agent.id === targetAgentId) ?? null
               : null;
-            const sessionKey = targetAgent
-              ? targetAgent.mainSessionKey || `agent:${targetAgent.id}:main`
-              : currentSessionKey;
+            if (targetAgentId && !targetAgent) return false;
+            const sessionKey = getPromptSessionKey(currentSessionKey, targetAgent);
             const existingSession = sessions.find((session) => session.key === sessionKey);
             setLastPromptAttemptSessionKey(sessionKey);
             const promptCwd = targetAgent?.workspace || cwd;

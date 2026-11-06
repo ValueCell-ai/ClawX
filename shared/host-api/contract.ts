@@ -811,6 +811,8 @@ export type SessionRenamePayload = { id: string; title: string };
 export type SessionModelSelection = {
   /** Explicit user selection. A null selection follows the Agent's configuration. */
   modelRef: string | null;
+  /** False when the Gateway confirms the session has no row yet. */
+  exists?: boolean;
   /** Runtime-selected model, including inherited choices and automatic fallbacks. */
   effectiveModelRef?: string;
   contextWindow?: number;

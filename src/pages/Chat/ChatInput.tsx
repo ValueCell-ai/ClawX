@@ -25,6 +25,7 @@ import { buildPreviewTarget } from '@/components/file-preview/build-preview-targ
 import { useProviderStore } from '@/stores/providers';
 import { buildConfiguredModelOptions, formatModelRefLabel } from '@/lib/model-options';
 import { readSessionModel, useSessionModel } from './session-model';
+import { getPromptSessionKey } from '@/stores/chat/session-key-utils';
 import { useComposerDraftStore } from '@/stores/composer-drafts';
 import type { AgentSummary } from '@/types/agent';
 import type { QuickAccessSkill } from '@/types/skill';
@@ -372,7 +373,6 @@ export function ChatInput({
   const currentAgentId = useChatStore((s) => s.currentAgentId);
   const currentSessionKey = useChatStore((s) => s.currentSessionKey);
   const sessions = useChatStore((s) => s.sessions);
-  const currentSession = sessions?.find((session) => session.key === currentSessionKey);
   const composerSessionRef = useRef(currentSessionKey);
   composerSessionRef.current = currentSessionKey;
   const currentAgent = useMemo(
@@ -392,8 +392,17 @@ export function ChatInput({
     ),
     [providerAccounts, providerDefaultAccountId, providerStatuses, providerVendors],
   );
-  const agentModelRef = currentAgent?.modelRef || defaultModelRef;
-  const sessionModel = useSessionModel(currentSessionKey, currentSession,
+  const selectedTarget = useMemo(
+    () => (agents ?? []).find((agent) => agent.id === targetAgentId) ?? null,
+    [agents, targetAgentId],
+  );
+  const destinationKey = getPromptSessionKey(currentSessionKey, selectedTarget);
+  const destination = sessions?.find((session) => session.key === destinationKey);
+  const destinationKeyRef = useRef(destinationKey);
+  destinationKeyRef.current = destinationKey;
+  const destinationAgent = selectedTarget ?? currentAgent;
+  const agentModelRef = destinationAgent?.modelRef || defaultModelRef;
+  const sessionModel = useSessionModel(destinationKey, destination,
     gatewayStatus.state === 'running' && gatewayStatus.gatewayReady !== false, sending, agentModelRef);
   const effectiveModelRef = sessionModel.value?.modelRef || sessionModel.value?.effectiveModelRef || agentModelRef;
   const currentModelLabel = useMemo(() => {
@@ -403,10 +412,6 @@ export function ChatInput({
   const mentionableAgents = useMemo(
     () => (agents ?? []).filter((agent) => agent.id !== currentAgentId),
     [agents, currentAgentId],
-  );
-  const selectedTarget = useMemo(
-    () => (agents ?? []).find((agent) => agent.id === targetAgentId) ?? null,
-    [agents, targetAgentId],
   );
   const filteredQuickSkills = useMemo(() => {
     const query = skillQuery.trim().toLowerCase();
@@ -459,13 +464,14 @@ export function ChatInput({
       });
     },
   });
-  if (!contextUsageSourceRef.current || contextUsageSourceRef.current.value !== contextUsage) {
+  const visibleUsage = destinationKey === currentSessionKey ? contextUsage : undefined;
+  if (destinationKey === currentSessionKey && contextUsageSourceRef.current?.value !== contextUsage) {
     contextUsageSourceRef.current = { value: contextUsage, modelRef: effectiveModelRef };
   }
-  const contextWindowOverride = contextUsageSourceRef.current.modelRef === effectiveModelRef
+  const contextWindowOverride = contextUsageSourceRef.current?.modelRef === effectiveModelRef
     ? undefined
     : sessionModel.value?.contextWindow ?? (!sessionModel.value?.modelRef ? currentAgent?.contextWindow : undefined);
-  const activeContextUsage = getContextUsage(contextUsage, contextWindowOverride);
+  const activeContextUsage = getContextUsage(visibleUsage, contextWindowOverride);
   const contextUsagePercentage = activeContextUsage
     ? new Intl.NumberFormat(i18n.resolvedLanguage, { style: 'percent', maximumFractionDigits: 0 }).format(activeContextUsage.percent / 100)
     : null;
@@ -692,15 +698,15 @@ export function ChatInput({
   }, [skillPickerOpen, loadQuickSkills]);
 
   const handleSelectModel = async (modelRef: string | null) => {
-    if (!currentAgent || sessionModel.writing || admissionInFlight.current) return;
+    if (!destinationAgent || sessionModel.writing || admissionInFlight.current) return;
     setModelPickerOpen(false);
     if (modelRef === sessionModel.value?.modelRef) return;
     try {
       await sessionModel.select(modelRef);
     } catch (error) {
-      if (composerSessionRef.current === currentSessionKey) toast.error(t('composer.modelSwitchFailed', { error: String(error) }));
+      if (destinationKeyRef.current === destinationKey) toast.error(t('composer.modelSwitchFailed', { error: String(error) }));
     } finally {
-      if (composerSessionRef.current === currentSessionKey) textareaRef.current?.focus();
+      if (destinationKeyRef.current === destinationKey) textareaRef.current?.focus();
     }
   };
 
@@ -889,16 +895,12 @@ export function ChatInput({
     setAdmitting(true);
     try {
       if (rendererExtensionRegistry.hasChatBeforeSendHooks()) {
-        const sessionKey = selectedTarget
-          ? selectedTarget.mainSessionKey || `agent:${selectedTarget.id}:main`
-          : currentSessionKey;
-        const destination = sessions?.find((session) => session.key === sessionKey);
-        const draftModelRef = useComposerDraftStore.getState().modelRefs[sessionKey];
+        const draftModelRef = useComposerDraftStore.getState().modelRefs[destinationKey];
         let sessionModelRef: string | null = draftModelRef ?? null;
         let sessionEffectiveModelRef: string | undefined;
         if (!draftModelRef && !destination?.createdLocally) {
           try {
-            const model = await readSessionModel(sessionKey);
+            const model = await readSessionModel(destinationKey);
             sessionModelRef = model.modelRef;
             sessionEffectiveModelRef = model.effectiveModelRef ?? undefined;
           } catch (error) {
@@ -910,11 +912,11 @@ export function ChatInput({
           text: textToSend,
           attachments: attachmentsToSend,
           targetAgentId,
-          sessionKey,
+          sessionKey: destinationKey,
           sessionModelRef,
           sessionEffectiveModelRef,
         });
-        if (composerSessionRef.current !== currentSessionKey) return;
+        if (composerSessionRef.current !== currentSessionKey || destinationKeyRef.current !== destinationKey) return;
         if (!guard.ok) {
           if (guard.message) toast.error(guard.message);
           return;
@@ -938,7 +940,7 @@ export function ChatInput({
       admissionInFlight.current = false;
       setAdmitting(false);
     }
-  }, [input, attachments, canSend, currentSessionKey, onSend, selectedTarget, sessions, setInput, t, targetAgentId]);
+  }, [input, attachments, canSend, currentSessionKey, destination, destinationKey, onSend, setInput, t, targetAgentId]);
 
   const handleStop = useCallback(() => {
     if (!canStop) return;
@@ -973,7 +975,7 @@ export function ChatInput({
             setSelectedSkill(null);
             return;
           }
-          setTargetAgentId(null);
+          if (!admissionInFlight.current) setTargetAgentId(null);
           return;
         }
       }
@@ -1219,7 +1221,7 @@ export function ChatInput({
               <button
                 type="button"
                 onClick={() => setTargetAgentId(null)}
-                disabled={inputDisabled}
+                disabled={inputDisabled || admitting}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/5 px-2.5 py-1 text-meta font-medium text-foreground transition-colors hover:bg-primary/10"
                 title={t('composer.clearTarget')}
               >
@@ -1304,12 +1306,12 @@ export function ChatInput({
                     setWorkspaceMenuOpen(false);
                     setPickerOpen((open) => !open);
                   }}
-                  disabled={inputDisabled || sending}
+                  disabled={inputDisabled || sending || admitting}
                   title={t('composer.pickAgent')}
                 >
                   <AtSign className="h-3.5 w-3.5" />
                 </Button>
-                {pickerOpen && (
+                {pickerOpen && !admitting && (
                   <div className="absolute left-0 bottom-full z-20 mb-2 w-72 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10">
                     <div className="px-3 py-2 text-tiny font-medium text-muted-foreground/80">
                       {t('composer.agentPickerTitle', { currentAgent: currentAgentName })}
@@ -1432,7 +1434,7 @@ export function ChatInput({
                     setWorkspaceMenuOpen(false);
                     setModelPickerOpen((open) => !open);
                   }}
-                  disabled={inputDisabled || sending || admitting || !currentAgent || sessionModel.writing}
+                  disabled={inputDisabled || sending || admitting || !destinationAgent || sessionModel.writing}
                   title={t('composer.pickModel')}
                 >
                   {sessionModel.writing ? (

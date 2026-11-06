@@ -394,6 +394,78 @@ describe('ChatInput agent targeting', () => {
     expect(modelApi.setModel).not.toHaveBeenCalled();
   });
 
+  it('reads and updates the routed target model from a local source draft', async () => {
+    configureAgentAndModelPickers();
+    const target = 'agent:research:desk';
+    const pickedModel = 'custom-aaaaaaaa/gpt-a';
+    let targetModel = 'custom-bbbbbbbb/gpt-b';
+    chatState.sessions[0].createdLocally = true;
+    modelApi.getModel.mockImplementation(async (key) => ({ modelRef: key === target ? targetModel : null }));
+    modelApi.setModel.mockImplementation(async (key, modelRef) => {
+      if (key === target) targetModel = modelRef;
+      return { modelRef };
+    });
+
+    const send = vi.fn();
+    const hasGuard = vi.spyOn(rendererExtensionRegistry, 'hasChatBeforeSendHooks').mockReturnValue(true);
+    const guard = vi.spyOn(rendererExtensionRegistry, 'runChatBeforeSend').mockResolvedValue({ ok: true });
+    try {
+      renderChatInput(send);
+      const picker = screen.getByTestId('chat-model-picker-button');
+      expect(picker).toHaveTextContent('gpt-a');
+      fireEvent.click(screen.getByTitle('Choose agent'));
+      fireEvent.click(screen.getByText('Research'));
+      await waitFor(() => expect(picker).toHaveTextContent('gpt-b'));
+      fireEvent.click(picker);
+      fireEvent.click(screen.getByRole('button', { name: 'gpt-a Alpha' }));
+      await waitFor(() => expect(picker).toHaveTextContent('gpt-a'));
+      expect(modelApi.setModel.mock.calls).toEqual([[target, pickedModel]]);
+      expect(useComposerDraftStore.getState().modelRefs).toEqual({});
+
+      fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Check this' } });
+      fireEvent.click(screen.getByTitle('Send'));
+      await waitFor(() => expect(send).toHaveBeenCalledWith('Check this', undefined, 'research'));
+      expect(guard).toHaveBeenCalledWith(expect.objectContaining({ sessionKey: target, sessionModelRef: pickedModel }));
+    } finally {
+      hasGuard.mockRestore();
+      guard.mockRestore();
+    }
+  });
+
+  it.each([
+    { state: 'local draft', listed: true },
+    { state: 'missing Gateway session', listed: false },
+  ])('uses the target Agent default and draft key for a $state until the target is cleared', async ({ listed }) => {
+    configureAgentAndModelPickers();
+    const target = 'agent:research:main';
+    const modelB = 'custom-bbbbbbbb/gpt-b';
+    agentsState.agents[1].modelRef = modelB;
+    delete agentsState.agents[1].mainSessionKey;
+    if (listed) chatState.sessions.push({ key: target, createdLocally: true });
+    modelApi.getModel.mockImplementation(async (key) => key === target
+      ? { modelRef: null, exists: false }
+      : { modelRef: modelB });
+    renderChatInput();
+    const picker = screen.getByTestId('chat-model-picker-button');
+    await waitFor(() => expect(picker).toHaveTextContent('gpt-b'));
+    fireEvent.click(screen.getByTitle('Choose agent'));
+    fireEvent.click(screen.getByText('Research'));
+    if (!listed) await waitFor(() => expect(modelApi.getModel).toHaveBeenCalledWith(target));
+    fireEvent.click(picker);
+    expect(screen.getByTestId('chat-model-picker-follow-agent')).toHaveTextContent('Follow agent (gpt-b)');
+    fireEvent.click(screen.getByRole('button', { name: 'gpt-a Alpha' }));
+    await waitFor(() => expect(picker).toHaveTextContent('gpt-a'));
+    expect(useComposerDraftStore.getState().modelRefs).toEqual({ [target]: 'custom-aaaaaaaa/gpt-a' });
+    expect(modelApi.setModel).not.toHaveBeenCalled();
+    if (listed) expect(modelApi.getModel).not.toHaveBeenCalledWith(target);
+
+    fireEvent.click(screen.getByTitle('Clear target agent'));
+    await waitFor(() => expect(picker).toHaveTextContent('gpt-b'));
+    fireEvent.click(screen.getByTitle('Choose agent'));
+    fireEvent.click(screen.getByText('Research'));
+    await waitFor(() => expect(picker).toHaveTextContent('gpt-a'));
+  });
+
   it('checks an unlisted @target session with the send guard before dispatch', async () => {
     configureAgentAndModelPickers();
     const target = 'agent:research:desk';

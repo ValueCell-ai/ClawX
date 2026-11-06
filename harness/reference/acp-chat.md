@@ -54,7 +54,12 @@ This extension has one removal condition: when the pinned ACP SDK accepts the na
 
 ## Conversation model selection
 
-The chat picker uses the exact destination session key. Main reads the Gateway's
+Selecting an Agent mention directs the model picker, pre-send hooks and prompt
+to that Agent's main session. Removing the mention restores the visible
+conversation's model. The Gateway can have a main session that the sidebar
+omits, so the picker reads the destination before staging a first-prompt choice.
+
+Main reads the Gateway's
 `sessions.describe` projection and writes `sessions.patch` with
 `modelScope: "session"`. The bundled Gateway accepts that scope even when an
 administrator has configured Agent-wide or global model switching. An external

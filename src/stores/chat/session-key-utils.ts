@@ -1,4 +1,5 @@
 import { CHANNEL_NAMES } from '@shared/types/channel';
+import type { AgentSummary } from '@shared/types/agent';
 import {
   containsOpenClawHeartbeatPollSentinel,
   isOpenClawHeartbeatAckText,
@@ -10,6 +11,10 @@ import type { ChatSession } from './types';
 const CHANNEL_SESSION_SEGMENTS = new Set<string>(Object.keys(CHANNEL_NAMES));
 const NON_USER_SESSION_LABELS = new Set(['clawx', 'main']);
 const SUBAGENT_CONTEXT_PREFIX = '[Subagent Context]';
+
+export function getPromptSessionKey(sourceKey: string, target: AgentSummary | null): string {
+  return target ? target.mainSessionKey || `agent:${target.id}:main` : sourceKey;
+}
 
 function stripHeartbeatSentinel(value: string | undefined): string {
   return (value ?? '').replaceAll(OPENCLAW_HEARTBEAT_POLL_SENTINEL, '').trim();

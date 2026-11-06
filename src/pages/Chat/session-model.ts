@@ -73,6 +73,16 @@ export function useSessionModel(
     const request = ++revision.current;
     setWritingKey(sessionKey);
     try {
+      // An Agent's main session can exist even when the sidebar omits it.
+      // Stage a first-prompt choice only if the Gateway confirms the row is absent.
+      if (!session) {
+        const observed = snapshot?.key === sessionKey ? snapshot.value : await readSessionModel(sessionKey);
+        if (observed.exists === false) {
+          useComposerDraftStore.getState().setModelRef(sessionKey, modelRef);
+          if (revision.current === request) setSnapshot({ key: sessionKey, value: observed });
+          return;
+        }
+      }
       const value = await writeSessionModel(sessionKey, modelRef);
       // A previous failed first send may still have a pending model on this session.
       useComposerDraftStore.getState().setModelRef(sessionKey, null);

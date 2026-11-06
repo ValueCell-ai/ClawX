@@ -28,7 +28,7 @@ describe('session model selection', () => {
     const rpc = vi.fn().mockResolvedValueOnce({ session: existing }).mockResolvedValueOnce({ session: null });
     const api = createSessionsApi({ gatewayManager: { rpc } });
     await expect(api.getModel({ sessionKey: key })).resolves.toEqual({ modelRef: null });
-    await expect(api.getModel({ sessionKey: key })).resolves.toEqual({ modelRef: null });
+    await expect(api.getModel({ sessionKey: key })).resolves.toEqual({ modelRef: null, exists: false });
     expect(rpc.mock.calls.map(([method]) => method)).toEqual(['sessions.describe', 'sessions.describe']);
   });
 

@@ -11,7 +11,8 @@ test.describe('ClawX chat model picker', () => {
       await app.evaluate(async ({ app: _app }, refs) => {
         const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
 
-        const sessionModels = new Map<string, string>();
+        const reviewerKey = 'agent:reviewer:primary';
+        const sessionModels = new Map<string, string>([[reviewerKey, refs.betaModelRef]]);
         const hostRequests: Array<{ path: string; method: string; body: unknown }> = [];
         const now = new Date().toISOString();
         let releaseProviderAccounts: (() => void) | undefined;
@@ -32,6 +33,7 @@ test.describe('ClawX chat model picker', () => {
           { key: 'agent:main:main', displayName: 'First chat', workspacePath },
           { key: 'agent:main:sibling', displayName: 'Sibling chat', workspacePath },
           { key: 'agent:main:other', displayName: 'Other workspace chat', workspacePath: `${workspacePath}-other` },
+          { key: reviewerKey, displayName: 'Reviewer chat', workspacePath },
         ];
         const agentsSnapshot = () => ({
           success: true,
@@ -47,6 +49,13 @@ test.describe('ClawX chat model picker', () => {
             agentDir: '~/.openclaw/agents/main/agent',
             mainSessionKey: 'agent:main:main',
             channelTypes: [],
+          }, {
+            id: 'reviewer',
+            name: 'Reviewer',
+            modelDisplay: 'gpt-5.6',
+            modelRef: 'openai/gpt-5.6',
+            workspace: workspacePath,
+            mainSessionKey: reviewerKey,
           }],
           defaultAgentId: 'main',
           defaultModelRef: refs.alphaModelRef,
@@ -340,6 +349,46 @@ test.describe('ClawX chat model picker', () => {
         || request.path === 'gateway:start'
         || request.path === 'gateway:config.patch'
       )).toBe(false);
+
+      await test.step('selects a model for the mentioned conversation when sending from a local draft', async () => {
+        await page.getByTestId('sidebar-new-chat').click();
+        await picker.click();
+        await kimiOption.click();
+        await expect(picker).toHaveText(/kimi-k2.7/);
+
+        const selectReviewer = async () => {
+          await page.getByTestId('chat-composer-agent').click();
+          await page.getByRole('button', { name: 'Reviewer gpt-5.6' }).click();
+        };
+        await selectReviewer();
+        await expect(picker).toHaveText(/provider\/model-beta/);
+        await picker.click();
+        await expect(page.getByRole('button', { name: 'provider/model-beta Beta' })).toHaveAttribute('aria-pressed', 'true');
+        await expect(page.getByTestId('chat-model-picker-follow-agent')).toContainText('gpt-5.6');
+        await gptOption.click();
+        await expect(picker).toHaveText(/gpt-5.6/);
+        await page.getByRole('button', { name: '@Reviewer', exact: true }).click();
+        await expect(picker).toHaveText(/kimi-k2.7/);
+        await selectReviewer();
+        await expect(picker).toHaveText(/gpt-5.6/);
+        await page.getByTestId('chat-composer-input').fill('Please review this change.');
+        await page.getByTestId('chat-composer-send').click();
+
+        const routedRequests = () => app.evaluate((_electron, since) => (
+          (globalThis as typeof globalThis & {
+            __chatModelPickerRequests?: Array<{ path: string; body: Record<string, unknown> | null }>;
+          }).__chatModelPickerRequests?.slice(since) ?? []
+        ), requests.length);
+        await expect.poll(async () => (await routedRequests())
+          .filter((r) => r.path === 'chat:sendAcpPrompt')
+          .map((r) => r.body?.sessionKey)).toEqual(['agent:reviewer:primary']);
+        const routed = await routedRequests();
+        const promptIndex = routed.findIndex((r) => r.path === 'chat:sendAcpPrompt');
+        expect(routed.filter((r) => r.path === 'sessions:setModel').map((r) => r.body)).toEqual([
+          { sessionKey: 'agent:reviewer:primary', modelRef: 'openai/gpt-5.6' },
+        ]);
+        expect(routed.findIndex((r) => r.path === 'sessions:setModel')).toBeLessThan(promptIndex);
+      });
 
     } finally {
       await closeElectronApp(app);
