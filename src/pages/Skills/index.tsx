@@ -764,7 +764,7 @@ export function Skills() {
                             disabled={isInstallLoading}
                             className="h-8 px-4 rounded-full shadow-none font-medium text-xs"
                           >
-                            {isInstallLoading ? <LoadingSpinner size="sm" /> : t('marketplace.install', 'Install')}
+                            {isInstallLoading ? <LoadingSpinner size="sm" /> : t('common:actions.install')}
                           </Button>
                         )}
                       </div>
