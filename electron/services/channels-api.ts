@@ -472,8 +472,8 @@ export async function buildChannelAccountsView(
     markRememberedProbeFailuresRechecked(startedAt);
   }
   if (!skipRuntime) {
+    const rpcStartedAt = Date.now();
     try {
-      const rpcStartedAt = Date.now();
       gatewayStatus = await ctx.gatewayManager.rpc<GatewayChannelStatusPayload>(
         'channels.status',
         { probe },
@@ -486,12 +486,12 @@ export async function buildChannelAccountsView(
         overlayRememberedProbeFailures(gatewayStatus);
       }
       logger.info(
-        `[channels.accounts] channels.status probe=${probe ? '1' : '0'}${recheckProbe ? ' (recheck)' : ''} elapsedMs=${Date.now() - rpcStartedAt} snapshot=${buildGatewayStatusSnapshot(gatewayStatus)}`
+        `[channels.accounts] channels.status probe=${probe ? '1' : '0'}${recheckProbe ? ' (recheck)' : ''} elapsedMs=${lastChannelsStatusOkAt - rpcStartedAt} snapshot=${buildGatewayStatusSnapshot(gatewayStatus)}`
       );
     } catch {
       lastChannelsStatusFailureAt = Date.now();
       logger.warn(
-        `[channels.accounts] channels.status probe=${probe ? '1' : '0'} failed after ${Date.now() - startedAt}ms`
+        `[channels.accounts] channels.status probe=${probe ? '1' : '0'} failed after ${lastChannelsStatusFailureAt - rpcStartedAt}ms`
       );
       gatewayStatus = null;
     }

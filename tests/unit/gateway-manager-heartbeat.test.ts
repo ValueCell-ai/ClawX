@@ -164,23 +164,40 @@ describe('GatewayManager heartbeat recovery', () => {
 
   it('keeps a failed owned-process escalation pending through restart cooldown', async () => {
     const { GatewayManager } = await import('@electron/gateway/manager');
+    const { logger } = await import('@electron/utils/logger');
+    const info = vi.spyOn(logger, 'info');
     const manager = new GatewayManager();
     const { internals } = createRunningManager(manager);
-    const restartSpy = vi.spyOn(manager, 'restart').mockResolvedValue();
-    vi.spyOn(manager, 'rpc').mockRejectedValue(new Error('RPC timeout: system-presence'));
+    Object.assign(internals.status, { pid: 42 });
+    const stop = vi.spyOn(manager, 'stop').mockResolvedValue();
+    vi.spyOn(manager, 'start').mockResolvedValue();
+    vi.spyOn(manager, 'rpc').mockRejectedValue(new Error('RPC timeout: sensitive transport details'));
+    const recoveryRequests = () => info.mock.calls
+      .map(([message]) => message)
+      .filter((message) => message.includes('trigger=owned-liveness-recovery'));
     await vi.advanceTimersByTimeAsync(179_000);
     (internals as unknown as {
       restartGovernor: { recordExecuted: (now: number) => void };
     }).restartGovernor.recordExecuted(Date.now());
 
     await vi.advanceTimersByTimeAsync(1_000);
-    expect(restartSpy).not.toHaveBeenCalled();
+    expect(stop).not.toHaveBeenCalled();
+    expect(recoveryRequests()).toEqual([]);
 
     await vi.advanceTimersByTimeAsync(1_499);
-    expect(restartSpy).not.toHaveBeenCalled();
+    expect(stop).not.toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(1);
-    expect(restartSpy).toHaveBeenCalledTimes(1);
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(recoveryRequests()).toEqual([
+      '[gateway-refresh] mode=restart requested pidBefore=42 trigger=owned-liveness-recovery probe=system-presence reason=deadline-probe-timeout',
+    ]);
+    await vi.advanceTimersByTimeAsync(2_500);
+    await manager.restart();
+    expect(stop).toHaveBeenCalledTimes(2);
+    expect(info).toHaveBeenCalledWith('[gateway-refresh] mode=restart requested pidBefore=42');
+    expect(recoveryRequests()).toHaveLength(1);
+    info.mockRestore();
     internals.connectionMonitor.clear();
   });
 
