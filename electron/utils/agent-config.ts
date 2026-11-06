@@ -1,5 +1,5 @@
-import { copyFile, lstat, mkdir, readdir, rm } from 'fs/promises';
-import { join, normalize } from 'path';
+import { copyFile, lstat, mkdir, readdir, realpath, rm } from 'fs/promises';
+import { basename, dirname, isAbsolute, join, normalize, relative, resolve } from 'path';
 import { isDeepStrictEqual } from 'node:util';
 import { mutateOpenClawConfig } from '../gateway/config-delivery';
 import { deleteAgentChannelAccounts, listConfiguredChannelsFromConfig, readOpenClawConfig } from './channel-config';
@@ -10,11 +10,12 @@ import { toUiChannelType } from './channel-alias';
 import { ensureClawXIdentityFile } from './openclaw-workspace';
 import { resolveModelContextWindow } from './openclaw-compaction';
 import { initializeAgentAuthDatabase, migrateAuthProfilesJsonToSqliteIfNeeded } from './openclaw-auth-sqlite';
+import { resolveOpenClawAgentWorkspaceDir, resolveLegacyOpenClawAgentWorkspaceDir, resolveOpenClawLegacyDataOwnerAgentId } from './openclaw-agent-roster';
+import { materializeLegacyAgentRoles } from './openclaw-legacy-agent-roles';
 
 const MAIN_AGENT_ID = 'main';
 const MAIN_AGENT_NAME = 'Main Agent';
 const DEFAULT_ACCOUNT_ID = 'default';
-const DEFAULT_WORKSPACE_PATH = '~/.openclaw/workspace';
 const AGENT_BOOTSTRAP_FILES = [
   'AGENTS.md',
   'SOUL.md',
@@ -176,13 +177,10 @@ async function ensureDir(path: string): Promise<void> {
   }
 }
 
-function getDefaultWorkspacePath(config: AgentConfigDocument): string {
-  const defaults = (config.agents && typeof config.agents === 'object'
-    ? (config.agents as AgentsConfig).defaults
-    : undefined);
-  return typeof defaults?.workspace === 'string' && defaults.workspace.trim()
-    ? defaults.workspace
-    : DEFAULT_WORKSPACE_PATH;
+function resolveWorkspace(agents: AgentsConfig | undefined, agentId: string): string {
+  return Array.isArray(agents?.list) && !isPlainObject(agents?.entries)
+    ? resolveLegacyOpenClawAgentWorkspaceDir(agents, agentId)
+    : resolveOpenClawAgentWorkspaceDir(agents, agentId);
 }
 
 function getDefaultAgentDirPath(agentId: string): string {
@@ -194,7 +192,7 @@ function createImplicitMainEntry(config: AgentConfigDocument): AgentListEntry {
     id: MAIN_AGENT_ID,
     name: MAIN_AGENT_NAME,
     default: true,
-    workspace: getDefaultWorkspacePath(config),
+    workspace: resolveWorkspace(config.agents, MAIN_AGENT_ID),
     agentDir: getDefaultAgentDirPath(MAIN_AGENT_ID),
   };
 }
@@ -319,6 +317,41 @@ function writeAgentRoster(
       return [id, entryConfig];
     })),
   };
+
+  // Changing roster ownership changes implicit workspace resolution. Pin only
+  // existing agents whose effective path would move, while the source roster
+  // still contains the legacy default marker / original ownership semantics.
+  const sourceIds = new Set(readRosterEntries(agentsConfig).map((entry) => entry.id));
+  for (const entry of entries) {
+    if (!sourceIds.has(entry.id)) continue;
+    if (entry.workspace !== undefined && (typeof entry.workspace !== 'string' || entry.workspace.trim())) continue;
+    const before = resolveWorkspace(agentsConfig, entry.id);
+    const after = resolveOpenClawAgentWorkspaceDir(config.agents, entry.id);
+    if (before !== after) config.agents.entries![entry.id].workspace = before;
+  }
+
+  const legacyDefault = !isPlainObject(agentsConfig.entries) && agentsConfig.ownership !== 'explicit'
+    ? agentsConfig.list?.find((entry) => entry.default === true)
+    : undefined;
+  if (legacyDefault && findRosterEntryId(entries, legacyDefault.id) && (agentsConfig.list?.length ?? 0) > 1) {
+    materializeLegacyAgentRoles(config, legacyDefault.id);
+  }
+
+  // A sole named agent can also be the inherited credential owner. Preserve
+  // that source when adding a second agent switches the roster to explicit.
+  const sourceAuthOwner = readOwnerAgentId(agentsConfig.defaults?.authInheritance)
+    ?? resolveOpenClawLegacyDataOwnerAgentId(agentsConfig) ?? MAIN_AGENT_ID;
+  const targetAuthOwner = readOwnerAgentId(config.agents.defaults?.authInheritance)
+    ?? resolveOpenClawLegacyDataOwnerAgentId(config.agents) ?? MAIN_AGENT_ID;
+  const sourceAuthOwnerWasRemoved = findRosterEntryId(readRosterEntries(agentsConfig), sourceAuthOwner)
+    && !findRosterEntryId(entries, sourceAuthOwner);
+  if (sourceAuthOwner !== targetAuthOwner && !sourceAuthOwnerWasRemoved) {
+    config.agents.defaults ??= {};
+    config.agents.defaults.authInheritance = {
+      ...(isPlainObject(config.agents.defaults.authInheritance) ? config.agents.defaults.authInheritance : {}),
+      agentId: sourceAuthOwner,
+    };
+  }
 }
 
 /**
@@ -334,6 +367,8 @@ export function migrateLegacyAgentRosterInConfig(config: Record<string, unknown>
   const agentConfig = config as AgentConfigDocument;
   const agents = agentConfig.agents;
   if (!isPlainObject(agents) || !Array.isArray(agents.list)) return false;
+  if (Object.hasOwn(agents, 'entries')) return false;
+  if (agents.ownership === 'explicit') return false;
 
   const legacyList = agents.list;
   const validEntries = legacyList.filter((entry): entry is AgentListEntry => (
@@ -345,7 +380,10 @@ export function migrateLegacyAgentRosterInConfig(config: Record<string, unknown>
   // Do not turn a malformed, empty, or ambiguous roster into a synthetic one.
   // Doctor can report and repair those cases with the full OpenClaw context.
   if (validEntries.length === 0 || validEntries.length !== legacyList.length) return false;
-  if (new Set(validEntries.map((entry) => entry.id)).size !== validEntries.length) return false;
+  if (validEntries.some((entry) => !/^[a-z0-9][a-z0-9_-]{0,63}$/i.test(entry.id))) return false;
+  if (validEntries.some((entry) => entry.default !== undefined && typeof entry.default !== 'boolean')) return false;
+  if (new Set(validEntries.map((entry) => normalizeAgentIdForBinding(entry.id))).size !== validEntries.length) return false;
+  if (validEntries.filter((entry) => entry.default).length > 1) return false;
 
   const { agentsConfig, entries, defaultAgentId } = normalizeAgentsConfig(agentConfig);
   writeAgentRoster(agentConfig, agentsConfig, entries, defaultAgentId);
@@ -495,6 +533,25 @@ function getManagedWorkspaceDirectory(agent: AgentListEntry): string | null {
   return normalizedConfigured === normalizedManaged ? configuredWorkspace : null;
 }
 
+async function canonicalWorkspacePath(path: string): Promise<string> {
+  const absolute = resolve(path);
+  try {
+    return await realpath(absolute);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    const parent = dirname(absolute);
+    return parent === absolute ? absolute : join(await canonicalWorkspacePath(parent), basename(absolute));
+  }
+}
+
+function workspacePathsOverlap(left: string, right: string): boolean {
+  const contains = (parent: string, child: string) => {
+    const path = relative(parent, child);
+    return !path || (!isAbsolute(path) && path !== '..' && !path.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`));
+  };
+  return contains(left, right) || contains(right, left);
+}
+
 export async function removeAgentWorkspaceDirectory(
   agent: { id: string; workspace?: string },
 ): Promise<string | null> {
@@ -508,6 +565,17 @@ export async function removeAgentWorkspaceDirectory(
   }
 
   try {
+    const config = await readOpenClawConfig() as AgentConfigDocument;
+    const { entries } = normalizeAgentsConfig(config);
+    const target = await canonicalWorkspacePath(workspaceDir);
+    for (const other of entries) {
+      if (normalizeAgentIdForBinding(other.id) === normalizeAgentIdForBinding(agent.id)) continue;
+      const remaining = await canonicalWorkspacePath(resolveWorkspace(config.agents, other.id));
+      if (workspacePathsOverlap(target, remaining)) {
+        logger.warn('Preserving removed Agent workspace used by another Agent', { agentId: agent.id, ownerAgentId: other.id });
+        return null;
+      }
+    }
     await rm(workspaceDir, { recursive: true, force: true });
     return workspaceDir;
   } catch (error) {
@@ -547,11 +615,13 @@ async function provisionAgentFilesystem(
   agent: AgentListEntry,
   options?: { inheritWorkspace?: boolean },
 ): Promise<void> {
-  const { entries } = normalizeAgentsConfig(config);
-  const mainEntry = entries.find((entry) => entry.id === MAIN_AGENT_ID) ?? createImplicitMainEntry(config);
-  const sourceWorkspace = expandPath(mainEntry.workspace || getDefaultWorkspacePath(config));
-  const targetWorkspace = expandPath(agent.workspace || `~/.openclaw/workspace-${agent.id}`);
-  const sourceAgentDir = expandPath(mainEntry.agentDir || getDefaultAgentDirPath(MAIN_AGENT_ID));
+  const { entries, defaultAgentId } = normalizeAgentsConfig(config);
+  const mainEntry = entries.find((entry) => entry.id === MAIN_AGENT_ID)
+    ?? entries.find((entry) => entry.id === defaultAgentId)
+    ?? createImplicitMainEntry(config);
+  const sourceWorkspace = resolveWorkspace(config.agents, mainEntry.id);
+  const targetWorkspace = resolveWorkspace(config.agents, agent.id);
+  const sourceAgentDir = expandPath(mainEntry.agentDir || getDefaultAgentDirPath(mainEntry.id));
   const targetAgentDir = expandPath(agent.agentDir || getDefaultAgentDirPath(agent.id));
   const targetSessionsDir = join(getOpenClawConfigDir(), 'agents', agent.id, 'sessions');
 
@@ -663,7 +733,7 @@ async function buildSnapshotFromConfig(config: AgentConfigDocument, preloadedCha
       overrideModelRef: explicitModelRef,
       contextWindow: resolveModelContextWindow(config, effectiveModelRef),
       inheritedModel,
-      workspace: entry.workspace || (entry.id === MAIN_AGENT_ID ? getDefaultWorkspacePath(config) : `~/.openclaw/workspace-${entry.id}`),
+      workspace: resolveWorkspace(config.agents, entry.id),
       agentDir: entry.agentDir || getDefaultAgentDirPath(entry.id),
       mainSessionKey: buildAgentMainSessionKey(config, entry.id),
       channelTypes: configuredChannels
@@ -921,6 +991,17 @@ export async function deleteAgentConfig(agentId: string): Promise<{ snapshot: Ag
     if (!removedEntry || nextEntries.length === entries.length) {
       throw new Error(`Agent "${agentId}" not found`);
     }
+    if (nextEntries.length === 0) throw new Error('The only configured agent cannot be deleted');
+    // These bindings can own data inherited by surviving agents. Do not clear
+    // the pointer and delete their credential/session source directory.
+    for (const role of ['authInheritance', 'sessionStore'] as const) {
+      if (findRosterEntryId(entries, readOwnerAgentId(agentsConfig.defaults?.[role])) === agentId) {
+        throw new Error(`Agent "${agentId}" owns agents.defaults.${role}; relocate its data and reassign that owner before deleting it`);
+      }
+    }
+    // The deletion service must inspect the directory this agent actually used,
+    // not infer workspace-<id> after its configuration has been removed.
+    removedEntry.workspace = resolveWorkspace(agentsConfig, agentId);
 
     writeAgentRoster(
       config,

@@ -1,14 +1,16 @@
 // @vitest-environment node
 
 import { access, lstat, mkdir, readFile, rm, symlink, writeFile } from 'fs/promises';
-import { join } from 'path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { join, resolve } from 'path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { testHome, testUserData } = vi.hoisted(() => {
+const { testHome, testUserData } = await vi.hoisted(async () => {
+  const os = await vi.importActual<typeof import('os')>('os');
+  const path = await vi.importActual<typeof import('path')>('path');
   const suffix = Math.random().toString(36).slice(2);
   return {
-    testHome: `/tmp/clawx-agent-config-${suffix}`,
-    testUserData: `/tmp/clawx-agent-config-user-data-${suffix}`,
+    testHome: path.join(os.tmpdir(), `clawx-agent-config-${suffix}`),
+    testUserData: path.join(os.tmpdir(), `clawx-agent-config-user-data-${suffix}`),
   };
 });
 
@@ -47,8 +49,63 @@ describe('agent config lifecycle', () => {
   beforeEach(async () => {
     vi.resetModules();
     vi.restoreAllMocks();
+    vi.stubEnv('HOME', testHome);
+    vi.stubEnv('USERPROFILE', testHome);
+    vi.stubEnv('OPENCLAW_HOME', testHome);
+    vi.stubEnv('OPENCLAW_STATE_DIR', '');
+    vi.stubEnv('OPENCLAW_WORKSPACE_DIR', '');
+    vi.stubEnv('OPENCLAW_PROFILE', '');
     await rm(testHome, { recursive: true, force: true });
     await rm(testUserData, { recursive: true, force: true });
+  });
+
+  afterEach(() => vi.unstubAllEnvs());
+
+  it.each([
+    { label: 'implicit first agent', list: [{ id: 'main' }, { id: 'coder' }], defaults: {}, owner: 'main' },
+    { label: 'marked main', list: [{ id: 'coder' }, { id: 'main', default: true }], defaults: {}, owner: 'main' },
+    { label: 'named default with a base', list: [{ id: 'main' }, { id: 'research', default: true }], defaults: { workspace: '~/工程 Alpha' }, owner: 'research' },
+  ])('preserves all effective workspaces for $label and migrates only once', async ({ list, defaults, owner }) => {
+    const { migrateLegacyAgentRosterInConfig, listAgentsSnapshotFromConfig } = await import('@electron/utils/agent-config');
+    const config = { agents: { defaults, list }, tools: { allow: ['read'] } };
+    const before = await listAgentsSnapshotFromConfig(config, []);
+    expect(migrateLegacyAgentRosterInConfig(config)).toBe(true);
+    const after = await listAgentsSnapshotFromConfig(config, []);
+    expect(after.agents.map(({ id, workspace }) => [id, workspace])).toEqual(before.agents.map(({ id, workspace }) => [id, workspace]));
+    expect(after.agents.find(({ id }) => id === owner)?.workspace).toBe(resolve(testHome, defaults.workspace ? '工程 Alpha' : '.openclaw/workspace'));
+    expect(config.tools).toEqual({ allow: ['read'] });
+    const migrated = structuredClone(config);
+    expect(migrateLegacyAgentRosterInConfig(config)).toBe(false);
+    expect(config).toEqual(migrated);
+  });
+
+  it('preserves explicit external paths and default owner roles', async () => {
+    const { migrateLegacyAgentRosterInConfig } = await import('@electron/utils/agent-config');
+    const config: Record<string, unknown> = { agents: { list: [
+      { id: 'main', workspace: '~/External Project' },
+      { id: 'research', default: true },
+    ] }, channels: { telegram: { enabled: true } } };
+    expect(migrateLegacyAgentRosterInConfig(config)).toBe(true);
+    expect(config.agents).toMatchObject({
+      defaults: { systemAgent: { agentId: 'research' }, authInheritance: { agentId: 'research' } },
+      entries: { main: { workspace: '~/External Project' }, research: { workspace: resolve(testHome, '.openclaw/workspace') } },
+    });
+    expect(config.bindings).toContainEqual({ agentId: 'research', match: { channel: 'telegram', accountId: '*' } });
+  });
+
+  it.each([
+    { list: [{ id: 'main' }, { id: 'MAIN' }] },
+    { list: [{ id: 'main', default: true }, { id: 'coder', default: true }] },
+    { list: [{ id: 'main', default: 'true' }] },
+    { list: [{ id: 'main' }], entries: { coder: {} } },
+    { list: [{ id: 'a b' }, { id: 'a-b' }] },
+    { list: [{ id: 'main' }], ownership: 'explicit' },
+  ])('leaves ambiguous roster shapes unchanged for Doctor: %j', async (agents) => {
+    const { migrateLegacyAgentRosterInConfig } = await import('@electron/utils/agent-config');
+    const config = { agents };
+    const before = structuredClone(config);
+    expect(migrateLegacyAgentRosterInConfig(config)).toBe(false);
+    expect(config).toEqual(before);
   });
 
   it('lists configured agent ids from openclaw.json', async () => {
@@ -126,7 +183,7 @@ describe('agent config lifecycle', () => {
       defaults: { systemAgent: { agentId: 'main' } },
       ownership: 'explicit',
       entries: {
-        main: { name: 'Main' },
+        main: { name: 'Main', workspace: resolve(testHome, '.openclaw/workspace') },
         research: {
           name: 'Research',
           workspace: '~/.openclaw/workspace-research',
@@ -161,7 +218,7 @@ describe('agent config lifecycle', () => {
         systemAgent: { agentId: 'main' },
         heartbeat: { every: '30m' },
       },
-      entries: { main: { name: 'Main' } },
+      entries: { main: { name: 'Main', workspace: resolve(testHome, '.openclaw/workspace-main') } },
     });
     expect(config).not.toHaveProperty('talk');
   });
@@ -194,6 +251,103 @@ describe('agent config lifecycle', () => {
         }),
       ]),
     );
+  });
+
+  it('does not reinterpret a current explicit main workspace when renaming an Agent', async () => {
+    await writeOpenClawJson({ agents: {
+      ownership: 'explicit', defaults: { workspace: '~/Fleet', systemAgent: { agentId: 'main' } },
+      entries: { main: { name: 'Main' }, coder: { name: 'Coder' } },
+    } });
+    const { updateAgentName } = await import('@electron/utils/agent-config');
+    const snapshot = await updateAgentName('main', 'Renamed');
+    expect(snapshot.agents.find(({ id }) => id === 'main')?.workspace).toBe(resolve(testHome, 'Fleet/main'));
+    expect((await readOpenClawJson()).agents).toMatchObject({ entries: { main: { name: 'Renamed' } } });
+    expect((await readOpenClawJson()).agents).not.toHaveProperty('entries.main.workspace');
+  });
+
+  it.each(['authInheritance', 'sessionStore'])('refuses to delete an Agent that owns shared %s data', async (role) => {
+    const config = { agents: {
+      ownership: 'explicit', defaults: { [role]: { agentId: 'research' }, systemAgent: { agentId: 'main' } },
+      entries: { main: {}, research: {} },
+    } };
+    await writeOpenClawJson(config);
+    const runtimeDir = resolve(testHome, '.openclaw/agents/research/agent');
+    await mkdir(runtimeDir, { recursive: true });
+    await writeFile(join(runtimeDir, 'keep.txt'), 'Shared data');
+    const { deleteAgentConfig } = await import('@electron/utils/agent-config');
+    await expect(deleteAgentConfig('research')).rejects.toThrow(`owns agents.defaults.${role}`);
+    expect(await readOpenClawJson()).toEqual(config);
+    await expect(readFile(join(runtimeDir, 'keep.txt'), 'utf8')).resolves.toBe('Shared data');
+  });
+
+  it('keeps an unlisted main auth source when a roster collapses to a named singleton', async () => {
+    await writeOpenClawJson({ agents: { ownership: 'explicit', entries: { researcher: {}, coder: {} } } });
+    const { deleteAgentConfig } = await import('@electron/utils/agent-config');
+    await deleteAgentConfig('coder');
+    expect((await readOpenClawJson()).agents).toMatchObject({ defaults: { authInheritance: { agentId: 'main' } } });
+  });
+
+  it('pins the named singleton workspace and inherited credential owner when adding an Agent', async () => {
+    await writeOpenClawJson({ agents: { entries: { researcher: { name: 'Researcher' } } } });
+    const { createAgent } = await import('@electron/utils/agent-config');
+    const snapshot = await createAgent('Coder');
+    expect(snapshot.agents.find(({ id }) => id === 'researcher')?.workspace).toBe(resolve(testHome, '.openclaw/workspace'));
+    expect((await readOpenClawJson()).agents).toMatchObject({ defaults: { authInheritance: { agentId: 'researcher' } } });
+  });
+
+  it('inherits bootstrap files from the current runtime main workspace, not the defaults base', async () => {
+    const base = resolve(testHome, 'Fleet');
+    await mkdir(join(base, 'main'), { recursive: true });
+    await writeFile(join(base, 'SOUL.md'), 'Unused base');
+    await writeFile(join(base, 'main', 'SOUL.md'), 'Actual main personality');
+    await writeOpenClawJson({ agents: {
+      ownership: 'explicit', defaults: { workspace: base, systemAgent: { agentId: 'main' } },
+      entries: { main: {}, coder: {} },
+    } });
+    const { createAgent } = await import('@electron/utils/agent-config');
+    await createAgent('Research', { inheritWorkspace: true });
+    await expect(readFile(resolve(testHome, '.openclaw/workspace-research/SOUL.md'), 'utf8')).resolves.toBe('Actual main personality');
+  });
+
+  it('does not delete an unrelated managed directory when a removed Agent used an inherited external base', async () => {
+    const unrelated = resolve(testHome, '.openclaw/workspace-coder');
+    await mkdir(unrelated, { recursive: true });
+    await writeFile(join(unrelated, 'keep.txt'), 'Unrelated');
+    await writeOpenClawJson({ agents: {
+      ownership: 'explicit', defaults: { workspace: '~/External', systemAgent: { agentId: 'main' } },
+      entries: { main: {}, coder: {} },
+    } });
+    const { deleteAgentConfig, removeAgentWorkspaceDirectory } = await import('@electron/utils/agent-config');
+    const { removedEntry } = await deleteAgentConfig('coder');
+    expect(removedEntry.workspace).toBe(resolve(testHome, 'External/coder'));
+    await expect(removeAgentWorkspaceDirectory(removedEntry)).resolves.toBeNull();
+    await expect(readFile(join(unrelated, 'keep.txt'), 'utf8')).resolves.toBe('Unrelated');
+  });
+
+  it.each(['', 'nested'])('keeps a removed Agent workspace shared by a surviving Agent (%s)', async (suffix) => {
+    const workspace = resolve(testHome, '.openclaw/workspace-coder');
+    await mkdir(join(workspace, suffix), { recursive: true });
+    await writeFile(join(workspace, 'keep.txt'), 'Shared workspace');
+    await writeOpenClawJson({ agents: {
+      ownership: 'explicit', defaults: { systemAgent: { agentId: 'main' } },
+      entries: { main: { workspace: join(workspace, suffix) }, coder: {} },
+    } });
+    const { deleteAgentConfig, removeAgentWorkspaceDirectory } = await import('@electron/utils/agent-config');
+    const { removedEntry } = await deleteAgentConfig('coder');
+    await expect(removeAgentWorkspaceDirectory(removedEntry)).resolves.toBeNull();
+    await expect(readFile(join(workspace, 'keep.txt'), 'utf8')).resolves.toBe('Shared workspace');
+  });
+
+  it('preserves a workspace referenced by another Agent through a directory link', async () => {
+    const workspace = resolve(testHome, '.openclaw/workspace-coder');
+    const link = resolve(testHome, 'linked-workspace');
+    await mkdir(workspace, { recursive: true });
+    await writeFile(join(workspace, 'keep.txt'), 'Shared via link');
+    await symlink(workspace, link, process.platform === 'win32' ? 'junction' : 'dir');
+    await writeOpenClawJson({ agents: { entries: { main: { workspace: join(link, 'future-child') } } } });
+    const { removeAgentWorkspaceDirectory } = await import('@electron/utils/agent-config');
+    await expect(removeAgentWorkspaceDirectory({ id: 'coder', workspace })).resolves.toBeNull();
+    await expect(readFile(join(workspace, 'keep.txt'), 'utf8')).resolves.toBe('Shared via link');
   });
 
   it('exposes effective and override model refs in the snapshot', async () => {
@@ -254,10 +408,11 @@ describe('agent config lifecycle', () => {
       defaults: {
         model: { primary: 'moonshot/kimi-k2.6' },
         systemAgent: { agentId: 'main' },
+        heartbeat: { agentId: 'main' },
       },
       ownership: 'explicit',
       entries: {
-        main: { name: 'Main' },
+        main: { name: 'Main', workspace: resolve(testHome, '.openclaw/workspace') },
         coder: { name: 'Coder', model: { primary: 'ark/ark-code-latest' } },
       },
     });
@@ -517,7 +672,7 @@ describe('agent config lifecycle', () => {
       'main',
       'test3',
     ]);
-    expect(config.bindings).toEqual([]);
+    expect(config.bindings).toEqual([{ agentId: 'main', match: { channel: 'feishu', accountId: '*' } }]);
     await expect(access(test2RuntimeDir)).rejects.toThrow();
     // The service removes the workspace after `deleteAgentConfig` commits, so the
     // config mutation leaves it in place for the caller.
@@ -978,7 +1133,7 @@ describe('agent config lifecycle', () => {
       },
     });
     const workspaceLink = join(testHome, '.openclaw', 'workspace-research');
-    await symlink(join(testHome, 'missing-workspace-target'), workspaceLink);
+    await symlink(resolve(testHome, 'missing-workspace-target'), workspaceLink, process.platform === 'win32' ? 'junction' : 'dir');
     const { createAgent } = await import('@electron/utils/agent-config');
 
     await expect(createAgent('Research')).rejects.toThrow();
