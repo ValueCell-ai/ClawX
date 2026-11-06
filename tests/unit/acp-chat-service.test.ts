@@ -1,5 +1,6 @@
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
@@ -198,7 +199,7 @@ describe('AcpChatService', () => {
       ['acp'],
       expect.objectContaining({
         cwd: expect.stringContaining('openclaw'),
-        execArgv: ['--import', 'file:///tmp/clawx-user-data/openclaw-runtime-compat.mjs'],
+        execArgv: ['--import', pathToFileURL('/tmp/clawx-user-data/openclaw-runtime-compat.mjs').href],
         stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
         windowsHide: true,
         env: expect.objectContaining({
@@ -1483,8 +1484,8 @@ describe('AcpChatService', () => {
       expect(accessRegistry.get('agent:pi:grant', 1)).toEqual({
         sessionKey: 'agent:pi:grant',
         generation: 1,
-        workspaceRoot: realpathSync(workspaceRoot),
-        executionCwd: realpathSync(executionCwd),
+        workspaceRoot: realpathSync.native(workspaceRoot),
+        executionCwd: realpathSync.native(executionCwd),
       });
     } finally {
       rmSync(parent, { recursive: true, force: true });
@@ -1512,8 +1513,8 @@ describe('AcpChatService', () => {
       expect(accessRegistry.get('agent:pi:first', 1)).toEqual({
         sessionKey: 'agent:pi:first',
         generation: 1,
-        workspaceRoot: realpathSync(firstRoot),
-        executionCwd: realpathSync(firstRoot),
+        workspaceRoot: realpathSync.native(firstRoot),
+        executionCwd: realpathSync.native(firstRoot),
       });
       expect(accessRegistry.get('agent:pi:second', 2)).toBeNull();
     } finally {

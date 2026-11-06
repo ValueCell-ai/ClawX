@@ -404,6 +404,10 @@ export const hostApi = {
     ),
   },
   sessions: {
+    getModel: (sessionKey: string) => invokeHost('sessions', 'getModel', { sessionKey }),
+    setModel: (sessionKey: string, modelRef: string | null, options?: { createIfMissing: boolean }) => (
+      invokeHost('sessions', 'setModel', { sessionKey, modelRef, ...options })
+    ),
     delete: (id: string) => invokeHost('sessions', 'delete', { id }),
     rename: (id: string, title: string) => (
       invokeHost('sessions', 'rename', { id, title })

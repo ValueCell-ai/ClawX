@@ -1,11 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ChatInput } from '@/pages/Chat/ChatInput';
+import { useComposerDraftStore } from '@/stores/composer-drafts';
+import { rendererExtensionRegistry } from '@/extensions/registry';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { AcpCurrentPlan } from '@/lib/acp/current-plan';
 import type { AcpSubagentSession } from '@/pages/Chat/AcpSubagentSessions';
 const hostApiFetchMock = vi.hoisted(() => vi.fn());
 const hostApiDialogOpenMock = vi.hoisted(() => vi.fn());
+const modelApi = vi.hoisted(() => ({ getModel: vi.fn(), setModel: vi.fn() }));
 const toastErrorMock = vi.hoisted(() => vi.fn());
 const microphoneMocks = vi.hoisted(() => ({ getConfig: vi.fn(), getMicrophoneAccess: vi.fn(), openMicrophoneSettings: vi.fn() }));
 const { agentsState, chatState, gatewayState, settingsState, providersState, artifactPanelMocks } = vi.hoisted(() => ({
@@ -17,7 +20,7 @@ const { agentsState, chatState, gatewayState, settingsState, providersState, art
   chatState: {
     currentAgentId: 'main',
     currentSessionKey: 'agent:main:session-1',
-    sessions: [{ key: 'agent:main:session-1' }],
+    sessions: [{ key: 'agent:main:session-1' }] as Array<{ key: string; createdLocally?: boolean }>,
   },
   gatewayState: {
     status: { state: 'running', port: 18789 },
@@ -64,6 +67,7 @@ vi.mock('@/stores/artifact-panel', () => ({
 vi.mock('@/lib/host-api', () => ({
   hostApiFetch: hostApiFetchMock,
   hostApi: {
+    sessions: modelApi,
     asr: microphoneMocks,
     files: {
       stagePaths: (input: unknown) => hostApiFetchMock('/api/files/stage-paths', {
@@ -125,6 +129,8 @@ function translate(key: string, vars?: Record<string, unknown>): string {
       return 'Gateway not connected...';
     case 'composer.send':
       return 'Send';
+    case 'composer.followAgentModel':
+      return `Follow agent (${String(vars?.model)})`;
     case 'composer.stop':
       return 'Stop';
     case 'composer.thinking':
@@ -269,6 +275,9 @@ describe('ChatInput agent targeting', () => {
     agentsState.agents = [];
     agentsState.defaultModelRef = null;
     agentsState.updateAgentModel.mockReset();
+    modelApi.getModel.mockReset().mockResolvedValue({ modelRef: null });
+    modelApi.setModel.mockReset().mockImplementation(async (_key, modelRef) => ({ modelRef }));
+    useComposerDraftStore.setState({ drafts: {}, modelRefs: {} });
     chatState.currentAgentId = 'main';
     chatState.currentSessionKey = 'agent:main:session-1';
     chatState.sessions = [{ key: 'agent:main:session-1' }];
@@ -300,17 +309,7 @@ describe('ChatInput agent targeting', () => {
 
   it('recomputes the context total and percentage after switching models', async () => {
     configureAgentAndModelPickers();
-    agentsState.updateAgentModel.mockImplementation(async (agentId: string, modelRef: string | null) => {
-      agentsState.agents = agentsState.agents.map((agent) => agent.id === agentId
-        ? {
-            ...agent,
-            modelRef: modelRef || agentsState.defaultModelRef,
-            overrideModelRef: modelRef,
-            contextWindow: 272_000,
-            inheritedModel: !modelRef,
-          }
-        : agent);
-    });
+    modelApi.setModel.mockResolvedValue({ modelRef: 'custom-bbbbbbbb/gpt-b', contextWindow: 272_000 });
     const contextUsage = { used: 68_000, size: 400_000 };
     const { rerender } = renderChatInput(vi.fn(), contextUsage);
 
@@ -321,7 +320,7 @@ describe('ChatInput agent targeting', () => {
     fireEvent.click(screen.getByTestId('chat-model-picker-button'));
     fireEvent.click(screen.getByRole('button', { name: 'gpt-b Beta' }));
     await waitFor(() => {
-      expect(agentsState.updateAgentModel).toHaveBeenCalledWith('main', 'custom-bbbbbbbb/gpt-b');
+      expect(modelApi.setModel).toHaveBeenCalledWith('agent:main:session-1', 'custom-bbbbbbbb/gpt-b');
     });
     rerender(
       <TooltipProvider delayDuration={0}>
@@ -341,6 +340,87 @@ describe('ChatInput agent targeting', () => {
     expect(screen.getByRole('progressbar', {
       name: '26% context used: 68,000 / 260,000 tokens',
     })).toBeInTheDocument();
+  });
+
+  it('reads the destination session and ignores late model writes after navigating to a sibling', async () => {
+    configureAgentAndModelPickers();
+    const first = chatState.currentSessionKey;
+    const sibling = 'agent:main:session-2';
+    chatState.sessions.push({ key: sibling });
+    let complete!: (value: { modelRef: string }) => void;
+    modelApi.setModel.mockImplementationOnce(() => new Promise((resolve) => { complete = resolve; }));
+    const { rerender } = renderChatInput();
+    const picker = screen.getByTestId('chat-model-picker-button');
+    await waitFor(() => expect(picker).toHaveTextContent('gpt-a'));
+    fireEvent.click(picker);
+    fireEvent.click(screen.getByRole('button', { name: 'gpt-b Beta' }));
+    expect(modelApi.setModel).toHaveBeenCalledWith(first, 'custom-bbbbbbbb/gpt-b');
+    chatState.currentSessionKey = sibling;
+    rerender(<TooltipProvider><ChatInput onSend={vi.fn()} /></TooltipProvider>);
+    await waitFor(() => expect(picker).toHaveTextContent('gpt-a'));
+    await act(async () => { complete({ modelRef: 'custom-bbbbbbbb/gpt-b' }); });
+    expect(picker).toHaveTextContent('gpt-a');
+    expect(modelApi.getModel).toHaveBeenCalledWith(sibling);
+    expect(agentsState.updateAgentModel).not.toHaveBeenCalled();
+  });
+
+  it('clears an existing session override and restores a rejected model selection', async () => {
+    configureAgentAndModelPickers();
+    modelApi.getModel.mockResolvedValue({ modelRef: 'custom-bbbbbbbb/gpt-b' });
+    modelApi.setModel.mockRejectedValueOnce(new Error('unavailable'));
+    renderChatInput();
+    const picker = screen.getByTestId('chat-model-picker-button');
+    await waitFor(() => expect(picker).toHaveTextContent('gpt-b'));
+    fireEvent.click(picker);
+    fireEvent.click(screen.getByTestId('chat-model-picker-follow-agent'));
+    await waitFor(() => expect(toastErrorMock).toHaveBeenCalled());
+    expect(picker).toHaveTextContent('gpt-b');
+    fireEvent.click(picker);
+    fireEvent.click(screen.getByTestId('chat-model-picker-follow-agent'));
+    await waitFor(() => expect(picker).toHaveTextContent('gpt-a'));
+    expect(modelApi.setModel).toHaveBeenLastCalledWith(chatState.currentSessionKey, null);
+  });
+
+  it('picks a model for a local draft without creating or updating a Gateway session', async () => {
+    configureAgentAndModelPickers();
+    chatState.sessions[0].createdLocally = true;
+    renderChatInput();
+    const picker = screen.getByTestId('chat-model-picker-button');
+    fireEvent.click(picker);
+    fireEvent.click(screen.getByRole('button', { name: 'gpt-b Beta' }));
+    await waitFor(() => expect(picker).toHaveTextContent('gpt-b'));
+    expect(useComposerDraftStore.getState().modelRefs[chatState.currentSessionKey]).toBe('custom-bbbbbbbb/gpt-b');
+    expect(modelApi.getModel).not.toHaveBeenCalled();
+    expect(modelApi.setModel).not.toHaveBeenCalled();
+  });
+
+  it('checks an unlisted @target session with the send guard before dispatch', async () => {
+    configureAgentAndModelPickers();
+    const target = 'agent:research:desk';
+    const pin = 'custom-revoked/old';
+    modelApi.getModel.mockImplementation(async (key) => ({
+      modelRef: key === target ? pin : null,
+      effectiveModelRef: key === target ? pin : 'custom-aaaaaaaa/gpt-a',
+    }));
+    const hasGuard = vi.spyOn(rendererExtensionRegistry, 'hasChatBeforeSendHooks').mockReturnValue(true);
+    const guard = vi.spyOn(rendererExtensionRegistry, 'runChatBeforeSend').mockResolvedValue({ ok: false, message: 'denied' });
+    try {
+      const send = vi.fn();
+      renderChatInput(send);
+      fireEvent.click(screen.getByTitle('Choose agent'));
+      fireEvent.click(screen.getByText('Research'));
+      fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Check this' } });
+      fireEvent.click(screen.getByTitle('Send'));
+      await waitFor(() => expect(guard).toHaveBeenCalledWith(expect.objectContaining({
+        sessionKey: target, targetAgentId: 'research', sessionModelRef: pin, sessionEffectiveModelRef: pin,
+      })));
+      expect(modelApi.getModel).toHaveBeenCalledWith(target);
+      expect(send).not.toHaveBeenCalled();
+      expect(screen.getByRole('textbox')).toHaveValue('Check this');
+    } finally {
+      hasGuard.mockRestore();
+      guard.mockRestore();
+    }
   });
 
   it('hides malformed context usage and clamps valid overages to 100%', () => {
@@ -557,7 +637,7 @@ describe('ChatInput agent targeting', () => {
     expect(screen.queryByTestId('chat-composer-image-generation-indicator')).not.toBeInTheDocument();
   });
 
-  it('waits for the provider snapshot before clearing an unavailable model override', async () => {
+  it('never clears an Agent override when the provider list changes', async () => {
     let resolveSnapshot!: () => void;
     agentsState.updateAgentModel.mockResolvedValue(undefined);
     providersState.refreshProviderSnapshot.mockReturnValue(new Promise<void>((resolve) => {
@@ -582,11 +662,9 @@ describe('ChatInput agent targeting', () => {
     });
     expect(agentsState.updateAgentModel).not.toHaveBeenCalled();
 
-    resolveSnapshot();
-
-    await waitFor(() => {
-      expect(agentsState.updateAgentModel).toHaveBeenCalledWith('main', null);
-    });
+    await act(async () => { resolveSnapshot(); });
+    expect(agentsState.updateAgentModel).not.toHaveBeenCalled();
+    expect(modelApi.setModel).not.toHaveBeenCalled();
   });
 
   it('renders editable workspace selector in the composer footer', () => {
@@ -939,13 +1017,13 @@ describe('ChatInput agent targeting', () => {
     expect(await screen.findByText('No matching skills found')).toBeInTheDocument();
   });
 
-  it('shows only the model id on the composer and a muted provider name in the menu', () => {
+  it('shows only the model id on the composer and a muted provider name in the menu', async () => {
     configureAgentAndModelPickers();
 
     renderChatInput();
 
     const pickerButton = screen.getByTestId('chat-model-picker-button');
-    expect(pickerButton).toHaveTextContent('gpt-a');
+    await waitFor(() => expect(pickerButton).toHaveTextContent('gpt-a'));
     expect(pickerButton).not.toHaveTextContent('Alpha');
     expect(pickerButton).not.toHaveTextContent('(');
 
