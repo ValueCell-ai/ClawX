@@ -2,6 +2,7 @@
  * In-process OpenClaw image generation runtime (no CLI subprocess).
  */
 import { pathToFileURL } from 'node:url';
+import { readImageGenerationModelValue } from './openclaw-media-models';
 import { resolveOpenClawRuntimeModulePath } from './runtime-package-resolution';
 
 type ImageGenerationRuntimeModule = {
@@ -127,9 +128,9 @@ export async function listImageGenerationProvidersInProcess(params: {
 }>> {
   const { listRuntimeImageGenerationProviders } = await getImageGenerationRuntime();
   const { resolveAgentModelPrimaryValue } = await getModelInputHelpers();
-  const defaults = (params.config as { agents?: { defaults?: { imageGenerationModel?: unknown } } })
+  const defaults = (params.config as { agents?: { defaults?: Record<string, unknown> } })
     ?.agents?.defaults;
-  const primaryRef = resolveAgentModelPrimaryValue(defaults?.imageGenerationModel);
+  const primaryRef = resolveAgentModelPrimaryValue(readImageGenerationModelValue(defaults));
   const selectedProvider = primaryRef?.includes('/')
     ? primaryRef.slice(0, primaryRef.indexOf('/')).trim().toLowerCase()
     : undefined;

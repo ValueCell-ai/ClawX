@@ -13,6 +13,12 @@ const INVALID_CONFIG_PATTERNS: RegExp[] = [
   /\bstartup migration(?:s)?\b.*\b(?:blocked|failed|did not complete cleanly)\b/i,
   /\bmigration\b.*\bopenclaw doctor --fix\b/i,
   /\brun:\s*openclaw doctor --fix\b/i,
+  // OpenClaw 2026.10.5 wording for retired config keys and offline state
+  // database migrations that block Gateway admission until doctor runs.
+  /\bconfig is invalid\b/i,
+  /\bconfig needs correction\b/i,
+  /\blegacy config keys detected\b/i,
+  /\bgateway\.maintenance_required\b/i,
 ];
 
 const FATAL_RUNTIME_PATTERNS: RegExp[] = [
@@ -20,11 +26,26 @@ const FATAL_RUNTIME_PATTERNS: RegExp[] = [
   /\buses SQLite\b.*\bnot WAL-reset-safe\b/i,
   /\bSQLite\b.*\bWAL-reset-safe runtime required\b/i,
   /\bInstall Node 24\.15\+.*\bNode 22\.22\.3\+\b/i,
+  // OpenClaw 2026.9.3+ raised the Node floor to >=24.16.0 <25 || >=26.1.0.
+  // The launcher (openclaw.mjs) and install precheck emit these diagnostics;
+  // retrying or running doctor cannot repair them.
+  /\bNode \S+ is unsupported; OpenClaw requires\b/i,
+  /\bthis OpenClaw release requires Node\b/i,
+  /\bnode:sqlite truncates TEXT\b/i,
 ];
 
 const STARTUP_MIGRATION_LOCK_PATTERNS: RegExp[] = [
   /\bstartup migrations? (?:is|are) already running\b/i,
   /\bretry after the other gateway finishes\b/i,
+];
+
+// State ownership is shared by Gateway and offline Doctor. Doctor cannot repair
+// contention with another live owner, even when the Gateway exits with code 1.
+// Keep these specific: unrelated SQLite or file-lock failures need their own policy.
+const GATEWAY_STATE_OWNERSHIP_CONTENTION_PATTERNS: RegExp[] = [
+  /\bGatewayStateOwnerContentionError\b/i,
+  /\bfailed to acquire gateway state ownership\b/i,
+  /\bwaited \d+\s*ms for gateway state ownership\b/i,
 ];
 
 const TRANSIENT_START_ERROR_PATTERNS: RegExp[] = [
@@ -103,6 +124,14 @@ export function hasStartupMigrationLockSignal(
     .some((text) => STARTUP_MIGRATION_LOCK_PATTERNS.some((pattern) => pattern.test(text)));
 }
 
+export function hasGatewayStateOwnershipContentionSignal(
+  startupError: unknown,
+  startupStderrLines: string[],
+): boolean {
+  return startupFailureCandidates(startupError, startupStderrLines)
+    .some((text) => GATEWAY_STATE_OWNERSHIP_CONTENTION_PATTERNS.some((pattern) => pattern.test(text)));
+}
+
 /**
  * Retry guard for one-time config repair during a single startup flow.
  */
@@ -171,9 +200,26 @@ export async function connectGatewayWithStartupRetry(options: {
 
 export type GatewayStartupRecoveryAction = 'repair' | 'retry' | 'fail';
 
+/**
+ * The reason a Gateway refused to start, used to tell whether a Doctor run
+ * made progress. OpenClaw reports one pending maintenance step at a time, so a
+ * state migration followed by a session store migration shows two reasons.
+ */
+export function getGatewayStartupFailureReason(startupStderrLines: string[]): string {
+  const lines = startupStderrLines.map((line) => line.trim()).filter(Boolean);
+  const failure = [...lines].reverse().find((line) => line.includes('Gateway failed to start:'));
+  return (failure ?? lines.at(-1) ?? '').replace(/^.*?Gateway failed to start:\s*/, '');
+}
+
+/** The error `waitForGatewayReady` throws when its readiness deadline passes. */
+export function isGatewayReadinessTimeoutError(error: unknown): boolean {
+  return error instanceof Error && /^Gateway failed to start after \d+ms\b/.test(error.message);
+}
+
 export function getGatewayStartupRecoveryAction(options: {
   startupError: unknown;
   startupStderrLines: string[];
+  processExitCode?: number | null;
   configRepairAttempted: boolean;
   attempt: number;
   maxAttempts: number;
@@ -181,14 +227,21 @@ export function getGatewayStartupRecoveryAction(options: {
   if (
     hasFatalRuntimeFailureSignal(options.startupError, options.startupStderrLines)
     || hasStartupMigrationLockSignal(options.startupError, options.startupStderrLines)
+    || hasGatewayStateOwnershipContentionSignal(options.startupError, options.startupStderrLines)
   ) {
     return 'fail';
   }
 
-  if (hasInvalidConfigFailureSignal(options.startupError, options.startupStderrLines)) {
-    // One doctor pass is the only automated repair. If the same migration or
-    // config failure remains afterward, stop instead of treating the generic
-    // process-exited error as transient.
+  // ClawX terminates a Gateway that never became ready, and on Windows that
+  // forced exit also reports code 1. It says nothing about the config.
+  const hasGenericConfigExit = options.processExitCode === 1
+    && !isGatewayReadinessTimeoutError(options.startupError);
+  if (hasInvalidConfigFailureSignal(options.startupError, options.startupStderrLines)
+    || hasGenericConfigExit) {
+    // Some packaged OpenClaw 2026.10 builds print only "The CLI command
+    // failed" and exit 1 for plugin-owned legacy config admission failures.
+    // Treat that startup-only exit as a bounded doctor opportunity instead of
+    // retrying the same invalid configuration indefinitely.
     return options.configRepairAttempted ? 'fail' : 'repair';
   }
 

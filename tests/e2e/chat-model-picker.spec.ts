@@ -103,6 +103,9 @@ test.describe('ClawX chat model picker', () => {
             return makeResponse(request.id, { success: true, modelRef: taskModels[String(body?.sessionKey)] ?? refs.alphaModelRef });
           }
           if (request?.module === 'chat' && request.action === 'setSessionModel') {
+            if ((globalThis as typeof globalThis & { __taskModelWriteBlocked?: boolean }).__taskModelWriteBlocked) {
+              return makeResponse(request.id, { success: false, error: 'Gateway is still preparing agents.' });
+            }
             taskModels[String(body?.sessionKey)] = String(body?.modelRef);
             return makeResponse(request.id, { success: true, modelRef: body?.modelRef });
           }
@@ -284,6 +287,21 @@ test.describe('ClawX chat model picker', () => {
       await expect(gptOption.getByTestId('chat-model-picker-option-icon')).toHaveAttribute('data-model-icon', 'openai');
       const kimiOption = page.getByTestId('chat-model-picker-menu').getByRole('menuitemradio', { name: 'kimi-k2.7', exact: true });
       await expect(kimiOption.getByTestId('chat-model-picker-option-icon')).toHaveAttribute('data-model-icon', 'kimi');
+      await app.evaluate(() => {
+        (globalThis as typeof globalThis & { __taskModelWriteBlocked?: boolean }).__taskModelWriteBlocked = true;
+      });
+      await gptOption.click();
+      await expect(page.getByText(/Failed to switch model:.*Gateway is still preparing agents/)).toBeVisible();
+      await expect(page.getByTestId('chat-model-picker-button')).toHaveText(/model-alpha/);
+      expect(await app.evaluate(() => (
+        (globalThis as typeof globalThis & {
+          __chatModelPickerRequests?: Array<{ path: string }>;
+        }).__chatModelPickerRequests?.some((request) => request.path === 'agents:updateModel') ?? false
+      ))).toBe(false);
+      await app.evaluate(() => {
+        (globalThis as typeof globalThis & { __taskModelWriteBlocked?: boolean }).__taskModelWriteBlocked = false;
+      });
+      await page.getByTestId('chat-model-picker-button').click();
       await gptOption.click();
       await expect(page.getByTestId('chat-model-picker-button')).toHaveText(/gpt-5.6/);
       await expect(page.getByTestId('chat-model-picker-current-icon')).toHaveAttribute('data-model-icon', 'openai');

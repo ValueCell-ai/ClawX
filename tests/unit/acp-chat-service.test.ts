@@ -23,6 +23,7 @@ const childProcessMock = vi.hoisted(() => {
     state,
     spawn: vi.fn(() => state.child),
     fork: vi.fn(() => state.child),
+    execFileSync: vi.fn(() => 'v24.21.0\n'),
   };
 });
 
@@ -44,6 +45,14 @@ vi.mock('@electron/utils/store', () => ({
   getSetting: storeMock.getSetting,
 }));
 
+vi.mock('@electron/utils/control-ui-device-pairing', () => ({
+  approvePendingLocalDeviceRequests: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock('@electron/utils/openclaw-utility-process', () => ({
+  ensureOpenClawRuntimeCompat: () => '/tmp/clawx-user-data/openclaw-runtime-compat.mjs',
+}));
+
 vi.mock('@agentclientprotocol/sdk', () => ({
   ClientSideConnection: acpSdkMock.ClientSideConnection,
   ndJsonStream: acpSdkMock.ndJsonStream,
@@ -51,9 +60,14 @@ vi.mock('@agentclientprotocol/sdk', () => ({
 }));
 
 vi.mock('node:child_process', () => ({
-  default: { spawn: childProcessMock.spawn, fork: childProcessMock.fork },
+  default: {
+    spawn: childProcessMock.spawn,
+    fork: childProcessMock.fork,
+    execFileSync: childProcessMock.execFileSync,
+  },
   spawn: childProcessMock.spawn,
   fork: childProcessMock.fork,
+  execFileSync: childProcessMock.execFileSync,
 }));
 
 function createConnection() {
@@ -120,7 +134,10 @@ function createFakeChild() {
   return child;
 }
 
-async function createSpawnedService(connection = createConnection()) {
+async function createSpawnedService(
+  connection = createConnection(),
+  gateway?: { isConnected: () => boolean; rpc: ReturnType<typeof vi.fn> },
+) {
   const send = vi.fn();
   const child = createFakeChild();
   acpSdkMock.state.connectionForSpawn = connection;
@@ -130,7 +147,7 @@ async function createSpawnedService(connection = createConnection()) {
     { webContents: { send } } as never,
     createPassthroughAccessRegistry() as never,
     undefined,
-    undefined,
+    gateway as never,
   );
   return { service, connection, send, child };
 }
@@ -181,7 +198,7 @@ describe('AcpChatService', () => {
       ['acp'],
       expect.objectContaining({
         cwd: expect.stringContaining('openclaw'),
-        execArgv: [],
+        execArgv: ['--import', 'file:///tmp/clawx-user-data/openclaw-runtime-compat.mjs'],
         stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
         windowsHide: true,
         env: expect.objectContaining({
@@ -208,10 +225,52 @@ describe('AcpChatService', () => {
       expect.objectContaining({
         env: expect.objectContaining({
           OPENCLAW_GATEWAY_TOKEN: 'clawx-test-gateway-token',
+          OPENCLAW_DEBUG: '1',
           OPENCLAW_ACP_ACCEPTED_PROMPT_RECOVERY_GRACE_MS: '480000',
         }),
       }),
     );
+  });
+
+  it('does not fork ACP until the injected Gateway is connected', async () => {
+    let connected = false;
+    const { service } = await createSpawnedService(createConnection(), {
+      isConnected: () => connected,
+      rpc: vi.fn(),
+    });
+    vi.useFakeTimers();
+    try {
+      const loading = service.loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(childProcessMock.fork).not.toHaveBeenCalled();
+
+      connected = true;
+      await vi.advanceTimersByTimeAsync(500);
+      await expect(loading).resolves.toEqual({ success: true, generation: 1 });
+      expect(childProcessMock.fork).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('fails without forking ACP when the Gateway never connects', async () => {
+    const { ACP_GATEWAY_READY_TIMEOUT_MS } = await import('../../electron/services/acp-chat-service');
+    const { service } = await createSpawnedService(createConnection(), {
+      isConnected: () => false,
+      rpc: vi.fn(),
+    });
+    vi.useFakeTimers();
+    try {
+      const loading = service.loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
+      await vi.advanceTimersByTimeAsync(ACP_GATEWAY_READY_TIMEOUT_MS + 1_000);
+      await expect(loading).resolves.toEqual({
+        success: false,
+        error: expect.stringContaining('ACP was not started'),
+      });
+      expect(childProcessMock.fork).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('filters non-JSON stdout diagnostics before the ACP SDK parser sees them', async () => {
@@ -635,6 +694,32 @@ describe('AcpChatService', () => {
       sessionId: 'acp-session-1',
       prompt: [{ type: 'text', text: 'hello' }],
       _meta: { sessionKey: 'agent:pi:session-123', prefixCwd: true, messageId: 'msg-1' },
+    });
+  });
+
+  it('returns and traces a concrete sanitized protocol cause instead of only Internal error', async () => {
+    const { service, connection } = await createService();
+    await service.loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
+    connection.prompt.mockRejectedValueOnce(Object.assign(new Error('Internal error'), {
+      code: -32603, data: { details: 'gateway not connected; token=PRIVATE_TOKEN', request: { prompt: 'PRIVATE_PROMPT' } },
+    }));
+    const result = await service.sendPrompt({ sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'next turn' });
+    expect(result).toEqual({ success: false, error: 'Internal error (-32603): gateway not connected; token=[redacted]' });
+    expect(loggerMock.error).toHaveBeenCalledWith(`[acp-chat] prompt failed: ${result.error}`);
+    const { getAcpTraceSnapshot } = await import('@electron/services/acp-trace');
+    const trace = getAcpTraceSnapshot().entries.filter((entry) => entry.event === 'session/prompt:failed').at(-1);
+    expect(trace?.details).toMatchObject({ error: result.error });
+    expect(JSON.stringify(trace)).not.toContain('PRIVATE_');
+  });
+
+  it('keeps reconnect timeout metadata and detail on a failed session load', async () => {
+    const { service, connection } = await createService();
+    connection.loadSession.mockRejectedValueOnce(Object.assign(new Error('ACP did not reconnect to Gateway within 60s'), {
+      code: -32000, data: { code: 'ACP_GATEWAY_RECONNECT_TIMEOUT', details: 'authentication unavailable' },
+    }));
+    await expect(service.loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' })).resolves.toEqual({
+      success: false, error: 'ACP did not reconnect to Gateway within 60s (-32000): authentication unavailable',
+      errorCode: 'ACP_GATEWAY_RECONNECT_TIMEOUT',
     });
   });
 

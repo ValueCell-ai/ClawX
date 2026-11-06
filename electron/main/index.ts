@@ -1,4 +1,3 @@
-import { getDevelopmentProfile } from '../utils/development-profile';
 /**
  * Electron Main Process Entry
  * Manages window creation, system tray, and IPC handlers
@@ -47,6 +46,7 @@ import {
   requestSecondInstanceFocus,
 } from './main-window-focus';
 import {
+  APP_QUIT_CLEANUP_TIMEOUT_MS,
   createQuitLifecycleState,
   markQuitCleanupCompleted,
   requestQuitLifecycleAction,
@@ -63,10 +63,10 @@ import { browserOAuthManager } from '../utils/browser-oauth';
 import { whatsAppLoginManager } from '../utils/whatsapp-login';
 import { cancelDingTalkDwsOAuth } from '../utils/dingtalk-dws';
 import { syncAllProviderAuthToRuntime } from '../services/providers/provider-runtime-sync';
+import { ensureOpenClawUpgradeSnapshot } from '../utils/openclaw-upgrade-snapshot';
 
 const WINDOWS_APP_USER_MODEL_ID = 'app.clawx.desktop';
 const isE2EMode = process.env.CLAWX_E2E === '1';
-const developmentProfile = getDevelopmentProfile();
 const requestedUserDataDir = process.env.CLAWX_USER_DATA_DIR?.trim();
 const requestedRemoteDebuggingPort = process.env.CLAWX_REMOTE_DEBUGGING_PORT?.trim();
 
@@ -74,7 +74,7 @@ if (requestedRemoteDebuggingPort) {
   app.commandLine.appendSwitch('remote-debugging-port', requestedRemoteDebuggingPort);
 }
 
-if ((isE2EMode || developmentProfile) && requestedUserDataDir) {
+if (isE2EMode && requestedUserDataDir) {
   app.setPath('userData', requestedUserDataDir);
 }
 
@@ -323,6 +323,10 @@ async function initialize(): Promise<void> {
     `Runtime: platform=${process.platform}/${process.arch}, electron=${process.versions.electron}, node=${process.versions.node}, packaged=${app.isPackaged}, pid=${process.pid}, ppid=${process.ppid}`
   );
 
+  // Before extensions, auth sync, bootstrap repairs or any Gateway startup writes.
+  // Failure aborts initialization: never migrate without a recoverable snapshot.
+  if (!isE2EMode) await ensureOpenClawUpgradeSnapshot();
+
   // Older or external Windows tooling can rewrite JSON as UTF-8 with BOM.
   // Repair those files before settings, provider stores, or extensions parse them.
   try {
@@ -354,7 +358,7 @@ async function initialize(): Promise<void> {
 
     // Apply persisted proxy settings before creating windows or network requests.
     await applyProxySettings();
-    if (!developmentProfile) await syncLaunchAtStartupSettingFromStore();
+    await syncLaunchAtStartupSettingFromStore();
   } else {
     logger.info('Running in E2E mode: startup side effects minimized');
   }
@@ -375,7 +379,7 @@ async function initialize(): Promise<void> {
   // The URL filter ensures this callback only fires for gateway requests,
   // avoiding unnecessary overhead on every other HTTP response.
   session.defaultSession.webRequest.onHeadersReceived(
-    { urls: [`http://127.0.0.1:${developmentProfile?.gatewayPort ?? 18789}/*`, `http://localhost:${developmentProfile?.gatewayPort ?? 18789}/*`] },
+    { urls: ['http://127.0.0.1:18789/*', 'http://localhost:18789/*'] },
     (details, callback) => {
       const headers = { ...details.responseHeaders };
       delete headers['X-Frame-Options'];
@@ -582,9 +586,16 @@ async function initialize(): Promise<void> {
   const gatewayAutoStart = await getSetting('gatewayAutoStart');
   if (!isE2EMode && gatewayAutoStart) {
     try {
-      await syncAllProviderAuthToRuntime();
+      // Let OpenClaw own any pending agent/auth migrations before ClawX writes
+      // provider credentials. Writing legacy auth JSON or v1 SQLite rows before
+      // doctor runs can invalidate OpenClaw's migration receipts.
       logger.debug('Auto-starting Gateway...');
       await gatewayManager.start();
+      try {
+        await syncAllProviderAuthToRuntime();
+      } catch (error) {
+        logger.warn('Post-start Gateway provider auth sync failed:', error);
+      }
       logger.info('Gateway auto-start succeeded');
     } catch (error) {
       logger.error('Gateway auto-start failed:', error);
@@ -747,7 +758,7 @@ if (gotTheLock) {
       })(),
     ]);
     const timeoutPromise = new Promise<'timeout'>((resolve) => {
-      setTimeout(() => resolve('timeout'), 5000);
+      setTimeout(() => resolve('timeout'), APP_QUIT_CLEANUP_TIMEOUT_MS);
     });
 
     void Promise.race([stopPromise.then(() => 'stopped' as const), timeoutPromise]).then((result) => {

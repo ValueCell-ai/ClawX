@@ -69,7 +69,7 @@ export function buildWorkspacePreviewTarget(
   };
 }
 
-export function buildAttachmentPreviewTarget(attachment: AttachmentRenderPart): FilePreviewTarget {
+export function buildAttachmentPreviewTarget(attachment: Pick<AttachmentRenderPart, 'reference' | 'access'>): FilePreviewTarget {
   if (attachment.access.status !== 'available' || attachment.access.target.kind !== 'local') {
     throw new Error('Attachment is not available for preview');
   }

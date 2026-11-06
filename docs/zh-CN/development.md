@@ -4,7 +4,7 @@
 
 ### 前置要求
 
-- **Node.js**：对应主版本范围内的 22.22.3+、24.15.0+ 或 25.9.0+（推荐 Node 24 LTS）
+- **Node.js**：24.16.0+（Node 24 LTS）或 26.1.0+（推荐 Node 26）；不支持 Node 22 / 23 / 25
 - **包管理器**：pnpm 9+（推荐）或 npm
 - **Linux（Ubuntu/Debian）**：运行 Electron 前，请先安装所需系统库：
   ```bash

@@ -3,13 +3,17 @@ import {
   connectGatewayWithStartupRetry,
   getGatewayStartupRecoveryAction,
   hasFatalRuntimeFailureSignal,
+  hasGatewayStateOwnershipContentionSignal,
   hasInvalidConfigFailureSignal,
   hasStartupMigrationLockSignal,
+  isGatewayReadinessTimeoutError,
   isGatewayStillStartingError,
   isInvalidConfigSignal,
   isTransientGatewayStartError,
   shouldAttemptConfigAutoRepair,
 } from '@electron/gateway/startup-recovery';
+
+const STATE_OWNERSHIP_REFUSAL = 'Gateway failed to start: failed to acquire gateway state ownership; waited 301732ms for Gateway state ownership: OpenClaw state database is busy at C:\\Users\\user\\.openclaw\\state\\openclaw.sqlite. holder 4324 at unknown host, last renewed 415345 s ago. The holder 4324 is alive on this host, stop it first. | file lock timeout for C:\\Users\\user\\AppData\\Local\\openclaw\\locks\\openclaw-state-owners\\state.example.lock | file_lock_timeout';
 
 describe('gateway startup recovery heuristics', () => {
   it('detects invalid-config signal from stderr lines', () => {
@@ -56,7 +60,40 @@ describe('gateway startup recovery heuristics', () => {
       'OpenClaw startup migrations did not complete cleanly; refusing to report the gateway ready.',
     )).toBe(true);
     expect(isInvalidConfigSignal('Run: openclaw doctor --fix')).toBe(true);
+    // OpenClaw 2026.10.5 requires a one-time state-schema migration before the
+    // Gateway will start, and points the operator at doctor --fix.
+    expect(isInvalidConfigSignal(
+      'OpenClaw state database schema migration required (audit-events-v2) at /tmp/openclaw/state/openclaw.sqlite; run openclaw doctor --fix to migrate it.',
+    )).toBe(true);
     expect(isInvalidConfigSignal('Gateway ready after 3 attempts')).toBe(false);
+  });
+
+  it('matches OpenClaw 2026.10.5 retired-key and offline-migration admission failures', () => {
+    expect(isInvalidConfigSignal('OpenClaw config is invalid')).toBe(true);
+    expect(isInvalidConfigSignal('Config needs correction: ~/.openclaw/openclaw.json')).toBe(true);
+    expect(isInvalidConfigSignal('Legacy config keys detected:')).toBe(true);
+    expect(isInvalidConfigSignal(
+      'Sessions remain unavailable. Stop the Gateway, run "openclaw doctor --fix" to inspect and repair this agent database, and restart. | gateway.maintenance_required',
+    )).toBe(true);
+    expect(isInvalidConfigSignal('[openclaw] For help, run `openclaw doctor`.')).toBe(false);
+    expect(isInvalidConfigSignal('[openclaw] The CLI command failed.')).toBe(false);
+  });
+
+  it('repairs the 2026.10.5 agent-roster migration that only reports a legacy key', () => {
+    const lines = [
+      'File: ~/.openclaw/openclaw.json',
+      'Problem:',
+      '  - agents.list: agents.list moved to keyed agents.entries. Run "openclaw doctor --fix".',
+      'Legacy config keys detected:',
+      '  - agents.list: agents.list moved to keyed agents.entries. Run "openclaw doctor --fix".',
+    ];
+    expect(getGatewayStartupRecoveryAction({
+      startupError: new Error('Gateway process exited before becoming ready (code=78)'),
+      startupStderrLines: lines,
+      configRepairAttempted: false,
+      attempt: 1,
+      maxAttempts: 3,
+    })).toBe('repair');
   });
 
   it('detects an active startup-migration lease that must not be restart-looped', () => {
@@ -64,6 +101,29 @@ describe('gateway startup recovery heuristics', () => {
       'OpenClaw startup migrations are already running for this state directory; retry after the other gateway finishes or after 2026-07-21T03:02:57.489Z.',
     ])).toBe(true);
     expect(hasStartupMigrationLockSignal(new Error('gateway start failed'), [])).toBe(false);
+  });
+
+  it.each([
+    STATE_OWNERSHIP_REFUSAL,
+    'Doctor could not enter maintenance. GatewayStateOwnerContentionError: OpenClaw state database is busy.',
+    'waited 301732ms for Gateway state ownership',
+  ])('recognizes state ownership contention in stderr and errors: %s', (diagnostic) => {
+    expect(hasGatewayStateOwnershipContentionSignal(undefined, [diagnostic])).toBe(true);
+    expect(hasGatewayStateOwnershipContentionSignal(new Error(diagnostic), [])).toBe(true);
+  });
+
+  it('recognizes the typed ownership error name', () => {
+    const error = new Error('The holder is alive on this host');
+    error.name = 'GatewayStateOwnerContentionError';
+    expect(hasGatewayStateOwnershipContentionSignal(error, [])).toBe(true);
+  });
+
+  it.each([
+    'SQLite database is busy',
+    'file lock timeout for C:\\Users\\user\\.openclaw\\sessions.lock | file_lock_timeout',
+    '[gateway] waiting for Gateway state ownership held by another OpenClaw process, up to 300 s',
+  ])('does not classify unrelated locks or waiting progress as an ownership failure: %s', (diagnostic) => {
+    expect(hasGatewayStateOwnershipContentionSignal(new Error(diagnostic), [diagnostic])).toBe(false);
   });
 
   it('detects Node and SQLite failures that cannot be repaired by doctor', () => {
@@ -74,6 +134,16 @@ describe('gateway startup recovery heuristics', () => {
       new Error('System Node 23.11.0 is outside the supported range'),
       [],
     )).toBe(true);
+    // OpenClaw 2026.9.3+ Node floor diagnostics.
+    expect(hasFatalRuntimeFailureSignal(undefined, [
+      'openclaw: Node 22.22.3 is unsupported; OpenClaw requires >=24.16.0 <25, or >=26.1.0 (Node 26 recommended).',
+    ])).toBe(true);
+    expect(hasFatalRuntimeFailureSignal(undefined, [
+      '[openclaw] error: this OpenClaw release requires Node >=24.16.0 <25 || >=26.1.0.',
+    ])).toBe(true);
+    expect(hasFatalRuntimeFailureSignal(undefined, [
+      'Node 24.15.0: node:sqlite truncates TEXT at embedded NUL (nodejs/node#61954); use 24.16+/26.1+ or a build with the fix',
+    ])).toBe(true);
     expect(hasFatalRuntimeFailureSignal(new Error('Config invalid'), [])).toBe(false);
   });
 });
@@ -81,6 +151,73 @@ describe('gateway startup recovery heuristics', () => {
 describe('getGatewayStartupRecoveryAction', () => {
   const configInvalidStderr = ['Config invalid', 'Run: openclaw doctor --fix'];
   const transientError = new Error('Gateway process exited before becoming ready (code=1)');
+
+  it('returns repair on a packaged OpenClaw code 1 startup exit', () => {
+    const action = getGatewayStartupRecoveryAction({
+      startupError: transientError,
+      startupStderrLines: ['[openclaw] The CLI command failed.'],
+      processExitCode: 1,
+      configRepairAttempted: false,
+      attempt: 1,
+      maxAttempts: 3,
+    });
+    expect(action).toBe('repair');
+  });
+
+  it.each(['stderr', 'error'] as const)(
+    'fails ownership contention from %s before exit-code repair or Doctor suggestions',
+    (source) => {
+      expect(getGatewayStartupRecoveryAction({
+        startupError: source === 'error' ? new Error(STATE_OWNERSHIP_REFUSAL) : transientError,
+        startupStderrLines: [
+          ...(source === 'stderr' ? [STATE_OWNERSHIP_REFUSAL] : []),
+          'Run: openclaw doctor --fix',
+        ],
+        processExitCode: 1,
+        configRepairAttempted: false,
+        attempt: 1,
+        maxAttempts: 3,
+      })).toBe('fail');
+    },
+  );
+
+  it('still repairs genuine config errors after an ownership-wait progress message', () => {
+    expect(getGatewayStartupRecoveryAction({
+      startupError: transientError,
+      startupStderrLines: [
+        '[gateway] waiting for Gateway state ownership held by another OpenClaw process, up to 300 s',
+        ...configInvalidStderr,
+      ],
+      processExitCode: 1,
+      configRepairAttempted: false,
+      attempt: 1,
+      maxAttempts: 3,
+    })).toBe('repair');
+  });
+
+  it('does not run doctor when ClawX terminated a Gateway that never became ready', () => {
+    const readinessTimeout = new Error('Gateway failed to start after 120014ms (256 readiness probes, port 18789)');
+    expect(isGatewayReadinessTimeoutError(readinessTimeout)).toBe(true);
+    expect(getGatewayStartupRecoveryAction({
+      startupError: readinessTimeout,
+      startupStderrLines: ['[gateway] startup phase: gateway.server-start-import starting total=28849.2ms'],
+      processExitCode: 1,
+      configRepairAttempted: false,
+      attempt: 1,
+      maxAttempts: 3,
+    })).toBe('fail');
+  });
+
+  it('still repairs a config error reported before the readiness timeout', () => {
+    expect(getGatewayStartupRecoveryAction({
+      startupError: new Error('Gateway failed to start after 120014ms (256 readiness probes, port 18789)'),
+      startupStderrLines: configInvalidStderr,
+      processExitCode: 1,
+      configRepairAttempted: false,
+      attempt: 1,
+      maxAttempts: 3,
+    })).toBe('repair');
+  });
 
   it('returns repair on first config-invalid failure', () => {
     const action = getGatewayStartupRecoveryAction({

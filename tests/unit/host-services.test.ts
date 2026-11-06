@@ -1561,7 +1561,11 @@ describe('host services', () => {
       .toBeLessThan(removeAgentWorkspaceDirectoryMock.mock.invocationCallOrder[0]);
   });
 
-  it('updates agent model without scheduling lifecycle work', async () => {
+  it.each([
+    { state: 'running', gatewayReady: true },
+    { state: 'running' }, // Older Gateway readiness compatibility.
+    { state: 'stopped', gatewayReady: false }, // Offline model configuration.
+  ])('updates agent model without scheduling lifecycle work (%j)', async (status) => {
     const snapshot = {
       agents: [{ id: 'main', modelRef: 'custom-enterpri/claude-sonnet-4' }],
       defaultAgentId: 'main',
@@ -1571,7 +1575,7 @@ describe('host services', () => {
       channelAccountOwners: {},
     };
     const gatewayManager = {
-      getStatus: vi.fn(() => ({ state: 'running' })),
+      getStatus: vi.fn(() => status),
       debouncedReload: vi.fn(),
     };
     const { createAgentsApi } = await import('@electron/services/agents-api');
@@ -1590,6 +1594,25 @@ describe('host services', () => {
     expect(providerRuntimeSync.syncAllProviderAuthToRuntime).toHaveBeenCalledTimes(1);
     expect(providerRuntimeSync.syncAgentModelOverrideToRuntime).toHaveBeenCalledWith('main');
     expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { state: 'starting' },
+    { state: 'reconnecting' },
+    { state: 'running', gatewayReady: false },
+    { state: 'running', gatewayReady: false, error: 'Agent main: prepared model runtime publication was superseded' },
+  ])('rejects model switching before config or credential writes while admission is unavailable (%j)', async (status) => {
+    const gatewayManager = { getStatus: vi.fn(() => status) };
+    const { createAgentsApi } = await import('@electron/services/agents-api');
+    const agentConfig = await import('@electron/utils/agent-config');
+    const providerRuntimeSync = await import('@electron/services/providers/provider-runtime-sync');
+
+    await expect(createAgentsApi({ gatewayManager: gatewayManager as never }).updateModel({
+      id: 'main', modelRef: 'custom/model',
+    })).rejects.toThrow(status.error || 'Gateway is still preparing agents');
+    expect(agentConfig.updateAgentModel).not.toHaveBeenCalled();
+    expect(providerRuntimeSync.syncAllProviderAuthToRuntime).not.toHaveBeenCalled();
+    expect(providerRuntimeSync.syncAgentModelOverrideToRuntime).not.toHaveBeenCalled();
   });
 
   it('assigns agent channels without scheduling lifecycle work', async () => {
@@ -1646,6 +1669,23 @@ describe('host services', () => {
     expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
     expect(gatewayManager.debouncedRestart).not.toHaveBeenCalled();
     expect(gatewayManager.restart).not.toHaveBeenCalled();
+  });
+
+  it('does not report agent creation success before credentials finish syncing', async () => {
+    createAgentMock.mockResolvedValue({ agents: [{ id: 'writer' }] });
+    const sync = await import('@electron/services/providers/provider-runtime-sync');
+    let finish!: () => void;
+    vi.mocked(sync.syncAllProviderAuthToRuntime).mockReturnValueOnce(new Promise<void>(resolve => { finish = resolve; }));
+    const { createAgentsApi } = await import('@electron/services/agents-api');
+    let completed = false;
+    const request = createAgentsApi({ gatewayManager: {} as never }).create({ name: 'Writer' }).then(() => { completed = true; });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(completed).toBe(false);
+    finish();
+    await request;
+    expect(completed).toBe(true);
+    vi.mocked(sync.syncAllProviderAuthToRuntime).mockRejectedValueOnce(new Error('credential sync failed'));
+    await expect(createAgentsApi({ gatewayManager: {} as never }).create({ name: 'Writer' })).rejects.toThrow('credential sync failed');
   });
 
   it('removes agent channel bindings without scheduling lifecycle work', async () => {

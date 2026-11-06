@@ -1,3 +1,9 @@
+import { GATEWAY_GRACEFUL_EXIT_TIMEOUT_MS } from '../gateway/recovery-budget';
+
+// ACP can take 4 seconds before Gateway stop begins; allow its full graceful
+// window plus the subsequent forced-stop fallback before quitting the app.
+export const APP_QUIT_CLEANUP_TIMEOUT_MS = GATEWAY_GRACEFUL_EXIT_TIMEOUT_MS + 10_000;
+
 export interface QuitLifecycleState {
   cleanupStarted: boolean;
   cleanupCompleted: boolean;

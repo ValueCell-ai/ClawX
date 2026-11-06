@@ -300,6 +300,26 @@ test.describe('ClawX ACP chat timeline', () => {
       await expect(page.getByTestId('acp-compaction-failure-reason')).toHaveText(
         'Reason: no real conversation messages',
       );
+
+      const manual = (status: 'in_progress' | 'completed') => ({
+        sessionUpdate: 'session_info_update',
+        _meta: {
+          'openclaw.ai/compaction': {
+            version: 1,
+            compactionId: 'manual-command-4',
+            status,
+            source: 'manual',
+            runId: 'compact-command-run',
+            willRetry: false,
+          },
+        },
+      });
+      await emitAcpSessionUpdates(app, [manual('in_progress')]);
+      await expect(compactionStatuses).toHaveCount(4);
+      await expect(compactionStatuses.last()).toHaveText('Compacting context');
+      await emitAcpSessionUpdates(app, [manual('completed'), manual('completed')]);
+      await expect(compactionStatuses).toHaveCount(4);
+      await expect(compactionStatuses.last()).toHaveText('Compacted history');
     } finally {
       await closeElectronApp(app);
     }

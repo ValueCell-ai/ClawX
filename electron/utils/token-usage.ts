@@ -8,6 +8,7 @@ import {
   type TokenUsageHistoryEntry,
 } from './token-usage-core';
 import { listConfiguredAgentIds } from './agent-config';
+import { readSqliteTranscriptRecordsForAgent } from './openclaw-transcript-sqlite';
 
 export {
   extractSessionIdFromTranscriptFileName,
@@ -89,15 +90,47 @@ async function listRecentSessionFiles(): Promise<Array<{ filePath: string; sessi
   }
 }
 
+async function readSqliteUsageHistory(agentIds: string[], remaining?: number): Promise<{ entries: TokenUsageHistoryEntry[]; agents: Set<string> }> {
+  const entries: TokenUsageHistoryEntry[] = [];
+  const agents = new Set<string>();
+  for (const agentId of agentIds) {
+    const dbPath = join(getOpenClawConfigDir(), 'agents', agentId, 'agent', 'openclaw-agent.sqlite');
+    try {
+      const fsP = await import('node:fs/promises');
+      await fsP.access(dbPath);
+      const { DatabaseSync } = await import(/* @vite-ignore */ 'node:sqlite');
+      const db = new DatabaseSync(dbPath, { readOnly: true });
+      agents.add(agentId);
+      try {
+        const keys = db.prepare('SELECT session_key FROM session_nodes').all() as Array<{ session_key?: unknown }>;
+        for (const row of keys) {
+          if (typeof row.session_key !== 'string') continue;
+          const records = await readSqliteTranscriptRecordsForAgent(agentId, row.session_key);
+          if (!records) continue;
+          const content = records.map(record => JSON.stringify({ type: record.type, timestamp: record.timestamp, message: record.message })).join('\n');
+          entries.push(...parseUsageEntriesFromJsonl(content, {
+            sessionId: records.find(record => record.sessionId)?.sessionId || row.session_key,
+            agentId,
+          }, remaining));
+          if (remaining !== undefined && entries.length >= remaining) return { entries: entries.slice(0, remaining), agents };
+        }
+      } finally { db.close(); }
+    } catch (error) { logger.debug(`Failed to read token usage SQLite for ${agentId}:`, error); }
+  }
+  return { entries, agents };
+}
+
 export async function getRecentTokenUsageHistory(limit?: number): Promise<TokenUsageHistoryEntry[]> {
-  const files = await listRecentSessionFiles();
-  const results: TokenUsageHistoryEntry[] = [];
   const maxEntries = typeof limit === 'number' && Number.isFinite(limit)
     ? Math.max(Math.floor(limit), 0)
     : Number.POSITIVE_INFINITY;
+  const agentIds = await listAgentIdsWithSessionDirs();
+  const sqliteHistory = await readSqliteUsageHistory(agentIds, Number.isFinite(maxEntries) ? maxEntries : undefined);
+  const files = await listRecentSessionFiles();
+  const results: TokenUsageHistoryEntry[] = [...sqliteHistory.entries];
 
   for (const file of files) {
-    if (results.length >= maxEntries) break;
+    if (sqliteHistory.agents.has(file.agentId) || results.length >= maxEntries) continue;
     try {
       const content = await readFile(file.filePath, 'utf8');
       const entries = parseUsageEntriesFromJsonl(content, {

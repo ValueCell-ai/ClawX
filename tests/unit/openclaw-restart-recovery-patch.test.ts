@@ -1,392 +1,292 @@
 // @vitest-environment node
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { promisify } from 'node:util';
+import { isDeepStrictEqual, promisify } from 'node:util';
 import { runInNewContext } from 'node:vm';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 const root = path.resolve(import.meta.dirname, '../..');
+const dist = path.join(root, 'node_modules/openclaw/dist');
 const execFileAsync = promisify(execFile);
 
-function assertValidUnifiedDiffHunks(patch: string): void {
-  const lines = patch.split('\n');
-  let hunkCount = 0;
+const OPENCLAW_VERSION = '2026.10.5';
+const PATCH_PATH = `patches/openclaw@${OPENCLAW_VERSION}.patch`;
 
-  for (let index = 0; index < lines.length; index += 1) {
-    const header = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/.exec(lines[index] ?? '');
-    if (!header) continue;
-
-    hunkCount += 1;
-    const expectedOld = Number(header[1] ?? 1);
-    const expectedNew = Number(header[2] ?? 1);
-    let oldLines = 0;
-    let newLines = 0;
-
-    for (index += 1; index < lines.length; index += 1) {
-      const line = lines[index] ?? '';
-      if (line.startsWith('@@ ') || line.startsWith('diff --git ')) {
-        index -= 1;
-        break;
-      }
-      if (line === '' && index === lines.length - 1) break;
-      if (line.startsWith(' ')) {
-        oldLines += 1;
-        newLines += 1;
-      } else if (line.startsWith('-')) {
-        oldLines += 1;
-      } else if (line.startsWith('+')) {
-        newLines += 1;
-      } else if (!line.startsWith('\\')) {
-        throw new Error(`Invalid unified diff line ${index + 1}: ${line}`);
-      }
-    }
-
-    expect({ oldLines, newLines }).toEqual({
-      oldLines: expectedOld,
-      newLines: expectedNew,
-    });
-  }
-
-  expect(hunkCount).toBeGreaterThan(0);
+async function loadBundledFunctions<T>(file: string, names: string[], context: Record<string, unknown>) {
+  const bundle = (await readFile(path.join(dist, file), 'utf8')).replace(/\r\n/g, '\n');
+  const declarations = names.map((name) => {
+    const matches = [...bundle.matchAll(new RegExp(`^function ${name}\\([^\\n]*\\) \\{[\\s\\S]*?^\\}`, 'gm'))];
+    expect(matches, `${file}: ${name}`).toHaveLength(1);
+    return matches[0][0];
+  });
+  return runInNewContext(`${declarations.join('\n')}\n({ ${names.join(', ')} });`, context) as T;
 }
 
-describe('OpenClaw restart recovery patch', () => {
-  it('registers the pinned runtime patch through the pnpm workspace', async () => {
+describe('OpenClaw restart recovery contract', () => {
+  it('retires empty Windows brokers without a Unix census while retaining tracked cleanup and Unix uncertainty', async () => {
+    const cases = [
+      { platform: 'win32', retained: 'none', group: undefined, immediate: true },
+      { platform: 'win32', retained: 'owned', group: false, immediate: false },
+      { platform: 'win32', retained: 'starting', group: false, immediate: false },
+      { platform: 'win32', retained: 'resources', group: false, immediate: false },
+      { platform: 'linux', retained: 'none', group: undefined, immediate: false },
+      { platform: 'linux', retained: 'none', group: true, immediate: false },
+      { platform: 'linux', retained: 'none', group: false, immediate: true },
+    ];
+    for (const scenario of cases) {
+      const label = JSON.stringify(scenario);
+      const child = { pid: 456, connected: true, disconnect: vi.fn() };
+      const exit = vi.fn();
+      const kill = vi.fn(() => {
+        if (scenario.platform === 'win32') throw new Error('Unix process groups are unavailable');
+      });
+      const force = vi.fn();
+      const killProcessTree = vi.fn(() => ({ force }));
+      const census = vi.fn(() => scenario.group);
+      const timers: Array<() => void> = [];
+      const schedule = vi.fn((callback: () => void, _delay: number) => { timers.push(callback); });
+      const resolveGrant = vi.fn();
+      const clearReceiver = vi.fn();
+      const { shutdown } = await loadBundledFunctions<{ shutdown: () => void }>(
+        'process/spawn-broker/worker.js', ['shutdown'], {
+          process: { platform: scenario.platform, pid: 123, kill, exit },
+          stopping: false,
+          owned: new Map(scenario.retained === 'owned' ? [[1, { child, detached: false }]] : []),
+          starting: new Map(scenario.retained === 'starting' ? [[1, {}]] : []),
+          launchGrants: new Map([[1, { resolve: resolveGrant }]]),
+          resources: { size: scenario.retained === 'resources' ? 1 : 0, disconnect: vi.fn() },
+          sender: { close: vi.fn() }, receiver: { clear: clearReceiver },
+          GRACEFUL_CANCEL_TIMEOUT_MS: 5_000,
+          killProcessTree, hasLiveOwnedProcessGroupMembers: census, setTimeout: schedule,
+        },
+      );
+      shutdown();
+      shutdown();
+      expect(resolveGrant, label).toHaveBeenCalledExactlyOnceWith(false);
+      expect(clearReceiver, label).toHaveBeenCalledOnce();
+      if (scenario.platform === 'win32') expect(census, label).not.toHaveBeenCalled();
+      if (scenario.immediate) expect(schedule, label).not.toHaveBeenCalled();
+      else {
+        expect(exit, label).not.toHaveBeenCalled();
+        expect(schedule, label).toHaveBeenCalledExactlyOnceWith(expect.any(Function), 5_250);
+        timers[0]();
+      }
+      expect(exit, label).toHaveBeenCalledExactlyOnceWith(0);
+      expect(kill, label).toHaveBeenCalledWith(-123, 'SIGKILL');
+      if (scenario.retained === 'owned') {
+        expect(child.disconnect, label).toHaveBeenCalledOnce();
+        expect(killProcessTree, label).toHaveBeenCalledExactlyOnceWith(456, { detached: false, graceMs: 5_000 });
+        expect(force, label).toHaveBeenCalledOnce();
+      } else expect(killProcessTree, label).not.toHaveBeenCalled();
+    }
+  });
+
+  it('skips dead-owner birth probes without losing PID reuse, unknown-owner, or exit-race checks', async () => {
+    type Inspect = (params: {
+      payload: { pid: number; starttime?: number };
+      getProcessStartTime: (pid: number) => number | null;
+      isPidDefinitelyDead: (pid: number) => boolean;
+    }) => { reason: string; observedStarttime: number | null } | null;
+    const files = [
+      'stale-lock-file-BXwDVcTj.mjs',
+      'infra/sqlite-readonly-location.worker.js',
+      'state/openclaw-state-read.worker.js',
+      'state/openclaw-state-lease-heartbeat.worker.js',
+      'managed-handoff-runtime.mjs',
+      'package-update-activation-recovery.mjs',
+      'process/supervisor/service-child-group-anchor.js',
+      'native-hook-relay/sqlite-snapshot-staging-owner-Coa4BeBx.mjs',
+    ];
+    for (const file of files) {
+      const { inspectStaleLockOwner: inspect } = await loadBundledFunctions<{ inspectStaleLockOwner: Inspect }>(
+        file, ['readLockFileOwnerPayload', 'inspectStaleLockOwner'], { process: { platform: 'win32' } },
+      );
+      const payload = { pid: 12345, starttime: 100 };
+      const birth = vi.fn((): number | null => 100);
+      expect(inspect({ payload, getProcessStartTime: birth, isPidDefinitelyDead: () => true }), file)
+        .toMatchObject({ reason: 'owner-process-exited', observedStarttime: null });
+      expect(birth, file).not.toHaveBeenCalled();
+      expect(inspect({ payload, getProcessStartTime: birth, isPidDefinitelyDead: () => false }), file).toBeNull();
+      expect(inspect({ payload, getProcessStartTime: () => 101, isPidDefinitelyDead: () => false }), file)
+        .toMatchObject({ reason: 'owner-starttime-changed', observedStarttime: 101 });
+      // Permission failures map to "not definitely dead"; unavailable identity
+      // must never be interpreted as permission to reclaim a live/unknown owner.
+      expect(inspect({ payload, getProcessStartTime: () => null, isPidDefinitelyDead: () => false }), file).toBeNull();
+      let exited = false;
+      expect(inspect({
+        payload,
+        getProcessStartTime: () => { exited = true; return null; },
+        isPidDefinitelyDead: () => exited,
+      }), file).toMatchObject({ reason: 'owner-process-exited' });
+      birth.mockClear();
+      expect(inspect({ payload: { pid: payload.pid }, getProcessStartTime: birth, isPidDefinitelyDead: () => false }), file).toBeNull();
+      expect(birth, file).not.toHaveBeenCalled();
+    }
+  });
+
+  it('combines only safe machine webhook decisions while keeping explicit config authoritative', async () => {
+    const channels = ['telegram', 'feishu', 'msteams', 'nextcloud-talk'];
+    const complete = Object.fromEntries(channels.map((id) => [id, []]));
+    const partial = { telegram: [], feishu: [], 'nextcloud-talk': [] };
+    const readMachine = vi.fn<() => unknown>(() => complete);
+    const ambientEnv: Record<string, string> = {};
+    const { readHistoricalWebhookCompletion: read, shouldRunHistoricalWebhookMigration: shouldRun } = await loadBundledFunctions<{
+      readHistoricalWebhookCompletion: (config: Record<string, unknown>, env: object) => unknown;
+      shouldRunHistoricalWebhookMigration: (config: Record<string, unknown>, env: object) => boolean;
+    }>('legacy-webhook-pins-Bucp571j.mjs', ['webhookCompletionKey', 'readHistoricalWebhookCompletion', 'shouldRunHistoricalWebhookMigration'], {
+      HISTORICAL_WEBHOOK_CHANNELS: channels,
+      process: { env: ambientEnv },
+      resolveConfigPath: () => '/fixture/openclaw.json',
+      readConfigMachineState: readMachine,
+      asNullableRecord: (value: unknown) => value && typeof value === 'object' && !Array.isArray(value) ? value : null,
+    });
+    const config = (marker: unknown, configuredChannels: object = {}) => ({
+      channels: configuredChannels, meta: { migrations: { webhookListeners: marker } },
+    });
+    expect(read(config(partial), {})).toEqual(complete);
+    expect(shouldRun(config(partial), {})).toBe(false);
+    expect(read(config(partial, { msteams: { enabled: true } }), {})).toBe(partial);
+    expect(read(config(partial, { msteams: { enabled: false } }), {})).toBe(partial);
+    expect(read(config(partial), { MSTEAMS_APP_ID: '' })).toBe(partial);
+    expect(shouldRun(config(partial), { MSTEAMS_APP_ID: 'fixture' })).toBe(true);
+    ambientEnv.MSTEAMS_APP_PASSWORD = 'fixture';
+    expect(read(config(partial), {})).toBe(partial);
+    expect(shouldRun(config(partial), {})).toBe(true);
+    delete ambientEnv.MSTEAMS_APP_PASSWORD;
+    // A completed webhook item does not imply its other compatibility fields
+    // are current; the original startup normalizer must still inspect them.
+    expect(shouldRun(config(partial, { telegram: { includeGroupHistoryContext: 'none' } }), {})).toBe(true);
+    const legacyPlugin = {
+      ...config({ telegram: [], msteams: [], 'nextcloud-talk': [] }),
+      plugins: { entries: { feishu: { config: { enabled: true } } } },
+    };
+    expect(read(legacyPlugin, {})).toBe(legacyPlugin.meta.migrations.webhookListeners);
+    expect(shouldRun(legacyPlugin, {})).toBe(true);
+    const authored = { msteams: [['channels', 'msteams', 'legacyWebhook']] };
+    expect(read(config(authored), {})).toEqual({ ...complete, ...authored });
+    readMachine.mockReturnValue({ msteams: [['channels', 'msteams', 'legacyWebhook']] });
+    expect(read(config(partial), {})).toBe(partial);
+    readMachine.mockReturnValue(true);
+    expect(read(config(partial), {})).toBe(partial);
+    expect(read(config(undefined), {})).toBe(true);
+    readMachine.mockClear();
+    expect(read(config(true), {})).toBe(true);
+    expect(read(config(complete), {})).toBe(complete);
+    expect(shouldRun(config(true), {})).toBe(false);
+    expect(shouldRun(config(complete), {})).toBe(false);
+    expect(shouldRun(config(undefined), {})).toBe(true);
+    expect(shouldRun(config(null), {})).toBe(true);
+    expect(readMachine).not.toHaveBeenCalled();
+    readMachine.mockImplementation(() => { throw new Error('machine state unavailable'); });
+    expect(read(config(partial), {})).toBe(partial);
+    expect(() => read(config(undefined), {})).toThrow('machine state unavailable');
+  });
+
+  it('reuses completed webhook work without hiding restored callbacks or bypassing marker-only publication', async () => {
+    type Config = {
+      channels: Record<string, Record<string, unknown>>;
+      meta: { migrations: { webhookListeners: Record<string, string[][]> } };
+    };
+    type Mutation = { config: Config; changes: string[]; historicalWebhookAccountIds: undefined[] };
+    const channels = ['telegram', 'feishu', 'msteams', 'nextcloud-talk'];
+    const complete = Object.fromEntries(channels.map((id) => [id, []]));
+    const writeMachine = vi.fn();
+    const functions = await loadBundledFunctions<{
+      applyHistoricalWebhookPins: (mutation: Mutation, declaration: object, context: object) => Mutation;
+      recordUnwrittenWebhookCompletion: (snapshot: { sourceConfig: Config }, mutation: Mutation, env: object) => boolean;
+    }>('legacy-webhook-pins-Bucp571j.mjs', [
+      'webhookCompletionKey', 'readHistoricalWebhookCompletion',
+      'recordUnwrittenWebhookCompletion', 'applyHistoricalWebhookPins',
+    ], {
+      HISTORICAL_WEBHOOK_CHANNELS: channels,
+      process: { env: {} },
+      resolveConfigPath: () => '/fixture/openclaw.json',
+      readConfigMachineState: () => complete,
+      writeConfigMachineState: writeMachine,
+      asNullableRecord: (value: unknown) => value && typeof value === 'object' && !Array.isArray(value) ? value : null,
+      resolveIsConfigReadOnly: () => false,
+      cloneConfigWithResolutionFacts: structuredClone,
+      isDeepStrictEqual,
+      resolveUpdateRehearsalRoot: () => undefined,
+      getConfigValueAtPath: (value: Record<string, unknown>, fields: string[]) => fields.reduce<unknown>(
+        (current, field) => (current as Record<string, unknown> | undefined)?.[field], value,
+      ),
+      setConfigValueAtPath: (value: Record<string, unknown>, fields: string[], item: unknown) => {
+        let current = value;
+        for (const field of fields.slice(0, -1)) current = (current[field] ??= {}) as Record<string, unknown>;
+        current[fields.at(-1)!] = item;
+      },
+    });
+    const config: Config = { channels: {}, meta: { migrations: { webhookListeners: {
+      telegram: [], feishu: [], 'nextcloud-talk': [],
+    } } } };
+    const mutation: Mutation = { config, changes: [], historicalWebhookAccountIds: [undefined] };
+    const declaration = { channelId: 'msteams', path: '/api/messages', port: 3978 };
+    const context = { env: {}, startup: true };
+    expect(functions.applyHistoricalWebhookPins(mutation, declaration, context)).toBe(mutation);
+    const envRestored = functions.applyHistoricalWebhookPins(mutation, declaration, {
+      env: { MSTEAMS_APP_ID: 'fixture' }, startup: true,
+    });
+    expect(envRestored.config.channels.msteams.legacyWebhook).toEqual({ path: '/api/messages', port: 3978 });
+    const restored = { ...mutation, config: { ...config, channels: { msteams: {} } } };
+    const migrated = functions.applyHistoricalWebhookPins(restored, declaration, context);
+    expect(migrated.config.channels.msteams.legacyWebhook).toEqual({ path: '/api/messages', port: 3978 });
+    expect(restored.config.channels.msteams).toEqual({});
+    expect(functions.recordUnwrittenWebhookCompletion({ sourceConfig: restored.config }, migrated, {})).toBe(false);
+    expect(writeMachine).not.toHaveBeenCalled();
+    const authoredCallback = { path: '/authored-callback', port: 5000 };
+    const authored = { ...mutation, config: { ...config, channels: { msteams: { legacyWebhook: authoredCallback } } } };
+    expect(functions.applyHistoricalWebhookPins(authored, declaration, context).config.channels.msteams.legacyWebhook)
+      .toEqual(authoredCallback);
+    const markerOnly = { ...mutation, config: { ...config, meta: { migrations: { webhookListeners: complete } } } };
+    expect(functions.recordUnwrittenWebhookCompletion({ sourceConfig: config }, markerOnly, {})).toBe(true);
+    expect(writeMachine).toHaveBeenCalledWith('webhookListeners:/fixture/openclaw.json', complete, { env: {} });
+  });
+
+  it('registers the pinned 2026.10.5 runtime patch through the pnpm workspace', async () => {
     const workspace = await readFile(path.join(root, 'pnpm-workspace.yaml'), 'utf8');
     const lockfile = await readFile(path.join(root, 'pnpm-lock.yaml'), 'utf8');
-    const patch = await readFile(path.join(root, 'patches/openclaw@2026.7.1-2.patch'));
+    const patch = await readFile(path.join(root, PATCH_PATH));
     const patchHash = createHash('sha256').update(patch).digest('hex');
 
-    expect(workspace).toContain(
-      'openclaw@2026.7.1-2: patches/openclaw@2026.7.1-2.patch',
-    );
+    expect(workspace).toContain(`openclaw@${OPENCLAW_VERSION}: ${PATCH_PATH}`);
+    expect(lockfile).toContain(`path: ${PATCH_PATH}`);
     expect(lockfile).toContain(`hash: ${patchHash}`);
-    expect(lockfile).toContain('path: patches/openclaw@2026.7.1-2.patch');
   });
 
-  it('carries trusted recovery lineage through Gateway events into ACP', async () => {
-    const patch = await readFile(
-      path.join(root, 'patches/openclaw@2026.7.1-2.patch'),
-      'utf8',
-    );
+  it('relies on the upstream 2026.10.5 restart-recovery lineage and admission path', async () => {
+    // Upstream 2026.10.5 ships the recovery work ClawX previously backported:
+    // startup orphan marking, interrupted-run lineage, and recovery admission
+    // provenance. The ClawX patch must not duplicate it.
+    const [preflight, lifecycle, marking] = await Promise.all([
+      readFile(path.join(dist, 'agent-request-preflight-f94DZoO_.mjs'), 'utf8'),
+      readFile(path.join(dist, 'main-session-restart-recovery-Xw9O4XVI.mjs'), 'utf8'),
+      readFile(path.join(dist, 'main-session-restart-recovery-marking-zFjz6Dha.mjs'), 'utf8'),
+    ]);
 
-    expect(patch).toContain('internalRestartRecoverySourceRunId');
-    expect(patch).toContain('canUseInternalRuntimeHandoff && inputProvenance?.kind');
-    expect(patch).toContain('resumedFromRunId');
-    expect(patch).toContain('pending.sendAccepted = true');
-    expect(patch).toContain('pending.disconnectContext = void 0');
-    expect(patch).toContain('OPENCLAW_ACP_ACCEPTED_PROMPT_RECOVERY_GRACE_MS');
-    expect(patch).toContain('ACP_GATEWAY_ACCEPTED_PROMPT_RECOVERY_GRACE_MS = Number.parseInt(process.env.OPENCLAW_ACP_ACCEPTED_PROMPT_RECOVERY_GRACE_MS ?? "", 10) || 6e5');
-    expect(patch).not.toContain('ACP_GATEWAY_ACCEPTED_PROMPT_RECOVERY_GRACE_MS = Math.max');
-    expect(patch).not.toContain('ACP_GATEWAY_ACCEPTED_PROMPT_RECOVERY_GRACE_MS = 6e4');
-    expect(patch).toContain('deadline === "accepted-recovery"');
-    expect(patch).toContain('const waitedRunId = pending.idempotencyKey');
-    expect(patch).toContain('status: "failed"');
-    expect(patch).toContain('getAgentRunContext(requestRunId)?.resumedFromRunId');
-    expect(patch).toContain('runId: params.runId');
-    expect(patch).toContain('runId: options?.runId');
-    expect(patch).toContain('execute: async (toolCallId, args, signal, onUpdate)');
-    expect(patch).toContain('runId: defaults?.runId');
-    expect(patch).toContain('runId: Type.Optional(Type.Union([Type.String(), Type.Null()]))');
-    expect(patch).toContain('toolCallId: params.toolCallId');
-    expect(patch).toContain('restart recovery must use a distinct run id');
-    expect(patch).toContain('const sourceRunId = normalizeOptionalString(entry.lifecycleRunId)');
-    expect(patch).toContain('entry.restartRecoveryDeliverySourceRunId = sourceRunId');
-    expect(patch).not.toContain('normalizeOptionalString(entry.restartRecoveryDeliverySourceRunId) ?? normalizeOptionalString(entry.lifecycleRunId)');
-    expect(patch).toContain('normalizeOptionalString(params.entry.restartRecoveryDeliverySourceRunId)');
-    expect(patch).toContain('phase === "start" ? { lifecycleRunId: runId }');
-    expect(patch).not.toContain('lifecycleRunId: void 0');
-    expect(patch).toContain('lifecycleRunId: _lifecycleRunId');
-    expect(patch).toContain('sessionKey: pending.sessionKey');
-    expect(patch).toContain('normalizeOptionalString(entry?.lifecycleRunId) !== runId');
-    expect(patch).toContain('sessionKey?: string | undefined');
-    expect(patch).toContain('restartRecoveryDeliverySourceRunId?: string');
-    expect(patch).toContain('this.ensureSessionMessageSubscription(sessionKey, entry)');
-    expect(patch).toContain('this.gateway.request("sessions.messages.subscribe", { key: sessionKey })');
-    expect(patch).not.toContain('this.gateway.request("sessions.subscribe", {})');
-    expect(patch).toContain('evt.event === "session.tool"');
-    expect(patch).not.toContain('diff --git a/scripts/README.md');
-    assertValidUnifiedDiffHunks(patch);
+    expect(preflight).toContain('isMainSessionRestartRecoveryInputProvenance');
+    expect(preflight).toContain('internal execution identity recovery fields are reserved for main-session restart recovery');
+    expect(lifecycle).toContain('restartRecoveryDeliverySourceRunId = sourceRunId');
+    expect(lifecycle).toContain('function readInterruptedRunId');
+    expect(lifecycle).toContain('internalExecutionIdentityRecoveryAttempt');
+    expect(lifecycle).toContain('sourceTool: MAIN_SESSION_RESTART_RECOVERY_SOURCE_TOOL');
+    expect(marking).toContain('async function markStartupOrphanedMainSessionsForRecovery');
+    expect(marking).toContain('entry.lifecycleRunId');
+
+    const patch = await readFile(path.join(root, PATCH_PATH), 'utf8');
+    expect(patch).not.toContain('internalRestartRecoverySourceRunId');
+    expect(patch).not.toContain('resolvePersistedAgentWaitSnapshot');
   });
 
-  it('settles agent.wait from the terminal session owned by the requested run after restart', async () => {
-    const stateDir = await mkdtemp(path.join(tmpdir(), 'clawx-restart-settlement-'));
-    const sessionsDir = path.join(stateDir, 'agents', 'main', 'sessions');
-    const storePath = path.join(sessionsDir, 'sessions.json');
-    const sessionKey = 'agent:main:restart-settlement';
-    const timeoutSessionKey = 'agent:main:restart-timeout';
-    const killedSessionKey = 'agent:main:restart-killed';
-    const doneSessionKey = 'agent:main:restart-done';
-    const wrongSessionKey = 'agent:main:wrong-restart-owner';
-    const recoveryRunId = 'bcd8a184-7232-4fae-9015-5b5e4fbfc07e';
-    const timeoutRunId = '72dd001e-4111-4fac-8b08-8d94d01926c0';
-    const killedRunId = '725d9946-18b8-44a2-a665-e1c7ce40536a';
-    const doneRunId = '8a9b2bd5-dd42-4f47-9919-6c02a5306268';
-
-    await mkdir(sessionsDir, { recursive: true });
-    await writeFile(storePath, JSON.stringify({
-      [sessionKey]: {
-        sessionId: 'session-restart-settlement',
-        status: 'failed',
-        abortedLastRun: true,
-        updatedAt: 1,
-        lifecycleRunId: recoveryRunId,
-        restartRecoveryDeliverySourceRunId: recoveryRunId,
-      },
-      [timeoutSessionKey]: {
-        sessionId: 'session-restart-timeout',
-        status: 'timeout',
-        abortedLastRun: true,
-        updatedAt: 2,
-        lifecycleRunId: timeoutRunId,
-      },
-      [killedSessionKey]: {
-        sessionId: 'session-restart-killed',
-        status: 'killed',
-        abortedLastRun: true,
-        updatedAt: 3,
-        lifecycleRunId: killedRunId,
-      },
-      [doneSessionKey]: {
-        sessionId: 'session-restart-done',
-        status: 'done',
-        abortedLastRun: false,
-        updatedAt: 4,
-        lifecycleRunId: doneRunId,
-      },
-      [wrongSessionKey]: {
-        sessionId: 'session-wrong-restart-owner',
-        status: 'done',
-        abortedLastRun: false,
-        updatedAt: 5,
-        lifecycleRunId: 'different-run',
-      },
-    }));
-
-    try {
-      const runtimePath = path.join(
-        root,
-        'node_modules/openclaw/dist/agent-D6kiZtPt.js',
-      );
-      const childScript = `
-        import { pathToFileURL } from 'node:url';
-        const runtime = await import(pathToFileURL(${JSON.stringify(runtimePath)}).href);
-        const handlers = runtime.agentHandlers ?? runtime.a;
-        const callWait = (runId, sessionKey) => new Promise((resolve) => {
-          handlers['agent.wait']({
-            params: { runId, sessionKey, timeoutMs: 0 },
-            context: { chatAbortControllers: new Map(), dedupe: new Map() },
-            respond: (ok, payload, error) => resolve({ ok, payload, error }),
-          });
-        });
-        const matching = await callWait(${JSON.stringify(recoveryRunId)}, ${JSON.stringify(sessionKey)});
-        const timeout = await callWait(${JSON.stringify(timeoutRunId)}, ${JSON.stringify(timeoutSessionKey)});
-        const killed = await callWait(${JSON.stringify(killedRunId)}, ${JSON.stringify(killedSessionKey)});
-        const done = await callWait(${JSON.stringify(doneRunId)}, ${JSON.stringify(doneSessionKey)});
-        const unrelatedRun = await callWait('unrelated-run', ${JSON.stringify(sessionKey)});
-        const unrelatedSession = await callWait(${JSON.stringify(recoveryRunId)}, ${JSON.stringify(wrongSessionKey)});
-        process.stdout.write(JSON.stringify({ matching, timeout, killed, done, unrelatedRun, unrelatedSession }));
-      `;
-      const { stdout } = await execFileAsync(process.execPath, ['--input-type=module', '--eval', childScript], {
-        env: { ...process.env, OPENCLAW_STATE_DIR: stateDir },
-      });
-      const result = JSON.parse(stdout) as {
-        matching: { ok: boolean; payload?: { runId?: string; status?: string } };
-        timeout: { ok: boolean; payload?: { runId?: string; status?: string } };
-        killed: { ok: boolean; payload?: { runId?: string; status?: string } };
-        done: { ok: boolean; payload?: { runId?: string; status?: string } };
-        unrelatedRun: { ok: boolean; payload?: { runId?: string; status?: string } };
-        unrelatedSession: { ok: boolean; payload?: { runId?: string; status?: string } };
-      };
-      expect(result.matching).toMatchObject({
-        ok: true,
-        payload: { runId: recoveryRunId, status: 'error' },
-      });
-      expect(result.timeout).toMatchObject({
-        ok: true,
-        payload: { runId: timeoutRunId, status: 'error' },
-      });
-      expect(result.killed).toMatchObject({
-        ok: true,
-        payload: { runId: killedRunId, status: 'error' },
-      });
-      expect(result.done).toMatchObject({
-        ok: true,
-        payload: { runId: doneRunId, status: 'ok' },
-      });
-      expect(result.unrelatedRun).toMatchObject({
-        ok: true,
-        payload: { runId: 'unrelated-run', status: 'timeout' },
-      });
-      expect(result.unrelatedSession).toMatchObject({
-        ok: true,
-        payload: { runId: recoveryRunId, status: 'timeout' },
-      });
-    } finally {
-      await rm(stateDir, { recursive: true, force: true });
-    }
-  }, 20_000);
-
-  it('links each recovery run to its directly interrupted predecessor', async () => {
-    const stateDir = await mkdtemp(path.join(tmpdir(), 'clawx-direct-restart-lineage-'));
-    const sessionsDir = path.join(stateDir, 'agents', 'main', 'sessions');
-    const storePath = path.join(sessionsDir, 'sessions.json');
-    const sessionKey = 'agent:main:direct-restart-lineage';
-    const originalRunId = '3cb9d54f-e999-458b-9bdc-8955e428e511';
-    const recoveryRunId = 'bcd8a184-7232-4fae-9015-5b5e4fbfc07e';
-
-    await mkdir(sessionsDir, { recursive: true });
-    await writeFile(storePath, JSON.stringify({
-      [sessionKey]: {
-        sessionId: 'session-direct-restart-lineage',
-        status: 'running',
-        abortedLastRun: false,
-        updatedAt: 1,
-        lifecycleRunId: recoveryRunId,
-        restartRecoveryDeliverySourceRunId: originalRunId,
-        restartRecoveryRuns: [{
-          runId: originalRunId,
-          lifecycleGeneration: 'previous-gateway',
-        }],
-      },
-    }));
-
-    try {
-      const runtimePath = path.join(
-        root,
-        'node_modules/openclaw/dist/main-session-restart-recovery-Ce8fihTV.js',
-      );
-      const runtime = await import(pathToFileURL(runtimePath).href) as {
-        r: (input: {
-          stateDir: string;
-          activeSessionIds: string[];
-          activeSessionKeys: string[];
-          updatedBeforeMs: number;
-        }) => Promise<{ marked: number }>;
-      };
-
-      await expect(runtime.r({
-        stateDir,
-        activeSessionIds: [],
-        activeSessionKeys: [],
-        updatedBeforeMs: Date.now(),
-      })).resolves.toMatchObject({ marked: 1 });
-
-      const store = JSON.parse(await readFile(storePath, 'utf8')) as Record<string, {
-        restartRecoveryDeliverySourceRunId?: string;
-        restartRecoveryRuns?: unknown[];
-      }>;
-      expect(store[sessionKey]?.restartRecoveryDeliverySourceRunId).toBe(recoveryRunId);
-      expect(store[sessionKey]?.restartRecoveryRuns).toBeUndefined();
-    } finally {
-      await rm(stateDir, { recursive: true, force: true });
-    }
-  });
-
-  it('prefers a guarded restart marker over older persisted recovery lineage', async () => {
-    const bundle = await readFile(
-      path.join(root, 'node_modules/openclaw/dist/main-session-restart-recovery-Ce8fihTV.js'),
-      'utf8',
-    );
-    const start = bundle.indexOf('async function resumeMainSession(params)');
-    const end = bundle.indexOf('\nasync function markRestartAbortedMainSessionsFromLocks', start);
-    expect(start).toBeGreaterThanOrEqual(0);
-    expect(end).toBeGreaterThan(start);
-
-    let request: { params?: { internalRestartRecoverySourceRunId?: string } } | undefined;
-    const context = {
-      sanitizePendingFinalDeliveryText: (value: string) => value,
-      normalizeOptionalString: (value: unknown) => (
-        typeof value === 'string' && value.trim() ? value.trim() : undefined
-      ),
-      buildResumeMessage: () => 'resume',
-      resolveRestartRecoveryDeliveryContext: () => undefined,
-      crypto: { randomUUID: () => 'next-recovery-run' },
-      callGateway: async (value: { params?: { internalRestartRecoverySourceRunId?: string } }) => {
-        request = value;
-        return { runId: 'next-recovery-run' };
-      },
-      applyRestartRecoveryLifecycle: async () => undefined,
-      log: { info: () => undefined, warn: () => undefined },
-      resumeMainSession: undefined as ((params: Record<string, unknown>) => Promise<boolean>) | undefined,
-    };
-    runInNewContext(
-      `${bundle.slice(start, end)}\nglobalThis.resumeMainSession = resumeMainSession;`,
-      context,
-    );
-
-    await expect(context.resumeMainSession?.({
-      entry: {
-        sessionId: 'session-guarded-restart-lineage',
-        restartRecoveryDeliverySourceRunId: 'original-run',
-        restartRecoveryRuns: [{
-          runId: 'current-recovery-run',
-          lifecycleGeneration: 'previous-gateway',
-        }],
-      },
-      storePath: '/tmp/sessions.json',
-      sessionKey: 'agent:main:guarded-restart-lineage',
-    })).resolves.toBe(true);
-    expect(request?.params?.internalRestartRecoverySourceRunId).toBe('current-recovery-run');
-  });
-
-  it('preserves recovered tool boundaries in live delivery and transcript replay', async () => {
-    const patch = await readFile(
-      path.join(root, 'patches/openclaw@2026.7.1-2.patch'),
-      'utf8',
-    );
-
-    expect(patch).toContain('const resumedFromRunId = runContext?.resumedFromRunId');
-    expect(patch).toContain('...sessionMessageSubscribers.get(resolveSessionDeliveryKey(sessionKey, sessionAgentId))');
-    expect(patch).toContain('function extractToolResultReplay(message)');
-    expect(patch).toContain('extractToolCallContent(message.content)');
-    expect(patch).toContain('typedBlock.type === "toolCall"');
-    expect(patch).toContain('sessionUpdate: "tool_call_update"');
-    expect(patch).toContain('chunk.sessionUpdate === "user_message_chunk"');
-    expect(patch).toContain('async handleGatewayReconnect()');
-    expect(patch).toContain('session message subscription recovery failed');
-    expect(patch).toContain('if (disconnectContext) await this.reconcilePendingPrompts');
-  });
-
-  it('retries the final ACP usage snapshot when a new session reports zero tokens', async () => {
-    const patch = await readFile(
-      path.join(root, 'patches/openclaw@2026.7.1-2.patch'),
-      'utf8',
-    );
-
-    expect(patch).toContain('!sessionSnapshot.usage || sessionSnapshot.usage.used === 0');
-    expect(patch).toContain('setTimeout(resolve, 1e3)');
-  });
-
-  it('keeps a complete ACP ledger authoritative during session load', async () => {
-    const bundle = await readFile(
-      path.join(root, 'node_modules/openclaw/dist/acp-cli-BXc5GttU.js'),
-      'utf8',
-    );
-
-    expect(bundle).toContain(
-      'ledgerReplay.complete ? Promise.resolve([]) : this.getSessionTranscript',
-    );
-    expect(bundle).toContain(
-      'if (ledgerReplay.complete) await this.replayLedgerSession(session.sessionId, ledgerReplay);',
-    );
-    expect(bundle).not.toContain('selectReplaySourceForIntegrity');
-    expect(bundle).not.toContain('session transcript integrity fallback');
-  });
-
-  it('executes the pinned transcript fallback as ordered native ACP updates', async () => {
-    const bundle = await readFile(
-      path.join(root, 'node_modules/openclaw/dist/acp-cli-BXc5GttU.js'),
-      'utf8',
-    );
-    const start = bundle.indexOf('function extractToolResultReplay(message)');
-    const end = bundle.indexOf('//#endregion', start);
-    expect(start).toBeGreaterThanOrEqual(0);
-    expect(end).toBeGreaterThan(start);
+  it('executes the ClawX transcript fallback as ordered native ACP replay updates', async () => {
+    const bundle = await readFile(path.join(dist, 'server-DkfYuk25.mjs'), 'utf8');
+    const replayStart = bundle.indexOf('function extractToolResultReplay(message)');
+    const end = bundle.indexOf('//#endregion', replayStart);
+    expect(replayStart).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(replayStart);
 
     const context = {
       normalizeOptionalString: (value: unknown) => (
@@ -405,10 +305,11 @@ describe('OpenClaw restart recovery patch', () => {
           ? [{ type: 'content', content: { type: 'text', text: value } }]
           : undefined
       ),
+      timestampMsToIsoString: () => undefined,
       extractReplayChunks: undefined as ((message: Record<string, unknown>) => unknown[]) | undefined,
     };
     runInNewContext(
-      `${bundle.slice(start, end)}\nglobalThis.extractReplayChunks = extractReplayChunks;`,
+      `${bundle.slice(replayStart, end)}\nglobalThis.extractReplayChunks = extractReplayChunks;`,
       context,
     );
     const extractReplayChunks = context.extractReplayChunks;
@@ -434,6 +335,7 @@ describe('OpenClaw restart recovery patch', () => {
       },
       { sessionUpdate: 'agent_message_chunk', text: 'After tool' },
     ]);
+
     expect(extractReplayChunks?.({
       role: 'toolResult',
       toolCallId: 'call-1',
@@ -448,52 +350,123 @@ describe('OpenClaw restart recovery patch', () => {
         locations: undefined,
       },
     ]);
+
+    expect(extractReplayChunks?.({
+      role: 'assistant',
+      timestamp: 1_700_000_000_000,
+      __openclaw: { kind: 'compaction', id: 'cmp-replay' },
+      content: [],
+    })).toEqual([
+      {
+        sessionUpdate: 'session_info_update',
+        _meta: {
+          'openclaw.ai/compaction': {
+            version: 1,
+            compactionId: 'cmp-replay',
+            status: 'completed',
+            source: 'transcript',
+          },
+        },
+      },
+    ]);
   });
 
-  it('passes execution identity through the pinned approval request builder', async () => {
-    const bundle = await readFile(
-      path.join(root, 'node_modules/openclaw/dist/bash-tools-DHyGpWCr.js'),
-      'utf8',
-    );
-    const start = bundle.indexOf('function buildExecApprovalRequestToolParams(params)');
-    const end = bundle.indexOf('\nfunction parseDecision', start);
-    expect(start).toBeGreaterThanOrEqual(0);
-    expect(end).toBeGreaterThan(start);
-
-    const context = {
-      DEFAULT_APPROVAL_TIMEOUT_MS: 60_000,
-      buildExecApprovalRequestToolParams: undefined as ((params: Record<string, unknown>) => Record<string, unknown>) | undefined,
+  it('uses native admitted routing for live and completed recovery wait targets', async () => {
+    const fixtureParent = await realpath(tmpdir());
+    const fixturePrefix = 'clawx-restart-recovery-';
+    const fixtureRoot = await mkdtemp(path.join(fixtureParent, fixturePrefix));
+    const cleanupFixture = async () => {
+      const resolvedFixture = await realpath(fixtureRoot);
+      if (path.dirname(resolvedFixture) !== fixtureParent || !path.basename(resolvedFixture).startsWith(fixturePrefix)) {
+        throw new Error('Refusing to remove a fixture outside its temporary parent');
+      }
+      await rm(resolvedFixture, { recursive: true, force: true });
     };
-    runInNewContext(
-      `${bundle.slice(start, end)}\nglobalThis.buildExecApprovalRequestToolParams = buildExecApprovalRequestToolParams;`,
-      context,
-    );
-
-    expect(context.buildExecApprovalRequestToolParams?.({
-      id: 'approval-1',
-      sessionId: 'session-1',
-      runId: 'recovery-run',
-      toolCallId: 'tool-1',
-    })).toMatchObject({
-      id: 'approval-1',
-      sessionId: 'session-1',
-      runId: 'recovery-run',
-      toolCallId: 'tool-1',
-      timeoutMs: 60_000,
-      twoPhase: true,
-    });
+    try {
+      const fixtureHome = path.join(fixtureRoot, 'home');
+      const fixtureState = path.join(fixtureHome, '.openclaw');
+      const fixtureWorkspace = path.join(fixtureRoot, 'workspace');
+      const fixtureRoaming = path.join(fixtureRoot, 'roaming');
+      const fixtureLocal = path.join(fixtureRoot, 'local');
+      await Promise.all([fixtureState, fixtureWorkspace, fixtureRoaming, fixtureLocal].map(
+        (directory) => mkdir(directory, { recursive: true }),
+      ));
+      const env = {
+        ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(OPENCLAW_|HOME$|USERPROFILE$|APPDATA$|LOCALAPPDATA$)/i.test(key))),
+        HOME: fixtureHome,
+        USERPROFILE: fixtureHome,
+        APPDATA: fixtureRoaming,
+        LOCALAPPDATA: fixtureLocal,
+        OPENCLAW_HOME: fixtureHome,
+        OPENCLAW_STATE_DIR: fixtureState,
+        OPENCLAW_CONFIG_PATH: path.join(fixtureState, 'openclaw.json'),
+      };
+      const { stdout } = await execFileAsync(process.execPath, ['--input-type=module', '-e', `
+      import * as registry from './node_modules/openclaw/dist/agent-run-registry-zReSioYT.mjs';
+      import * as events from './node_modules/openclaw/dist/agent-events-CCeMHYh0.mjs';
+      import * as jobs from './node_modules/openclaw/dist/agent-job-DleplIFW.mjs';
+      import { n as prepareWait } from './node_modules/openclaw/dist/session-request-targets-BAGtAj-T.mjs';
+      const key = 'agent:main:restart-native-fixture';
+      const generation = registry.f();
+      await jobs.a({ runId: 'initialize-observer', timeoutMs: 0 });
+      const owner = registry.i('recovered', { sessionKey: key, sessionId: 'session', lifecycleGeneration: generation, resumedFromRunId: 'original' }, { trackOwner: true, ownsContext: true });
+      registry.i('unrelated', { sessionKey: key, sessionId: 'session', lifecycleGeneration: generation });
+      const live = jobs.resolveAgentRecoveryWaitTarget('original', key);
+      const wrongSession = jobs.resolveAgentRecoveryWaitTarget('original', 'agent:other:session');
+      const seen = [];
+      events.m(event => seen.push(event));
+      events.a({ runId: 'unrelated', resumedFromRunId: 'forged', stream: 'lifecycle', data: { phase: 'start', startedAt: Date.now() } });
+      events.a({ runId: 'recovered', stream: 'lifecycle', data: { phase: 'end', startedAt: Date.now() - 1, endedAt: Date.now(), status: 'ok', stopReason: 'stop', terminalReply: { disposition: 'empty' } } });
+      registry.o('recovered');
+      registry.C('recovered', owner);
+      const completed = jobs.resolveAgentRecoveryWaitTarget('original', key);
+      const wait = prepareWait({ chatAbortControllers: new Map(), chatQueuedTurns: new Map(), dedupe: new Map(), getRuntimeConfig: () => ({ agents: { defaults: { workspace: ${JSON.stringify(fixtureWorkspace)} } } }) }, { runId: 'original', sessionKey: key, timeoutMs: 0 });
+      const observation = await wait.wait();
+      console.log(JSON.stringify({ live, wrongSession, completed, forged: seen.find(e => e.runId === 'unrelated').resumedFromRunId ?? null, session: wait.session, result: observation.result }));
+      `], { cwd: root, env, timeout: 20_000 });
+      const result = JSON.parse(stdout.trim().split('\n').at(-1)!);
+      expect(result).toMatchObject({
+        live: 'recovered', completed: 'recovered', wrongSession: 'original', forged: null,
+        session: { sessionKey: 'agent:main:restart-native-fixture', sessionId: 'session' },
+        result: { runId: 'recovered', resumedFromRunId: 'original', status: 'ok' },
+      });
+    } finally {
+      await cleanupFixture();
+    }
   });
 
-  it('keeps all patched runtime chunks syntactically valid', async () => {
-    for (const file of [
-      'agent-tools-BD8WL7ny.js',
-      'bash-tools-DHyGpWCr.js',
-      'exec-approval-DRfKKxhu.js',
-      'schema-BuOFpc7K.js',
+  it('requires the exact durable terminal owner before using a post-restart receipt', async () => {
+    const bundle = await readFile(path.join(dist, 'session-request-targets-BAGtAj-T.mjs'), 'utf8');
+    const start = bundle.indexOf('function readAcpTerminalOwner(');
+    const end = bundle.indexOf('function prepareAgentWaitForTurn(', start);
+    let entry: Record<string, unknown> = { sessionId: 'native-session', lastRunId: 'finished-run', status: 'done', endedAt: 100 };
+    const sandbox = {
+      resolveSessionSharingTarget: () => ({ entry, storeKey: 'agent:main:fixture', agentId: 'main' }),
+      getAgentEventLifecycleGeneration: () => 'current-generation',
+      read: undefined as undefined | ((context: unknown, run: string, key: string) => unknown),
+    };
+    runInNewContext(`${bundle.slice(start, end)}\nglobalThis.read = readAcpTerminalOwner;`, sandbox);
+    const context = { getRuntimeConfig: () => ({}) };
+    expect(sandbox.read?.(context, 'finished-run', 'agent:main:fixture')).toMatchObject({
+      status: 'ok', terminalReceipt: { runId: 'finished-run', sessionId: 'native-session' },
+    });
+    for (const patch of [
+      { lastRunId: 'later-run' }, { lifecycleRunId: 'active-run' },
+      { status: 'interrupted' }, { endedAt: Number.NaN },
     ]) {
+      entry = { sessionId: 'native-session', lastRunId: 'finished-run', status: 'done', endedAt: 100, ...patch };
+      expect(sandbox.read?.(context, 'finished-run', 'agent:main:fixture')).toBeUndefined();
+    }
+  });
+
+  it('keeps every patched runtime chunk syntactically valid', async () => {
+    const patch = await readFile(path.join(root, PATCH_PATH), 'utf8');
+    const files = [...patch.matchAll(/^diff --git a\/(dist\/[^ ]+) b\//gm)].map((match) => match[1]);
+    expect(files.length).toBeGreaterThan(0);
+    for (const file of files) {
       await expect(execFileAsync(process.execPath, [
         '--check',
-        path.join(root, 'node_modules/openclaw/dist', file),
+        path.join(root, 'node_modules/openclaw', file),
       ])).resolves.toMatchObject({ stderr: '' });
     }
   });

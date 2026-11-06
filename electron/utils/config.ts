@@ -1,5 +1,3 @@
-import { getDevelopmentProfile } from './development-profile';
-
 /**
  * Application Configuration
  * Centralized configuration constants and helpers
@@ -19,7 +17,7 @@ export const PORTS = {
   CLAWX_HOST_API: 13210,
   
   /** OpenClaw Gateway port */
-  OPENCLAW_GATEWAY: getDevelopmentProfile()?.gatewayPort ?? 18789,
+  OPENCLAW_GATEWAY: 18789,
 } as const;
 
 /**

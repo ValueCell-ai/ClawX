@@ -322,8 +322,3 @@ describe('dingtalk dws helpers', () => {
     expect(getDingTalkDwsStatusNote()).toBe(DINGTALK_DWS_AUTH_REQUIRED);
   });
 });
-
-vi.mock('@electron/utils/paths', async (importOriginal) => ({
-  ...await importOriginal<typeof import('@electron/utils/paths')>(),
-  getOpenClawConfigDir: () => '/home/test/.openclaw',
-}));

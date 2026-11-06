@@ -4,6 +4,17 @@ import type { ElectronApplication, Page } from '@playwright/test';
 import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
 
 const TRANSCRIBED_TEXT = 'voice dictation result';
+const SESSION_KEY = 'agent:main:voice-e2e';
+const CHAT_MOCKS = {
+  gatewayStatus: { state: 'running', gatewayReady: true, port: 18789, pid: 12345 },
+  gatewayRpc: {
+    '["sessions.list",{}]': {
+      success: true,
+      result: { sessions: [{ key: SESSION_KEY, displayName: 'Voice fixture' }] },
+    },
+  },
+  emptyAcpSessions: [SESSION_KEY],
+};
 
 function stableStringify(value: unknown): string {
   if (value == null || typeof value !== 'object') return JSON.stringify(value);
@@ -95,7 +106,7 @@ test.describe('ClawX voice dictation', () => {
       const app = await launchElectronApp({ skipSetup: true });
       try {
         await installIpcMocks(app, {
-          gatewayStatus: { state: 'running', port: 18789, pid: 12345 },
+          ...CHAT_MOCKS,
           hostApi: { [stableStringify(['asr', 'getConfig', null])]: { configured: true, config: null, hasApiKey: true } },
         });
         await installAsrTranscribeMock(app, TRANSCRIBED_TEXT);
@@ -166,7 +177,7 @@ test.describe('ClawX voice dictation', () => {
 
     try {
       await installIpcMocks(app, {
-        gatewayStatus: { state: 'running', port: 18789, pid: 12345 },
+        ...CHAT_MOCKS,
         hostApi: {
           [stableStringify(['asr', 'getConfig', null])]: {
             configured: true,
@@ -209,7 +220,7 @@ test.describe('ClawX voice dictation', () => {
 
     try {
       await installIpcMocks(app, {
-        gatewayStatus: { state: 'running', port: 18789, pid: 12345 },
+        ...CHAT_MOCKS,
         hostApi: {
           [stableStringify(['asr', 'getConfig', null])]: {
             configured: false,

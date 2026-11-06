@@ -3,6 +3,7 @@
     "composite": true,
     "target": "ES2022",
     "lib": ["ES2022"],
+    "types": ["node"],
     "module": "ESNext",
     "skipLibCheck": true,
 
@@ -28,5 +29,5 @@
       "@shared/*": ["shared/*"]
     }
   },
-  "include": ["electron", "shared", "shared/**/*.json", "vite.config.ts"]
+  "include": ["electron", "shared", "shared/**/*.json", "vite.config.ts", "scripts/vite-dev-watch.ts"]
 }

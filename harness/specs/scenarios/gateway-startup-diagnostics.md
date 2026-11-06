@@ -13,6 +13,7 @@ requiredProfiles:
 requiredRules:
   - gateway-readiness-policy
   - gateway-heartbeat-safety
+  - gateway-diagnostic-logging
   - renderer-main-boundary
   - backend-communication-boundary
   - api-client-transport-policy
@@ -21,6 +22,30 @@ requiredRules:
 ---
 
 Use this spec when ClawX shows the Gateway as starting/running but UI data does not refresh, memory-backed data cannot load, or Gateway RPC calls time out after a restart.
+
+## User Report Workflow
+
+Ask the user to export the existing issue report from the sidebar shortcut or
+Settings > Support after the problem occurs. Startup and liveness diagnostics
+are recorded automatically in the ClawX logs already included in that export;
+users do not need a terminal, environment variables, or a debugging switch.
+Conversation selection remains optional. The commands below are developer
+triage tools, not prerequisites for a useful user report.
+
+Each accepted start/restart has a correlation identifier across shutdown,
+spawn, handshake, and Agent readiness. Request-to-ready timing includes the
+wait after handshake for Agent database admission. Failed or superseded
+attempts must remain distinguishable from successful readiness. The existing
+`gateway.startup` metric ends at handshake and must not be interpreted as the
+complete user wait.
+
+During slow startup, Main records progress at most once every 30 seconds,
+including the latest observed phase and time since progress. Heartbeat misses
+capture parent-observed Gateway CPU/memory and system available memory where
+supported, without requiring a response from the Gateway or sending an extra
+RPC. These snapshots stop with their lifecycle and must distinguish unavailable
+measurements from zero. They provide evidence for triage, not CPU stacks, disk
+profiles, or proof of a deadlock.
 
 ClawX should prefer OpenClaw-native signals over stderr string matching:
 
@@ -55,6 +80,7 @@ Important distinction:
 - **Port ready** only means the process is listening.
 - **Handshake ready** only means ClawX connected to the Gateway socket.
 - **RPC ready** means a cheap call such as `system-presence` succeeds.
+- **Agent ready** additionally means the readiness policy has completed Agent database admission; handshake and core RPC can succeed before this.
 
 UI features that depend on Gateway runtime data must prefer RPC-ready evidence over port-ready evidence.
 
@@ -79,13 +105,13 @@ lsof -nP -iTCP:5173 -sTCP:LISTEN || true
 tail -n 160 "$HOME/Library/Application Support/clawx/logs/clawx-$(date +%F).log"
 ```
 
-ClawX-owned Gateway children enable `OPENCLAW_GATEWAY_STARTUP_TRACE=1` automatically. Normal duration-bearing trace lines are normalized as informational records:
+ClawX-owned Gateway children enable `OPENCLAW_GATEWAY_STARTUP_TRACE=1` automatically. Both stdout and stderr traces are collected with bounded, UTF-8-safe line buffering. Normal duration-bearing trace lines are normalized as informational records:
 
 ```text
 [gateway-startup] stage=plugins.bootstrap durationMs=... totalMs=...
 ```
 
-Stages taking at least 10 seconds are marked `slow=true`. A spawn-to-handshake duration of at least 30 seconds emits `Slow managed Gateway startup detected` with the longest observed OpenClaw stage. The existing `gateway.startup` metric also includes the compact `openclawTrace` summary. Startup trace records contain stage names and timings only; do not add environment values, config payloads, or provider secrets to these diagnostics.
+Stages taking at least 10 seconds are marked `slow=true`. A spawn-to-handshake duration of at least 30 seconds emits `Slow managed Gateway startup detected` with the longest observed OpenClaw stage. The existing `gateway.startup` metric also includes the compact `openclawTrace` summary. Phase-start records identify the latest observed beginning even when no matching completion arrives. Startup trace records contain normalized stage names and numeric values only; arbitrary stdout, environment values, config payloads, and provider secrets must not enter the new diagnostics. Nested and concurrent runtime timings overlap, so do not add them to their parent phases or to request-to-ready elapsed time.
 
 3. Probe OpenClaw-native signals in this order. Redirect output for memory-related calls because successful responses may contain user data:
 
@@ -273,6 +299,9 @@ pnpm exec openclaw gateway call status >/tmp/clawx-status.json
 
 ## Acceptance Criteria
 
+- A user can obtain the automatic diagnostics through the existing issue report export without commands or debug switches.
+- Correlated request-to-ready timing includes Agent admission and distinguishes interrupted attempts; startup trace capture covers both output streams.
+- Slow-start and heartbeat diagnostics have bounded volume, survive missing platform metrics, and preserve readiness and recovery decisions.
 - Gateway starts without restart loops.
 - `configSyncMs` stays small relative to total startup time.
 - `system-presence` succeeds after startup settles.
@@ -307,4 +336,6 @@ When sharing findings:
 - Quote log patterns and timing metrics, not full memory doctor output.
 - Redact tokens, account identifiers, device IDs, and channel recipients.
 - State whether the failure is port readiness, handshake readiness, or RPC readiness.
+- Distinguish Agent admission from handshake completion, and do not sum nested or parallel trace durations.
+- Treat missing platform metrics as unknown; CPU/memory snapshots alone cannot establish a deadlock or disk/antivirus bottleneck.
 - Separate ClawX-owned cleanup issues from OpenClaw runtime initialization cost.

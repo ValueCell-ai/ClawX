@@ -1,11 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import {
-  applyModelAwareCompactionReserveTokensFloor,
-  resolveModelContextWindow,
-} from '@electron/utils/openclaw-compaction';
+import { resolveModelContextWindow } from '@electron/utils/openclaw-compaction';
 
-describe('applyModelAwareCompactionReserveTokensFloor', () => {
-  it('overwrites an existing floor with 25% of the selected model context window', () => {
+describe('resolveModelContextWindow', () => {
+  it('reads the configured context window of the selected model', () => {
     const config: Record<string, unknown> = {
       models: {
         providers: {
@@ -14,19 +11,9 @@ describe('applyModelAwareCompactionReserveTokensFloor', () => {
           },
         },
       },
-      agents: {
-        defaults: {
-          compaction: { mode: 'safeguard', reserveTokensFloor: 50_000 },
-        },
-      },
     };
 
-    expect(applyModelAwareCompactionReserveTokensFloor(config, 'openai/gpt-5.6-luna')).toBe(true);
-    expect(config.agents).toEqual({
-      defaults: {
-        compaction: { mode: 'safeguard', reserveTokensFloor: 68_000 },
-      },
-    });
+    expect(resolveModelContextWindow(config, 'openai/gpt-5.6-luna')).toBe(272_000);
   });
 
   it('prefers the effective context token limit over the native context window', () => {
@@ -42,19 +29,9 @@ describe('applyModelAwareCompactionReserveTokensFloor', () => {
           },
         },
       },
-      agents: {
-        defaults: {
-          compaction: { mode: 'safeguard', reserveTokensFloor: 50_000 },
-        },
-      },
     };
 
-    expect(applyModelAwareCompactionReserveTokensFloor(config, 'openai/gpt-5.6-sol')).toBe(true);
-    expect(config.agents).toEqual({
-      defaults: {
-        compaction: { mode: 'safeguard', reserveTokensFloor: 68_000 },
-      },
-    });
+    expect(resolveModelContextWindow(config, 'openai/gpt-5.6-sol')).toBe(272_000);
   });
 
   it('applies the transport ceiling to an oversized configured context window', () => {
@@ -67,22 +44,12 @@ describe('applyModelAwareCompactionReserveTokensFloor', () => {
           },
         },
       },
-      agents: {
-        defaults: {
-          compaction: { mode: 'safeguard', reserveTokensFloor: 100_000 },
-        },
-      },
     };
 
-    expect(applyModelAwareCompactionReserveTokensFloor(config, 'openai/gpt-5.6-sol')).toBe(true);
-    expect(config.agents).toEqual({
-      defaults: {
-        compaction: { mode: 'safeguard', reserveTokensFloor: 68_000 },
-      },
-    });
+    expect(resolveModelContextWindow(config, 'openai/gpt-5.6-sol')).toBe(272_000);
   });
 
-  it('uses 50000 without inferring a context window from a known model name', () => {
+  it('does not infer a context window from a known model name', () => {
     const config: Record<string, unknown> = {
       models: {
         providers: {
@@ -91,36 +58,14 @@ describe('applyModelAwareCompactionReserveTokensFloor', () => {
           },
         },
       },
-      agents: {
-        defaults: {
-          compaction: { mode: 'safeguard', reserveTokensFloor: 250_000 },
-        },
-      },
     };
 
     expect(resolveModelContextWindow(config, 'deepseek/deepseek-v4-pro')).toBeUndefined();
-    expect(applyModelAwareCompactionReserveTokensFloor(config, 'deepseek/deepseek-v4-pro')).toBe(true);
-    expect(config.agents).toEqual({
-      defaults: {
-        compaction: { mode: 'safeguard', reserveTokensFloor: 50_000 },
-      },
-    });
   });
 
-  it('keeps the 50000 fallback unchanged when the model context window is unknown', () => {
-    const config: Record<string, unknown> = {
-      agents: {
-        defaults: {
-          compaction: { mode: 'safeguard', reserveTokensFloor: 50_000 },
-        },
-      },
-    };
-
-    expect(applyModelAwareCompactionReserveTokensFloor(config, 'custom-provider/unknown-model')).toBe(false);
-    expect(config.agents).toEqual({
-      defaults: {
-        compaction: { mode: 'safeguard', reserveTokensFloor: 50_000 },
-      },
-    });
+  it('returns undefined for unknown or malformed model refs', () => {
+    expect(resolveModelContextWindow({}, 'custom-provider/unknown-model')).toBeUndefined();
+    expect(resolveModelContextWindow({}, 'no-slash')).toBeUndefined();
+    expect(resolveModelContextWindow({}, null)).toBeUndefined();
   });
 });

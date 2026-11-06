@@ -4,6 +4,7 @@
  */
 import { ipcMain, BrowserWindow, shell, dialog, app, type Session } from 'electron';
 import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join, extname, basename, resolve, sep, relative } from 'node:path';
 import { syncMacTrafficLightPosition } from './traffic-light-layout';
 import { GatewayManager } from '../gateway/manager';
@@ -11,7 +12,7 @@ import { ClawHubService } from '../gateway/clawhub';
 import {
   type ProviderConfig,
 } from '../utils/secure-storage';
-import { getOpenClawConfigDir, getOpenClawStatus, getOpenClawSkillsDir, ensureDir, expandPath } from '../utils/paths';
+import { getOpenClawStatus, getOpenClawSkillsDir, ensureDir, expandPath } from '../utils/paths';
 import { getOpenClawCliCommand } from '../utils/openclaw-cli';
 import { getAllSettings, getSetting, resetSettings, setSetting, type AppSettings } from '../utils/store';
 import {
@@ -175,7 +176,7 @@ function registerTypedHostHandlers(
       stagedAttachments,
     }),
     media: createMediaApi({ attachmentAccess }),
-    sessions: createSessionsApi(),
+    sessions: createSessionsApi({ gatewayManager }),
     chat: createChatApi({ gatewayManager, mainWindow, acpSessionAccessRegistry }),
     cron: createCronApi({ gatewayManager }),
     skills: createSkillsApi({ clawHubService, gatewayManager }),
@@ -1015,7 +1016,11 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
  * Shell-related IPC handlers
  */
 function expandShellPath(input: string): string {
-  return expandPath(input);
+  if (input === '~') return homedir();
+  if (input.startsWith(`~${sep}`) || input.startsWith('~/') || input.startsWith('~\\')) {
+    return join(homedir(), input.slice(2));
+  }
+  return input;
 }
 
 function registerShellHandlers(): void {
@@ -1245,7 +1250,7 @@ function getMimeType(ext: string): string {
   return EXT_MIME_MAP[ext.toLowerCase()] || 'application/octet-stream';
 }
 
-const OUTBOUND_DIR = join(getOpenClawConfigDir(), 'media', 'outbound');
+const OUTBOUND_DIR = join(homedir(), '.openclaw', 'media', 'outbound');
 
 // ── File preview (sandboxed) ──────────────────────────────────────────
 //
@@ -1314,7 +1319,7 @@ function isPathInside(child: string, parent: string): boolean {
  */
 function getFilePreviewWriteRoots(): string[] {
   const roots: string[] = [];
-  const openclawDir = getOpenClawConfigDir();
+  const openclawDir = join(homedir(), '.openclaw');
   roots.push(resolve(openclawDir));
   try {
     roots.push(resolve(app.getPath('userData')));

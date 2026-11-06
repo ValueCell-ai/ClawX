@@ -3,10 +3,19 @@ export const GATEWAY_HEARTBEAT_TIMEOUT_MS = 30_000;
 export const GATEWAY_HEARTBEAT_MAX_MISSES = 4;
 export const GATEWAY_LIVENESS_DEADLINE_MS = 180_000;
 export const GATEWAY_CONTROL_PROBE_TIMEOUT_MS = 5_000;
+// Packaged Windows shutdown exceeded 8s even with no active runs: database and
+// singleton cleanup must finish before ownership release and process exit.
+// Keep a bounded 20s exit window; an acknowledgement alone never completes it.
+export const GATEWAY_GRACEFUL_EXIT_TIMEOUT_MS = 20_000;
 // OpenClaw emits compaction lifecycle diagnostics. A missing end diagnostic
 // must not suppress a real Gateway recovery indefinitely.
 export const GATEWAY_COMPACTION_RECOVERY_GRACE_MS = 5 * 60_000;
 export const GATEWAY_READY_FALLBACK_PROBE_DELAYS_MS = [1_500, 3_000, 5_000, 8_000, 12_000, 30_000] as const;
+// After an unclean Gateway exit OpenClaw admits agent databases in the background;
+// until then sessions.list succeeds with zero rows. gatewayReady waits for that
+// admission, bounded so a stuck inspection cannot hold the app not-ready forever.
+export const GATEWAY_AGENT_DATABASE_ADMISSION_WAIT_MS = 50_000;
+export const GATEWAY_AGENT_DATABASE_ADMISSION_POLL_MS = 500;
 
 const MANAGED_GATEWAY_BOOTSTRAP_ALLOWANCE_MS = GATEWAY_LIVENESS_DEADLINE_MS;
 const GATEWAY_READY_PROBE_BUDGET_MS = GATEWAY_READY_FALLBACK_PROBE_DELAYS_MS.reduce(
@@ -15,7 +24,7 @@ const GATEWAY_READY_PROBE_BUDGET_MS = GATEWAY_READY_FALLBACK_PROBE_DELAYS_MS.red
 );
 
 // Budget the liveness deadline, one bounded allowance for managed-process bootstrap,
-// the deadline verification RPC, and every ready probe.
+// the deadline verification RPC, every ready probe, and the agent-database admission wait.
 // This intentionally does not mirror the much longer cold-start retry ceiling: retaining an
 // IPC prompt for that entire ceiling would hide a dead run. Rounding up keeps the grace
 // synchronized with the deadline, verification, and ready-probe policy changes.
@@ -24,6 +33,7 @@ export const ACP_ACCEPTED_PROMPT_RECOVERY_GRACE_MS = 60_000 * Math.ceil((
   + MANAGED_GATEWAY_BOOTSTRAP_ALLOWANCE_MS
   + GATEWAY_CONTROL_PROBE_TIMEOUT_MS
   + GATEWAY_READY_PROBE_BUDGET_MS
+  + GATEWAY_AGENT_DATABASE_ADMISSION_WAIT_MS
 ) / 60_000
 );
 

@@ -7,8 +7,10 @@
 import { access, mkdir, readFile, writeFile, readdir, unlink } from 'fs/promises';
 import { constants } from 'fs';
 import { join, resolve, sep } from 'path';
+import { homedir } from 'os';
 import { logger } from './logger';
-import { getOpenClawConfigDir, expandPath, getResourcesDir } from './paths';
+import { listOpenClawAgentRosterEntries } from './openclaw-agent-roster';
+import { getResourcesDir } from './paths';
 
 const CLAWX_BEGIN = '<!-- clawx:begin -->';
 const CLAWX_END = '<!-- clawx:end -->';
@@ -22,7 +24,7 @@ async function fileExists(p: string): Promise<boolean> {
 }
 
 function isCurrentOpenClawPath(p: string): boolean {
-  const openclawDir = resolve(getOpenClawConfigDir());
+  const openclawDir = resolve(join(homedir(), '.openclaw'));
   const workspaceDir = resolve(p);
   return workspaceDir === openclawDir || workspaceDir.startsWith(openclawDir + sep);
 }
@@ -208,7 +210,7 @@ type WorkspaceDir = {
  * Collect all unique workspace directories from the openclaw config.
  */
 async function resolveAllWorkspaceDirs(): Promise<WorkspaceDir[]> {
-  const openclawDir = getOpenClawConfigDir();
+  const openclawDir = join(homedir(), '.openclaw');
   const dirs = new Map<string, WorkspaceDir>();
   const addDir = (dir: string, waitForGatewaySeed: boolean) => {
     const existing = dirs.get(dir);
@@ -226,19 +228,18 @@ async function resolveAllWorkspaceDirs(): Promise<WorkspaceDir[]> {
       const defaultWs = config?.agents?.defaults?.workspace;
       let hasDefaultWorkspace = false;
       if (typeof defaultWs === 'string' && defaultWs.trim()) {
-        addDir(expandPath(defaultWs), true);
+        addDir(defaultWs.replace(/^~/, homedir()), true);
         hasDefaultWorkspace = true;
       }
 
-      const agents = config?.agents?.list;
-      if (Array.isArray(agents)) {
-        for (const agent of agents) {
-          const ws = agent?.workspace;
-          if (typeof ws === 'string' && ws.trim()) {
-            const isMainDefault =
-              agent?.default === true || (agent?.id === 'main' && !hasDefaultWorkspace);
-            addDir(expandPath(ws), isMainDefault);
-          }
+      const systemAgentId = config?.agents?.defaults?.systemAgent?.agentId;
+      for (const { id, entry } of listOpenClawAgentRosterEntries(config?.agents)) {
+        const ws = entry.workspace;
+        if (typeof ws === 'string' && ws.trim()) {
+          const isMainDefault = entry.default === true
+            || (typeof systemAgentId === 'string' && systemAgentId.trim() === id)
+            || (id === 'main' && !hasDefaultWorkspace);
+          addDir(ws.replace(/^~/, homedir()), isMainDefault);
         }
       }
     }

@@ -5,6 +5,7 @@
 import { app } from 'electron';
 import path from 'path';
 import { EventEmitter } from 'events';
+import { randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
 import { PORTS } from '../utils/config';
 import { JsonRpcNotification, isNotification, isResponse } from './protocol';
@@ -26,7 +27,6 @@ import {
   getReconnectSkipReason,
   isOpenClawFatalConfigExitCode,
 } from './process-policy';
-import { removeOpenClaw2026_7_1UpgradeSnapshot } from '../utils/openclaw-upgrade-snapshot';
 import {
   clearPendingGatewayRequests,
   rejectPendingGatewayRequest,
@@ -60,11 +60,14 @@ import {
   GATEWAY_STARTUP_SLOW_STAGE_MS,
   GATEWAY_STARTUP_SLOW_TOTAL_MS,
   GatewayStartupTraceCollector,
+  parseGatewayStartupPhaseStart,
   recordGatewayStartupStderrLine,
 } from './startup-stderr';
 import { runGatewayStartupSequence } from './startup-orchestrator';
+import { recordGatewayReadyForCapabilityConsent } from '../utils/plugin-capability-consent';
 import {
   hasFatalRuntimeFailureSignal,
+  hasGatewayStateOwnershipContentionSignal,
   hasInvalidConfigFailureSignal,
   hasStartupMigrationLockSignal,
 } from './startup-recovery';
@@ -89,8 +92,14 @@ import {
   GATEWAY_HEARTBEAT_MAX_MISSES,
   GATEWAY_HEARTBEAT_TIMEOUT_MS,
   GATEWAY_CONTROL_PROBE_TIMEOUT_MS,
+  GATEWAY_GRACEFUL_EXIT_TIMEOUT_MS,
   GATEWAY_READY_FALLBACK_PROBE_DELAYS_MS,
+  GATEWAY_AGENT_DATABASE_ADMISSION_POLL_MS,
+  GATEWAY_AGENT_DATABASE_ADMISSION_WAIT_MS,
 } from './recovery-budget';
+import { probeAgentDatabaseAdmissions } from './agent-database-admission';
+import { collectGatewayProcessDiagnostics, getGatewayDiagnosticEnvironment } from './process-diagnostics';
+import { OPENCLAW_GATEWAY_SHUTDOWN_REQUEST, OPENCLAW_GATEWAY_SHUTDOWN_RESULT } from '../utils/openclaw-utility-process';
 
 export interface GatewayStatus {
   state: GatewayLifecycleState;
@@ -162,6 +171,24 @@ function classifyCapabilityMethod(method: string): GatewayCapabilityName | null 
   return null;
 }
 
+const GATEWAY_SHUTDOWN_RPC_TIMEOUT_MS = 5_000;
+const GATEWAY_DIAGNOSTIC_INTERVAL_MS = 30_000;
+
+type GatewayDiagnosticAttempt = {
+  id: string;
+  kind: 'start' | 'restart';
+  requestedAt: number;
+  stage: string;
+  stageStartedAt: number;
+  spawnCount: number;
+  stopStartedAt?: number;
+  stopCompletedAt?: number;
+  spawnedAt?: number;
+  handshakeAt?: number;
+  readyAt?: number;
+  outcome?: 'ready' | 'failed' | 'stopped' | 'superseded';
+};
+
 /**
  * Gateway Manager Events
  */
@@ -196,7 +223,15 @@ export class GatewayManager extends EventEmitter {
   private startLock = false;
   private lastSpawnSummary: string | null = null;
   private recentStartupStderrLines: string[] = [];
+  private lastProcessOutputAt = 0;
   private readonly startupTraceCollector = new GatewayStartupTraceCollector();
+  private diagnosticAttempt: GatewayDiagnosticAttempt | null = null;
+  private restartDiagnosticAttempt: GatewayDiagnosticAttempt | null = null;
+  private diagnosticTimer: NodeJS.Timeout | null = null;
+  private diagnosticLastOutputAt: number | undefined;
+  private lastHeartbeatDiagnosticAt: number | undefined;
+  private diagnosticProcessGeneration = 0;
+  private diagnosticResourceSample: ReturnType<typeof collectGatewayProcessDiagnostics> | null = null;
   private pendingRequests: Map<string, PendingGatewayRequest> = new Map();
   private deviceIdentity: DeviceIdentity | null = null;
   private restartInFlight: Promise<void> | null = null;
@@ -210,7 +245,6 @@ export class GatewayManager extends EventEmitter {
   private deadlineEscalationPending = false;
   private deadlineProbeInFlight = false;
   private deferredDeadlineProbeLivenessAt: number | undefined;
-  private upgradeSnapshotCleanupAttempted = false;
   private externalShutdownSupported: boolean | null = null;
   private reconnectAttemptsTotal = 0;
   private reconnectSuccessTotal = 0;
@@ -220,6 +254,19 @@ export class GatewayManager extends EventEmitter {
   private isAutoReconnectStart = false;
   private gatewayReadyFallbackTimer: NodeJS.Timeout | null = null;
   private gatewayReadyFallbackAttempt = 0;
+  private gatewayReadyAdmissionGate: {
+    connectedAt: number | undefined;
+    startedAt: number;
+    pendingLogged: boolean;
+    observedBlock: boolean;
+    unknownAttempts: number;
+    error?: string;
+    recoveryAfter?: number;
+  } | null = null;
+  private gatewayReadyAdmissionTimer: NodeJS.Timeout | null = null;
+  // Survives stop/start and reconnects; only confirmed admission rearms recovery.
+  private gatewayAdmissionRecoveryUsed = false;
+  private gatewayAdmissionBlocked = false;
   private readonly capabilityMonitor = new GatewayCapabilityMonitor();
   private diagnostics: GatewayDiagnosticsSnapshot = {
     consecutiveHeartbeatMisses: 0,
@@ -270,9 +317,8 @@ export class GatewayManager extends EventEmitter {
       this.resetGatewayReadyFallback();
       if (this.status.state === 'running' && !this.status.gatewayReady) {
         logger.info('Gateway subsystems ready (event received)');
-        this.setStatus({ gatewayReady: true });
+        this.markGatewayReady();
       }
-      void this.cleanupOpenClawUpgradeSnapshot();
     });
     this.on('gateway:health', (payload) => {
       this.capabilityMonitor.recordOpenClawHealth(payload);
@@ -340,6 +386,118 @@ export class GatewayManager extends EventEmitter {
     return this.stateController.isConnected(this.ws?.readyState === WebSocket.OPEN);
   }
 
+  private clearDiagnosticTimer(): void {
+    if (this.diagnosticTimer) clearInterval(this.diagnosticTimer);
+    this.diagnosticTimer = null;
+  }
+
+  private beginGatewayDiagnostics(kind: GatewayDiagnosticAttempt['kind']): GatewayDiagnosticAttempt {
+    this.finishGatewayDiagnostics('superseded');
+    const now = Date.now();
+    this.diagnosticAttempt = {
+      id: randomUUID(), kind, requestedAt: now, stage: `${kind}-requested`, stageStartedAt: now, spawnCount: 0,
+    };
+    this.startupTraceCollector.reset();
+    this.diagnosticLastOutputAt = undefined;
+    // Ignore the previous child's trailing output while a restart shuts it
+    // down. A plain start may reconnect to the same child (code 1012), whose
+    // output must continue to feed the new attempt.
+    if (kind === 'restart') this.diagnosticProcessGeneration += 1;
+    this.logGatewayDiagnostic(`${kind}-requested`);
+    logger.info('[gateway-diagnostics] environment', { attemptId: this.diagnosticAttempt.id, ...getGatewayDiagnosticEnvironment() });
+    this.startDiagnosticTimer();
+    return this.diagnosticAttempt;
+  }
+
+  private startDiagnosticTimer(): void {
+    this.clearDiagnosticTimer();
+    const attempt = this.diagnosticAttempt;
+    if (!attempt || attempt.outcome) return;
+    this.diagnosticTimer = setInterval(() => {
+      if (this.diagnosticAttempt === attempt && !attempt.outcome) {
+        this.logGatewayDiagnostic('progress');
+      }
+    }, GATEWAY_DIAGNOSTIC_INTERVAL_MS);
+    this.diagnosticTimer.unref?.();
+  }
+
+  private recordDiagnosticStage(stage: string, attempt = this.diagnosticAttempt): void {
+    if (!attempt || attempt !== this.diagnosticAttempt || attempt.outcome) return;
+    if (attempt.stage === stage) return;
+    attempt.stage = stage;
+    attempt.stageStartedAt = Date.now();
+    this.logGatewayDiagnostic(stage);
+  }
+
+  private finishGatewayDiagnostics(outcome: NonNullable<GatewayDiagnosticAttempt['outcome']>, attempt = this.diagnosticAttempt): void {
+    if (!attempt || attempt !== this.diagnosticAttempt || attempt.outcome) return;
+    attempt.outcome = outcome;
+    if (outcome === 'ready') attempt.readyAt = Date.now();
+    this.logGatewayDiagnostic(outcome);
+    this.clearDiagnosticTimer();
+  }
+
+  /** Parent-observed evidence remains available when the Gateway cannot answer RPC. */
+  private logGatewayDiagnostic(event: string, details: Record<string, unknown> = {}): void {
+    const now = Date.now();
+    const attempt = this.diagnosticAttempt;
+    const pid = this.ownsProcess ? this.process?.pid : undefined;
+    // Several lifecycle milestones can arrive in one tick. Reusing the native
+    // sample avoids near-zero CPU intervals and unnecessary OS queries.
+    if (!this.diagnosticResourceSample || this.diagnosticResourceSample.pid !== pid
+      || now - this.diagnosticResourceSample.sampledAt >= 1_000) {
+      this.diagnosticResourceSample = collectGatewayProcessDiagnostics(pid);
+    }
+    const age = (at: number | undefined) => at === undefined ? undefined : Math.max(0, now - at);
+    logger.info('[gateway-diagnostics]', {
+      event,
+      attemptId: attempt?.id,
+      kind: attempt?.kind,
+      outcome: attempt?.outcome,
+      requestedAt: attempt?.requestedAt,
+      elapsedMs: age(attempt?.requestedAt),
+      stage: attempt?.stage,
+      stageElapsedMs: age(attempt?.stageStartedAt),
+      spawnCount: attempt?.spawnCount,
+      stopMs: attempt?.stopCompletedAt !== undefined && attempt.stopStartedAt !== undefined
+        ? attempt.stopCompletedAt - attempt.stopStartedAt : undefined,
+      spawnToHandshakeMs: attempt?.handshakeAt !== undefined && attempt.spawnedAt !== undefined
+        ? attempt.handshakeAt - attempt.spawnedAt : undefined,
+      handshakeToReadyMs: attempt?.readyAt !== undefined && attempt.handshakeAt !== undefined
+        ? attempt.readyAt - attempt.handshakeAt : undefined,
+      requestToReadyMs: attempt?.readyAt !== undefined ? attempt.readyAt - attempt.requestedAt : undefined,
+      state: this.status.state,
+      gatewayReady: this.status.gatewayReady === true,
+      pid: this.status.pid,
+      ownedProcess: this.ownsProcess,
+      lastOutputAgeMs: age(this.diagnosticLastOutputAt),
+      lastAliveAgeMs: age(this.diagnostics.lastAliveAt),
+      lastRpcSuccessAgeMs: age(this.diagnostics.lastRpcSuccessAt),
+      pendingRpcCount: this.pendingRequests.size,
+      consecutiveHeartbeatMisses: this.diagnostics.consecutiveHeartbeatMisses,
+      trace: this.startupTraceCollector.getSummary(),
+      progress: this.startupTraceCollector.getProgress(now),
+      resources: this.diagnosticResourceSample,
+      ...details,
+    });
+  }
+
+  private recordStartupTrace(line: string, source: 'stdout' | 'stderr'): boolean {
+    const trace = this.startupTraceCollector.record(line);
+    const phase = parseGatewayStartupPhaseStart(line);
+    if (!trace && !phase) return false;
+    const fields = { attemptId: this.diagnosticAttempt?.id, source };
+    if (trace) {
+      const message = `[gateway-startup] stage=${trace.name} durationMs=${trace.durationMs}`
+        + (trace.totalMs === undefined ? '' : ` totalMs=${trace.totalMs}`);
+      if (trace.durationMs >= GATEWAY_STARTUP_SLOW_STAGE_MS) logger.warn(`${message} slow=true`, fields);
+      else logger.info(message, fields);
+    } else if (phase) {
+      logger.info('[gateway-startup] phase-start', { ...fields, stage: phase.name, totalMs: phase.totalMs });
+    }
+    return true;
+  }
+
   /**
    * Start Gateway process
    */
@@ -355,6 +513,11 @@ export class GatewayManager extends EventEmitter {
     }
 
     this.startLock = true;
+    const diagnosticAttempt = this.diagnosticAttempt && this.restartDiagnosticAttempt === this.diagnosticAttempt && !this.diagnosticAttempt.outcome
+      ? this.diagnosticAttempt
+      : this.beginGatewayDiagnostics('start');
+    this.recordDiagnosticStage('start-requested');
+    this.startDiagnosticTimer();
     const startEpoch = this.lifecycleController.bump('start');
     logger.info(`Gateway start requested (port=${this.status.port})`);
     this.lastSpawnSummary = null;
@@ -397,6 +560,7 @@ export class GatewayManager extends EventEmitter {
           this.recentStartupStderrLines = [];
         },
         getStartupStderrLines: () => this.recentStartupStderrLines,
+        getProcessExitCode: () => this.processExitCode,
         assertLifecycle: (phase) => {
           this.lifecycleController.assert(startEpoch, phase);
         },
@@ -449,11 +613,14 @@ export class GatewayManager extends EventEmitter {
               getProcessExitCode: () => this.processExitCode,
               // A code-1012 in-process reload normally returns within seconds.
               // Use a smaller bounded retry budget for an owned process that
-              // stopped serving WS, while cold startup uses the explicit
-              // readiness deadline in waitForGatewayReady.
-              ...(recoveringOwnedProcess ? { retries: 50 } : {}),
+              // stopped serving WS, while a cold start waits as long as the
+              // new process keeps writing output.
+              ...(recoveringOwnedProcess
+                ? { retries: 50 }
+                : { getLastProgressAt: () => this.lastProcessOutputAt }),
             });
           } catch (error) {
+            this.lifecycleController.assert(startEpoch, 'start/wait-ready-failed');
             // A process that remains alive but never emits a challenge is
             // stale. Reclaim it before the outer startup recovery schedules a
             // new attempt; otherwise every retry would wait on the same PID.
@@ -476,6 +643,7 @@ export class GatewayManager extends EventEmitter {
         },
         onConnectedToManagedGateway: () => {
           this.startHealthCheck();
+          recordGatewayReadyForCapabilityConsent();
           const tConnected = Date.now();
           const spawnToReadyMs = tReady && tSpawned ? tReady - tSpawned : undefined;
           const startupTrace = this.startupTraceCollector.getSummary();
@@ -495,7 +663,9 @@ export class GatewayManager extends EventEmitter {
             });
           }
         },
-        runDoctorRepair: async () => await runOpenClawDoctorRepair(),
+        runDoctorRepair: async () => await runOpenClawDoctorRepair({
+          assertLifecycle: () => this.lifecycleController.assert(startEpoch, 'start/doctor-prepare'),
+        }),
         onDoctorRepairSuccess: () => {
           this.setStatus({ state: 'starting', error: undefined, reconnectAttempts: 0 });
         },
@@ -505,6 +675,7 @@ export class GatewayManager extends EventEmitter {
       });
     } catch (error) {
       if (error instanceof LifecycleSupersededError) {
+        this.finishGatewayDiagnostics('superseded', diagnosticAttempt);
         logger.debug(error.message);
         return;
       }
@@ -513,8 +684,11 @@ export class GatewayManager extends EventEmitter {
         error
       );
       this.setStatus({ state: 'error', error: String(error) });
+      this.finishGatewayDiagnostics('failed', diagnosticAttempt);
       const fatalStartupFailure = isOpenClawFatalConfigExitCode(this.processExitCode)
+        || this.processExitCode === 1
         || hasFatalRuntimeFailureSignal(error, this.recentStartupStderrLines)
+        || hasGatewayStateOwnershipContentionSignal(error, this.recentStartupStderrLines)
         || hasStartupMigrationLockSignal(error, this.recentStartupStderrLines)
         || hasInvalidConfigFailureSignal(error, this.recentStartupStderrLines);
       if (fatalStartupFailure) {
@@ -547,10 +721,65 @@ export class GatewayManager extends EventEmitter {
   }
 
   /**
+   * Ask an owned Gateway to release its databases and leases before the
+   * process is terminated. The exit listener is installed before sending the
+   * private parent-port request so even a synchronous exit cannot be missed.
+   */
+  private async requestOwnedGatewayShutdown(child: Electron.UtilityProcess): Promise<'graceful' | 'exited' | 'failed'> {
+    const pid = child.pid ?? 'unknown';
+    const requestId = randomUUID();
+    type Outcome = { kind: 'exit'; code: number } | { kind: 'rejected'; reason: unknown } | { kind: 'timeout' };
+    let settle!: (outcome: Outcome) => void;
+    const outcomePromise = new Promise<Outcome>((resolve) => {
+      settle = resolve;
+    });
+    const onExit = (code: number) => settle({ kind: 'exit', code });
+    const onMessage = (message: unknown) => {
+      if (!message || typeof message !== 'object') return;
+      const result = message as { type?: unknown; requestId?: unknown; accepted?: unknown; reason?: unknown };
+      if (result.type === OPENCLAW_GATEWAY_SHUTDOWN_RESULT && result.requestId === requestId && result.accepted === false) {
+        settle({ kind: 'rejected', reason: result.reason });
+      }
+    };
+    child.once('exit', onExit);
+    child.on('message', onMessage);
+    const timeout = setTimeout(() => settle({ kind: 'timeout' }), GATEWAY_GRACEFUL_EXIT_TIMEOUT_MS);
+
+    try {
+      logger.info(`Requesting graceful Gateway shutdown through parent port (pid=${pid})`);
+      try {
+        child.postMessage({ type: OPENCLAW_GATEWAY_SHUTDOWN_REQUEST, requestId });
+      } catch (error) {
+        settle({ kind: 'rejected', reason: error });
+      }
+      // Acceptance only confirms dispatch. Success requires the actual exit.
+      const outcome = await outcomePromise;
+      if (outcome.kind === 'exit') {
+        if (outcome.code === 0) {
+          logger.info(`Gateway exited gracefully (pid=${pid})`);
+          return 'graceful';
+        }
+        logger.warn(`Gateway exited with code=${outcome.code} during graceful shutdown (pid=${pid})`);
+        return 'exited';
+      }
+      if (outcome.kind === 'rejected') logger.warn(`Gateway graceful shutdown request was unavailable (pid=${pid}):`, outcome.reason);
+      else logger.warn(`Gateway did not exit within graceful shutdown budget (pid=${pid})`);
+      return 'failed';
+    } finally {
+      clearTimeout(timeout);
+      child.removeListener('exit', onExit);
+      child.removeListener('message', onMessage);
+    }
+  }
+
+  /**
    * Stop Gateway process
    */
   async stop(): Promise<void> {
     logger.info('Gateway stop requested');
+    const diagnosticAttempt = this.diagnosticAttempt;
+    if (diagnosticAttempt && !diagnosticAttempt.outcome) diagnosticAttempt.stopStartedAt = Date.now();
+    this.recordDiagnosticStage('stopping');
     cancelLocalDeviceAutoApproval();
     this.lifecycleController.bump('stop');
     // Disable auto-reconnect
@@ -559,11 +788,18 @@ export class GatewayManager extends EventEmitter {
     // Clear all timers
     this.clearAllTimers();
 
-    // If this manager is attached to an external gateway process, ask it to shut down
-    // over protocol before closing the socket.
-    if (!this.ownsProcess && this.ws?.readyState === WebSocket.OPEN && this.externalShutdownSupported !== false) {
+    // Ask an owned Gateway to close SQLite readers, checkpoint WAL state, and
+    // release leases before resorting to process termination. A hard kill here
+    // makes the next startup pay the stale-lease integrity recovery cost.
+    let ownedShutdownResult: 'graceful' | 'exited' | 'failed' = 'failed';
+    const ownedChild = this.process && this.ownsProcess ? this.process : null;
+    if (ownedChild) {
+      ownedShutdownResult = await this.requestOwnedGatewayShutdown(ownedChild);
+    } else if (this.ws?.readyState === WebSocket.OPEN && this.externalShutdownSupported !== false) {
+      // If this manager is attached to an external gateway process, ask it to
+      // shut down over protocol before closing the socket.
       try {
-        await this.rpc('shutdown', undefined, 5000);
+        await this.rpc('shutdown', undefined, GATEWAY_SHUTDOWN_RPC_TIMEOUT_MS);
         this.externalShutdownSupported = true;
       } catch (error) {
         if (this.isUnsupportedShutdownError(error)) {
@@ -586,14 +822,13 @@ export class GatewayManager extends EventEmitter {
       this.ws = null;
     }
 
-    // Kill process
-    if (this.process && this.ownsProcess) {
-      const child = this.process;
-      await terminateOwnedGatewayProcess(child);
-
-      if (this.process === child) {
-        this.process = null;
-      }
+    // Fall back to process termination only when the owned Gateway did not
+    // leave within the graceful shutdown budget.
+    if (ownedChild && ownedShutdownResult === 'failed' && this.process === ownedChild && this.ownsProcess) {
+      await terminateOwnedGatewayProcess(ownedChild);
+    }
+    if (this.process === ownedChild) {
+      this.process = null;
     }
     this.ownsProcess = false;
 
@@ -603,6 +838,13 @@ export class GatewayManager extends EventEmitter {
     this.isAutoReconnectStart = false;
     this.diagnostics.consecutiveHeartbeatMisses = 0;
     this.setStatus({ state: 'stopped', error: undefined, pid: undefined, connectedAt: undefined, uptime: undefined, gatewayReady: undefined });
+    if (diagnosticAttempt && diagnosticAttempt === this.diagnosticAttempt && !diagnosticAttempt.outcome) {
+      diagnosticAttempt.stopCompletedAt = Date.now();
+      this.logGatewayDiagnostic('stop-completed', {
+        shutdownMethod: ownedChild ? (ownedShutdownResult === 'failed' ? 'forced' : ownedShutdownResult) : 'no-owned-process',
+      });
+      if (diagnosticAttempt !== this.restartDiagnosticAttempt) this.finishGatewayDiagnostics('stopped', diagnosticAttempt);
+    }
   }
 
   /**
@@ -667,12 +909,20 @@ export class GatewayManager extends EventEmitter {
     }
 
     const pidBefore = this.status.pid;
+    const diagnosticAttempt = this.beginGatewayDiagnostics('restart');
+    this.restartDiagnosticAttempt = diagnosticAttempt;
     logger.info(`[gateway-refresh] mode=restart requested pidBefore=${pidBefore ?? 'n/a'}`);
     this.restartInFlight = (async () => {
       await this.stop();
       try {
         await this.start();
       } catch (err) {
+        if (this.status.state === 'error' && !this.shouldReconnect) {
+          // start() deliberately disables recovery for fatal startup failures.
+          // A restart must preserve that decision instead of recreating a loop.
+          logger.warn('Gateway restart: start() failed with automatic recovery disabled', err);
+          throw err;
+        }
         // stop() set shouldReconnect=false. Restore it so the gateway
         // can self-heal via scheduleReconnect() instead of dying permanently.
         logger.warn('Gateway restart: start() failed after stop(), enabling auto-reconnect recovery', err);
@@ -698,7 +948,11 @@ export class GatewayManager extends EventEmitter {
         `[gateway-refresh] mode=restart result=applied pidBefore=${pidBefore ?? 'n/a'} pidAfter=${this.status.pid ?? 'n/a'} ` +
         `suppressed=${observability.suppressed_total} executed=${observability.executed_total} circuitOpenUntil=${observability.circuit_open_until}`,
       );
+    } catch (error) {
+      this.finishGatewayDiagnostics('failed', diagnosticAttempt);
+      throw error;
     } finally {
+      if (this.restartDiagnosticAttempt === diagnosticAttempt) this.restartDiagnosticAttempt = null;
       this.restartInFlight = null;
       this.restartController.flushDeferredRestart(
         'restart:finally',
@@ -735,6 +989,7 @@ export class GatewayManager extends EventEmitter {
    * Clear all active timers
    */
   private clearAllTimers(): void {
+    this.clearDiagnosticTimer();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -743,6 +998,149 @@ export class GatewayManager extends EventEmitter {
     this.cancelDeadlineRecovery();
     this.restartController.clearDebounceTimer();
     this.resetGatewayReadyFallback();
+    this.clearGatewayReadyAdmission();
+  }
+
+  private clearGatewayReadyAdmission(): void {
+    if (this.gatewayReadyAdmissionTimer) {
+      clearTimeout(this.gatewayReadyAdmissionTimer);
+      this.gatewayReadyAdmissionTimer = null;
+    }
+    this.gatewayReadyAdmissionGate = null;
+  }
+
+  /**
+   * Publishes gatewayReady only once OpenClaw has admitted every agent
+   * database. Renderer session hydration keys off gatewayReady, and a
+   * pending admission answers sessions.list with an empty catalog.
+   */
+  private markGatewayReady(): void {
+    if (this.status.state !== 'running' || this.status.gatewayReady) {
+      return;
+    }
+    if (this.gatewayReadyAdmissionGate?.connectedAt === this.status.connectedAt) {
+      return;
+    }
+    this.clearGatewayReadyAdmission();
+    this.gatewayReadyAdmissionGate = {
+      connectedAt: this.status.connectedAt,
+      startedAt: Date.now(),
+      pendingLogged: false,
+      observedBlock: false,
+      unknownAttempts: 0,
+    };
+    void this.checkGatewayReadyAdmission();
+  }
+
+  private scheduleGatewayReadyAdmissionCheck(delayMs = GATEWAY_AGENT_DATABASE_ADMISSION_POLL_MS): void {
+    this.gatewayReadyAdmissionTimer = setTimeout(() => {
+      this.gatewayReadyAdmissionTimer = null;
+      void this.checkGatewayReadyAdmission();
+    }, delayMs);
+  }
+
+  private async checkGatewayReadyAdmission(): Promise<void> {
+    const gate = this.gatewayReadyAdmissionGate;
+    const isCurrent = () => this.gatewayReadyAdmissionGate === gate
+      && this.status.state === 'running'
+      && !this.status.gatewayReady
+      && this.status.connectedAt === gate?.connectedAt;
+    if (!gate || !isCurrent()) {
+      return;
+    }
+
+    const admission = await probeAgentDatabaseAdmissions(this.status.port);
+    if (!isCurrent()) {
+      return;
+    }
+
+    this.recordDiagnosticStage(`admission-${admission.state}`);
+
+    const waitedMs = Date.now() - gate.startedAt;
+    const reportError = (error: string) => {
+      if (gate.error === error) return;
+      gate.error = error;
+      logger.warn(error);
+      this.setStatus({ gatewayReady: false, error });
+    };
+    if (admission.state === 'unknown') {
+      gate.recoveryAfter = undefined;
+      gate.unknownAttempts += 1;
+      // Preserve the legacy unavailable-probe fallback, but never let a failed
+      // probe erase an explicit refusal (including across our recovery restart).
+      if (gate.unknownAttempts < 3 || this.gatewayAdmissionBlocked || this.gatewayAdmissionRecoveryUsed) {
+        if (gate.unknownAttempts >= 3 && !gate.error) {
+          reportError('Unable to verify Gateway agent database admission; waiting for readiness.');
+        }
+        this.scheduleGatewayReadyAdmissionCheck(gate.unknownAttempts < 3 ? undefined : 5_000);
+        return;
+      }
+      logger.warn('Gateway admission probe unavailable after 3 attempts; retaining legacy readiness fallback');
+    } else if (admission.state === 'pending') {
+      this.gatewayAdmissionBlocked = true;
+      gate.observedBlock = true;
+      gate.unknownAttempts = 0;
+      gate.recoveryAfter = undefined;
+      if (!gate.pendingLogged) {
+        gate.pendingLogged = true;
+        logger.info(`Gateway ready deferred: agent database admission pending (agents=${admission.agentIds.join(',')})`);
+      }
+      const slow = waitedMs >= GATEWAY_AGENT_DATABASE_ADMISSION_WAIT_MS;
+      if (slow) {
+        reportError(`Gateway agent database preparation is taking longer than expected (agents=${admission.agentIds.join(',')}); still waiting.`);
+      }
+      // Slow upgrade migrations must neither be interrupted nor published ready.
+      this.scheduleGatewayReadyAdmissionCheck(slow ? 5_000 : undefined);
+      return;
+    } else if (admission.state === 'failed') {
+      this.gatewayAdmissionBlocked = true;
+      gate.observedBlock = true;
+      gate.unknownAttempts = 0;
+      const error = admission.failures.map(({ agentId, reason, repairHint }) =>
+        `Agent ${agentId}: ${reason}${repairHint ? `\n${repairHint}` : ''}`).join('\n');
+      if (gate.error !== error) gate.recoveryAfter = undefined;
+      reportError(error);
+      const recoverable = admission.pendingAgentIds.length === 0
+        && admission.failures.every(({ code, reason }) => code === 'agent-database-inspection-failed'
+          && reason.startsWith('prepared model runtime publication was superseded'));
+      if (recoverable && !this.gatewayAdmissionRecoveryUsed && this.ownsProcess
+        && this.shouldReconnect && !this.startLock && !this.restartInFlight) {
+        // Re-probe after a quiet interval before restarting. Existing explicit
+        // restart requests can supersede this gate; never queue an unfenced one.
+        gate.recoveryAfter ??= Date.now() + GatewayManager.RESTART_COOLDOWN_MS;
+        if (Date.now() >= gate.recoveryAfter) {
+          this.gatewayAdmissionRecoveryUsed = true;
+          logger.warn('Recovering superseded agent model publication with one owned Gateway restart');
+          try {
+            await this.restart();
+          } catch (error) {
+            logger.warn('Gateway agent admission recovery restart failed:', error);
+          }
+          // A governor-suppressed restart may leave the same connection alive.
+          if (isCurrent()) this.scheduleGatewayReadyAdmissionCheck(5_000);
+          return;
+        }
+      } else {
+        gate.recoveryAfter = undefined;
+      }
+      this.scheduleGatewayReadyAdmissionCheck(5_000);
+      return;
+    }
+
+    if (admission.state === 'ready') {
+      this.gatewayAdmissionRecoveryUsed = false;
+      this.gatewayAdmissionBlocked = false;
+      if (gate.observedBlock) {
+        logger.info(`Gateway agent database admission completed after ${waitedMs}ms`);
+      }
+    }
+    this.clearGatewayReadyAdmission();
+    this.setStatus({
+      gatewayReady: true,
+      ...(gate.error && this.status.error === gate.error ? { error: undefined } : {}),
+    });
+    this.logGatewayDiagnostic('admission-completed', { admissionEvidence: admission.state });
+    this.finishGatewayDiagnostics('ready');
   }
 
   private clearGatewayReadyFallbackTimer(): void {
@@ -794,11 +1192,7 @@ export class GatewayManager extends EventEmitter {
       if (this.status.state === 'running' && !this.status.gatewayReady) {
         logger.info('Gateway ready fallback RPC router probe succeeded');
         this.resetGatewayReadyFallback();
-        this.setStatus({ gatewayReady: true });
-        // A fast Gateway can emit gateway.ready before the WebSocket client is
-        // attached. A successful router probe is equivalent readiness, so it
-        // must also complete the one-time migration snapshot lifecycle.
-        void this.cleanupOpenClawUpgradeSnapshot();
+        this.markGatewayReady();
       }
     } catch (error) {
       this.capabilityMonitor.recordCoreProbe({
@@ -978,6 +1372,10 @@ export class GatewayManager extends EventEmitter {
   private recordHeartbeatTimeout(consecutiveMisses: number): void {
     this.diagnostics.lastHeartbeatTimeoutAt = Date.now();
     this.diagnostics.consecutiveHeartbeatMisses = consecutiveMisses;
+    if (this.lastHeartbeatDiagnosticAt === undefined || Date.now() - this.lastHeartbeatDiagnosticAt >= GATEWAY_DIAGNOSTIC_INTERVAL_MS) {
+      this.lastHeartbeatDiagnosticAt = Date.now();
+      this.logGatewayDiagnostic('heartbeat-missed');
+    }
   }
 
   private recordSocketClose(code: number): void {
@@ -990,6 +1388,8 @@ export class GatewayManager extends EventEmitter {
    * Uses OpenClaw npm package from node_modules (dev) or resources (production)
    */
   private async startProcess(): Promise<void> {
+    const diagnosticAttempt = this.diagnosticAttempt;
+    this.recordDiagnosticStage('preparing-launch', diagnosticAttempt);
     const launchContext = await prepareGatewayLaunchContext(this.status.port);
     await unloadLaunchctlGatewayService();
     this.processExitCode = null;
@@ -998,6 +1398,10 @@ export class GatewayManager extends EventEmitter {
     // timings or stderr deduplication state from different Gateway children.
     const stderrDedup = new Map<string, number>();
     this.startupTraceCollector.reset();
+    this.diagnosticLastOutputAt = undefined;
+    this.recordDiagnosticStage('launching-process', diagnosticAttempt);
+    const diagnosticGeneration = ++this.diagnosticProcessGeneration;
+    this.diagnosticResourceSample = null;
 
     const { child, lastSpawnSummary } = await launchGatewayProcess({
       port: this.status.port,
@@ -1005,10 +1409,21 @@ export class GatewayManager extends EventEmitter {
       sanitizeSpawnArgs: (args) => this.sanitizeSpawnArgs(args),
       getCurrentState: () => this.status.state,
       getShouldReconnect: () => this.shouldReconnect,
+      onStdoutLine: (line) => {
+        if (diagnosticGeneration !== this.diagnosticProcessGeneration) return;
+        this.diagnosticLastOutputAt = Date.now();
+        // Only normalized timing records are logged. stdout may contain user
+        // content; it must not become a transcript or influence readiness.
+        this.recordStartupTrace(line, 'stdout');
+      },
       onStderrLine: (line) => {
+        this.lastProcessOutputAt = Date.now();
         this.compactionActivity.recordStderrLine(line);
         recordGatewayStartupStderrLine(this.recentStartupStderrLines, line);
-        const traceStage = this.startupTraceCollector.record(line);
+        if (diagnosticGeneration === this.diagnosticProcessGeneration) {
+          this.diagnosticLastOutputAt = Date.now();
+          if (this.recordStartupTrace(line, 'stderr')) return;
+        }
         const classified = classifyGatewayStderrMessage(line);
         if (classified.level === 'drop') return;
 
@@ -1023,16 +1438,6 @@ export class GatewayManager extends EventEmitter {
           return;
         }
 
-        if (traceStage) {
-          const message = `[gateway-startup] stage=${traceStage.name} durationMs=${traceStage.durationMs}`
-            + (traceStage.totalMs === undefined ? '' : ` totalMs=${traceStage.totalMs}`);
-          if (traceStage.durationMs >= GATEWAY_STARTUP_SLOW_STAGE_MS) {
-            logger.warn(`${message} slow=true`);
-          } else {
-            logger.info(message);
-          }
-          return;
-        }
         if (classified.level === 'debug') {
           logger.debug(`[Gateway stderr] ${classified.normalized}`);
           return;
@@ -1045,8 +1450,17 @@ export class GatewayManager extends EventEmitter {
       },
       onSpawn: (pid) => {
         this.setStatus({ pid });
+        if (diagnosticAttempt && diagnosticAttempt === this.diagnosticAttempt && !diagnosticAttempt.outcome) {
+          diagnosticAttempt.spawnCount += 1;
+          diagnosticAttempt.spawnedAt = Date.now();
+          diagnosticAttempt.handshakeAt = undefined;
+          this.recordDiagnosticStage('waiting-for-handshake', diagnosticAttempt);
+        }
       },
       onExit: (exitedChild, code) => {
+        if (diagnosticGeneration === this.diagnosticProcessGeneration) {
+          this.logGatewayDiagnostic('process-exit', { exitedPid: exitedChild.pid, exitCode: code, expected: !this.shouldReconnect });
+        }
         this.processExitCode = code;
         this.ownsProcess = false;
         this.connectionMonitor.clear();
@@ -1056,13 +1470,18 @@ export class GatewayManager extends EventEmitter {
           this.process = null;
         }
         this.emit('exit', code);
+        if (diagnosticGeneration === this.diagnosticProcessGeneration && !this.startLock && this.shouldReconnect) {
+          this.finishGatewayDiagnostics('failed');
+        }
 
         if (this.status.state === 'running') {
           this.setStatus({ state: 'stopped' });
         }
 
         const orchestratedStartupFailure = isOpenClawFatalConfigExitCode(code)
+          || (this.status.state === 'starting' && code === 1)
           || hasFatalRuntimeFailureSignal(undefined, this.recentStartupStderrLines)
+          || hasGatewayStateOwnershipContentionSignal(undefined, this.recentStartupStderrLines)
           || hasStartupMigrationLockSignal(undefined, this.recentStartupStderrLines)
           || hasInvalidConfigFailureSignal(undefined, this.recentStartupStderrLines);
         if (orchestratedStartupFailure) {
@@ -1118,6 +1537,10 @@ export class GatewayManager extends EventEmitter {
           port,
           connectedAt: Date.now(),
         });
+        if (this.diagnosticAttempt && !this.diagnosticAttempt.outcome) {
+          this.diagnosticAttempt.handshakeAt = Date.now();
+          this.recordDiagnosticStage('handshake-completed');
+        }
         this.startPing();
         this.scheduleGatewayReadyFallback();
         scheduleLocalDeviceAutoApproval(this);
@@ -1315,20 +1738,6 @@ export class GatewayManager extends EventEmitter {
   private cancelDeadlineRecovery(): void {
     this.clearDeadlineEscalation();
     this.recoveryController.stop();
-  }
-
-  private async cleanupOpenClawUpgradeSnapshot(): Promise<void> {
-    if (this.upgradeSnapshotCleanupAttempted) return;
-    this.upgradeSnapshotCleanupAttempted = true;
-
-    try {
-      const result = await removeOpenClaw2026_7_1UpgradeSnapshot();
-      if (result.status === 'removed') {
-        logger.info(`[upgrade] Removed OpenClaw 2026.7.1 pre-migration snapshot: ${result.snapshotDir}`);
-      }
-    } catch (error) {
-      logger.warn('[upgrade] Failed to remove OpenClaw 2026.7.1 pre-migration snapshot:', error);
-    }
   }
 
   /**

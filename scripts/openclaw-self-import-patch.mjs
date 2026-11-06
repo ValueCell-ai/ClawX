@@ -76,7 +76,9 @@ function listJavaScriptFiles(rootDir) {
         stack.push(fullPath);
         continue;
       }
-      if (entry.isFile() && entry.name.endsWith('.js')) {
+      // OpenClaw 2026.10 emits bundled extensions as ESM (.mjs) alongside the
+      // legacy CJS (.js) entries, and both can import the plugin-sdk facade.
+      if (entry.isFile() && (entry.name.endsWith('.js') || entry.name.endsWith('.mjs'))) {
         files.push(fullPath);
       }
     }

@@ -1,17 +1,14 @@
 import { chmod, copyFile, lstat, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, relative, resolve } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { backup, DatabaseSync } from 'node:sqlite';
 import { resolveOpenClawConfigPath, resolveOpenClawStateDir } from './paths';
 
-const UPGRADE_ID = 'openclaw-2026.7.1';
+const UPGRADE_ID = 'openclaw-2026.10.5';
 const SNAPSHOT_DIR_MODE = 0o700;
 const SNAPSHOT_FILE_MODE = 0o600;
-const AGENT_AUTH_BASENAMES = new Set([
-  'auth-profiles.json',
-  'openclaw-agent.sqlite',
-  'openclaw-agent.sqlite-wal',
-  'openclaw-agent.sqlite-shm',
-]);
+// Runtime/plugin binaries, caches and user workspaces are not migration inputs.
+const EXCLUDED_ROOTS = new Set(['backups', 'extensions', 'node_modules', 'skills', 'logs', 'browser']);
+const pendingSnapshots = new Map<string, Promise<OpenClawUpgradeSnapshotResult>>();
 
 export type OpenClawUpgradeSnapshotResult = {
   status: 'created' | 'exists';
@@ -43,8 +40,9 @@ async function isCopyableRegularFile(path: string): Promise<boolean> {
   try {
     const info = await lstat(path);
     return info.isFile();
-  } catch {
-    return false;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw error;
   }
 }
 
@@ -59,7 +57,32 @@ async function snapshotMarkerExists(markerPath: string): Promise<boolean> {
 async function copyFileIfPresent(source: string, destination: string, copied: string[]): Promise<void> {
   if (!await isCopyableRegularFile(source)) return;
   await mkdir(dirname(destination), { recursive: true, mode: SNAPSHOT_DIR_MODE });
-  await copyFile(source, destination);
+  if (source.endsWith('.sqlite')) {
+    // SQLite's online backup includes committed WAL pages in one consistent DB.
+    // Never independently copy a live DB and its changing WAL/SHM sidecars.
+    const db = new DatabaseSync(source, { readOnly: true });
+    try {
+      await backup(db, destination);
+    } finally {
+      db.close();
+    }
+    const check = new DatabaseSync(destination, { readOnly: true });
+    try {
+      const rows = check.prepare('PRAGMA integrity_check').all();
+      if (rows.length !== 1 || rows[0]?.integrity_check !== 'ok') {
+        throw new Error(`Upgrade snapshot integrity check failed: ${source}`);
+      }
+    } finally {
+      check.close();
+    }
+  } else {
+    const before = await stat(source);
+    await copyFile(source, destination);
+    const after = await stat(source);
+    if (before.size !== after.size || before.mtimeMs !== after.mtimeMs) {
+      throw new Error(`Upgrade input changed while being backed up: ${source}`);
+    }
+  }
   await chmod(destination, SNAPSHOT_FILE_MODE);
   copied.push(destination);
 }
@@ -106,13 +129,13 @@ async function copyTree(
   sourceRoot: string,
   destinationRoot: string,
   copied: string[],
-  includeFile: (name: string) => boolean,
 ): Promise<void> {
   let entries;
   try {
     entries = await readdir(sourceRoot, { withFileTypes: true });
-  } catch {
-    return;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw error;
   }
 
   for (const entry of entries) {
@@ -122,40 +145,50 @@ async function copyTree(
     const destination = join(destinationRoot, entry.name);
     if (entry.isDirectory()) {
       await mkdir(destination, { recursive: true, mode: SNAPSHOT_DIR_MODE });
-      await copyTree(source, destination, copied, includeFile);
-    } else if (entry.isFile() && includeFile(entry.name)) {
+      await copyTree(source, destination, copied);
+    } else if (entry.isFile() && !/\.sqlite-(wal|shm)$/.test(entry.name)) {
       await copyFileIfPresent(source, destination, copied);
     }
   }
 }
 
-/**
- * Creates a one-time pre-migration snapshot before ClawX first starts the
- * OpenClaw 2026.7.1 Gateway. SQLite databases are copied together with their
- * WAL/SHM sidecars; channel credentials under `credentials/` are intentionally
- * excluded because this migration does not rewrite them.
- */
-export async function ensureOpenClaw2026_7_1UpgradeSnapshot(
+/** Retained until explicitly removed by the user, never on Gateway readiness. */
+export async function ensureOpenClawUpgradeSnapshot(
   options: SnapshotOptions = {},
 ): Promise<OpenClawUpgradeSnapshotResult> {
+  const stateDir = resolve(options.stateDir ?? resolveOpenClawStateDir());
+  const key = `${stateDir}\0${resolve(options.configPath ?? resolveOpenClawConfigPath())}`;
+  const pending = pendingSnapshots.get(key);
+  if (pending) return pending;
+  const operation = createUpgradeSnapshot({ ...options, stateDir });
+  pendingSnapshots.set(key, operation);
+  try {
+    return await operation;
+  } finally {
+    pendingSnapshots.delete(key);
+  }
+}
+
+async function createUpgradeSnapshot(options: SnapshotOptions): Promise<OpenClawUpgradeSnapshotResult> {
   const stateDir = resolve(options.stateDir ?? resolveOpenClawStateDir());
   const configPath = resolve(options.configPath ?? resolveOpenClawConfigPath());
   const snapshotDir = resolveSnapshotDir(stateDir);
   const markerPath = join(snapshotDir, 'snapshot.json');
 
   if (await snapshotMarkerExists(markerPath)) {
-    try {
-      const marker = JSON.parse(await readFile(markerPath, 'utf8')) as { files?: unknown };
-      return {
-        status: 'exists',
-        snapshotDir,
-        files: Array.isArray(marker.files)
-          ? marker.files.filter((value): value is string => typeof value === 'string')
-          : [],
-      };
-    } catch {
-      // Replace malformed/incomplete snapshots below.
+    const marker = JSON.parse(await readFile(markerPath, 'utf8')) as { upgrade?: unknown; files?: unknown };
+    if (marker.upgrade !== UPGRADE_ID || !Array.isArray(marker.files)) {
+      throw new Error(`Invalid upgrade snapshot manifest; preserve and inspect ${snapshotDir}`);
     }
+    const files: string[] = [];
+    for (const file of marker.files) {
+      if (typeof file !== 'string' || relative(snapshotDir, resolve(snapshotDir, file)).startsWith('..')
+        || !await isCopyableRegularFile(join(snapshotDir, file))) {
+        throw new Error(`Incomplete upgrade snapshot; preserve and inspect ${snapshotDir}`);
+      }
+      files.push(file);
+    }
+    return { status: 'exists', snapshotDir, files };
   }
 
   const tempDir = `${snapshotDir}.tmp-${process.pid}-${Date.now()}`;
@@ -166,26 +199,18 @@ export async function ensureOpenClaw2026_7_1UpgradeSnapshot(
   try {
     await copyFileIfPresent(configPath, join(tempDir, 'config', basename(configPath)), copiedDestinations);
 
-    for (const databasePath of [
-      join(stateDir, 'openclaw.sqlite'),
-      join(stateDir, 'state', 'openclaw.sqlite'),
-    ]) {
-      const relativeDatabase = relative(stateDir, databasePath);
-      for (const suffix of ['', '-wal', '-shm']) {
-        await copyFileIfPresent(
-          `${databasePath}${suffix}`,
-          join(tempDir, 'state-files', `${relativeDatabase}${suffix}`),
-          copiedDestinations,
-        );
+    const entries = await readdir(stateDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (EXCLUDED_ROOTS.has(entry.name) || entry.name === 'workspace' || entry.name.startsWith('workspace-')) continue;
+      const source = join(stateDir, entry.name);
+      // Preserve the historical agents layout; other state lives under state-files.
+      const destination = entry.name === 'agents'
+        ? join(tempDir, 'agents') : join(tempDir, 'state-files', entry.name);
+      if (entry.isDirectory()) await copyTree(source, destination, copiedDestinations);
+      else if (entry.isFile() && source !== configPath && !/\.sqlite-(wal|shm)$/.test(entry.name)) {
+        await copyFileIfPresent(source, destination, copiedDestinations);
       }
     }
-
-    await copyTree(
-      join(stateDir, 'agents'),
-      join(tempDir, 'agents'),
-      copiedDestinations,
-      (name) => AGENT_AUTH_BASENAMES.has(name),
-    );
 
     const files = copiedDestinations.map((path) => relative(tempDir, path)).sort();
     await writeFile(join(tempDir, 'snapshot.json'), `${JSON.stringify({
@@ -246,11 +271,8 @@ export async function quarantineLegacyUpdateCheckState(
   return { status: 'quarantined', sourcePath, backupPath };
 }
 
-/**
- * Removes the one-time OpenClaw 2026.7.1 pre-migration snapshot after Gateway
- * startup succeeds so duplicated config/auth/SQLite secrets do not linger.
- */
-export async function removeOpenClaw2026_7_1UpgradeSnapshot(
+/** Explicit maintenance only. Gateway readiness must never call this. */
+export async function removeOpenClawUpgradeSnapshot(
   options: SnapshotOptions = {},
 ): Promise<OpenClawUpgradeSnapshotCleanupResult> {
   const stateDir = resolve(options.stateDir ?? resolveOpenClawStateDir());
@@ -263,3 +285,7 @@ export async function removeOpenClaw2026_7_1UpgradeSnapshot(
   await rm(snapshotDir, { recursive: true, force: true });
   return { status: 'removed', snapshotDir };
 }
+
+/** @deprecated Compatibility alias for tests/extensions from the pre-10.5 branch. */
+export const ensureOpenClaw2026_7_1UpgradeSnapshot = ensureOpenClawUpgradeSnapshot;
+export const removeOpenClaw2026_7_1UpgradeSnapshot = removeOpenClawUpgradeSnapshot;

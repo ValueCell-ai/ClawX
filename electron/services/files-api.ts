@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import { constants } from 'node:fs';
 import type { Stats } from 'node:fs';
 import type { FileHandle } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import {
   basename,
   dirname,
@@ -28,7 +29,7 @@ import {
   FILE_PREVIEW_MAX_TEXT_BYTES,
 } from '@shared/file-preview/limits';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
-import { getOpenClawConfigDir, expandPath, resolveOpenClawStateDir } from '../utils/paths';
+import { expandPath, resolveOpenClawStateDir } from '../utils/paths';
 import {
   resolveClawXStagingDir,
   type AttachmentAccess,
@@ -377,7 +378,7 @@ function getWorkspaceBinaryCap(value: unknown): number {
 
 function getFilePreviewWriteRoots(): string[] {
   const roots: string[] = [];
-  roots.push(resolve(getOpenClawConfigDir()));
+  roots.push(resolve(join(homedir(), '.openclaw')));
   try {
     roots.push(resolve(app.getPath('userData')));
   } catch {

@@ -1,9 +1,11 @@
-import { app, utilityProcess } from 'electron';
+import { app } from 'electron';
 import { existsSync, writeFileSync } from 'fs';
 import path from 'path';
+import { StringDecoder } from 'node:string_decoder';
 import type { GatewayLaunchContext } from './config-sync';
 import type { GatewayLifecycleState } from './process-policy';
 import { logger } from '../utils/logger';
+import { forkOpenClawUtilityProcess } from '../utils/openclaw-utility-process';
 import { appendNodeRequireToNodeOptions } from '../utils/paths';
 
 const GATEWAY_FETCH_PRELOAD_SOURCE = `'use strict';
@@ -104,6 +106,50 @@ function ensureGatewayFetchPreload(): string {
   return dest;
 }
 
+const MAX_GATEWAY_OUTPUT_LINE_CHARS = 64 * 1024;
+
+/** Preserve split UTF-8/lines without retaining unbounded child output. */
+function createGatewayOutputLineBuffer(onLine: (line: string) => void): {
+  write: (chunk: Buffer | string) => void;
+  flush: () => void;
+} {
+  const decoder = new StringDecoder('utf8');
+  let pending = '';
+  let discarding = false;
+  const consume = (text: string) => {
+    let offset = 0;
+    while (offset < text.length) {
+      const newline = text.indexOf('\n', offset);
+      const end = newline < 0 ? text.length : newline;
+      if (!discarding) {
+        const fragment = text.slice(offset, end);
+        if (pending.length + fragment.length > MAX_GATEWAY_OUTPUT_LINE_CHARS) {
+          // Drop the entire oversized line; emitting a suffix could misidentify
+          // arbitrary text as a fresh trace or leak part of a sensitive value.
+          pending = '';
+          discarding = true;
+        } else {
+          pending += fragment;
+        }
+      }
+      if (newline < 0) break;
+      if (!discarding && pending.length > 0) onLine(pending.replace(/\r$/, ''));
+      pending = '';
+      discarding = false;
+      offset = newline + 1;
+    }
+  };
+  return {
+    write: (chunk) => consume(typeof chunk === 'string' ? chunk : decoder.write(chunk)),
+    flush: () => {
+      consume(decoder.end());
+      if (!discarding && pending.length > 0) onLine(pending.replace(/\r$/, ''));
+      pending = '';
+      discarding = false;
+    },
+  };
+}
+
 export async function launchGatewayProcess(options: {
   port: number;
   launchContext: GatewayLaunchContext;
@@ -111,6 +157,7 @@ export async function launchGatewayProcess(options: {
   getCurrentState: () => GatewayLifecycleState;
   getShouldReconnect: () => boolean;
   onStderrLine: (line: string) => void;
+  onStdoutLine?: (line: string) => void;
   onSpawn: (pid: number | undefined) => void;
   onExit: (child: Electron.UtilityProcess, code: number | null) => void;
   onError: (error: Error) => void;
@@ -172,12 +219,16 @@ export async function launchGatewayProcess(options: {
   }
 
   return await new Promise<{ child: Electron.UtilityProcess; lastSpawnSummary: string }>((resolve, reject) => {
-    const child = utilityProcess.fork(entryScript, gatewayArgs, {
+    const child = forkOpenClawUtilityProcess(entryScript, gatewayArgs, {
       cwd: openclawDir,
       stdio: 'pipe',
       env: runtimeEnv as NodeJS.ProcessEnv,
       serviceName: 'OpenClaw Gateway',
-    });
+    }, { gatewayShutdownControl: true });
+    const stderrLines = createGatewayOutputLineBuffer(options.onStderrLine);
+    // stdout contains OpenClaw runtime startup traces absent from stderr. Let
+    // the manager select safe diagnostics rather than logging raw stdout here.
+    const stdoutLines = createGatewayOutputLineBuffer((line) => options.onStdoutLine?.(line));
 
     let settled = false;
     const resolveOnce = () => {
@@ -199,6 +250,8 @@ export async function launchGatewayProcess(options: {
     });
 
     child.on('exit', (code: number) => {
+      stderrLines.flush();
+      stdoutLines.flush();
       // Only check shouldReconnect — not current state.  On Windows the WS
       // close handler fires before the process exit handler and sets state to
       // 'stopped', which would make an unexpected crash look like a planned
@@ -210,12 +263,10 @@ export async function launchGatewayProcess(options: {
       options.onExit(child, code);
     });
 
-    child.stderr?.on('data', (data) => {
-      const raw = data.toString();
-      for (const line of raw.split(/\r?\n/)) {
-        options.onStderrLine(line);
-      }
-    });
+    child.stderr?.on('data', (data: Buffer | string) => stderrLines.write(data));
+    child.stderr?.on('end', () => stderrLines.flush());
+    child.stdout?.on('data', (data: Buffer | string) => stdoutLines.write(data));
+    child.stdout?.on('end', () => stdoutLines.flush());
 
     child.on('spawn', () => {
       logger.info(`Gateway process started (pid=${child.pid})`);

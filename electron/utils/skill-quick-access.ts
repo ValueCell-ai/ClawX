@@ -2,7 +2,7 @@ import { access, lstat, readdir, readFile, realpath, stat } from 'node:fs/promis
 import { constants } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join, relative, resolve } from 'node:path';
-import { getOpenClawConfigDir, expandPath, getOpenClawResolvedDir, getOpenClawSkillsDir, getResourcesDir } from './paths';
+import { expandPath, getOpenClawResolvedDir, getOpenClawSkillsDir, getResourcesDir } from './paths';
 
 export type QuickAccessSkillSource = 'workspace' | 'openclaw' | 'agents' | 'legacy';
 
@@ -243,7 +243,7 @@ async function resolveLegacyRoots(explicitRoots?: string[]): Promise<string[]> {
 
   const openClawDir = getOpenClawResolvedDir();
   const extensionSkillRoots = await discoverExtensionSkillRoots([
-    join(getOpenClawConfigDir(), 'extensions'),
+    join(homedir(), '.openclaw', 'extensions'),
     join(openClawDir, 'extensions'),
     join(openClawDir, 'dist', 'extensions'),
   ]);

@@ -1,6 +1,7 @@
 #!/usr/bin/env zx
 
 import 'zx/globals';
+import { downloadBufferWithRetry } from './download-with-retry.mjs';
 
 const ROOT_DIR = path.resolve(__dirname, '..');
 const AGENT_BROWSER_VERSION = 'v0.27.0';
@@ -78,12 +79,8 @@ async function setupTarget(id) {
   // Download (bare binary — no extraction needed)
   const startedAt = Date.now();
   echo(`   ⬇️  Downloading: ${downloadUrl}`);
-  const response = await fetch(downloadUrl);
-  if (!response.ok) {
-    throw new Error(`Failed to download ${target.asset}: ${response.status} ${response.statusText}`);
-  }
-  const buffer = await response.arrayBuffer();
-  await fs.writeFile(destBin, Buffer.from(buffer));
+  const buffer = await downloadBufferWithRetry(downloadUrl, { label: target.asset });
+  await fs.writeFile(destBin, buffer);
 
   // Permission fix
   if (os.platform() !== 'win32') {
