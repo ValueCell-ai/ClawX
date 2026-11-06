@@ -82,9 +82,13 @@ function parseRunningConfigSnapshot(snapshot: ConfigSnapshot | undefined): OpenC
   return parseConfig(raw);
 }
 
-function isBaseHashConflict(error: unknown): boolean {
+function isRetryableConfigSetConflict(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return /config changed since last load; re-run config\.get and retry/i.test(message);
+  if (/config changed since last load; re-run config\.get and retry/i.test(message)) return true;
+
+  // GatewayManager forwards the RPC error message. OpenClaw explicitly reports
+  // whether it restored the original file after a partial publication.
+  return /^Config publication failed after removing .+: config publication identity changed\r?\nThe config write was rolled back\.(?: |$)/.test(message);
 }
 
 /**
@@ -218,7 +222,7 @@ async function mutateRunningConfig(
       });
       return true;
     } catch (error) {
-      if (attempt === 0 && isBaseHashConflict(error)) continue;
+      if (attempt === 0 && isRetryableConfigSetConflict(error)) continue;
 
       // config.set may durably replace the file and then close the socket with
       // code 1012 before its RPC response reaches ClawX. Reconnect can restore
