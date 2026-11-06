@@ -5,7 +5,7 @@ import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import { stripAcpWorkingDirectoryPrefix } from '@shared/chat/session-title';
 import { isOpenClawHeartbeatPollText } from '@shared/chat/openclaw-internal';
 import type { RawMessage } from '@shared/chat/types';
-import type { SessionTurnTimingCandidate } from '@shared/host-api/contract';
+import type { SessionModelSelection, SessionTurnTimingCandidate } from '@shared/host-api/contract';
 import { resolveOpenClawStateDir } from '../utils/paths';
 import { logger } from '../utils/logger';
 import {
@@ -617,6 +617,36 @@ async function loadSessionTurnTimingsByKey(
 
 type SessionsApiContext = { gatewayManager?: { rpc: <T>(method: string, params?: unknown, timeoutMs?: number) => Promise<T> } };
 
+function projectSessionModel(
+  explicit: boolean,
+  provider: unknown,
+  model: unknown,
+  contextTokens: unknown,
+): SessionModelSelection {
+  const effectiveModelRef = typeof provider === 'string' && provider && typeof model === 'string' && model
+    ? `${provider}/${model}`
+    : undefined;
+  if (explicit && !effectiveModelRef) throw new Error('Gateway did not return the selected session model');
+  return {
+    modelRef: (explicit && effectiveModelRef) || null,
+    ...(effectiveModelRef ? { effectiveModelRef } : {}),
+    ...(typeof contextTokens === 'number' && Number.isFinite(contextTokens) && contextTokens > 0
+      ? { contextWindow: contextTokens } : {}),
+  };
+}
+
+async function describeSessionModel(ctx: SessionsApiContext, sessionKey: string) {
+  if (!ctx.gatewayManager) throw new Error('Gateway not connected');
+  if (!parseSessionKey(sessionKey)) throw new Error('Invalid session key');
+  const description = await ctx.gatewayManager.rpc<unknown>('sessions.describe', { key: sessionKey });
+  if (isRecord(description) && description.session === null) return null;
+  const row = isRecord(description) ? description.session : null;
+  if (!isRecord(row) || row.key !== sessionKey || typeof row.sessionId !== 'string' || !row.sessionId) {
+    throw new Error('Gateway did not return the requested session');
+  }
+  return row;
+}
+
 async function mutateMigratedSessionDirectly(sessionKey: string, mutation: 'delete' | 'rename', label?: string): Promise<{ handled: boolean; success: boolean; error?: string }> {
   const parsed = parseSessionKey(sessionKey);
   if (!parsed) return { handled: false, success: false };
@@ -794,6 +824,40 @@ async function renameSession(sessionKey: string, label: string, ctx?: SessionsAp
 
 export function createSessionsApi(ctx: SessionsApiContext = {}): CompleteHostServiceRegistry['sessions'] {
   return {
+    getModel: async (payload) => {
+      const row = await describeSessionModel(ctx, getSessionKey(payload));
+      if (!row) return { modelRef: null, exists: false };
+      if (row.modelOverrideSource === undefined) return { modelRef: null };
+      // Older transcripts may name the model that produced the last reply. Only
+      // the Gateway's projected user override represents a deliberate choice.
+      return projectSessionModel(row.modelOverrideSource === 'user', row.modelProvider, row.model, row.contextTokens);
+    },
+    setModel: async (payload) => {
+      const sessionKey = getSessionKey(payload);
+      const { modelRef, createIfMissing } = payload;
+      if (modelRef !== null && (typeof modelRef !== 'string' || !/^[^/\s]+\/\S+$/.test(modelRef))) {
+        throw new Error('Session model must be a provider/model reference or null');
+      }
+      if (!ctx.gatewayManager) throw new Error('Gateway not connected');
+      const row = await describeSessionModel(ctx, sessionKey);
+      if (!row && !(createIfMissing === true && modelRef !== null)) throw new Error('Session no longer exists');
+      // The explicit scope prevents admin connections from honoring an agent/global
+      // sticky-model policy. Never retry an unsupported scoped patch without it.
+      const result = await ctx.gatewayManager.rpc<unknown>('sessions.patch', {
+        key: sessionKey,
+        ...(row ? { expectedSessionId: row.sessionId } : {}),
+        model: modelRef,
+        modelScope: 'session',
+      });
+      if (!isRecord(result) || result.ok !== true || result.key !== sessionKey || !isRecord(result.entry)
+        || !isRecord(result.resolved)) throw new Error('Gateway did not confirm the session model change');
+      return projectSessionModel(
+        result.entry.modelOverrideSource === 'user',
+        result.resolved.modelProvider,
+        result.resolved.model,
+        result.resolved.contextTokens,
+      );
+    },
     delete: async (payload) => deleteSession(getSessionKey(payload), ctx),
     rename: async (payload) => {
       const body = isRecord(payload) ? payload as SessionPayload : {};

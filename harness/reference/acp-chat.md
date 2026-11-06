@@ -52,6 +52,25 @@ Before provider submission, patched OpenClaw compares measured prompt tokens wit
 
 This extension has one removal condition: when the pinned ACP SDK accepts the native Session Compaction RFD update and the distributed OpenClaw adapter emits that native update for the same live and replay paths, remove the metadata producer and Renderer version-1 validator and consume the native event instead.
 
+## Conversation model selection
+
+Selecting an Agent mention directs the model picker, pre-send hooks and prompt
+to that Agent's main session. Removing the mention restores the visible
+conversation's model. The Gateway can have a main session that the sidebar
+omits, so the picker reads the destination before staging a first-prompt choice.
+
+Main reads the Gateway's
+`sessions.describe` projection and writes `sessions.patch` with
+`modelScope: "session"`. The bundled Gateway accepts that scope even when an
+administrator has configured Agent-wide or global model switching. An external
+Gateway that rejects the field must surface the error. Retrying without the
+field could change sibling conversations.
+
+A local draft holds its choice until first send. After ACP session creation,
+the host confirms the selection before the first prompt. Clearing it resumes
+the Agent's configured model. On a 0.6.1 upgrade the runtime distinguishes old
+user overrides from the model a transcript recorded for a previous reply.
+
 ## Identity And Race Protection
 
 Renderer-visible session identity is the OpenClaw Gateway session key. Main may hold a different ACP session id returned by `newSession`; it rewrites downstream routing to the matching Gateway session key. Loads on the shared ACP connection are serialized. A routing envelope carries the session key and the Main-owned generation token for the matching load or live prompt. Renderer uses a separate local request sequence to reject stale load completions; preparing a local-only session must not advance the ACP generation. Renderer ignores updates, permission requests, and asynchronous hydration results whose session or generation matches neither the selected session nor a retained live prompt. Generation is an in-memory race token rather than a durable sequence; Main may restore the previous value when a load fails, so code must compare it together with session and current-operation state rather than assume global monotonicity.

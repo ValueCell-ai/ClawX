@@ -103,6 +103,12 @@ forbiddenPatterns:
 
 Gateway backend communication covers all ClawX paths that move data between the visual desktop UI and OpenClaw runtime/backend services.
 
+The chat composer reads and updates session model selections through Main.
+Conversation switches, workspace changes and Agent routing must preserve the
+identity of both the selection and the next prompt. After a 0.6.1 upgrade,
+sessions without an explicit selection inherit the migrated Agent configuration.
+See [Conversation model selection](../../reference/acp-chat.md#conversation-model-selection).
+
 Coordinator-owned OpenClaw config mutations, including model-switch retries after a confirmed publication rollback, and their `config.get`/`config.set` transaction contract are documented in `harness/reference/openclaw-config-delivery.md`.
 
 Overlapping configuration readers share the pending read until a mutation or secrets reload enters the queue. During a Gateway stall they observe the same timeout. In issue reports, the duration of a `channels.status` RPC measures time from dispatch to success or failure. A separate log entry identifies when a failed liveness check triggers a guarded restart of a ClawX-owned Gateway.
