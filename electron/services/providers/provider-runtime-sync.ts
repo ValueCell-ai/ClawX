@@ -13,6 +13,8 @@ import {
   removeProviderKeyFromOpenClaw,
   saveOAuthTokenToOpenClaw,
   saveProviderKeyToOpenClaw,
+  seedOAuthTokenToOpenClaw,
+  seedProviderKeyToOpenClaw,
   OPENAI_CODEX_OAUTH_PROVIDER_CONFIG,
   setOpenClawDefaultModel,
   setOpenClawDefaultModelWithOverride,
@@ -212,7 +214,9 @@ export async function syncProviderApiKeyToRuntime(
 export async function syncAllProviderAuthToRuntime(): Promise<void> {
   await migrateAllAgentAuthProfilesToSqlite();
   const accounts = await listProviderAccounts();
+  const accountsByRuntimeProvider = new Map<string, typeof accounts>();
   for (const account of accounts) {
+    if (!account.enabled) continue;
     const runtimeProviderKey = await resolveRuntimeProviderKey({
       id: account.id,
       name: account.label,
@@ -225,24 +229,30 @@ export async function syncAllProviderAuthToRuntime(): Promise<void> {
       createdAt: account.createdAt,
       updatedAt: account.updatedAt,
     });
+    const candidates = accountsByRuntimeProvider.get(runtimeProviderKey) ?? [];
+    candidates.push(account);
+    accountsByRuntimeProvider.set(runtimeProviderKey, candidates);
+  }
 
+  for (const [runtimeProviderKey, candidates] of accountsByRuntimeProvider) {
+    const account = candidates.find((candidate) => candidate.isDefault) ?? candidates[0];
     const secret = await getProviderSecret(account.id);
     if (!secret) {
       continue;
     }
 
     if (secret.type === 'api_key') {
-      await saveProviderKeyToOpenClaw(runtimeProviderKey, secret.apiKey);
+      await seedProviderKeyToOpenClaw(runtimeProviderKey, secret.apiKey);
       continue;
     }
 
     if (secret.type === 'local' && secret.apiKey) {
-      await saveProviderKeyToOpenClaw(runtimeProviderKey, secret.apiKey);
+      await seedProviderKeyToOpenClaw(runtimeProviderKey, secret.apiKey);
       continue;
     }
 
     if (secret.type === 'oauth') {
-      await saveOAuthTokenToOpenClaw(runtimeProviderKey, {
+      await seedOAuthTokenToOpenClaw(runtimeProviderKey, {
         access: secret.accessToken,
         refresh: secret.refreshToken,
         expires: secret.expiresAt,
