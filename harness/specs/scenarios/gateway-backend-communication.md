@@ -105,6 +105,8 @@ Gateway backend communication covers all ClawX paths that move data between the 
 
 Coordinator-owned OpenClaw config mutations and their `config.get`/`config.set` transaction contract are documented in `harness/reference/openclaw-config-delivery.md`.
 
+Overlapping configuration readers share the pending read until a mutation or secrets reload enters the queue. During a Gateway stall they observe the same timeout. In issue reports, the duration of a `channels.status` RPC measures time from dispatch to success or failure. A separate log entry identifies when a failed liveness check triggers a guarded restart of a ClawX-owned Gateway.
+
 Allowed flow:
 Renderer page/component -> `src/lib/host-api.ts` or `src/lib/api-client.ts` -> Electron Main typed host service or IPC handler -> Main-owned OpenClaw Gateway WebSocket -> runtime result -> store/UI.
 

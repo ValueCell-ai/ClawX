@@ -8,6 +8,7 @@ import {
   mutateOpenClawConfig,
   readOpenClawConfigSnapshot,
   registerOpenClawConfigCoordinator,
+  reloadOpenClawSecretsIfRunning,
   resetOpenClawConfigCoordinatorForTests,
   restoreRedactedSentinelsFromBaseline,
 } from '@electron/gateway/config-delivery';
@@ -149,6 +150,115 @@ describe('OpenClaw config delivery coordinator', () => {
       config: { value: 1 },
       exists: true,
     });
+  });
+
+  it('shares an outstanding read, isolates nested values, and reads again after settlement', async () => {
+    const manager = createGatewayManager();
+    manager.rpc.mockResolvedValueOnce({ config: { agents: ['first'] } })
+      .mockResolvedValueOnce({ config: { agents: ['updated'] } });
+    registerOpenClawConfigCoordinator(manager);
+
+    const [first, second] = await Promise.all([readOpenClawConfigSnapshot(), readOpenClawConfigSnapshot()]);
+    expect(manager.rpc).toHaveBeenCalledOnce();
+    (first.config.agents as string[]).push('local change');
+    expect(second.config.agents).toEqual(['first']);
+    expect((await readOpenClawConfigSnapshot()).config.agents).toEqual(['updated']);
+    expect(manager.rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it('reads the new Gateway connection when an old connection still has a pending read', async () => {
+    const manager = createGatewayManager();
+    manager.getStatus.mockReturnValue({ state: 'running', connectedAt: 1 });
+    let rejectOldRead!: (error: Error) => void;
+    manager.rpc.mockReturnValueOnce(new Promise((_, reject) => { rejectOldRead = reject; }))
+      .mockResolvedValueOnce({ config: { source: 'reconnected' } });
+    registerOpenClawConfigCoordinator(manager);
+
+    const oldRead = readOpenClawConfigSnapshot();
+    await vi.waitFor(() => expect(manager.rpc).toHaveBeenCalledOnce());
+    manager.getStatus.mockReturnValue({ state: 'running', connectedAt: 2 });
+    const newRead = readOpenClawConfigSnapshot();
+    const outcome = Promise.allSettled([oldRead, newRead]);
+    const timeout = new Error('RPC timeout: config.get');
+    rejectOldRead(timeout);
+
+    expect(await outcome).toEqual([
+      { status: 'rejected', reason: timeout },
+      { status: 'fulfilled', value: { config: { source: 'reconnected' }, exists: true } },
+    ]);
+  });
+
+  it('shares a config.get timeout and permits a fresh read after rejection', async () => {
+    const manager = createGatewayManager();
+    const timeout = new Error('RPC timeout: config.get');
+    manager.rpc.mockRejectedValueOnce(timeout).mockResolvedValueOnce({ config: { recovered: true } });
+    registerOpenClawConfigCoordinator(manager);
+
+    const readers = await Promise.allSettled([readOpenClawConfigSnapshot(), readOpenClawConfigSnapshot()]);
+    expect(readers).toEqual([
+      { status: 'rejected', reason: timeout },
+      { status: 'rejected', reason: timeout },
+    ]);
+    expect(manager.rpc).toHaveBeenCalledOnce();
+    expect((await readOpenClawConfigSnapshot()).config.recovered).toBe(true);
+  });
+
+  it('orders read groups around a mutation and secrets reload, including reads inside the mutator', async () => {
+    const manager = createGatewayManager();
+    let version = 'initial';
+    manager.rpc.mockImplementation(async (method: string, params: { raw?: string }) => {
+      if (method === 'config.get') return { config: { version }, hash: 'test-hash' };
+      if (method === 'config.set') version = JSON.parse(params.raw!).version;
+      if (method === 'secrets.reload') version = 'reloaded';
+      return {};
+    });
+    registerOpenClawConfigCoordinator(manager);
+
+    const before = readOpenClawConfigSnapshot();
+    const mutation = mutateOpenClawConfig(async (config) => {
+      config.version = 'written';
+      const nested = await readOpenClawConfigSnapshot();
+      expect(nested.config.version).toBe('written');
+      nested.config.version = 'local change';
+    });
+    const afterWrite = readOpenClawConfigSnapshot();
+    const reload = reloadOpenClawSecretsIfRunning();
+    const afterReload = readOpenClawConfigSnapshot();
+
+    expect((await before).config.version).toBe('initial');
+    expect(await mutation).toBe(true);
+    expect((await afterWrite).config.version).toBe('written');
+    expect(await reload).toBe(true);
+    expect((await afterReload).config.version).toBe('reloaded');
+    expect(manager.rpc.mock.calls.map(([method]) => method)).toEqual([
+      'config.get', 'config.get', 'config.set', 'config.get', 'secrets.reload', 'config.get',
+    ]);
+  });
+
+  it('keeps the new group active after a read from the previous coordinator settles', async () => {
+    const firstManager = createGatewayManager();
+    const secondManager = createGatewayManager();
+    let finishOldRead!: () => void;
+    firstManager.rpc.mockReturnValue(new Promise((resolve) => {
+      finishOldRead = () => resolve({ config: { source: 'old' } });
+    }));
+    let finishNewRead!: () => void;
+    secondManager.rpc.mockReturnValue(new Promise((resolve) => {
+      finishNewRead = () => resolve({ config: { source: 'new' } });
+    }));
+
+    registerOpenClawConfigCoordinator(firstManager);
+    const oldRead = readOpenClawConfigSnapshot();
+    await vi.waitFor(() => expect(firstManager.rpc).toHaveBeenCalledOnce());
+    registerOpenClawConfigCoordinator(secondManager);
+    const newRead = readOpenClawConfigSnapshot();
+    finishOldRead();
+    expect((await oldRead).config.source).toBe('old');
+    const joinedRead = readOpenClawConfigSnapshot();
+    finishNewRead();
+    expect((await newRead).config.source).toBe('new');
+    expect((await joinedRead).config.source).toBe('new');
+    expect(secondManager.rpc).toHaveBeenCalledOnce();
   });
 
   it('applies an awaited nested mutation to the same in-flight config without deadlocking', async () => {
