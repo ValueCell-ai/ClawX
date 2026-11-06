@@ -243,7 +243,7 @@ describe('ensureClawXContext', () => {
       JSON.stringify({
         agents: {
           defaults: { workspace: defaultWorkspace },
-          list: [{ id: 'agent', workspace: agentWorkspace }],
+          list: [{ id: 'main', default: true }, { id: 'agent', workspace: agentWorkspace }],
         },
       }),
       'utf-8',

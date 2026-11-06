@@ -1044,6 +1044,25 @@ describe('host services', () => {
       };
     }
 
+    it('excludes the wait for config from the duration of a failed channel probe', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(0);
+      readOpenClawConfigMock.mockImplementationOnce(async () => {
+        vi.setSystemTime(30_000);
+        return { channels: {} };
+      });
+      const rpc = vi.fn(async () => {
+        vi.setSystemTime(35_000);
+        throw new Error('RPC timeout: channels.status');
+      });
+      const { createChannelsApi } = await import('@electron/services/channels-api');
+      const { logger } = await import('@electron/utils/logger');
+      const channelsApi = createChannelsApi({ gatewayManager: createGatewayManager(rpc) as never });
+
+      await channelsApi.accounts({ mode: 'runtime', probe: true });
+      expect(logger.warn).toHaveBeenCalledWith('[channels.accounts] channels.status probe=1 failed after 5000ms');
+    });
+
     it('keeps a probe failure visible even when a cached snapshot reports connected', async () => {
       configureFeishu();
       const rpc = vi.fn().mockImplementation(async (_method: string, params: { probe?: boolean }) =>
@@ -2153,8 +2172,6 @@ describe('host services', () => {
       mainWindow: {} as never,
       acpSessionAccessRegistry: {} as never,
     }))).toEqual([
-      'getSessionModel',
-      'setSessionModel',
       'getAcpSessionFamily',
       'loadAcpSession',
       'sendAcpPrompt',

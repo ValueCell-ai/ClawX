@@ -1,7 +1,8 @@
 // @vitest-environment node
 
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -105,6 +106,32 @@ function seedTranscriptRecords(sessionKey: string, records: unknown[]) {
   );
 }
 
+function seedRuntimeSession(sessionKey: string, entry: Record<string, unknown>) {
+  const agentDir = join(testOpenClawDir, 'agents/main/agent');
+  mkdirSync(agentDir, { recursive: true });
+  const databasePath = join(agentDir, 'openclaw-agent.sqlite');
+  const runtimeRequire = createRequire(import.meta.url);
+  const sdk = runtimeRequire('openclaw/plugin-sdk/sqlite-runtime');
+  const db = new DatabaseSync(databasePath);
+  try {
+    sdk.ensureOpenClawAgentDatabaseSchema(db, {
+      agentId: 'main', path: databasePath, register: false,
+      env: { OPENCLAW_STATE_DIR: testOpenClawDir },
+    });
+    db.prepare('INSERT INTO session_nodes (session_key, current_session_id, entry_json, updated_at, label) VALUES (?, ?, ?, ?, ?)')
+      .run(sessionKey, String(entry.sessionId), JSON.stringify(entry), Number(entry.updatedAt), String(entry.label));
+  } finally {
+    db.close();
+  }
+  const runtimeDist = dirname(dirname(runtimeRequire.resolve('openclaw/plugin-sdk/sqlite-runtime')));
+  const parserFile = readdirSync(runtimeDist).find((file) => /^session-entry-json-.*\.mjs$/.test(file));
+  if (!parserFile) throw new Error('Bundled OpenClaw session parser not found');
+  const parser = Object.values(runtimeRequire(join(runtimeDist, parserFile)))
+    .find((value) => typeof value === 'function' && value.name === 'parseSqliteSessionEntryRecord');
+  if (typeof parser !== 'function') throw new Error('Bundled OpenClaw session parser contract changed');
+  return { databasePath, parseEntry: parser as (row: Record<string, unknown>) => Record<string, unknown> | null };
+}
+
 describe('sessions API workspace summaries', () => {
   beforeEach(() => {
     rmSync(testOpenClawDir, { recursive: true, force: true });
@@ -112,21 +139,48 @@ describe('sessions API workspace summaries', () => {
   });
 
   it('deletes and renames migrated SQLite sessions persistently without sessions.json', async () => {
-    const agentDir = join(testOpenClawDir, 'agents/main/agent');
-    mkdirSync(agentDir, { recursive: true });
-    const db = new DatabaseSync(join(agentDir, 'openclaw-agent.sqlite'));
-    db.exec('CREATE TABLE session_nodes(session_key TEXT PRIMARY KEY, current_session_id TEXT, label TEXT, updated_at INTEGER); CREATE TABLE transcript_events(session_id TEXT, seq INTEGER, event_json TEXT, PRIMARY KEY(session_id, seq));');
-    db.prepare('INSERT INTO session_nodes VALUES (?, ?, ?, ?)').run('agent:main:session-mutate', 'mutate-id', 'old', 1);
-    db.close();
+    const sessionKey = 'agent:main:session-mutate';
+    const entry = {
+      sessionId: 'mutate-id', updatedAt: 1, label: 'old',
+      deliveryContext: { channel: 'feishu', accountId: 'test-account' },
+    };
+    const { databasePath, parseEntry } = seedRuntimeSession(sessionKey, entry);
     const { createSessionsApi } = await import('@electron/services/sessions-api');
-    await expect(createSessionsApi().rename({ sessionKey: 'agent:main:session-mutate', label: 'new' })).resolves.toEqual({ success: true });
-    const renamed = new DatabaseSync(join(agentDir, 'openclaw-agent.sqlite'), { readOnly: true });
-    expect(renamed.prepare('SELECT label FROM session_nodes WHERE session_key=?').get('agent:main:session-mutate')?.label).toBe('new');
-    renamed.close();
-    await expect(createSessionsApi().delete({ sessionKey: 'agent:main:session-mutate' })).resolves.toEqual({ success: true });
-    const deleted = new DatabaseSync(join(agentDir, 'openclaw-agent.sqlite'), { readOnly: true });
-    expect(deleted.prepare('SELECT count(*) AS n FROM session_nodes WHERE session_key=?').get('agent:main:session-mutate')?.n).toBe(0);
-    deleted.close();
+    const rpc = vi.fn().mockRejectedValue(new Error('Gateway restarting'));
+    await expect(createSessionsApi({ gatewayManager: { rpc } }).rename({ sessionKey, label: 'new' })).resolves.toEqual({ success: true });
+    expect(rpc).toHaveBeenCalledWith('sessions.patch', { key: sessionKey, label: 'new' });
+    const renamed = new DatabaseSync(databasePath, { readOnly: true });
+    try {
+      expect(renamed.prepare('PRAGMA user_version').get()?.user_version).toBe(25);
+      const row = renamed.prepare('SELECT current_session_id, entry_json, label, updated_at FROM session_nodes WHERE session_key=?').get(sessionKey)!;
+      expect(row.label).toBe('new');
+      expect(row.updated_at).toBeGreaterThan(1);
+      expect(parseEntry(row)).toEqual({ ...entry, label: 'new', updatedAt: row.updated_at });
+    } finally {
+      renamed.close();
+    }
+    await expect(createSessionsApi().delete({ sessionKey })).resolves.toEqual({ success: true });
+    const deleted = new DatabaseSync(databasePath, { readOnly: true });
+    try {
+      expect(deleted.prepare('SELECT count(*) AS n FROM session_nodes WHERE session_key=?').get(sessionKey)?.n).toBe(0);
+    } finally {
+      deleted.close();
+    }
+  });
+
+  it('leaves inconsistent persisted session metadata unchanged when fallback rename fails', async () => {
+    const sessionKey = 'agent:main:inconsistent';
+    const { databasePath } = seedRuntimeSession(sessionKey, { sessionId: 'inconsistent-id', updatedAt: 1, label: 'old' });
+    const db = new DatabaseSync(databasePath);
+    try {
+      db.prepare('UPDATE session_nodes SET updated_at = 2 WHERE session_key = ?').run(sessionKey);
+      const before = db.prepare('SELECT * FROM session_nodes WHERE session_key = ?').get(sessionKey);
+      const { createSessionsApi } = await import('@electron/services/sessions-api');
+      await expect(createSessionsApi().rename({ sessionKey, label: 'new' })).resolves.toMatchObject({ success: false });
+      expect(db.prepare('SELECT * FROM session_nodes WHERE session_key = ?').get(sessionKey)).toEqual(before);
+    } finally {
+      db.close();
+    }
   });
 
   it('loads transcript history from the state dir when the config path is elsewhere', async () => {

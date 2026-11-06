@@ -103,7 +103,15 @@ forbiddenPatterns:
 
 Gateway backend communication covers all ClawX paths that move data between the visual desktop UI and OpenClaw runtime/backend services.
 
-Coordinator-owned OpenClaw config mutations and their `config.get`/`config.set` transaction contract are documented in `harness/reference/openclaw-config-delivery.md`.
+The chat composer reads and updates session model selections through Main.
+Conversation switches, workspace changes and Agent routing must preserve the
+identity of both the selection and the next prompt. After a 0.6.1 upgrade,
+sessions without an explicit selection inherit the migrated Agent configuration.
+See [Conversation model selection](../../reference/acp-chat.md#conversation-model-selection).
+
+Coordinator-owned OpenClaw config mutations, including model-switch retries after a confirmed publication rollback, and their `config.get`/`config.set` transaction contract are documented in `harness/reference/openclaw-config-delivery.md`.
+
+Overlapping configuration readers share the pending read until a mutation or secrets reload enters the queue. During a Gateway stall they observe the same timeout. In issue reports, the duration of a `channels.status` RPC measures time from dispatch to success or failure. A separate log entry identifies when a failed liveness check triggers a guarded restart of a ClawX-owned Gateway.
 
 Allowed flow:
 Renderer page/component -> `src/lib/host-api.ts` or `src/lib/api-client.ts` -> Electron Main typed host service or IPC handler -> Main-owned OpenClaw Gateway WebSocket -> runtime result -> store/UI.
@@ -126,6 +134,8 @@ Typed generic Gateway RPC requests are validated by `electron/services/gateway-a
 Channel/plugin migration behavior is also part of this scenario when ClawX rewrites OpenClaw config before Gateway launch. Upgrades must preserve single-owner channel registration for migrated plugin-backed channels such as Feishu/Lark. A desktop Chat session has no channel account context; a bundled WeCom business tool may fall back only when exactly one WeCom account is configured and must reject an ambiguous multi-account selection.
 
 Windows upgrade validation must use matching old/new runtime dependencies and isolated application/state directories. Retain old conversation and tool history, credentials, agents, workspaces and the pre-migration snapshot across restart and new activity. Record real readiness timings and distinguish unit coverage from runtime and installer coverage. The local 0.6.1 validation results and remaining limitations are recorded in `harness/reference/local-061-upgrade-validation.md`.
+
+Agent roster upgrades also preserve effective workspace locations before retiring legacy defaults. The unique marked default Agent's channel fallback, heartbeat, system, auth-inheritance, fixed-store and talk responsibilities follow the pinned Doctor rules without overriding explicit owners or disabled settings. Current Agent CRUD, UI snapshots and workspace bootstrap/identity maintenance share the runtime's workspace resolver; already-current rosters must not regain inferred legacy ownership. Offline session renames keep the canonical SQLite entry and indexed label/timestamp synchronized transactionally. See `harness/specs/tasks/fix-061-upgrade-workspace-consistency.md`, `harness/specs/rules/openclaw-upgrade-persistence.md` and the follow-up section in `harness/reference/local-061-upgrade-validation.md` for validation and remaining compatibility boundaries.
 
 Restart performance investigations must distinguish complete app launches from in-app Gateway restarts and separate the old process's stop duration from new-process readiness. Windows process-identity probes, stale ownership records and repeated configuration validation can dominate the runtime bootstrap. Controlled profiling evidence and the boundaries of safe stale-owner optimization are recorded in `harness/reference/windows-gateway-restart-latency.md`.
 

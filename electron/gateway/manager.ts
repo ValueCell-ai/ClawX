@@ -870,7 +870,7 @@ export class GatewayManager extends EventEmitter {
   /**
    * Restart Gateway process
    */
-  async restart(): Promise<void> {
+  async restart(deadlineProbeFailure?: 'deadline-probe-timeout' | 'deadline-probe-failed'): Promise<void> {
     this.cancelDeadlineRecovery();
     if (this.restartController.isRestartDeferred({
       state: this.status.state,
@@ -911,7 +911,10 @@ export class GatewayManager extends EventEmitter {
     const pidBefore = this.status.pid;
     const diagnosticAttempt = this.beginGatewayDiagnostics('restart');
     this.restartDiagnosticAttempt = diagnosticAttempt;
-    logger.info(`[gateway-refresh] mode=restart requested pidBefore=${pidBefore ?? 'n/a'}`);
+    const trigger = deadlineProbeFailure
+      ? ` trigger=owned-liveness-recovery probe=system-presence reason=${deadlineProbeFailure}`
+      : '';
+    logger.info(`[gateway-refresh] mode=restart requested pidBefore=${pidBefore ?? 'n/a'}${trigger}`);
     this.restartInFlight = (async () => {
       await this.stop();
       try {
@@ -1705,7 +1708,8 @@ export class GatewayManager extends EventEmitter {
     }
 
     this.deadlineEscalationPending = false;
-    void this.restart().catch((error) => {
+    const failure = reason === 'deadline-probe-timeout' ? reason : 'deadline-probe-failed';
+    void this.restart(failure).catch((error) => {
       logger.warn(`Gateway deadline recovery failed (${reason}):`, error);
     });
   }

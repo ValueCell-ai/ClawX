@@ -407,6 +407,10 @@ export const hostApi = {
     ),
   },
   sessions: {
+    getModel: (sessionKey: string) => invokeHost('sessions', 'getModel', { sessionKey }),
+    setModel: (sessionKey: string, modelRef: string | null, options?: { createIfMissing: boolean }) => (
+      invokeHost('sessions', 'setModel', { sessionKey, modelRef, ...options })
+    ),
     delete: (id: string) => invokeHost('sessions', 'delete', { id }),
     rename: (id: string, title: string) => (
       invokeHost('sessions', 'rename', { id, title })
@@ -420,8 +424,6 @@ export const hostApi = {
     ),
   },
   chat: {
-    getSessionModel: (sessionKey: string) => invokeHost('chat', 'getSessionModel', { sessionKey }),
-    setSessionModel: (sessionKey: string, modelRef: string) => invokeHost('chat', 'setSessionModel', { sessionKey, modelRef }),
     getAcpSessionFamily: (input: AcpSessionFamilyPayload) => (
       invokeHost('chat', 'getAcpSessionFamily', input)
     ),

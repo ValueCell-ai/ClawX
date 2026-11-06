@@ -467,6 +467,7 @@ describe('sanitizeOpenClawConfig', () => {
     expect(agents.defaults).toEqual({
       workspace: '~/.openclaw/workspace',
       systemAgent: { agentId: 'main' },
+      heartbeat: { agentId: 'main' },
     });
     expect(agents.entries).toEqual({
       main: {

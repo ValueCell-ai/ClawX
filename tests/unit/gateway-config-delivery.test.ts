@@ -8,6 +8,7 @@ import {
   mutateOpenClawConfig,
   readOpenClawConfigSnapshot,
   registerOpenClawConfigCoordinator,
+  reloadOpenClawSecretsIfRunning,
   resetOpenClawConfigCoordinatorForTests,
   restoreRedactedSentinelsFromBaseline,
 } from '@electron/gateway/config-delivery';
@@ -72,6 +73,10 @@ describe('restoreRedactedSentinelsFromBaseline', () => {
 });
 
 describe('OpenClaw config delivery coordinator', () => {
+  const baseHashConflict = 'config changed since last load; re-run config.get and retry';
+  const publicationConflict = 'Config publication failed after removing C:\\OpenClaw\\openclaw.json: config publication identity changed';
+  const confirmedRollback = 'The config write was rolled back. Inspect recovery backups at C:\\OpenClaw\\openclaw.json.bak.';
+  const rolledBackConflict = `${publicationConflict}\n${confirmedRollback}`;
   let testDir: string;
   let configPath: string;
   let previousConfigPath: string | undefined;
@@ -149,6 +154,115 @@ describe('OpenClaw config delivery coordinator', () => {
       config: { value: 1 },
       exists: true,
     });
+  });
+
+  it('shares an outstanding read, isolates nested values, and reads again after settlement', async () => {
+    const manager = createGatewayManager();
+    manager.rpc.mockResolvedValueOnce({ config: { agents: ['first'] } })
+      .mockResolvedValueOnce({ config: { agents: ['updated'] } });
+    registerOpenClawConfigCoordinator(manager);
+
+    const [first, second] = await Promise.all([readOpenClawConfigSnapshot(), readOpenClawConfigSnapshot()]);
+    expect(manager.rpc).toHaveBeenCalledOnce();
+    (first.config.agents as string[]).push('local change');
+    expect(second.config.agents).toEqual(['first']);
+    expect((await readOpenClawConfigSnapshot()).config.agents).toEqual(['updated']);
+    expect(manager.rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it('reads the new Gateway connection when an old connection still has a pending read', async () => {
+    const manager = createGatewayManager();
+    manager.getStatus.mockReturnValue({ state: 'running', connectedAt: 1 });
+    let rejectOldRead!: (error: Error) => void;
+    manager.rpc.mockReturnValueOnce(new Promise((_, reject) => { rejectOldRead = reject; }))
+      .mockResolvedValueOnce({ config: { source: 'reconnected' } });
+    registerOpenClawConfigCoordinator(manager);
+
+    const oldRead = readOpenClawConfigSnapshot();
+    await vi.waitFor(() => expect(manager.rpc).toHaveBeenCalledOnce());
+    manager.getStatus.mockReturnValue({ state: 'running', connectedAt: 2 });
+    const newRead = readOpenClawConfigSnapshot();
+    const outcome = Promise.allSettled([oldRead, newRead]);
+    const timeout = new Error('RPC timeout: config.get');
+    rejectOldRead(timeout);
+
+    expect(await outcome).toEqual([
+      { status: 'rejected', reason: timeout },
+      { status: 'fulfilled', value: { config: { source: 'reconnected' }, exists: true } },
+    ]);
+  });
+
+  it('shares a config.get timeout and permits a fresh read after rejection', async () => {
+    const manager = createGatewayManager();
+    const timeout = new Error('RPC timeout: config.get');
+    manager.rpc.mockRejectedValueOnce(timeout).mockResolvedValueOnce({ config: { recovered: true } });
+    registerOpenClawConfigCoordinator(manager);
+
+    const readers = await Promise.allSettled([readOpenClawConfigSnapshot(), readOpenClawConfigSnapshot()]);
+    expect(readers).toEqual([
+      { status: 'rejected', reason: timeout },
+      { status: 'rejected', reason: timeout },
+    ]);
+    expect(manager.rpc).toHaveBeenCalledOnce();
+    expect((await readOpenClawConfigSnapshot()).config.recovered).toBe(true);
+  });
+
+  it('orders read groups around a mutation and secrets reload, including reads inside the mutator', async () => {
+    const manager = createGatewayManager();
+    let version = 'initial';
+    manager.rpc.mockImplementation(async (method: string, params: { raw?: string }) => {
+      if (method === 'config.get') return { config: { version }, hash: 'test-hash' };
+      if (method === 'config.set') version = JSON.parse(params.raw!).version;
+      if (method === 'secrets.reload') version = 'reloaded';
+      return {};
+    });
+    registerOpenClawConfigCoordinator(manager);
+
+    const before = readOpenClawConfigSnapshot();
+    const mutation = mutateOpenClawConfig(async (config) => {
+      config.version = 'written';
+      const nested = await readOpenClawConfigSnapshot();
+      expect(nested.config.version).toBe('written');
+      nested.config.version = 'local change';
+    });
+    const afterWrite = readOpenClawConfigSnapshot();
+    const reload = reloadOpenClawSecretsIfRunning();
+    const afterReload = readOpenClawConfigSnapshot();
+
+    expect((await before).config.version).toBe('initial');
+    expect(await mutation).toBe(true);
+    expect((await afterWrite).config.version).toBe('written');
+    expect(await reload).toBe(true);
+    expect((await afterReload).config.version).toBe('reloaded');
+    expect(manager.rpc.mock.calls.map(([method]) => method)).toEqual([
+      'config.get', 'config.get', 'config.set', 'config.get', 'secrets.reload', 'config.get',
+    ]);
+  });
+
+  it('keeps the new group active after a read from the previous coordinator settles', async () => {
+    const firstManager = createGatewayManager();
+    const secondManager = createGatewayManager();
+    let finishOldRead!: () => void;
+    firstManager.rpc.mockReturnValue(new Promise((resolve) => {
+      finishOldRead = () => resolve({ config: { source: 'old' } });
+    }));
+    let finishNewRead!: () => void;
+    secondManager.rpc.mockReturnValue(new Promise((resolve) => {
+      finishNewRead = () => resolve({ config: { source: 'new' } });
+    }));
+
+    registerOpenClawConfigCoordinator(firstManager);
+    const oldRead = readOpenClawConfigSnapshot();
+    await vi.waitFor(() => expect(firstManager.rpc).toHaveBeenCalledOnce());
+    registerOpenClawConfigCoordinator(secondManager);
+    const newRead = readOpenClawConfigSnapshot();
+    finishOldRead();
+    expect((await oldRead).config.source).toBe('old');
+    const joinedRead = readOpenClawConfigSnapshot();
+    finishNewRead();
+    expect((await newRead).config.source).toBe('new');
+    expect((await joinedRead).config.source).toBe('new');
+    expect(secondManager.rpc).toHaveBeenCalledOnce();
   });
 
   it('applies an awaited nested mutation to the same in-flight config without deadlocking', async () => {
@@ -348,12 +462,15 @@ describe('OpenClaw config delivery coordinator', () => {
     ]);
   });
 
-  it('retries one base-hash conflict from a fresh Gateway snapshot', async () => {
+  it.each([
+    ['base-hash conflict', baseHashConflict],
+    ['rolled-back publication conflict', rolledBackConflict],
+  ])('retries one %s from a fresh Gateway snapshot', async (_label, conflict) => {
     const gatewayManager = createGatewayManager();
     gatewayManager.rpc
       .mockResolvedValueOnce({ raw: '{ value: 1 }', hash: 'hash-1' })
-      .mockRejectedValueOnce(new Error('config changed since last load; re-run config.get and retry'))
-      .mockResolvedValueOnce({ raw: '{ value: 4 }', hash: 'hash-2' })
+      .mockRejectedValueOnce(new Error(conflict))
+      .mockResolvedValueOnce({ raw: '{ value: 4, concurrent: true }', hash: 'hash-2' })
       .mockResolvedValueOnce({ ok: true });
     registerOpenClawConfigCoordinator(gatewayManager);
 
@@ -369,14 +486,56 @@ describe('OpenClaw config delivery coordinator', () => {
     ]);
     expect(gatewayManager.rpc.mock.calls[1][1]).toMatchObject({ baseHash: 'hash-1' });
     expect(gatewayManager.rpc.mock.calls[3][1]).toMatchObject({ baseHash: 'hash-2' });
-    expect(JSON.parse((gatewayManager.rpc.mock.calls[3][1] as { raw: string }).raw)).toEqual({ value: 5 });
+    expect(JSON.parse((gatewayManager.rpc.mock.calls[3][1] as { raw: string }).raw)).toEqual({ value: 5, concurrent: true });
+  });
+
+  it.each([
+    ['unconfirmed rollback', `${publicationConflict}\nRollback could not be confirmed. Inspect the current config before retrying.`],
+    ['unsuccessful rollback', `${publicationConflict}\nThe write was not rolled back. Inspect the current config before retrying.`],
+    ['other publication failure', `Config publication failed after removing openclaw.json: access denied\n${confirmedRollback}`],
+    ['post-write failure', `Config was written to openclaw.json, but post-write processing failed: config publication identity changed\n${confirmedRollback}`],
+  ])('surfaces a %s without replaying the mutation', async (_label, message) => {
+    const gatewayManager = createGatewayManager();
+    const failure = new Error(message);
+    gatewayManager.rpc
+      .mockResolvedValueOnce({ raw: '{}', hash: 'hash-1' })
+      .mockRejectedValueOnce(failure);
+    registerOpenClawConfigCoordinator(gatewayManager);
+
+    await expect(mutateOpenClawConfig((config) => {
+      config.value = 1;
+    })).rejects.toBe(failure);
+    expect(gatewayManager.rpc.mock.calls.map(([method]) => method)).toEqual(['config.get', 'config.set']);
+    expect(renameMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['another publication conflict', rolledBackConflict],
+    ['a base-hash conflict', baseHashConflict],
+  ])('stops after a rolled-back publication conflict followed by %s', async (_label, secondMessage) => {
+    const gatewayManager = createGatewayManager();
+    const secondFailure = new Error(secondMessage);
+    gatewayManager.rpc
+      .mockResolvedValueOnce({ raw: '{}', hash: 'hash-1' })
+      .mockRejectedValueOnce(new Error(rolledBackConflict))
+      .mockResolvedValueOnce({ raw: '{}', hash: 'hash-2' })
+      .mockRejectedValueOnce(secondFailure);
+    registerOpenClawConfigCoordinator(gatewayManager);
+
+    await expect(mutateOpenClawConfig((config) => {
+      config.value = 1;
+    })).rejects.toBe(secondFailure);
+    expect(gatewayManager.rpc.mock.calls.map(([method]) => method)).toEqual([
+      'config.get', 'config.set', 'config.get', 'config.set',
+    ]);
+    expect(renameMock).not.toHaveBeenCalled();
   });
 
   it('runs transaction-serialized before-apply validation before each pure mutator replay', async () => {
     const gatewayManager = createGatewayManager();
     gatewayManager.rpc
       .mockResolvedValueOnce({ raw: '{ value: 1 }', hash: 'hash-1' })
-      .mockRejectedValueOnce(new Error('config changed since last load; re-run config.get and retry'))
+      .mockRejectedValueOnce(new Error(baseHashConflict))
       .mockResolvedValueOnce({ raw: '{ value: 4 }', hash: 'hash-2' })
       .mockResolvedValueOnce({ ok: true });
     registerOpenClawConfigCoordinator(gatewayManager);

@@ -3,7 +3,6 @@ import type { GatewayManager } from '../gateway/manager';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import { createAcpChatService } from './acp-chat-service';
 import type { AcpSessionAccessRegistry } from './acp-session-access-registry';
-import { createTaskModelSelection } from './model-selection-service';
 
 export function createChatApi({
   gatewayManager,
@@ -17,7 +16,6 @@ export function createChatApi({
   const acpChat = createAcpChatService(mainWindow, acpSessionAccessRegistry, gatewayManager);
 
   return {
-    ...createTaskModelSelection(gatewayManager),
     getAcpSessionFamily: (payload) => acpChat.getSessionFamily(payload),
     loadAcpSession: (payload) => acpChat.loadSession(payload),
     sendAcpPrompt: (payload) => acpChat.sendPrompt(payload),

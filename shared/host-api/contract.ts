@@ -17,7 +17,6 @@ export type JsonRecord = Record<string, unknown>;
 export type HostSuccess = { success: boolean; error?: string };
 export type ModelSelectionResult = HostSuccess & { modelRef?: string | null };
 export type GlobalModelSelectionPayload = { accountId: string; modelId: string };
-export type TaskModelSelectionPayload = { sessionKey: string; modelRef: string };
 export type OptionalHostSuccess = { success?: boolean; error?: string };
 
 export type OpenClawDoctorMode = 'diagnose' | 'fix';
@@ -812,6 +811,21 @@ export type SessionSummariesResult = HostSuccess & {
 };
 export type SessionDeletePayload = { id: string };
 export type SessionRenamePayload = { id: string; title: string };
+export type SessionModelSelection = {
+  /** Explicit user selection. A null selection follows the Agent's configuration. */
+  modelRef: string | null;
+  /** False when the Gateway confirms the session has no row yet. */
+  exists?: boolean;
+  /** Runtime-selected model, including inherited choices and automatic fallbacks. */
+  effectiveModelRef?: string;
+  contextWindow?: number;
+};
+export type SessionSetModelPayload = {
+  sessionKey: string;
+  modelRef: string | null;
+  /** Only the first prompt of a locally created ACP conversation may materialize a Gateway row. */
+  createIfMissing?: boolean;
+};
 
 export type CronUpdatePayload = { id: string; input: CronJobUpdateInput };
 export type CronIdPayload = { id: string };
@@ -1097,6 +1111,8 @@ export type HostApiContract = {
     testImageGeneration: (payload: ImageGenerationTestPayload) => ImageGenerationTestResult;
   };
   sessions: {
+    getModel: (payload: { sessionKey: string }) => SessionModelSelection;
+    setModel: (payload: SessionSetModelPayload) => SessionModelSelection;
     delete: (payload: SessionDeletePayload) => HostSuccess;
     rename: (payload: SessionRenamePayload) => HostSuccess;
     summaries: (payload?: SessionSummariesPayload) => SessionSummariesResult;
@@ -1104,8 +1120,6 @@ export type HostApiContract = {
     turnTimings: (payload: SessionTurnTimingsPayload) => SessionTurnTimingsResult;
   };
   chat: {
-    getSessionModel: (payload: { sessionKey: string }) => ModelSelectionResult;
-    setSessionModel: (payload: TaskModelSelectionPayload) => ModelSelectionResult;
     getAcpSessionFamily: (payload: AcpSessionFamilyPayload) => AcpSessionFamilyResult;
     loadAcpSession: (payload: AcpChatLoadPayload) => AcpChatOperationResult;
     sendAcpPrompt: (payload: AcpChatPromptPayload) => AcpChatOperationResult;

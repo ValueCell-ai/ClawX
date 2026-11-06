@@ -7,6 +7,8 @@ export const EMPTY_DRAFT_ATTACHMENTS: FileAttachment[] = [];
 type ComposerDraftState = {
   drafts: Record<string, string>;
   attachments: Record<string, FileAttachment[]>;
+  modelRefs: Record<string, string>;
+  setModelRef: (sessionKey: string, modelRef: string | null) => void;
   setDraft: (sessionKey: string, update: SetStateAction<string>) => void;
   setAttachments: (sessionKey: string, update: SetStateAction<FileAttachment[]>) => void;
   updateAttachment: (id: string, update: Partial<FileAttachment>) => void;
@@ -16,6 +18,13 @@ type ComposerDraftState = {
 export const useComposerDraftStore = create<ComposerDraftState>((set) => ({
   drafts: {},
   attachments: {},
+  modelRefs: {},
+  setModelRef: (sessionKey, modelRef) => set((state) => {
+    const modelRefs = { ...state.modelRefs };
+    if (modelRef) modelRefs[sessionKey] = modelRef;
+    else delete modelRefs[sessionKey];
+    return { modelRefs };
+  }),
   setDraft: (sessionKey, update) => {
     if (!sessionKey) return;
     set((state) => {
@@ -66,12 +75,14 @@ export const useComposerDraftStore = create<ComposerDraftState>((set) => ({
   clearDraft: (sessionKey) => {
     if (!sessionKey) return;
     set((state) => {
-      if (!(sessionKey in state.drafts) && !(sessionKey in state.attachments)) return state;
+      if (!(sessionKey in state.drafts) && !(sessionKey in state.attachments) && !(sessionKey in state.modelRefs)) return state;
       const drafts = { ...state.drafts };
       const attachments = { ...state.attachments };
+      const modelRefs = { ...state.modelRefs };
       delete drafts[sessionKey];
       delete attachments[sessionKey];
-      return { drafts, attachments };
+      delete modelRefs[sessionKey];
+      return { drafts, attachments, modelRefs };
     });
   },
 }));

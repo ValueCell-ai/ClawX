@@ -44,8 +44,14 @@ interface FileConfigSnapshot {
   raw: string | undefined;
 }
 
+interface PendingConfigRead {
+  source: 'file' | 'running' | number;
+  result: Promise<OpenClawConfigSnapshot>;
+}
+
 let gatewayManager: ConfigDeliveryGatewayManager | undefined;
 let transactionTail: Promise<void> = Promise.resolve();
+let pendingRead: PendingConfigRead | undefined;
 const activeMutation = new AsyncLocalStorage<ActiveMutationContext>();
 
 /** Placeholder OpenClaw substitutes for sensitive values in `config.get` snapshots. */
@@ -76,9 +82,13 @@ function parseRunningConfigSnapshot(snapshot: ConfigSnapshot | undefined): OpenC
   return parseConfig(raw);
 }
 
-function isBaseHashConflict(error: unknown): boolean {
+function isRetryableConfigSetConflict(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return /config changed since last load; re-run config\.get and retry/i.test(message);
+  if (/config changed since last load; re-run config\.get and retry/i.test(message)) return true;
+
+  // GatewayManager forwards the RPC error message. OpenClaw explicitly reports
+  // whether it restored the original file after a partial publication.
+  return /^Config publication failed after removing .+: config publication identity changed\r?\nThe config write was rolled back\.(?: |$)/.test(message);
 }
 
 /**
@@ -212,7 +222,7 @@ async function mutateRunningConfig(
       });
       return true;
     } catch (error) {
-      if (attempt === 0 && isBaseHashConflict(error)) continue;
+      if (attempt === 0 && isRetryableConfigSetConflict(error)) continue;
 
       // config.set may durably replace the file and then close the socket with
       // code 1012 before its RPC response reaches ClawX. Reconnect can restore
@@ -357,9 +367,13 @@ async function runMutation(
   return await mutateFileConfig(manager, mutator, options);
 }
 
-async function runRead(): Promise<OpenClawConfigSnapshot> {
-  const manager = gatewayManager;
-  if (manager?.getStatus().state === 'running') {
+function configReadSource(manager: ConfigDeliveryGatewayManager | undefined): PendingConfigRead['source'] {
+  const status = manager?.getStatus();
+  return status?.state === 'running' ? status.connectedAt ?? 'running' : 'file';
+}
+
+async function runRead(manager: ConfigDeliveryGatewayManager | undefined): Promise<OpenClawConfigSnapshot> {
+  if (manager) {
     try {
       const snapshot = await manager.rpc<ConfigSnapshot>('config.get', {});
       return { config: parseRunningConfigSnapshot(snapshot), exists: true };
@@ -380,9 +394,18 @@ async function runSecretsReload(): Promise<boolean> {
   return true;
 }
 
+function enqueueTransaction<T>(run: () => Promise<T>): Promise<T> {
+  // Only adjacent readers may share a snapshot. A queued write or reload is a barrier.
+  pendingRead = undefined;
+  const transaction = transactionTail.then(run);
+  transactionTail = transaction.then(() => undefined, () => undefined);
+  return transaction;
+}
+
 export function registerOpenClawConfigCoordinator(
   manager: ConfigDeliveryGatewayManager,
 ): void {
+  pendingRead = undefined;
   gatewayManager = manager;
 }
 
@@ -395,15 +418,7 @@ export function mutateOpenClawConfig(
     return applyNestedMutator(context, mutator);
   }
 
-  const transaction = transactionTail.then(
-    () => runMutation(mutator, options),
-    () => runMutation(mutator, options),
-  );
-  transactionTail = transaction.then(
-    () => undefined,
-    () => undefined,
-  );
-  return transaction;
+  return enqueueTransaction(() => runMutation(mutator, options));
 }
 
 /** Always read the on-disk config, never a redacted `config.get` snapshot. */
@@ -421,30 +436,30 @@ export function readOpenClawConfigSnapshot(): Promise<OpenClawConfigSnapshot> {
     });
   }
 
-  const transaction = transactionTail.then(
-    () => runRead(),
-    () => runRead(),
-  );
-  transactionTail = transaction.then(
-    () => undefined,
-    () => undefined,
-  );
-  return transaction;
+  const source = configReadSource(gatewayManager);
+  if (pendingRead?.source !== source) {
+    const read: PendingConfigRead = {
+      source,
+      result: enqueueTransaction(() => {
+        // A queued read can start after the Gateway has stopped or reconnected.
+        const manager = gatewayManager;
+        read.source = configReadSource(manager);
+        return runRead(read.source === 'file' ? undefined : manager);
+      }).finally(() => {
+        if (pendingRead === read) pendingRead = undefined;
+      }),
+    };
+    pendingRead = read;
+  }
+  return pendingRead.result.then((snapshot) => structuredClone(snapshot));
 }
 
 export function reloadOpenClawSecretsIfRunning(): Promise<boolean> {
-  const transaction = transactionTail.then(
-    () => runSecretsReload(),
-    () => runSecretsReload(),
-  );
-  transactionTail = transaction.then(
-    () => undefined,
-    () => undefined,
-  );
-  return transaction;
+  return enqueueTransaction(runSecretsReload);
 }
 
 export function resetOpenClawConfigCoordinatorForTests(): void {
+  pendingRead = undefined;
   gatewayManager = undefined;
   transactionTail = Promise.resolve();
 }

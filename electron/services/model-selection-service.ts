@@ -1,5 +1,4 @@
-import type { GatewayManager } from '../gateway/manager';
-import type { GlobalModelSelectionPayload, ModelSelectionResult, TaskModelSelectionPayload } from '@shared/host-api/contract';
+import type { GlobalModelSelectionPayload, ModelSelectionResult } from '@shared/host-api/contract';
 import type { ProviderAccount } from '../shared/providers/types';
 import { getProviderService } from './providers/provider-service';
 import { getOpenClawProviderKey, syncDefaultProviderToRuntime } from './providers/provider-runtime-sync';
@@ -40,50 +39,4 @@ export async function setGlobalDefaultModel(payload: GlobalModelSelectionPayload
     await service.setDefaultAccount(account.id);
     return { success: true, modelRef };
   } catch (error) { return failure(error); }
-}
-
-function requireSessionKey(value: unknown): string {
-  if (typeof value !== 'string' || !/^agent:[a-z0-9_-]+:.+$/i.test(value) || value.length > 1024) {
-    throw new Error('Invalid session key');
-  }
-  return value;
-}
-
-function runtimeModelRef(row?: { model?: string; modelProvider?: string }): string | null {
-  const model = row?.model?.trim();
-  if (!model) return null;
-  const provider = row?.modelProvider?.trim();
-  return provider ? `${provider}/${modelId(provider, model)}` : model.includes('/') ? model : null;
-}
-
-/** Session model mutations go through Gateway, never global config or native session files. */
-export function createTaskModelSelection(gateway: GatewayManager) {
-  return {
-    async getSessionModel(payload: { sessionKey: string }): Promise<ModelSelectionResult> {
-      try {
-        const key = requireSessionKey(payload.sessionKey);
-        const result = await gateway.rpc<{ sessions?: Array<{ key: string; model?: string; modelProvider?: string }> }>('sessions.list', {
-          agentId: key.split(':')[1], search: key, limit: 100, includeGlobal: true, includeUnknown: true,
-        });
-        return { success: true, modelRef: runtimeModelRef(result.sessions?.find(row => row.key === key)) };
-      } catch (error) { return failure(error); }
-    },
-    async setSessionModel(payload: TaskModelSelectionPayload): Promise<ModelSelectionResult> {
-      try {
-        const key = requireSessionKey(payload.sessionKey);
-        const requested = typeof payload.modelRef === 'string' ? payload.modelRef.trim() : '';
-        const accounts = await getProviderService().listAccounts();
-        const known = accounts.some(account => {
-          if (!account.enabled) return false;
-          const { provider, models } = accountModels(account);
-          return models.some(id => `${provider}/${id}` === requested);
-        });
-        if (!known) throw new Error('Model is no longer configured');
-        const result = await gateway.rpc<{ key?: string; resolved?: { model?: string; modelProvider?: string } }>('sessions.patch', { key, model: requested });
-        const saved = runtimeModelRef(result.resolved);
-        if ((result.key && result.key !== key) || saved !== requested) throw new Error('The task model was not updated');
-        return { success: true, modelRef: saved };
-      } catch (error) { return failure(error); }
-    },
-  };
 }

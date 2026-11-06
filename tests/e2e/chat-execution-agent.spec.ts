@@ -30,7 +30,7 @@ for (const language of ['zh', 'en', 'ja', 'ru']) {
           calls.push(request);
           const respond = (data: unknown) => ({ id: request.id, ok: true, data });
           if (request.module === 'chat' && request.action === 'loadAcpSession') return respond({ success: true, generation: 1 });
-          if (request.module === 'chat' && request.action === 'getSessionModel') return respond({ success: true, modelRef: null });
+          if (request.module === 'sessions' && request.action === 'getModel') return respond({ success: true, modelRef: null });
           if (request.module === 'chat' && request.action === 'sendAcpPrompt') return respond({ success: true, stopReason: 'end_turn' });
           if (request.module === 'skills' && request.action === 'quickAccess') {
             const id = String(request.payload?.workspace).endsWith('-coder') ? 'coder' : 'main';

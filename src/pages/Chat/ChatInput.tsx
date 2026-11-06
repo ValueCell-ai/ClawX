@@ -10,7 +10,7 @@ import {
   useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo,
   type SetStateAction,
 } from 'react';
-import { Presentation, Table2, FileScan, Monitor, WandSparkles, SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, Bot, Search, ChevronDown } from 'lucide-react';
+import { Presentation, Table2, FileScan, Monitor, WandSparkles, SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, AtSign, Bot, Search, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import * as DropdownMenu from '@/components/ui/dropdown-menu';
 import { hasFloatingSurface } from '@/components/ui/floating-ui';
@@ -27,7 +27,6 @@ import { useGatewayStore } from '@/stores/gateway';
 import { useSettingsStore } from '@/stores/settings';
 import { useAgentsStore } from '@/stores/agents';
 import { useChatStore } from '@/stores/chat';
-import { useTaskModelStore } from '@/stores/task-models';
 import { EMPTY_DRAFT_ATTACHMENTS, useComposerDraftStore } from '@/stores/composer-drafts';
 import type { FileAttachment } from '@/types/attachment';
 export type { FileAttachment } from '@/types/attachment';
@@ -35,6 +34,8 @@ import { useArtifactPanel } from '@/stores/artifact-panel';
 import { buildPreviewTarget } from '@/components/file-preview/build-preview-target';
 import { useProviderStore } from '@/stores/providers';
 import { buildConfiguredModelOptions, formatModelRefLabel, resolveConfiguredModelRef } from '@/lib/model-options';
+import { getSessionModelSelectionError, readSessionModel, useSessionModel } from './session-model';
+import { getPromptSessionKey } from '@/stores/chat/session-key-utils';
 import type { AgentSummary } from '@/types/agent';
 import type { QuickAccessSkill } from '@/types/skill';
 import { useTranslation } from 'react-i18next';
@@ -64,7 +65,7 @@ type ComposerExpandedPanel = 'subagents' | 'plan' | null;
 
 interface ChatInputProps {
   welcome?: boolean;
-  onSend: (text: string, attachments?: FileAttachment[]) => void;
+  onSend: (text: string, attachments?: FileAttachment[], targetAgentId?: string | null) => void | Promise<boolean>;
   onSelectAgent?: (agentId: string) => void;
   onStop?: () => void;
   draft?: string;
@@ -348,6 +349,7 @@ export function ChatInput({
     else setLocalAttachments(items => items.map(item => item.id === id ? { ...item, ...update, id } : item));
   }, [draftKey]);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [target, setTarget] = useState<{ source: string; agentId: string } | null>(null);
   const [skillPickerOpen, setSkillPickerOpen] = useState(false);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
@@ -358,6 +360,8 @@ export function ChatInput({
   const skillsRequestRef = useRef(0);
   const [skillsError, setSkillsError] = useState<string | null>(null);
   const [selectedSkill, setSelectedSkill] = useState<QuickAccessSkill | null>(null);
+  const [admitting, setAdmitting] = useState(false);
+  const admissionInFlight = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const draftSelectionsRef = useRef(new Map<string, {
     start: number;
@@ -376,12 +380,11 @@ export function ChatInput({
   const providerVendors = useProviderStore((s) => s.vendors);
   const refreshProviderSnapshot = useProviderStore((s) => s.refreshProviderSnapshot);
   const currentAgentId = useChatStore((s) => s.currentAgentId);
-  const sessionKey = draftKey ?? '';
-  const sessionIsDraft = useChatStore(s => !s.sessions.some(session => session.key === sessionKey && !session.createdLocally));
-  const taskModel = useTaskModelStore(s => s.choices[sessionKey]?.modelRef);
-  const modelLoading = useTaskModelStore(s => !!s.loading[sessionKey]);
-  const switchingModelRef = useTaskModelStore(s => !!s.saving[sessionKey]);
-  const modelError = useTaskModelStore(s => s.errors[sessionKey]);
+  const currentSessionKey = useChatStore((s) => s.currentSessionKey);
+  const sessions = useChatStore((s) => s.sessions);
+  const targetAgentId = target?.source === currentSessionKey ? target?.agentId ?? null : null;
+  const composerSessionRef = useRef(currentSessionKey);
+  composerSessionRef.current = currentSessionKey;
   const currentAgent = useMemo(
     () => (agents ?? []).find((agent) => agent.id === currentAgentId) ?? null,
     [agents, currentAgentId],
@@ -399,15 +402,27 @@ export function ChatInput({
     ),
     [providerAccounts, providerDefaultAccountId, providerStatuses, providerVendors],
   );
-  const configuredModelRef = useMemo(
-    () => currentAgent?.modelRef?.trim() || defaultModelRef?.trim() || resolveConfiguredModelRef(null, null, modelOptions),
-    [currentAgent?.modelRef, defaultModelRef, modelOptions],
+  const selectedTarget = useMemo(
+    () => (agents ?? []).find((agent) => agent.id === targetAgentId) ?? null,
+    [agents, targetAgentId],
   );
-  const effectiveModelRef = taskModel || configuredModelRef;
+  const destinationKey = getPromptSessionKey(currentSessionKey, selectedTarget);
+  const destination = sessions?.find((session) => session.key === destinationKey);
+  const destinationKeyRef = useRef(destinationKey);
+  destinationKeyRef.current = destinationKey;
+  const destinationAgent = selectedTarget ?? currentAgent;
+  const agentModelRef = destinationAgent?.modelRef || defaultModelRef || resolveConfiguredModelRef(null, null, modelOptions);
+  const sessionModel = useSessionModel(destinationKey, destination,
+    gatewayStatus.state === 'running' && gatewayStatus.gatewayReady !== false, sending, agentModelRef);
+  const effectiveModelRef = sessionModel.value?.modelRef || sessionModel.value?.effectiveModelRef || agentModelRef;
   const currentModelLabel = useMemo(() => {
     const matchedOption = modelOptions.find((option) => option.modelRef === effectiveModelRef);
-    return modelError && !taskModel ? t('composer.modelReadFailed') : matchedOption?.modelId || formatModelRefLabel(effectiveModelRef);
-  }, [effectiveModelRef, modelOptions, modelError, taskModel, t]);
+    return matchedOption?.modelId || (effectiveModelRef ? formatModelRefLabel(effectiveModelRef) : t('composer.followAgentModelShort'));
+  }, [effectiveModelRef, modelOptions, t]);
+  const mentionableAgents = useMemo(
+    () => (agents ?? []).filter((agent) => agent.id !== currentAgentId),
+    [agents, currentAgentId],
+  );
   const filteredQuickSkills = useMemo(() => {
     const query = skillQuery.trim().toLowerCase();
     if (!query) return quickSkills;
@@ -419,10 +434,10 @@ export function ChatInput({
     );
   }, [quickSkills, skillQuery, t]);
   const showAgentPicker = !!currentAgent;
-  const showModelPicker = modelOptions.length > 1;
+  const showModelPicker = modelOptions.length > 0 || !!sessionModel.value?.modelRef;
   const chatComposerStatusComponents = rendererExtensionRegistry.getChatComposerStatusComponents();
   const isGatewayUsable = gatewayStatus.state === 'running' && gatewayStatus.gatewayReady !== false;
-  const inputDisabled = disabled || modelLoading || switchingModelRef;
+  const inputDisabled = disabled || admitting;
   const attachmentsLocked = inputDisabled;
   const gatewayUnavailable = !isGatewayUsable;
   const workspaceSelectorDisabled = workspaceReadOnly || inputDisabled || sending || !onSelectWorkspace;
@@ -460,13 +475,14 @@ export function ChatInput({
       });
     },
   });
-  if (!contextUsageSourceRef.current || contextUsageSourceRef.current.value !== contextUsage) {
+  const visibleUsage = destinationKey === currentSessionKey ? contextUsage : undefined;
+  if (destinationKey === currentSessionKey && contextUsageSourceRef.current?.value !== contextUsage) {
     contextUsageSourceRef.current = { value: contextUsage, modelRef: effectiveModelRef };
   }
-  const contextWindowOverride = contextUsageSourceRef.current.modelRef === effectiveModelRef
+  const contextWindowOverride = contextUsageSourceRef.current?.modelRef === effectiveModelRef
     ? undefined
-    : currentAgent?.contextWindow;
-  const activeContextUsage = getContextUsage(contextUsage, contextWindowOverride);
+    : sessionModel.value?.contextWindow ?? (!sessionModel.value?.modelRef ? currentAgent?.contextWindow : undefined);
+  const activeContextUsage = getContextUsage(visibleUsage, contextWindowOverride);
   const contextUsagePercentage = activeContextUsage
     ? new Intl.NumberFormat(i18n.resolvedLanguage, { style: 'percent', maximumFractionDigits: 0 }).format(activeContextUsage.percent / 100)
     : null;
@@ -496,12 +512,6 @@ export function ChatInput({
       cancelled = true;
     };
   }, [gatewayStatus.state, refreshProviderSnapshot]);
-
-  useEffect(() => {
-    if (sessionKey && !sessionIsDraft && gatewayStatus.state === 'running' && gatewayStatus.gatewayReady !== false) {
-      void useTaskModelStore.getState().read(sessionKey);
-    }
-  }, [sessionKey, sessionIsDraft, gatewayStatus.state, gatewayStatus.gatewayReady]);
 
   useEffect(() => {
     if (workspaceSelectorDisabled) {
@@ -695,20 +705,18 @@ export function ChatInput({
     });
   };
 
-  const handleSelectModel = useCallback(async (modelRef: string) => {
-    if (!currentAgent || !sessionKey || switchingModelRef || modelLoading) return;
-    if (modelRef === effectiveModelRef && !modelError) {
-      setModelPickerOpen(false);
-      return;
-    }
-
+  const handleSelectModel = async (modelRef: string | null) => {
+    if (!destinationKey || !destinationAgent || sessionModel.writing || admissionInFlight.current) return;
     setModelPickerOpen(false);
+    if (modelRef === sessionModel.value?.modelRef && !sessionModel.failed) return;
     try {
-      await useTaskModelStore.getState().choose(sessionKey, modelRef, sessionIsDraft);
+      await sessionModel.select(modelRef);
     } catch (error) {
-      toast.error(t('composer.modelSwitchFailed', { error: String(error) }));
+      if (destinationKeyRef.current === destinationKey) toast.error(t('composer.modelSwitchFailed', { error: String(error) }));
+    } finally {
+      if (destinationKeyRef.current === destinationKey) textareaRef.current?.focus();
     }
-  }, [currentAgent, effectiveModelRef, switchingModelRef, modelLoading, modelError, sessionKey, sessionIsDraft, t]);
+  };
 
   const handleSelectWorkspace = useCallback((path: string) => {
     if (workspaceSelectorDisabled || !onSelectWorkspace) return;
@@ -841,51 +849,75 @@ export function ChatInput({
   const canSend = (input.trim() || attachments.length > 0)
     && allReady
     && !inputDisabled
+    && !sessionModel.writing
+    && !admitting
     && !sending
     && !imageGenerating;
   const canStop = sending && !inputDisabled && !!onStop;
 
   const handleSend = useCallback(async () => {
-    if (!canSend) return;
+    if (!canSend || admissionInFlight.current) return;
+    const modelError = getSessionModelSelectionError(destinationKey);
+    if (modelError) {
+      toast.error(t('composer.modelSwitchFailed', { error: modelError }));
+      return;
+    }
     const readyAttachments = attachments.filter(a => a.status === 'ready');
     const textToSend = input.trim();
     const attachmentsToSend = readyAttachments.length > 0 ? readyAttachments : undefined;
 
-    if (rendererExtensionRegistry.hasChatBeforeSendHooks()) {
-      const guard = await rendererExtensionRegistry.runChatBeforeSend({
-        text: textToSend,
-        attachments: attachmentsToSend,
-        targetAgentId: null,
-      });
-      if (!guard.ok) {
-        if (guard.message) {
-          toast.error(guard.message);
+    admissionInFlight.current = true;
+    setAdmitting(true);
+    try {
+      if (rendererExtensionRegistry.hasChatBeforeSendHooks()) {
+        const draftModelRef = useComposerDraftStore.getState().modelRefs[destinationKey];
+        let sessionModelRef: string | null = draftModelRef ?? null;
+        let sessionEffectiveModelRef: string | undefined;
+        if (!draftModelRef && !destination?.createdLocally) {
+          try {
+            const model = await readSessionModel(destinationKey);
+            sessionModelRef = model.modelRef;
+            sessionEffectiveModelRef = model.effectiveModelRef ?? undefined;
+          } catch (error) {
+            toast.error(t('composer.modelReadFailed', { error: String(error) }));
+            return;
+          }
         }
-        return;
+        const guard = await rendererExtensionRegistry.runChatBeforeSend({
+          text: textToSend,
+          attachments: attachmentsToSend,
+          targetAgentId,
+          sessionKey: destinationKey,
+          sessionModelRef,
+          sessionEffectiveModelRef,
+        });
+        if (composerSessionRef.current !== currentSessionKey || destinationKeyRef.current !== destinationKey) return;
+        if (!guard.ok) {
+          if (guard.message) toast.error(guard.message);
+          return;
+        }
       }
+      const accepted = targetAgentId
+        ? onSend(textToSend, attachmentsToSend, targetAgentId)
+        : onSend(textToSend, attachmentsToSend);
+      if (accepted && !await accepted) return;
+      // An @mention can open another conversation during admission. setInput
+      // still addresses the original keyed draft, while transient UI is shared.
+      setInput((value) => value === input ? '' : value);
+      setAttachments((current) => current === attachments ? [] : current);
+      setTarget((current) => current?.source === currentSessionKey && current.agentId === targetAgentId ? null : current);
+      if (composerSessionRef.current !== currentSessionKey) return;
+      setSelectedSkill(null);
+      setSkillQuery('');
+      if (textareaRef.current) textareaRef.current.style.height = 'auto';
+      setPickerOpen(false);
+      setSkillPickerOpen(false);
+      setWorkspaceMenuOpen(false);
+    } finally {
+      admissionInFlight.current = false;
+      setAdmitting(false);
     }
-
-    // Capture values before clearing — clear input immediately for snappy UX,
-    // but keep attachments available for the async send
-    console.log(`[handleSend] text="${textToSend.substring(0, 50)}", attachments=${attachments.length}, ready=${readyAttachments.length}, sending=${!!attachmentsToSend}`);
-    if (attachmentsToSend) {
-      console.log('[handleSend] Attachment details:', attachmentsToSend.map(a => ({
-        id: a.id, fileName: a.fileName, mimeType: a.mimeType, fileSize: a.fileSize,
-        stagedPath: a.stagedPath, status: a.status, hasPreview: !!a.preview,
-      })));
-    }
-    setInput('');
-    setAttachments([]);
-    setSelectedSkill(null);
-    setSkillQuery('');
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-    }
-    onSend(textToSend, attachmentsToSend);
-    setPickerOpen(false);
-    setSkillPickerOpen(false);
-    setWorkspaceMenuOpen(false);
-  }, [input, attachments, canSend, onSend, setInput, setAttachments]);
+  }, [input, attachments, canSend, currentSessionKey, destination, destinationKey, onSend, setAttachments, setInput, t, targetAgentId]);
 
   const handleStop = useCallback(() => {
     if (!canStop) return;
@@ -1191,6 +1223,19 @@ export function ChatInput({
               </div>
             )}
 
+            {selectedTarget && (
+              <button
+                type="button"
+                title={t('composer.clearTarget')}
+                onClick={() => setTarget(null)}
+                disabled={admitting}
+                className="mb-2 inline-flex max-w-full items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/5 px-2 py-1 text-meta font-medium hover:bg-primary/10"
+              >
+                <span className="truncate">{t('composer.targetChip', { agent: selectedTarget.name })}</span>
+                <X className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+              </button>
+            )}
+
             {/* Text Row — flush-left */}
             <div className="relative min-h-[48px]">
               {skillTokenRanges.length > 0 && (
@@ -1263,7 +1308,7 @@ export function ChatInput({
                       'h-8 gap-1.5 rounded-lg px-1.5 text-meta text-foreground/80 hover:bg-black/5 dark:hover:bg-white/10 transition-colors',
                       pickerOpen && 'bg-black/5 dark:bg-white/10'
                     )}
-                    disabled={sending || imageGenerating || !!switchingModelRef}
+                    disabled={sending || imageGenerating || admitting || sessionModel.writing}
                     title={t('composer.executionAgent', { agent: currentAgentName })}
                     aria-label={t('composer.executionAgent', { agent: currentAgentName })}
                     aria-expanded={pickerOpen}
@@ -1277,7 +1322,8 @@ export function ChatInput({
                       <div className="px-3 py-1.5 text-tiny font-medium text-muted-foreground/80">
                         {t('composer.executionAgentTitle')}
                       </div>
-                      <DropdownMenu.RadioGroup value={currentAgentId} className="clawx-menu-list max-h-64 overflow-y-auto">
+                      <div className="max-h-[min(16rem,calc(var(--radix-dropdown-menu-content-available-height)-3rem))] overflow-y-auto">
+                      <DropdownMenu.RadioGroup value={currentAgentId} className="clawx-menu-list">
                         {agents.map((agent) => (
                           <AgentPickerItem
                             key={agent.id}
@@ -1290,6 +1336,24 @@ export function ChatInput({
                           />
                         ))}
                       </DropdownMenu.RadioGroup>
+                      {mentionableAgents.length > 0 && (
+                        <DropdownMenu.Group className="clawx-menu-list mt-1 border-t border-border pt-1">
+                          <DropdownMenu.Label className="px-3 py-1.5 text-tiny font-medium text-muted-foreground/80">
+                            {t('composer.agentPickerTitle')}
+                          </DropdownMenu.Label>
+                          {mentionableAgents.map(agent => (
+                            <DropdownMenu.Item key={agent.id}
+                              data-testid={`chat-agent-target-${agent.id}`}
+                              className="clawx-menu-item flex items-center gap-2 text-sm"
+                              onSelect={() => setTarget({ source: currentSessionKey, agentId: agent.id })}
+                            >
+                              <AtSign className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                              <span className="truncate">{agent.name}</span>
+                            </DropdownMenu.Item>
+                          ))}
+                        </DropdownMenu.Group>
+                      )}
+                      </div>
                     </DropdownMenu.Content></DropdownMenu.Portal>
                   </DropdownMenu.Root>
                 </div>
@@ -1384,11 +1448,21 @@ export function ChatInput({
                   />
                 )}
                 {showModelPicker && <ModelPicker
-                  options={modelOptions} value={effectiveModelRef} label={currentModelLabel}
+                  options={modelOptions} value={sessionModel.value?.modelRef ?? null} label={currentModelLabel}
+                  followAgent={{
+                    label: agentModelRef
+                      ? t('composer.followAgentModel', { model: formatModelRefLabel(agentModelRef) })
+                      : t('composer.followAgentModelShort'),
+                    selected: sessionModel.value?.modelRef === null,
+                    onSelect: () => void handleSelectModel(null),
+                  }}
                   title={t('composer.modelPickerTitle')} testIdPrefix="chat-model-picker"
-                  open={modelPickerOpen} onOpenChange={open => handlePickerOpenChange('model', open)}
+                  open={modelPickerOpen} onOpenChange={open => {
+                    if (open && !sessionModel.value) sessionModel.refresh();
+                    handlePickerOpenChange('model', open);
+                  }}
                   onValueChange={ref => void handleSelectModel(ref)}
-                  disabled={inputDisabled || sending || !currentAgent} busy={switchingModelRef}
+                  disabled={inputDisabled || sending || !destinationAgent} busy={sessionModel.writing}
                   onCloseAutoFocus={handlePickerCloseAutoFocus}
                 />}
 

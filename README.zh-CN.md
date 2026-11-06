@@ -160,6 +160,12 @@ pnpm dev
 
 Windows 升级会识别旧安装遗留的盘符路径和网络插件路径，从旧版加载列表中清理已失效或指向内置插件的路径，并保留仍存在的外部插件和相对包引用。
 
+从 ClawX 0.6.1 升级时，有效的多 Agent 配置会保留各 Agent 原先实际使用的工作区，以及配置中旧默认 Agent 的职责。Agent 设置、后续 Agent 编辑和工作区准备使用一致的运行时路径规则；显式配置的外部工作区保留原路径。
+
+在聊天输入框中选择模型后，只有当前会话的后续消息会使用它。选择**跟随 Agent** 可恢复使用该 Agent 的当前模型。从 0.6.1 升级时，原先为 Agent 选择的模型会作为继承它的会话的默认值；已有独立模型选择的会话会保留自己的选择。
+
+在输入框的助手菜单中，通过**将下一条消息发送给其他助手**选择接收消息的助手。此时，模型选择器显示并修改该 Agent 主会话的模型。移除 `@agent` 后，选择器会重新显示原会话的模型。
+
 ClawX 会在启动写入前，在 OpenClaw 状态目录下保留私有快照 `backups/clawx-openclaw-2026.10.5-pre-migration`。快照包含旧会话文件、认证和媒体，并通过 SQLite 在线备份纳入已提交的 WAL 数据。无法完成快照时停止启动；Gateway 就绪不会自动删除快照。OpenClaw 会先自行处理待完成的 schema 和旧版认证迁移，之后 ClawX 才同步供应商凭据，因此中断后可重试而不会先被 ClawX 改写迁移源文件。请在确认升级正常后再手动删除快照以回收空间。快照包含密钥，请勿分享。运行时二进制、符号链接目标和外部工作区不在快照范围内，手动回退前请另行备份。
 
 OpenClaw 2026.10.5 更换了两个渠道插件，ClawX 会在首次启动 Gateway 前完成迁移。QQ 机器人从 `@openclaw/qqbot` 切换到腾讯 QQBot 2.0（`@tencent-connect/openclaw-qqbot`，插件 id `openclaw-qqbot`），默认账号移到 `channels.qqbot` 顶层，原本开放的私聊保持开放（使用审批标记 `openclaw:approval-disabled`）。带审批、密钥文件或群命令策略的 QQ 机器人配置交给 OpenClaw Doctor 处理。飞书从 `@larksuite/openclaw-lark` 切换到官方 `@openclaw/feishu`，应用凭据保持不变；官方插件提供 14 个飞书工具（原为 39 个），不再提供日历、任务、用户 OAuth、表格和搜索类工具。
@@ -215,7 +221,7 @@ ClawX 采用 **双进程 + Host API 统一接入架构**：React 渲染进程只
 
 - **进程模型**：Electron 主进程负责窗口、网关进程监控、系统集成与自动更新；OpenClaw Gateway 作为独立运行时进程提供 AI 编排、频道和技能能力；渲染层不直接访问本地端点。
 - **本机 Computer Use**：Electron Main 保留 `EmbeddedCuaDriverHost`、原生 SDK 加载、权限检查和 daemon 监督。`CLAWX_CUA_CONNECTION_FILE` 指向私有描述符 `{ v: 2, generation, driverVersion, binaryPath, socketPath }`。OpenClaw 现有的 `exec` 使用描述符中的内置程序绝对路径及显式 socket 调用 CLI，`read` 向模型提供截图。整个流程不使用自定义插件、MCP 代理、node host、配对或运行时下载。
-- **配置交付**：Gateway 运行时由 Main 使用 `config.get` / `config.set`，停止或启动中则更新解析后的 JSON5 配置；普通 Provider/Agent/Skill/模型修改不会替换进程，凭据通过 `secrets.reload` 热更新。连续三分钟没有已验证的 Gateway 活动后，ClawX 会验证核心 RPC，并且只重启其自身拥有且不可用的 Gateway 进程；外部管理的 Gateway 保留给用户手动恢复。
+- **配置交付**：Gateway 运行时由 Main 使用 `config.get` / `config.set`，停止或启动中则更新解析后的 JSON5 配置；普通 Provider/Agent/Skill/模型修改不会替换进程，凭据通过 `secrets.reload` 热更新。如果 Gateway 在保存时检测到配置文件标识变化并确认已回滚，ClawX 会重新读取配置并重试一次。连续三分钟没有已验证的 Gateway 活动后，ClawX 会验证核心 RPC，并且只重启其自身拥有且不可用的 Gateway 进程；外部管理的 Gateway 保留给用户手动恢复。 同时读取配置的调用会共用一个请求，Gateway 无响应时只需等待同一次超时。问题现场日志会单独记录频道状态 RPC 的耗时，并标明哪次自动重启由存活检查失败触发。
 - **ACP Chat**：Chat UI 基于 ACP ([Agent Client Protocol](https://agentclientprotocol.com)) 与 OpenClaw 交互，从而在高速迭代的 OpenClaw 前找到相对稳定的聊天协议面。ACP 走 Main 持有的 stdio bridge，支持配置热重载后的历史回放认证、跨页面持续流式输出，以及由 Main 验证和加载的媒体/附件/文件活动（Changes）展示。通过原生拖拽或文件选择器添加的文件直接引用其规范化源路径，不再创建 ClawX 暂存副本；有路径的图片会继续作为 ACP 资源链接传递，不会再被 OpenClaw 重新写入 `media/inbound`，因此源文件后续发生修改、移动或删除时会影响附件。剪贴板等没有稳定路径的字节附件仍使用受保护的临时暂存和内联图片传输。当 ACP 遗漏资源块时，经 OpenClaw internal-UI message 工具确认交付的生成文件（包括 Excel 工作簿）会恢复为附件卡片。已确认接收的请求最多等待 Main 计算出的 8 分钟重启预算；未确认请求保留 5 秒断线期限。重连时，即使会话列表暂时缺项，界面也会保留正在执行的对话。当受保护的 Gateway 重启中断已接收的对话轮次时，补丁后的 OpenClaw 运行时会将恢复 run 显式关联到原 ACP prompt，使后续文本和工具活动继续进入同一个内存轮次；之后的历史回放也会以原生 ACP 更新恢复持久化的工具边界。如果最终答复持久化后再次重启导致终态通知丢失，按 run 和会话范围执行的结算会结束 pending prompt，避免 Chat 一直显示执行中。 Chat 回复中的显式本地文件链接可在点击后打开受会话校验的文件预览或系统应用，支持工作空间以外的文件；文件不可用时会显示提示。 工具卡片通过本地化名称和图标区分执行代码、执行命令与列出文件。 重新进入对话时，ACP 适配器还会把较新的离线完成消息从原生历史补回自身账本，后续继续聊天或重新加载时仍可显示，并避免重复。 手动和自动上下文压缩也会通过 ACP 展示生命周期，包括当前对话在外部触发的压缩。
 - **对话重连**：Gateway 重启后，新消息会等待 ACP 自身连接恢复，默认最多等待 60 秒，期间可以取消。错误提示会显示经过脱敏的具体原因和协议错误码。
 - **设计原则**：前端调用单一入口、Main 掌控传输策略、优雅恢复（重连/超时/退避）、安全存储与 CORS 安全。
