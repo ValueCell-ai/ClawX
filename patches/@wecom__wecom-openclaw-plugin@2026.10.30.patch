@@ -1,19 +1,18 @@
 diff --git a/dist/src/cli/tool.js b/dist/src/cli/tool.js
-index 79fb6f33ee8b797b109daa8dc16e94803484ea90..d504e69d39f255c6bafb47213d0ae641921bc375 100644
 --- a/dist/src/cli/tool.js
 +++ b/dist/src/cli/tool.js
-@@ -11,7 +11,7 @@
- import * as path from "node:path";
+@@ -12,7 +12,7 @@
  import { spawn } from "./process-launcher.js";
  import { getWeComRuntime } from "../runtime.js";
+ import { readRuntimeConfig } from "../openclaw-compat.js";
 -import { hasMultiAccounts, resolveWeComAccountMulti } from "../accounts.js";
 +import { listWeComAccountIds, resolveWeComAccountMulti } from "../accounts.js";
  import { resolveStateDir } from "../state-dir-resolve.js";
  import { CLI_ENV_PASSTHROUGH, CLI_KILL_FORCE_WAIT_MS, CLI_KILL_GRACE_MS, CLI_LOG, CLI_MAX_OUTPUT_BYTES, CLI_RESIGN_CODES, CLI_TIMEOUT_MS, CLI_TOOL_NAME, } from "./const.js";
  import { CliArgvError, normalizeArgs } from "./argv.js";
-@@ -41,9 +41,9 @@ function resolveBot(accountId) {
-     catch {
-         throw new CliAuthError("插件运行时未初始化，无法读取 openclaw 配置");
+@@ -58,9 +58,9 @@
+         console.error(`${CLI_LOG} 读取 OpenClaw 运行时配置失败: ${error instanceof Error ? error.stack : String(error)}`);
+         throw new CliAuthError(`读取 OpenClaw 运行时配置失败: ${error instanceof Error ? error.message : String(error)}`);
      }
 -    const multi = hasMultiAccounts(cfg);
 +    const configuredAccountIds = listWeComAccountIds(cfg);

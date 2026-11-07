@@ -21,7 +21,7 @@ const deferred = () => {
 
 beforeEach(async () => {
   vi.useFakeTimers();
-  const source = await readFile(path.resolve('node_modules/openclaw/dist/server-DkfYuk25.mjs'), 'utf8');
+  const source = await readFile(path.resolve('node_modules/openclaw/dist/server-D2T0Amp5.mjs'), 'utf8');
   const start = source.indexOf('const ACP_GATEWAY_RECONNECT_TIMEOUT_MS =');
   const end = source.indexOf('const MAX_STARTUP_ACP_BUFFER_BYTES =', start);
   expect(start).toBeGreaterThan(0);

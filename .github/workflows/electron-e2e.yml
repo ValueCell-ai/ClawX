@@ -136,6 +136,10 @@ jobs:
       - name: Verify Electron binary
         run: pnpm exec electron --version
 
+      - name: Verify Windows OpenClaw runtime and native dependency versions
+        if: runner.os == 'Windows'
+        run: pnpm exec vitest run tests/unit/openclaw-bundle-config.test.ts
+
       - name: Generate extension bridge
         run: pnpm run ext:bridge
 

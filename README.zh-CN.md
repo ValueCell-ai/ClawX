@@ -146,7 +146,11 @@ Windows 升级会识别旧安装遗留的盘符路径和网络插件路径，从
 
 在输入框中选中 `@agent` 后，模型选择器显示并修改该 Agent 主会话的模型。移除 `@agent` 后，选择器会重新显示原会话的模型。
 
-ClawX 会在启动写入前，在 OpenClaw 状态目录下保留私有快照 `backups/clawx-openclaw-2026.10.5-pre-migration`。快照包含旧会话文件、认证和媒体，并通过 SQLite 在线备份纳入已提交的 WAL 数据。无法完成快照时停止启动；Gateway 就绪不会自动删除快照。OpenClaw 会先自行处理待完成的 schema 和旧版认证迁移，之后 ClawX 才同步供应商凭据，因此中断后可重试而不会先被 ClawX 改写迁移源文件。请在确认升级正常后再手动删除快照以回收空间。快照包含密钥，请勿分享。运行时二进制、符号链接目标和外部工作区不在快照范围内，手动回退前请另行备份。
+ClawX 支持从官方 0.6.1（OpenClaw `2026.7.1-2`）或使用 `2026.10.5` 的 main 构建直接原地升级到 `2026.10.10`。启动写入前会在 OpenClaw 状态目录保留独立的 `backups/clawx-openclaw-2026.10.10-pre-migration` 快照，不复用 10.5 快照。私有快照包含配置、频道凭据、旧历史、插件文件、媒体以及配置的外部 Agent/会话存储；SQLite 在线备份包含已提交的 WAL 数据。备份失败即停止启动，Gateway 就绪不会删除快照。OpenClaw 先完成 schema 迁移，ClawX 再同步凭据，中断后可以重试。工作区和运行时二进制不在备份范围内。请保留对应旧安装包，验证升级后再删除快照；快照含密钥，请勿分享。
+
+需要回退时，先退出所有 ClawX、Gateway 和 Doctor 进程，再用 Node 24.16+（24.x）或 26.1+ 执行 `node <应用资源目录>/cli/restore-openclaw-upgrade.mjs <快照目录> --confirm-stopped`。恢复工具验证文件哈希，一并恢复配置、数据库和插件文件，并通过恢复日志保留被替换的新版数据；恢复中断后再次执行会先撤销未完成的恢复。恢复后请先安装对应的旧版 ClawX 再启动，否则新版应用会再次迁移旧数据库。详见[升级和恢复说明](harness/reference/openclaw-2026-10-10-upgrade.md)。 Windows 可使用安装目录内的 `resources/bin/node.exe`，恢复前须退出托盘中的 ClawX，并沿用原 Windows 用户配置目录。
+
+官方 Discord、飞书和 WhatsApp 依赖同步到 `2026.10.10`；企业微信升级到 `2026.10.30` 以适配当前配置 API，钉钉保持 `0.8.26`，微信保持 `2.4.10`。飞书沿用 main 已有迁移逻辑。
 
 OpenClaw 2026.10.5 更换了两个渠道插件，ClawX 会在首次启动 Gateway 前完成迁移。QQ 机器人从 `@openclaw/qqbot` 切换到腾讯 QQBot 2.0（`@tencent-connect/openclaw-qqbot`，插件 id `openclaw-qqbot`），默认账号移到 `channels.qqbot` 顶层，原本开放的私聊保持开放（使用审批标记 `openclaw:approval-disabled`）。带审批、密钥文件或群命令策略的 QQ 机器人配置交给 OpenClaw Doctor 处理。飞书从 `@larksuite/openclaw-lark` 切换到官方 `@openclaw/feishu`，应用凭据保持不变；官方插件提供 14 个飞书工具（原为 39 个），不再提供日历、任务、用户 OAuth、表格和搜索类工具。
 

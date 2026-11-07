@@ -203,18 +203,21 @@ function mutateMachineStateIndex(
   db: DatabaseSync,
   sqlitePath: string,
   mutate: InstallRecordsMutation,
+  strict = false,
 ): boolean {
   db.exec('BEGIN IMMEDIATE;');
   let committed = false;
   try {
     const nowMs = Date.now();
     if (hasActivePluginLifecycleLease(db, nowMs)) {
+      if (strict) throw new Error('OpenClaw plugin lifecycle operation holds the state lease');
       logger.warn(`[plugin] Skipped install metadata update in ${sqlitePath}: an OpenClaw plugin lifecycle operation holds the state lease`);
       return false;
     }
 
     const current = readMachineStateIndex(db);
     if (current === 'invalid') {
+      if (strict) throw new Error('Invalid OpenClaw plugin index; run Doctor before replacing plugins');
       logger.warn(`[plugin] Skipped install metadata update in ${sqlitePath}: the OpenClaw plugin index row is invalid; run OpenClaw Doctor to repair it`);
       return false;
     }
@@ -309,11 +312,12 @@ function mutateStateDatabase(
   sqlitePath: string,
   mutate: InstallRecordsMutation,
   createIfMissing: boolean,
+  strict = false,
 ): boolean {
   const db = openStateDatabase(sqlitePath);
   try {
     if (usesMachineStateIndex(db)) {
-      return mutateMachineStateIndex(db, sqlitePath, mutate);
+      return mutateMachineStateIndex(db, sqlitePath, mutate, strict);
     }
     // Fresh or pre-2026.10 database: OpenClaw imports this table into
     // config_machine_state during its schema migration.
@@ -329,6 +333,7 @@ function mutateStateDatabase(
  */
 export function upsertPluginInstallRecordsIntoSqlite(
   records: Record<string, Record<string, unknown>>,
+  options: { removeIds?: string[]; throwOnError?: boolean } = {},
 ): boolean {
   if (Object.keys(records).length === 0) {
     return false;
@@ -339,12 +344,16 @@ export function upsertPluginInstallRecordsIntoSqlite(
   mkdirSync(join(resolveOpenClawStateDir(), 'state'), { recursive: true });
 
   try {
-    const changed = mutateStateDatabase(sqlitePath, upsertMutation(records), true);
+    const changed = mutateStateDatabase(sqlitePath, (current) => {
+      const removed = removeMutation((options.removeIds ?? []).filter(id => !Object.hasOwn(records, id)))(current);
+      return upsertMutation(records)(current) || removed;
+    }, true, options.throwOnError);
     if (changed) {
       logger.info(`[plugin] Persisted trusted install metadata to SQLite for: ${Object.keys(records).join(', ')}`);
     }
     return changed;
   } catch (error) {
+    if (options.throwOnError) throw error;
     logger.warn('[plugin] Failed to persist trusted install metadata to SQLite:', error);
     return false;
   }

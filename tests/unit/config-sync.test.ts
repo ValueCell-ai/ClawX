@@ -1,10 +1,40 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { stripSystemdSupervisorEnv } from '@electron/gateway/config-sync-env';
 
-const { mockEnsureDingTalkDwsInstalled, mockLoggerWarn } = vi.hoisted(() => ({
+const { mockEnsureDingTalkDwsInstalled, mockLoggerWarn, mockEnsurePluginInstalled } = vi.hoisted(() => ({
   mockEnsureDingTalkDwsInstalled: vi.fn(),
   mockLoggerWarn: vi.fn(),
+  mockEnsurePluginInstalled: vi.fn(),
 }));
+
+vi.mock('@electron/utils/plugin-install', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@electron/utils/plugin-install')>(),
+  ensurePluginInstalled: mockEnsurePluginInstalled,
+}));
+
+describe('configured channel upgrade transaction', () => {
+  it('retains disabled channel payloads without enabling accounts or changing Feishu policy', async () => {
+    const { retainedChannelPluginsForMaintenance } = await import('@electron/gateway/config-sync');
+    const config = { channels: {
+      wecom: { enabled: false, accounts: { named: { secret: 'synthetic' } } },
+      dingtalk: { enabled: false }, 'openclaw-weixin': { enabled: false },
+      qqbot: { enabled: false }, discord: { enabled: false },
+      feishu: { enabled: false }, unsupported: { enabled: false },
+    } };
+    const before = structuredClone(config);
+    expect(retainedChannelPluginsForMaintenance(['telegram'], config))
+      .toEqual(['telegram', 'wecom', 'dingtalk', 'openclaw-weixin', 'qqbot', 'discord']);
+    expect(config).toEqual(before);
+  });
+  it('awaits each payload/index transaction and reports a failed channel for retry', async () => {
+    mockEnsurePluginInstalled.mockReset().mockResolvedValue({ installed: true });
+    mockEnsurePluginInstalled.mockResolvedValueOnce({ installed: false, warning: 'sharing violation' });
+    const { ensureConfiguredPluginsUpgraded } = await import('@electron/gateway/config-sync');
+    expect(await ensureConfiguredPluginsUpgraded(['wecom', 'dingtalk', 'openclaw-weixin', 'qqbot'])).toBe(false);
+    expect(mockEnsurePluginInstalled.mock.calls.map(call => call[0])).toEqual(['wecom', 'dingtalk', 'openclaw-weixin', 'qqbot']);
+    expect(await ensureConfiguredPluginsUpgraded(['wecom'])).toBe(true);
+  });
+});
 
 vi.mock('electron', () => ({
   app: {

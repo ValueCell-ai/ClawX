@@ -197,6 +197,22 @@ describe('runGatewayStartupSequence', () => {
     expect(hooks.onConnectedToManagedGateway).toHaveBeenCalledTimes(1);
   });
 
+  it('migrates a main-built v25 Agent after the 10.10 code 78 refusal', async () => {
+    const hooks = createMockHooks({
+      waitForReady: vi.fn().mockRejectedValueOnce(new Error('Gateway process exited before becoming ready (code=78)'))
+        .mockResolvedValue(undefined),
+      getProcessExitCode: vi.fn().mockReturnValue(78),
+      getStartupStderrLines: vi.fn().mockReturnValue([
+        'Agent main (C:\\Users\\测试 用户\\.openclaw\\agents\\main\\agent\\openclaw-agent.sqlite): OpenClaw agent database C:\\Users\\测试 用户\\.openclaw\\agents\\main\\agent\\openclaw-agent.sqlite uses schema version 25; stop active agents and run openclaw doctor --fix to migrate session identities before using it.',
+      ]),
+      runDoctorRepair: vi.fn().mockResolvedValue(true),
+    });
+    await runGatewayStartupSequence(hooks);
+    expect(hooks.runDoctorRepair).toHaveBeenCalledOnce();
+    expect(hooks.startProcess).toHaveBeenCalledTimes(2);
+    expect(hooks.onConnectedToManagedGateway).toHaveBeenCalledOnce();
+  });
+
   it('does not run Doctor or repeat startup when another process owns state', async () => {
     const failure = new Error('Gateway process exited before becoming ready (code=1)');
     const hooks = createMockHooks({

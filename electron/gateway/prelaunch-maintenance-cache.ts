@@ -158,3 +158,26 @@ export function runCachedPrelaunchMaintenanceTask(
   writeCache(cachePath, cache);
   return { executed: true, reason: 'cache-miss' };
 }
+
+/** Publish a cache hit only after asynchronous payload/index work commits. */
+export async function runCachedPrelaunchMaintenanceTaskAsync(
+  taskName: PrelaunchMaintenanceTaskName,
+  cacheKey: CacheKeyInput,
+  task: () => Promise<boolean>,
+  options: { cachePath?: string } = {},
+): Promise<PrelaunchMaintenanceRunResult> {
+  const readKey = () => typeof cacheKey === 'function' ? cacheKey() : cacheKey;
+  const cachePath = options.cachePath ?? getDefaultCachePath();
+  const cache = readCache(cachePath);
+  let initialKey: string | undefined;
+  try { initialKey = readKey(); } catch { /* Execute without caching. */ }
+  if (cache && initialKey !== undefined && cache.tasks[taskName]?.key === initialKey) {
+    return { executed: false, reason: 'cache-hit' };
+  }
+  if (!await task()) return { executed: true, reason: 'task-failed' };
+  if (!cache || initialKey === undefined) return { executed: true, reason: 'cache-unavailable' };
+  try {
+    cache.tasks[taskName] = { key: readKey(), updatedAt: new Date().toISOString() };
+  } catch { return { executed: true, reason: 'cache-unavailable' }; }
+  return { executed: true, reason: writeCache(cachePath, cache) ? 'cache-miss' : 'cache-unavailable' };
+}

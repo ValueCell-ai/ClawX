@@ -6,7 +6,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 const root = path.resolve(import.meta.dirname, '../..');
 const dist = path.join(root, 'node_modules/openclaw/dist');
-const patchPath = path.join(root, 'patches/openclaw@2026.10.5.patch');
+const patchPath = path.join(root, 'patches/openclaw@2026.10.10.patch');
 
 describe('OpenClaw ACP compaction lifecycle patch', () => {
   let patch: string;
@@ -17,9 +17,9 @@ describe('OpenClaw ACP compaction lifecycle patch', () => {
   beforeAll(async () => {
     [patch, installedAcp, installedEmbedded, installedSessions] = await Promise.all([
       readFile(patchPath, 'utf8'),
-      readFile(path.join(dist, 'server-DkfYuk25.mjs'), 'utf8'),
-      readFile(path.join(dist, 'builtin-openclaw-CLelpwAr.mjs'), 'utf8'),
-      readFile(path.join(dist, 'sessions-compact-BHqjQkq-.mjs'), 'utf8'),
+      readFile(path.join(dist, 'server-D2T0Amp5.mjs'), 'utf8'),
+      readFile(path.join(dist, 'sdk-B0aTjN8h.mjs'), 'utf8'),
+      readFile(path.join(dist, 'sessions-compact-BHiWjMnG.mjs'), 'utf8'),
     ]);
   });
 

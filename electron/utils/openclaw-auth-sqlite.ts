@@ -24,7 +24,10 @@ const SHARED_AUTH_STORE_CELL_KEY = 'authProfiles.store';
 const SHARED_AUTH_STATE_CELL_KEY = 'authProfiles.state';
 const STATE_BUSY_TIMEOUT_MS = 5_000;
 // Admission ceiling, never a substitute for migrating a database's structure.
-const OPENCLAW_OWNED_AGENT_SCHEMA_VERSION = 25;
+const OPENCLAW_OWNED_AGENT_SCHEMA_VERSION = 27;
+// This repair describes a historical ClawX bug, not the current runtime schema.
+// Repair its verified v25 marker first; upstream Doctor then owns v25 -> v27.
+const CLOBBERED_AGENT_SCHEMA_VERSION = 25;
 
 export class OpenClawAgentSchemaMigrationPendingError extends Error {
   constructor(version: number) {
@@ -104,7 +107,7 @@ function repairKnownClobberedSchema(db: DatabaseSync, agentId: string, sqlitePat
   const meta = readSchemaMetadata(db);
   if (meta?.app_version !== '2026.10.5' || meta.schema_version !== 1 || meta.agent_id !== agentId) return;
   try {
-    persistenceRuntime.assertBundledAgentStructure(db, sqlitePath, OPENCLAW_OWNED_AGENT_SCHEMA_VERSION);
+    persistenceRuntime.assertBundledAgentStructure(db, sqlitePath, CLOBBERED_AGENT_SCHEMA_VERSION);
   } catch {
     return; // Not a fully migrated v25 structure: never pretend otherwise.
   }
@@ -120,10 +123,10 @@ function repairKnownClobberedSchema(db: DatabaseSync, agentId: string, sqlitePat
     if (readUserVersion(db) !== 1 || current?.schema_version !== 1 || current.app_version !== '2026.10.5') {
       throw new Error('Agent schema changed during repair');
     }
-    persistenceRuntime.assertBundledAgentStructure(db, sqlitePath, OPENCLAW_OWNED_AGENT_SCHEMA_VERSION);
-    db.exec(`PRAGMA user_version = ${OPENCLAW_OWNED_AGENT_SCHEMA_VERSION}`);
+    persistenceRuntime.assertBundledAgentStructure(db, sqlitePath, CLOBBERED_AGENT_SCHEMA_VERSION);
+    db.exec(`PRAGMA user_version = ${CLOBBERED_AGENT_SCHEMA_VERSION}`);
     db.prepare('UPDATE schema_meta SET schema_version = ? WHERE meta_key = ?')
-      .run(OPENCLAW_OWNED_AGENT_SCHEMA_VERSION, PRIMARY_ROW_KEY);
+      .run(CLOBBERED_AGENT_SCHEMA_VERSION, PRIMARY_ROW_KEY);
     db.exec('COMMIT');
   } catch (error) {
     db.exec('ROLLBACK');

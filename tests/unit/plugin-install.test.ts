@@ -359,9 +359,9 @@ describe('plugin installer diagnostics', () => {
     });
     mockReadFileSync.mockImplementation((input: string) => {
       if (String(input) === `${targetDir}/package.json`) {
-        return JSON.stringify({ version: '0.8.25' });
+        return JSON.stringify({ name: '@dingtalk-real-ai/dingtalk-connector', version: '0.8.25' });
       }
-      return '{}';
+      return JSON.stringify({ id: 'dingtalk' });
     });
     mockRealpathSync.mockImplementation((input: string) => input);
 
@@ -375,7 +375,7 @@ describe('plugin installer diagnostics', () => {
         installPath: targetDir,
         version: '0.8.25',
       }),
-    });
+    }, expect.objectContaining({ throwOnError: true }));
   });
 
   it('adds the WeCom channel descriptor while preserving valid upstream npm metadata', async () => {
@@ -619,9 +619,9 @@ describe('plugin installer diagnostics', () => {
     });
     mockReadFileSync.mockImplementation((input: string) => {
       if (String(input).endsWith('package.json')) {
-        return JSON.stringify({ version: '2026.6.10' });
+        return JSON.stringify({ name: '@openclaw/whatsapp', version: '2026.6.10' });
       }
-      return '{}';
+      return JSON.stringify({ id: 'whatsapp' });
     });
     mockRealpathSync.mockImplementation((input: string) => input);
 
@@ -634,7 +634,7 @@ describe('plugin installer diagnostics', () => {
         installPath: targetDir,
         resolvedName: '@openclaw/whatsapp',
       }),
-    });
+    }, expect.objectContaining({ throwOnError: true }));
   });
 
   it('does not ship or expose an installer for the retired CUA adapter', async () => {
@@ -660,7 +660,9 @@ describe('plugin installer diagnostics', () => {
       const value = String(input);
       return value.startsWith(retiredDir) || value.startsWith(imageDir);
     });
-    mockReadFileSync.mockReturnValue(JSON.stringify({ version: '0.1.0' }));
+    mockReadFileSync.mockImplementation((input: string) => String(input).endsWith('openclaw.plugin.json')
+      ? JSON.stringify({ id: 'clawx-openai-image' })
+      : JSON.stringify({ name: 'clawx-openai-image-plugin', version: '0.1.0' }));
 
     const { ensureAllBundledPluginsInstalled, syncTrustedOfficialPluginInstallRecord } = await import('@electron/utils/plugin-install');
     await ensureAllBundledPluginsInstalled();
@@ -672,7 +674,7 @@ describe('plugin installer diagnostics', () => {
         source: 'path',
         installPath: imageDir,
       }),
-    });
+    }, expect.objectContaining({ throwOnError: true }));
     expect(mockUpsertPluginInstallRecordsIntoSqlite).not.toHaveBeenCalledWith(expect.objectContaining({
       'clawx-cua-computer': expect.anything(),
     }));
@@ -729,9 +731,9 @@ describe('plugin installer diagnostics', () => {
     });
     mockReadFileSync.mockImplementation((input: string) => {
       if (String(input) === `${targetDir}/package.json`) {
-        return JSON.stringify({ version: '2026.8.17' });
+        return JSON.stringify({ name: '@wecom/wecom-openclaw-plugin', version: '2026.8.17' });
       }
-      return '{}';
+      return JSON.stringify({ id: 'wecom' });
     });
     mockRealpathSync.mockImplementation((input: string) => input);
 
@@ -748,7 +750,7 @@ describe('plugin installer diagnostics', () => {
         installPath: targetDir,
         version: '2026.8.17',
       }),
-    });
+    }, expect.objectContaining({ throwOnError: true }));
   });
 
   it('replaces legacy Feishu npm ownership with the ClawX path mirror', async () => {
@@ -770,9 +772,9 @@ describe('plugin installer diagnostics', () => {
     });
     mockReadFileSync.mockImplementation((input: string) => {
       if (String(input) === `${targetDir}/package.json`) {
-        return JSON.stringify({ version: '2026.10.5' });
+        return JSON.stringify({ name: '@openclaw/feishu', version: '2026.10.5' });
       }
-      return '{}';
+      return JSON.stringify({ id: 'feishu' });
     });
 
     const { syncTrustedOfficialPluginInstallRecord } = await import('@electron/utils/plugin-install');
@@ -792,7 +794,7 @@ describe('plugin installer diagnostics', () => {
         installPath: targetDir,
         version: '2026.10.5',
       }),
-    });
+    }, expect.objectContaining({ throwOnError: true }));
   });
 
   it('records the Tencent QQBot mirror as path-owned openclaw-qqbot and drops the legacy qqbot record', async () => {
@@ -810,7 +812,7 @@ describe('plugin installer diagnostics', () => {
       if (String(input) === `${targetDir}/package.json`) {
         return JSON.stringify({ name: '@tencent-connect/openclaw-qqbot', version: '2.0.3' });
       }
-      return '{}';
+      return JSON.stringify({ id: 'openclaw-qqbot' });
     });
 
     const { syncTrustedOfficialPluginInstallRecord } = await import('@electron/utils/plugin-install');
@@ -825,7 +827,7 @@ describe('plugin installer diagnostics', () => {
         installPath: targetDir,
         version: '2.0.3',
       }),
-    });
+    }, expect.objectContaining({ throwOnError: true }));
   });
 
   it('removes stale metadata even when an unconfigured mirror directory is already missing', async () => {

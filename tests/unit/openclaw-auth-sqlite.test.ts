@@ -72,20 +72,27 @@ describe('OpenClaw auth SQLite ownership', () => {
   it('creates a complete current schema immediately usable by the bundled runtime', async () => {
     const { writeAuthProfilesToSqlite, initializeAgentAuthDatabase } = await import('@electron/utils/openclaw-auth-sqlite');
     writeAuthProfilesToSqlite(store, 'main');
-    expect(inspect().version).toBe(25);
+    expect(inspect().version).toBe(27);
     const db = new DatabaseSync(dbPath(), { readOnly: true });
-    try { expect(() => assertBundledAgentStructure(db, dbPath(), 25)).not.toThrow(); }
+    try { expect(() => assertBundledAgentStructure(db, dbPath(), 27)).not.toThrow(); }
     finally { db.close(); }
     const before = await readFile(dbPath());
     initializeAgentAuthDatabase('main');
     expect(await readFile(dbPath())).toEqual(before);
   }, 20_000);
   it('does not modify schema metadata while writing to a current database', async () => {
-    await seed(25);
+    await seed(27);
     const before = inspect();
     const { writeAuthProfilesToSqlite } = await import('@electron/utils/openclaw-auth-sqlite');
     writeAuthProfilesToSqlite(store, 'main');
     expect(inspect()).toEqual(before);
+  });
+  it('defers main-built v25 profiles to Doctor without rewriting credentials or markers', async () => {
+    await seed(25);
+    const before = await readFile(dbPath());
+    const { writeAuthProfilesToSqlite } = await import('@electron/utils/openclaw-auth-sqlite');
+    expect(() => writeAuthProfilesToSqlite(store, 'main')).toThrow('schema migration is pending');
+    expect(await readFile(dbPath())).toEqual(before);
   });
   it('preserves a genuine interrupted v16 structure and refuses pre-migration auth writes', async () => {
     await seed(16);
@@ -114,7 +121,7 @@ describe('OpenClaw auth SQLite ownership', () => {
     expect(inspect(`${dbPath()}.clawx-before-schema-repair`).version).toBe(1);
   });
   it('preserves future schema markers during repair and rejects auth writes', async () => {
-    await seed(25, 26, '2026.10.10');
+    await seed(27, 28, '2026.11.1');
     const before = await readFile(dbPath());
     const { repairOpenClawOwnedAgentSchema, writeAuthProfilesToSqlite } = await import('@electron/utils/openclaw-auth-sqlite');
     repairOpenClawOwnedAgentSchema('main');
@@ -122,7 +129,7 @@ describe('OpenClaw auth SQLite ownership', () => {
     expect(await readFile(dbPath())).toEqual(before);
   }, 20_000);
   it('reads main credentials relocated by OpenClaw Doctor into shared state', async () => {
-    await seed(25);
+    await seed(27);
     const db = new DatabaseSync(dbPath());
     db.exec('DELETE FROM auth_profile_store');
     db.close();
@@ -166,7 +173,7 @@ describe('OpenClaw auth SQLite ownership', () => {
     expect(await migrateAuthProfilesJsonToSqliteIfNeeded('main')).toBe(false);
   });
   it('keeps main credentials in the agent database until OpenClaw relocates them', async () => {
-    await seed(25);
+    await seed(27);
     await seedSharedState({ location: 'legacy-main' });
     const { writeAuthProfilesToSqlite, readAuthProfilesFromSqlite } = await import('@electron/utils/openclaw-auth-sqlite');
     writeAuthProfilesToSqlite(store, 'main');
@@ -181,7 +188,7 @@ describe('OpenClaw auth SQLite ownership', () => {
     expect(existsSync(dbPath())).toBe(false);
   });
   it('refuses cross-agent writes', async () => {
-    await seed(25);
+    await seed(27);
     const db = new DatabaseSync(dbPath());
     db.exec("UPDATE schema_meta SET agent_id='other' WHERE meta_key='primary'");
     db.close();

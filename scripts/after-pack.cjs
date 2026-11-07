@@ -242,7 +242,7 @@ const PLATFORM_NATIVE_SCOPES = {
   '@node-llama-cpp': /^(mac|linux|win)-(arm64|x64|armv7l)(-metal|-cuda|-cuda-ext|-vulkan)?$/,
   '@esbuild': /^(darwin|linux|win32|android|freebsd|netbsd|openbsd|sunos|aix|openharmony)-(x64|arm64|arm|ia32|loong64|mips64el|ppc64|riscv64|s390x)/,
   '@openai': /^codex-(darwin|linux|win32)-(x64|arm64)$/,
-  '@openclaw': /^fs-safe-(darwin|linux|win32)-(x64|arm64)/,
+  '@openclaw': /^(?:fs-safe|proc-safe)-(darwin|linux|win32)-(x64|arm64)/,
 };
 
 // Unscoped packages that follow a <name>-<platform>-<arch> convention.

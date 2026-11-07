@@ -67,7 +67,7 @@ async function fixture() {
   });
   const port = (server.address() as { port: number }).port;
   async function startAcp() {
-    const child = spawn(process.execPath, [path.resolve('node_modules/openclaw/dist/server-DkfYuk25.mjs'), '--url', `ws://127.0.0.1:${port}`, '--token', 'fixture', '--verbose'], {
+    const child = spawn(process.execPath, [path.resolve('node_modules/openclaw/openclaw.mjs'), 'acp', '--url', `ws://127.0.0.1:${port}`, '--token', 'fixture', '--verbose'], {
       env: { ...process.env, HOME: home, OPENCLAW_STATE_DIR: home, OPENCLAW_CONFIG_PATH: config },
       stdio: ['pipe', 'pipe', 'pipe'],
     });

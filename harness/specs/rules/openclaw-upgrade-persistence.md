@@ -25,3 +25,9 @@ Upgrade regression coverage must include intermediate/future schemas, new agents
 compressed messages, absent or stale JSONL, deletion/rename persistence, usage,
 channel account discovery, plugin install records in both index formats, and
 WAL-inclusive backup. Ordinary chat remains ACP-owned.
+
+Validate official ClawX 0.6.1 (runtime 2026.7.1-2) and main/runtime 2026.10.5 separately when upgrading to 2026.10.10. Identify data by its real schema, not the app version. A version-specific snapshot must retain plugin payloads, configured external Agent/session persistence, private permissions and committed WAL data. Refuse missing/incomplete baseline contents rather than replacing them with migrated data. Offline restore must verify integrity, quarantine newer roots including SQLite sidecars, journal each rename and undo interrupted publication before retry. External stores need same-volume staging. See `harness/reference/openclaw-2026-10-10-upgrade.md`.
+
+Windows recovery must exercise real sharing violations and retry, directory junctions, non-ASCII/space-containing paths, same-volume external staging and bundled Node/native architecture. Recreate directory links as junctions without requiring Developer Mode; do not treat POSIX permissions or macOS simulations as Windows installation evidence.
+
+When a new runtime defers CLI exit, let its cleanup finish, drain output and propagate the exit from Electron utility processes. Cover both shared-state migration refusal and Agent-only schema refusal (including Windows paths) in the bounded Doctor/startup orchestration; never repair a competing live state owner.
