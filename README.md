@@ -234,7 +234,7 @@ Development file watching skips generated `build/`, `release/`, `dist-electron/`
 
 ### Windows release signing
 
-ClawX and ClawX Biz use the same SSL.com OV + eSigner integration during Windows packaging. Release, preview and manual distribution workflows require signing credentials and stop on signing failures. Local builds remain unsigned unless `CLAWX_WINDOWS_SIGNING=1` is set. Signed builds verify the publisher of automatic updates. See the [Windows signing setup and operations guide (Chinese)](harness/reference/windows-code-signing.md) for Hong Kong company verification, certificate enrollment, GitHub configuration, trial releases and renewal. A valid signature does not guarantee immediate SmartScreen reputation.
+ClawX and ClawX Biz use the same SSL.com OV + eSigner integration during Windows packaging. Release, preview and manual distribution workflows require signing credentials and stop on signing failures. Local builds remain unsigned unless `CLAWX_WINDOWS_SIGNING=1` is set. Signed builds verify the publisher of automatic updates. Certificate enrollment and operations instructions are maintained in private documentation. A valid signature does not guarantee immediate SmartScreen reputation.
 
 ## Contributing
 

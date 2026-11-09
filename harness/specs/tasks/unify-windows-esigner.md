@@ -18,7 +18,6 @@ touchedAreas:
   - harness/specs/scenarios/windows-code-signing.md
   - harness/specs/rules/windows-signing-release-policy.md
   - harness/specs/tasks/unify-windows-esigner.md
-  - harness/reference/windows-code-signing.md
   - README.md
   - README.zh-CN.md
   - README.ja-JP.md
@@ -39,12 +38,10 @@ acceptance:
   - Missing credentials, a failed signer, a wrong publisher, an invalid signature or missing timestamp stops signing.
   - Signed builds enable updater signature verification and publish metadata produced after signing.
   - Existing valid signatures on explicitly allowed helper executables are preserved, while application and installer publishers are verified.
-  - Documentation walks a Hong Kong company through application materials, OV issuance, eSigner automation, repository setup, trial release, renewal and troubleshooting.
+  - Public documentation describes release signing behavior; detailed certificate enrollment and operations instructions are maintained in private documentation.
   - Offline tests and schema checks report their limits; production issuance and paid signing require the user's service account.
 docs:
   required: true
-references:
-  - harness/reference/windows-code-signing.md
 ---
 
 Implement and validate in isolated worktrees based on each repository's main.

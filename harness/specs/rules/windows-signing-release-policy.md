@@ -6,8 +6,6 @@ appliesTo:
   - windows-code-signing
 requiredProfiles:
   - fast
-references:
-  - harness/reference/windows-code-signing.md
 ---
 
 - Sign the application, NSIS uninstaller and installer inside electron-builder,

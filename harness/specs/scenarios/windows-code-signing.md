@@ -17,8 +17,6 @@ requiredProfiles:
 requiredRules:
   - windows-signing-release-policy
   - docs-sync
-references:
-  - harness/reference/windows-code-signing.md
 ---
 
 ClawX and ClawX Biz share the community edition's build-time Windows signing
