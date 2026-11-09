@@ -94,14 +94,15 @@ and physical path comparison prevents duplicate captures through aliases.
 The Windows snapshot directory inherits the user's directory ACL; POSIX mode
 assertions apply only on Unix.
 
-Windows CI runs recovery with paths containing spaces and Chinese characters,
-an actual PowerShell file handle denying sharing, junction handling, plugin
-transaction failures and native package selection. The bundle probes proc-safe
-from the flattened output. The Electron matrix verifies both a refused Gateway
-exit and a successful Doctor exit in real utility processes. NSIS install-over,
-updater restart, standard-user ACLs, antivirus interference and Windows channel
-delivery still require a Windows installation acceptance run; macOS tests are
-not evidence that those Windows-specific interactions passed.
+Windows CI retains the starting-main steps. The additional Windows-specific
+upgrade tests and CI steps were removed at the user's request on 2026-11-09.
+Platform-independent migration and rollback regressions remain, and the bundle
+still probes proc-safe from the flattened output. The Electron matrix verifies
+both a refused Gateway exit and a successful Doctor exit in real utility
+processes. NSIS install-over, updater restart, standard-user ACLs, antivirus
+interference and Windows channel delivery still require a Windows installation
+acceptance run; macOS tests are not evidence that those Windows-specific
+interactions passed.
 
 ## Runtime patch maintenance
 
@@ -177,8 +178,9 @@ Feishu connection, WhatsApp QR login or channel message delivery was tested.
 A broad concurrent test run initially timed out in nine runtime tests while
 builds and the live application harness shared the host. Those affected tests
 passed when rerun with two workers. Lint has seven existing React warnings and
-no errors. Native Windows tests have been added to CI but were not executed on
-this macOS host; Windows file-lock tests are skipped locally. A successful
-Windows CI run and NSIS/updater installation acceptance remain release gates.
+no errors. No native Windows validation was executed on this macOS host. The
+additional Windows-specific tests and CI steps from this validation session
+were subsequently removed on 2026-11-09. Existing Windows CI and NSIS/updater
+installation acceptance remain unverified.
 Private account fixtures and copied credentials are removed after validation;
 only sanitized result records and logs are retained outside the repository.

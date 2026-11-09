@@ -203,7 +203,7 @@ describe('runGatewayStartupSequence', () => {
         .mockResolvedValue(undefined),
       getProcessExitCode: vi.fn().mockReturnValue(78),
       getStartupStderrLines: vi.fn().mockReturnValue([
-        'Agent main (C:\\Users\\测试 用户\\.openclaw\\agents\\main\\agent\\openclaw-agent.sqlite): OpenClaw agent database C:\\Users\\测试 用户\\.openclaw\\agents\\main\\agent\\openclaw-agent.sqlite uses schema version 25; stop active agents and run openclaw doctor --fix to migrate session identities before using it.',
+        'Agent main (/tmp/main/openclaw-agent.sqlite): OpenClaw agent database /tmp/main/openclaw-agent.sqlite uses schema version 25; stop active agents and run openclaw doctor --fix to migrate session identities before using it.',
       ]),
       runDoctorRepair: vi.fn().mockResolvedValue(true),
     });

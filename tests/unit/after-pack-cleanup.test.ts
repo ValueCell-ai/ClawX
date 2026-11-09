@@ -56,19 +56,19 @@ describe('after-pack cleanup helpers', () => {
     expect(existsSync(join(nodeModules, '@openai', 'codex-linux-x64'))).toBe(false);
   });
 
-  it.each(['fs-safe', 'proc-safe'])('keeps only the target %s native package', (name) => {
+  it('keeps only the target fs-safe native package next to the feishu plugin', () => {
     const nodeModules = makeTempNodeModules();
-    makePackage(join(nodeModules, '@openclaw', name));
+    makePackage(join(nodeModules, '@openclaw', 'fs-safe'));
     for (const target of ['darwin-arm64', 'darwin-x64', 'linux-arm64-gnu', 'linux-x64-musl', 'win32-x64-msvc']) {
-      makePackage(join(nodeModules, '@openclaw', `${name}-${target}`));
+      makePackage(join(nodeModules, '@openclaw', `fs-safe-${target}`));
     }
 
     afterPack.__test!.cleanupNativePlatformPackages(nodeModules, 'win32', 'x64');
 
-    expect(existsSync(join(nodeModules, '@openclaw', name))).toBe(true);
-    expect(existsSync(join(nodeModules, '@openclaw', `${name}-win32-x64-msvc`))).toBe(true);
+    expect(existsSync(join(nodeModules, '@openclaw', 'fs-safe'))).toBe(true);
+    expect(existsSync(join(nodeModules, '@openclaw', 'fs-safe-win32-x64-msvc'))).toBe(true);
     for (const target of ['darwin-arm64', 'darwin-x64', 'linux-arm64-gnu', 'linux-x64-musl']) {
-      expect(existsSync(join(nodeModules, '@openclaw', `${name}-${target}`))).toBe(false);
+      expect(existsSync(join(nodeModules, '@openclaw', `fs-safe-${target}`))).toBe(false);
     }
   });
 

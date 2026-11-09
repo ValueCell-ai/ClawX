@@ -3,8 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { execFile, spawn } from 'node:child_process';
-import { once } from 'node:events';
+import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -12,7 +11,7 @@ import { ensureOpenClawUpgradeSnapshot, quarantineLegacyUpdateCheckState, remove
 import { restoreUpgradeSnapshot } from '../../resources/cli/restore-openclaw-upgrade.mjs';
 const roots: string[] = [];
 async function fixture() {
-  const stateDir = await mkdtemp(join(tmpdir(), 'clawx 升级 '));
+  const stateDir = await mkdtemp(join(tmpdir(), 'clawx-upgrade-'));
   roots.push(stateDir);
   const configPath = join(stateDir, 'openclaw.json');
   await writeFile(configPath, '{"version":"old"}\n');
@@ -118,16 +117,6 @@ describe('OpenClaw 2026.10.10 upgrade snapshot', () => {
     expect((await removeOpenClawUpgradeSnapshot(options)).status).toBe('removed');
     expect((await removeOpenClawUpgradeSnapshot(options)).status).toBe('missing');
   });
-  it('removes recovery artifacts without following plugin junctions into the host runtime', async () => {
-    const options = await fixture();
-    const host = await fixture();
-    const snapshot = await ensureOpenClawUpgradeSnapshot(options);
-    const retained = join(snapshot.snapshotDir, 'recovery/retained/node_modules');
-    await mkdir(retained, { recursive: true });
-    await symlink(host.stateDir, join(retained, 'openclaw'), 'junction');
-    await removeOpenClawUpgradeSnapshot(options);
-    expect(await readFile(host.configPath, 'utf8')).toContain('old');
-  });
   it('quarantines legacy update state only when a canonical row exists', async () => {
     const options = await fixture();
     const sourcePath = join(options.stateDir, 'update-check.json');
@@ -201,39 +190,6 @@ describe('OpenClaw 2026.10.10 upgrade snapshot', () => {
     await restoreUpgradeSnapshot(snapshot.snapshotDir, { ...options, assertOffline: async () => {} });
     expect(await readFile(credentials, 'utf8')).toBe('old login');
   });
-  it.skipIf(process.platform !== 'win32')('preserves current data when Windows denies a directory rename and retries after unlock', async () => {
-    const options = await fixture();
-    await mkdir(join(options.stateDir, 'credentials'));
-    const token = join(options.stateDir, 'credentials/token');
-    await writeFile(token, 'old login');
-    const snapshot = await ensureOpenClawUpgradeSnapshot(options);
-    await writeFile(options.configPath, 'new config');
-    await writeFile(token, 'new login');
-    const holder = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
-      "$f = [IO.File]::Open($env:CLAWX_LOCK_FIXTURE, 'Open', 'Read', 'None'); [Console]::WriteLine('locked'); [Console]::ReadLine() | Out-Null; $f.Dispose()"],
-    { env: { ...process.env, CLAWX_LOCK_FIXTURE: token }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
-    const closed = once(holder, 'exit');
-    try {
-      await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error('Windows lock fixture did not become ready')), 10000);
-        holder.stdout.once('data', data => {
-          clearTimeout(timer);
-          if (data.toString().includes('locked')) resolve();
-          else reject(new Error('Unexpected lock response'));
-        });
-        holder.once('error', error => { clearTimeout(timer); reject(error); });
-        holder.once('exit', () => { clearTimeout(timer); reject(new Error('Lock holder exited before readiness')); });
-      });
-      await expect(restoreUpgradeSnapshot(snapshot.snapshotDir, { ...options, assertOffline: async () => {} })).rejects.toMatchObject({ code: expect.stringMatching(/^(EPERM|EACCES|EBUSY)$/) });
-      expect(await readFile(options.configPath, 'utf8')).toBe('new config');
-    } finally {
-      holder.stdin.end('\n');
-      await closed;
-    }
-    expect(await readFile(token, 'utf8')).toBe('new login');
-    await restoreUpgradeSnapshot(snapshot.snapshotDir, { ...options, assertOffline: async () => {} });
-    expect(await readFile(token, 'utf8')).toBe('old login');
-  }, 20000);
   it('rejects a live runtime and corrupted snapshot before touching current data', async () => {
     const options = await fixture();
     const snapshot = await ensureOpenClawUpgradeSnapshot(options);

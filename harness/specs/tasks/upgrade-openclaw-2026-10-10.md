@@ -61,7 +61,7 @@ requiredTests:
   - tests/unit/gateway-startup-orchestrator.test.ts
   - tests/e2e/agent-creation-upgrade.spec.ts
 acceptance:
-  - Exercise Windows junction preservation, occupied-file rollback and retry, paths with spaces/non-ASCII characters, bundled Node/native architecture and deferred Electron utility exit. Keep native Windows checks in CI and distinguish them from macOS simulations and installer acceptance.
+  - Preserve Windows runtime and recovery compatibility. Per the updated task scope, do not add Windows-specific test cases or CI steps; retain existing main coverage and platform-independent migration, rollback and deferred utility exit regressions. Distinguish macOS validation from Windows installation acceptance.
   - Pin OpenClaw, Discord, WhatsApp and official Feishu to 2026.10.10, regenerate the runtime patch against that package, and preserve existing ACP/recovery/compaction behavior.
   - Use the upstream v27 schema contract for current Agent auth writes while preserving the narrowly verified historical v25 marker repair. Doctor owns actual schema migration.
   - Create a new WAL-consistent snapshot before any migration writer. Retain plugin payloads and applicable external persistence locations for offline recovery; never erase the baseline on readiness.
