@@ -30,6 +30,7 @@ expectedUserBehavior:
   - Official ClawX 0.6.1 with OpenClaw 2026.7.1-2 upgrades directly to 2026.10.10; no intermediate app or manual credential entry is required.
   - Telegram, Discord, QQ, DingTalk, WeCom and Weixin retain configured accounts, login state, routing, permissions and tools. Feishu preserves the starting-main migration behavior without additional capability or policy work.
   - WhatsApp's official dependency also moves to 2026.10.10; a separate WhatsApp login-flow redesign is outside this task.
+  - ClawX's computer-use SDK, CLI and native artifacts remain pinned to 0.37.0, independently of OpenClaw's own transitive CUA dependency.
   - Packages built from the starting main commit (6be7ae2c, OpenClaw 2026.10.5) upgrade in place independently of the official 0.6.1 baseline; fresh installs also work.
   - Select migration and recovery by actual runtime/data identity, not the ClawX app version alone. Never confuse a 10.5 upgrade snapshot with this upgrade's baseline.
   - Interrupted migration is retryable; a failed plugin replacement never advertises a new identity over old files, and rollback restores a coherent offline pre-upgrade state.
@@ -58,6 +59,9 @@ requiredTests:
   - tests/unit/channel-config.test.ts
   - tests/unit/qqbot-plugin-compat.test.ts
   - tests/unit/openclaw-bundle-config.test.ts
+  - tests/unit/cua-cli-exec.test.ts
+  - tests/unit/cua-sdk.test.ts
+  - tests/unit/sessions-api-workspace.test.ts
   - tests/unit/gateway-startup-orchestrator.test.ts
   - tests/e2e/agent-creation-upgrade.spec.ts
 acceptance:

@@ -17,6 +17,7 @@ does not identify a database schema or migration receipt.
 | Tencent Weixin | 2.4.10 | Supports current SDK and legacy QR account files |
 | Tencent QQBot / connector | 2.0.3 / 1.2.0 | Retain main's Tencent account and plugin-identity migration |
 | Electron / Windows Node | 41.10.7 / 24.18.1 | Meet Node >=24.16.0 <25 or >=26.1.0 |
+| ClawX CUA SDK / CLI | 0.37.0 | Retain the app's direct dependency and downloaded native artifacts, independently of OpenClaw's transitive copy |
 
 Feishu deliberately retains the starting-main migration, including its
 [documented tool compatibility boundaries](openclaw-2026-10-5-upgrade.md).

@@ -118,6 +118,8 @@ function seedRuntimeSession(sessionKey: string, entry: Record<string, unknown>) 
       agentId: 'main', path: databasePath, register: false,
       env: { OPENCLAW_STATE_DIR: testOpenClawDir },
     });
+    // 10.10 creates v27 before ClawX performs any session mutation.
+    expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(27);
     db.prepare('INSERT INTO session_nodes (session_key, current_session_id, entry_json, updated_at, label) VALUES (?, ?, ?, ?, ?)')
       .run(sessionKey, String(entry.sessionId), JSON.stringify(entry), Number(entry.updatedAt), String(entry.label));
   } finally {
@@ -151,7 +153,7 @@ describe('sessions API workspace summaries', () => {
     expect(rpc).toHaveBeenCalledWith('sessions.patch', { key: sessionKey, label: 'new' });
     const renamed = new DatabaseSync(databasePath, { readOnly: true });
     try {
-      expect(renamed.prepare('PRAGMA user_version').get()?.user_version).toBe(25);
+      expect(renamed.prepare('PRAGMA user_version').get()?.user_version).toBe(27);
       const row = renamed.prepare('SELECT current_session_id, entry_json, label, updated_at FROM session_nodes WHERE session_key=?').get(sessionKey)!;
       expect(row.label).toBe('new');
       expect(row.updated_at).toBeGreaterThan(1);
@@ -162,6 +164,7 @@ describe('sessions API workspace summaries', () => {
     await expect(createSessionsApi().delete({ sessionKey })).resolves.toEqual({ success: true });
     const deleted = new DatabaseSync(databasePath, { readOnly: true });
     try {
+      expect(deleted.prepare('PRAGMA user_version').get()?.user_version).toBe(27);
       expect(deleted.prepare('SELECT count(*) AS n FROM session_nodes WHERE session_key=?').get(sessionKey)?.n).toBe(0);
     } finally {
       deleted.close();
