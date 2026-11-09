@@ -185,3 +185,12 @@ were subsequently removed on 2026-11-09. Existing Windows CI and NSIS/updater
 installation acceptance remain unverified.
 Private account fixtures and copied credentials are removed after validation;
 only sanitized result records and logs are retained outside the repository.
+
+## Native Windows follow-up, 2026-11-09
+
+The two Windows package upgrade routes and the reported temporary SQLite
+snapshot cleanup failure are tracked separately in
+[Windows SQLite upgrade validation](windows-sqlite-upgrade-validation-20261109.md).
+That record identifies the packages exercised, retained data checks and channel
+connection coverage, and distinguishes those observations from the earlier
+macOS validation.

@@ -103,6 +103,10 @@ forbiddenPatterns:
 
 Gateway backend communication covers all ClawX paths that move data between the visual desktop UI and OpenClaw runtime/backend services.
 
+Native Windows upgrade evidence for the independent official 0.6.1 and main
+inputs is recorded in `harness/reference/windows-sqlite-upgrade-validation-20261109.md`,
+including SQLite snapshot cleanup diagnostics and the limits of isolated probes.
+
 The chat composer reads and updates session model selections through Main.
 Conversation switches, workspace changes and Agent routing must preserve the
 identity of both the selection and the next prompt. After a 0.6.1 upgrade,

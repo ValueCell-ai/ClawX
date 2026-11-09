@@ -150,6 +150,10 @@ ClawX 支持从官方 0.6.1（OpenClaw `2026.7.1-2`）或使用 `2026.10.5` 的 
 
 需要回退时，先退出所有 ClawX、Gateway 和 Doctor 进程，再用 Node 24.16+（24.x）或 26.1+ 执行 `node <应用资源目录>/cli/restore-openclaw-upgrade.mjs <快照目录> --confirm-stopped`。恢复工具验证文件哈希，一并恢复配置、数据库和插件文件，并通过恢复日志保留被替换的新版数据；恢复中断后再次执行会先撤销未完成的恢复。恢复后请先安装对应的旧版 ClawX 再启动，否则新版应用会再次迁移旧数据库。详见[升级和恢复说明](harness/reference/openclaw-2026-10-10-upgrade.md)。 Windows 可使用安装目录内的 `resources/bin/node.exe`，恢复前须退出托盘中的 ClawX，并沿用原 Windows 用户配置目录。
 
+Windows 上清理 SQLite 临时快照和旧会话导入目录时，会先释放父进程保留的文件身份校验句柄，再删除临时数据库，避免 Doctor 自身的句柄导致升级检查或会话迁移报 `EPERM`、`ENOTEMPTY`。详见[本机升级验证记录](harness/reference/windows-sqlite-upgrade-validation-20261109.md)。
+
+Doctor 也识别已验证的 `2026.10.5`/schema 25 情况：首次启动 Gateway 前保存 Provider，导致旧版未初始化删除日志。恢复仍须满足配置的 Agent 路径一致、原始数据库来源未变化、存在缺失日志恢复凭据、没有删除记录且备份验证通过等条件。
+
 官方 Discord、飞书和 WhatsApp 依赖同步到 `2026.10.10`；企业微信升级到 `2026.10.30` 以适配当前配置 API，钉钉保持 `0.8.26`，微信保持 `2.4.10`。飞书沿用 main 已有迁移逻辑。
 
 OpenClaw 2026.10.5 更换了两个渠道插件，ClawX 会在首次启动 Gateway 前完成迁移。QQ 机器人从 `@openclaw/qqbot` 切换到腾讯 QQBot 2.0（`@tencent-connect/openclaw-qqbot`，插件 id `openclaw-qqbot`），默认账号移到 `channels.qqbot` 顶层，原本开放的私聊保持开放（使用审批标记 `openclaw:approval-disabled`）。带审批、密钥文件或群命令策略的 QQ 机器人配置交给 OpenClaw Doctor 处理。飞书从 `@larksuite/openclaw-lark` 切换到官方 `@openclaw/feishu`，应用凭据保持不变；官方插件提供 14 个飞书工具（原为 39 个），不再提供日历、任务、用户 OAuth、表格和搜索类工具。

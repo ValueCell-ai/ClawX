@@ -154,6 +154,10 @@ ClawX は公式 0.6.1（OpenClaw `2026.7.1-2`）または `2026.10.5` を使う 
 
 ロールバック時は ClawX、Gateway、Doctor をすべて終了し、Node 24.16+（24.x）または 26.1+ で `node <アプリのリソース>/cli/restore-openclaw-upgrade.mjs <スナップショット> --confirm-stopped` を実行します。ハッシュを検証し、設定、データベース、プラグインを一緒に復元します。置き換えた新データも復旧ログとともに保持し、中断時は再試行前に未完了の復元を取り消します。復元後は対応する旧 ClawX をインストールしてから起動してください。[詳細](harness/reference/openclaw-2026-10-10-upgrade.md)。 Windows では同梱の `resources/bin/node.exe` を使用できます。復元前にトレイの ClawX を終了し、同じ Windows ユーザープロファイルを使ってください。
 
+Windows で SQLite の一時スナップショットと旧セッションのインポート用ディレクトリを削除する前に、親プロセスが保持するファイル識別用ハンドルを解放します。これにより、Doctor 自身のハンドルが原因となるアップグレード検査やセッション移行時の `EPERM`、`ENOTEMPTY` を防ぎます。[ローカルのアップグレード検証記録](harness/reference/windows-sqlite-upgrade-validation-20261109.md)を参照してください。
+
+Doctor は、Gateway の初回起動前に Provider を保存すると削除ジャーナルが未初期化になる、確認済みの `2026.10.5`/schema 25 のケースも認識します。復元には引き続き、設定された Agent パスの一致、元の作成元情報が不変であること、ジャーナル欠落の復旧記録、削除記録がないこと、検証済みバックアップが必要です。
+
 公式 Discord、Feishu、WhatsApp は `2026.10.10` に統一します。WeCom は新しい設定 API に対応する `2026.10.30`、DingTalk は `0.8.26`、Weixin は `2.4.10` です。Feishu の移行処理は main と同じです。
 
 OpenClaw 2026.10.5 では 2 つのチャネルプラグインの提供元が変わり、ClawX は最初の Gateway 起動前に両方を移行します。QQ ボットは `@openclaw/qqbot` から Tencent QQBot 2.0（`@tencent-connect/openclaw-qqbot`、プラグイン id `openclaw-qqbot`）に切り替わり、デフォルトアカウントは `channels.qqbot` の最上位に移動します。開放されていた DM は承認マーカー `openclaw:approval-disabled` を使って開放のまま維持されます。承認、シークレットファイル、グループコマンドのポリシーを含む QQ ボット設定は OpenClaw Doctor に任せます。Feishu は `@larksuite/openclaw-lark` から公式の `@openclaw/feishu` に切り替わり、アプリの認証情報はそのまま使えます。公式プラグインの Feishu ツールは 39 個から 14 個になり、カレンダー、タスク、ユーザー OAuth、シート、検索のツールは使えなくなります。

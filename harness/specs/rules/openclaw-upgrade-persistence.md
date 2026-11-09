@@ -30,4 +30,27 @@ Validate official ClawX 0.6.1 (runtime 2026.7.1-2) and main/runtime 2026.10.5 se
 
 Windows recovery must preserve current data on sharing violations, support retry and use same-volume external staging. Recreate directory links as junctions without requiring Developer Mode; do not treat POSIX permissions or macOS simulations as Windows installation evidence.
 
+For a Windows temporary SQLite cleanup failure, record file attributes and native
+reader lifetime separately from schema integrity. Successful probes or a later
+cleanup do not identify the holder of the original sharing violation. Validate
+both package baselines and retain the observed limits, as described in
+`harness/reference/windows-sqlite-upgrade-validation-20261109.md`.
+
+Retained snapshot cleanup must drain readers, seal the snapshot against new
+admission, and close the host's retained identity descriptors before a cleanup
+worker deletes its files. A closed native SQLite connection does not prove that
+the host admission descriptor has closed. Keep all bundled implementations in
+sync, preserve cleanup failures, and verify descriptor closure even on platforms
+that permit unlinking open files.
+Temporary transcript import databases require the same descriptor retirement
+after native close. A directory cleanup failure must not be mistaken for proof
+that retained JSONL and SQLite transcript contents differ.
+
+Missing deletion history must remain fail-closed unless the runtime's guarded
+Doctor recovery recognizes a verified affected producer. ClawX main's native-first
+provider save can create a stable OpenClaw 2026.10.5 schema 25 agent before shared
+state initialization. Recognize only that exact additional producer pair, retain
+unchanged creation/update metadata and all ownership, receipt, absent deletion-row,
+authority and verified backup guards, and reject unrelated versions or schemas.
+
 When a new runtime defers CLI exit, let its cleanup finish, drain output and propagate the exit from Electron utility processes. Cover both shared-state migration refusal and Agent-only schema refusal in the bounded Doctor/startup orchestration; never repair a competing live state owner.

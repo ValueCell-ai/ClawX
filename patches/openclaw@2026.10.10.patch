@@ -2427,3 +2427,223 @@ diff --git a/dist/zod-schema-BhFMUqIz.mjs b/dist/zod-schema-BhFMUqIz.mjs
  		/** Identifier-preservation instruction policy for compaction summaries. */
  		identifierPolicy: union([literal("strict"), literal("off")]).optional(),
  		/** Preserve this many most-recent user/assistant turns verbatim in compaction summary context. */
+diff --git a/dist/sqlite-readonly-location-cleanup-Cck2PywQ.mjs b/dist/sqlite-readonly-location-cleanup-Cck2PywQ.mjs
+--- a/dist/sqlite-readonly-location-cleanup-Cck2PywQ.mjs
++++ b/dist/sqlite-readonly-location-cleanup-Cck2PywQ.mjs
+@@ -352,11 +352,14 @@
+ function sealRetainedSnapshotTempDirectory(directory, options) {
+ 	const owner = snapshotDirectories.get(directory);
+ 	if (!owner?.releaseRetained) throw new SqliteSnapshotCleanupError("SQLite snapshot has no retained cleanup owner");
+ 	if (options?.requireRequested && !owner.retirementStarted) throw new SqliteSnapshotCleanupError("SQLite snapshot is still owned; cleanup has not been requested");
+ 	assertSnapshotReadersRetired(owner);
+ 	owner.retirementStarted = true;
++	// ClawX: the host retains identity descriptors that a cleanup child cannot close.
++	for (const location of owner.admissionLocations ?? []) retireSqliteDatabaseAdmissionForPath(location);
+ }
+ function adoptPreparedLocation(location, ownedRoot, requireCleanup = false, onCleanupFailure) {
+ 	const tempDir = ownedRoot ?? path.dirname(location);
+ 	registerSnapshotTempDirectory(tempDir);
++	(snapshotDirectory(tempDir).admissionLocations ??= new Set()).add(location);
+ 	let active = true;
+diff --git a/dist/infra/sqlite-readonly-location.worker.js b/dist/infra/sqlite-readonly-location.worker.js
+--- a/dist/infra/sqlite-readonly-location.worker.js
++++ b/dist/infra/sqlite-readonly-location.worker.js
+@@ -14242,11 +14242,14 @@
+ function sealRetainedSnapshotTempDirectory(directory, options) {
+ 	const owner = snapshotDirectories.get(directory);
+ 	if (!owner?.releaseRetained) throw new SqliteSnapshotCleanupError("SQLite snapshot has no retained cleanup owner");
+ 	if (options?.requireRequested && !owner.retirementStarted) throw new SqliteSnapshotCleanupError("SQLite snapshot is still owned; cleanup has not been requested");
+ 	assertSnapshotReadersRetired(owner);
+ 	owner.retirementStarted = true;
++	// ClawX: the host retains identity descriptors that a cleanup child cannot close.
++	for (const location of owner.admissionLocations ?? []) retireSqliteDatabaseAdmissionForPath(location);
+ }
+ function adoptPreparedLocation(location, ownedRoot, requireCleanup = false, onCleanupFailure) {
+ 	const tempDir = ownedRoot ?? path.dirname(location);
+ 	registerSnapshotTempDirectory(tempDir);
++	(snapshotDirectory(tempDir).admissionLocations ??= new Set()).add(location);
+ 	let active = true;
+diff --git a/dist/config-doctor/openclaw-state-db-cache-BBhRV-OR.js b/dist/config-doctor/openclaw-state-db-cache-BBhRV-OR.js
+--- a/dist/config-doctor/openclaw-state-db-cache-BBhRV-OR.js
++++ b/dist/config-doctor/openclaw-state-db-cache-BBhRV-OR.js
+@@ -4357,11 +4357,14 @@
+ function sealRetainedSnapshotTempDirectory(directory, options) {
+ 	const owner = snapshotDirectories.get(directory);
+ 	if (!owner?.releaseRetained) throw new SqliteSnapshotCleanupError("SQLite snapshot has no retained cleanup owner");
+ 	if (options?.requireRequested && !owner.retirementStarted) throw new SqliteSnapshotCleanupError("SQLite snapshot is still owned; cleanup has not been requested");
+ 	assertSnapshotReadersRetired(owner);
+ 	owner.retirementStarted = true;
++	// ClawX: the host retains identity descriptors that a cleanup child cannot close.
++	for (const location of owner.admissionLocations ?? []) retireSqliteDatabaseAdmissionForPath(location);
+ }
+ function adoptPreparedLocation(location, ownedRoot, requireCleanup = false, onCleanupFailure) {
+ 	const tempDir = ownedRoot ?? path.dirname(location);
+ 	registerSnapshotTempDirectory(tempDir);
++	(snapshotDirectory(tempDir).admissionLocations ??= new Set()).add(location);
+ 	let active = true;
+diff --git a/dist/managed-handoff-runtime.mjs b/dist/managed-handoff-runtime.mjs
+--- a/dist/managed-handoff-runtime.mjs
++++ b/dist/managed-handoff-runtime.mjs
+@@ -69228,11 +69228,14 @@
+ function sealRetainedSnapshotTempDirectory(directory, options) {
+ 	const owner = snapshotDirectories.get(directory);
+ 	if (!owner?.releaseRetained) throw new SqliteSnapshotCleanupError("SQLite snapshot has no retained cleanup owner");
+ 	if (options?.requireRequested && !owner.retirementStarted) throw new SqliteSnapshotCleanupError("SQLite snapshot is still owned; cleanup has not been requested");
+ 	assertSnapshotReadersRetired(owner);
+ 	owner.retirementStarted = true;
++	// ClawX: the host retains identity descriptors that a cleanup child cannot close.
++	for (const location of owner.admissionLocations ?? []) retireSqliteDatabaseAdmissionForPath(location);
+ }
+ function adoptPreparedLocation(location, ownedRoot, requireCleanup = false, onCleanupFailure) {
+ 	const tempDir = ownedRoot ?? path.dirname(location);
+ 	registerSnapshotTempDirectory(tempDir);
++	(snapshotDirectory(tempDir).admissionLocations ??= new Set()).add(location);
+ 	let active = true;
+diff --git a/dist/native-hook-relay/sqlite-snapshot-staging-owner-DhKDO7I3.mjs b/dist/native-hook-relay/sqlite-snapshot-staging-owner-DhKDO7I3.mjs
+--- a/dist/native-hook-relay/sqlite-snapshot-staging-owner-DhKDO7I3.mjs
++++ b/dist/native-hook-relay/sqlite-snapshot-staging-owner-DhKDO7I3.mjs
+@@ -1534,11 +1534,14 @@
+ function sealRetainedSnapshotTempDirectory(directory, options) {
+ 	const owner = snapshotDirectories.get(directory);
+ 	if (!owner?.releaseRetained) throw new SqliteSnapshotCleanupError("SQLite snapshot has no retained cleanup owner");
+ 	if (options?.requireRequested && !owner.retirementStarted) throw new SqliteSnapshotCleanupError("SQLite snapshot is still owned; cleanup has not been requested");
+ 	assertSnapshotReadersRetired(owner);
+ 	owner.retirementStarted = true;
++	// ClawX: the host retains identity descriptors that a cleanup child cannot close.
++	for (const location of owner.admissionLocations ?? []) retireSqliteDatabaseAdmissionForPath(location);
+ }
+ function adoptPreparedLocation(location, ownedRoot, requireCleanup = false, onCleanupFailure) {
+ 	const tempDir = ownedRoot ?? path.dirname(location);
+ 	registerSnapshotTempDirectory(tempDir);
++	(snapshotDirectory(tempDir).admissionLocations ??= new Set()).add(location);
+ 	let active = true;
+diff --git a/dist/package-update-activation-recovery.mjs b/dist/package-update-activation-recovery.mjs
+--- a/dist/package-update-activation-recovery.mjs
++++ b/dist/package-update-activation-recovery.mjs
+@@ -69568,11 +69568,14 @@
+ function sealRetainedSnapshotTempDirectory(directory, options) {
+ 	const owner = snapshotDirectories.get(directory);
+ 	if (!owner?.releaseRetained) throw new SqliteSnapshotCleanupError("SQLite snapshot has no retained cleanup owner");
+ 	if (options?.requireRequested && !owner.retirementStarted) throw new SqliteSnapshotCleanupError("SQLite snapshot is still owned; cleanup has not been requested");
+ 	assertSnapshotReadersRetired(owner);
+ 	owner.retirementStarted = true;
++	// ClawX: the host retains identity descriptors that a cleanup child cannot close.
++	for (const location of owner.admissionLocations ?? []) retireSqliteDatabaseAdmissionForPath(location);
+ }
+ function adoptPreparedLocation(location, ownedRoot, requireCleanup = false, onCleanupFailure) {
+ 	const tempDir = ownedRoot ?? path.dirname(location);
+ 	registerSnapshotTempDirectory(tempDir);
++	(snapshotDirectory(tempDir).admissionLocations ??= new Set()).add(location);
+ 	let active = true;
+diff --git a/dist/process/supervisor/service-child-group-anchor.js b/dist/process/supervisor/service-child-group-anchor.js
+--- a/dist/process/supervisor/service-child-group-anchor.js
++++ b/dist/process/supervisor/service-child-group-anchor.js
+@@ -39721,11 +39721,14 @@
+ function sealRetainedSnapshotTempDirectory(directory, options) {
+ 	const owner = snapshotDirectories.get(directory);
+ 	if (!owner?.releaseRetained) throw new SqliteSnapshotCleanupError("SQLite snapshot has no retained cleanup owner");
+ 	if (options?.requireRequested && !owner.retirementStarted) throw new SqliteSnapshotCleanupError("SQLite snapshot is still owned; cleanup has not been requested");
+ 	assertSnapshotReadersRetired(owner);
+ 	owner.retirementStarted = true;
++	// ClawX: the host retains identity descriptors that a cleanup child cannot close.
++	for (const location of owner.admissionLocations ?? []) retireSqliteDatabaseAdmissionForPath(location);
+ }
+ function adoptPreparedLocation(location, ownedRoot, requireCleanup = false, onCleanupFailure) {
+ 	const tempDir = ownedRoot ?? path.dirname(location);
+ 	registerSnapshotTempDirectory(tempDir);
++	(snapshotDirectory(tempDir).admissionLocations ??= new Set()).add(location);
+ 	let active = true;
+diff --git a/dist/state-retention/openclaw-state-db-cache-R82_ufLk.js b/dist/state-retention/openclaw-state-db-cache-R82_ufLk.js
+--- a/dist/state-retention/openclaw-state-db-cache-R82_ufLk.js
++++ b/dist/state-retention/openclaw-state-db-cache-R82_ufLk.js
+@@ -4884,11 +4884,14 @@
+ function sealRetainedSnapshotTempDirectory(directory, options) {
+ 	const owner = snapshotDirectories.get(directory);
+ 	if (!owner?.releaseRetained) throw new SqliteSnapshotCleanupError("SQLite snapshot has no retained cleanup owner");
+ 	if (options?.requireRequested && !owner.retirementStarted) throw new SqliteSnapshotCleanupError("SQLite snapshot is still owned; cleanup has not been requested");
+ 	assertSnapshotReadersRetired(owner);
+ 	owner.retirementStarted = true;
++	// ClawX: the host retains identity descriptors that a cleanup child cannot close.
++	for (const location of owner.admissionLocations ?? []) retireSqliteDatabaseAdmissionForPath(location);
+ }
+ function adoptPreparedLocation(location, ownedRoot, requireCleanup = false, onCleanupFailure) {
+ 	const tempDir = ownedRoot ?? path.dirname(location);
+ 	registerSnapshotTempDirectory(tempDir);
++	(snapshotDirectory(tempDir).admissionLocations ??= new Set()).add(location);
+ 	let active = true;
+diff --git a/dist/state/openclaw-state-read-sqlite-snapshot-staging-owner-DazbInYM.mjs b/dist/state/openclaw-state-read-sqlite-snapshot-staging-owner-DazbInYM.mjs
+--- a/dist/state/openclaw-state-read-sqlite-snapshot-staging-owner-DazbInYM.mjs
++++ b/dist/state/openclaw-state-read-sqlite-snapshot-staging-owner-DazbInYM.mjs
+@@ -1034,11 +1034,14 @@
+ function sealRetainedSnapshotTempDirectory(directory, options) {
+ 	const owner = snapshotDirectories.get(directory);
+ 	if (!owner?.releaseRetained) throw new SqliteSnapshotCleanupError("SQLite snapshot has no retained cleanup owner");
+ 	if (options?.requireRequested && !owner.retirementStarted) throw new SqliteSnapshotCleanupError("SQLite snapshot is still owned; cleanup has not been requested");
+ 	assertSnapshotReadersRetired(owner);
+ 	owner.retirementStarted = true;
++	// ClawX: the host retains identity descriptors that a cleanup child cannot close.
++	for (const location of owner.admissionLocations ?? []) retireSqliteDatabaseAdmissionForPath(location);
+ }
+ function adoptPreparedLocation(location, ownedRoot, requireCleanup = false, onCleanupFailure) {
+ 	const tempDir = ownedRoot ?? path.dirname(location);
+ 	registerSnapshotTempDirectory(tempDir);
++	(snapshotDirectory(tempDir).admissionLocations ??= new Set()).add(location);
+ 	let active = true;
+diff --git a/dist/session-sqlite-transcript-verification-DHMFn-A2.mjs b/dist/session-sqlite-transcript-verification-DHMFn-A2.mjs
+--- a/dist/session-sqlite-transcript-verification-DHMFn-A2.mjs
++++ b/dist/session-sqlite-transcript-verification-DHMFn-A2.mjs
+@@ -2,6 +2,7 @@ import { c as isRecord } from "./record-coerce-TIsquoVR.mjs";
+ import { c as readFileDescriptorBoundedSync } from "./boundary-file-read-CCth2Hwg.mjs";
+ import { t as hasErrnoCode } from "./errno-FR4CRyya.mjs";
+ import { r as openNodeSqliteDatabase } from "./node-sqlite-BksPWqrD.mjs";
++import { I as retireSqliteDatabaseAdmissionForPath } from "./sqlite-database-admission-BmDJq98c.mjs";
+ import { a as executeSqliteQueryTakeFirstSync, s as iterateSqliteQuerySync } from "./kysely-sync-B4IoHDWv.mjs";
+ import { n as normalizeAgentId } from "./agent-id-D1-Q6vR4.mjs";
+ import { p as createPrivateSqliteTempDirectorySync } from "./sqlite-snapshot-staging-CLXGJ4ir.mjs";
+@@ -247,9 +248,9 @@ function transcriptRepairUserKey(entry, strip) {
+ //#region src/config/sessions/session-accessor.sqlite-import-stage.ts
+ function withSqliteSessionImportStage(run) {
+ 	const directory = createPrivateSqliteTempDirectorySync(os.tmpdir(), "openclaw-session-import-");
++	const filename = path.join(directory, "transcripts.sqlite");
+ 	let database;
+ 	try {
+-		const filename = path.join(directory, "transcripts.sqlite");
+ 		fs.closeSync(fs.openSync(filename, "wx", 384));
+ 		database = openNodeSqliteDatabase(filename);
+ 		database.exec(`
+@@ -270,14 +271,13 @@ function withSqliteSessionImportStage(run) {
+     `);
+ 		return run(new SqliteSessionImportStage(database));
+ 	} finally {
+-		try {
+-			database?.close();
+-		} finally {
+-			fs.rmSync(directory, {
+-				recursive: true,
+-				force: true
+-			});
+-		}
++		database?.close();
++		// ClawX: native close leaves the host identity descriptor open on Windows.
++		retireSqliteDatabaseAdmissionForPath(filename);
++		fs.rmSync(directory, {
++			recursive: true,
++			force: true
++		});
+ 	}
+ }
+ var SqliteSessionImportStage = class {
+diff --git a/dist/doctor-agent-deletion-journal-m5o6mZHM.mjs b/dist/doctor-agent-deletion-journal-m5o6mZHM.mjs
+--- a/dist/doctor-agent-deletion-journal-m5o6mZHM.mjs
++++ b/dist/doctor-agent-deletion-journal-m5o6mZHM.mjs
+@@ -214,7 +214,9 @@ const AFFECTED_AGENT_SCHEMAS = new Map([
+ 		"2026.10.5-beta.1",
+ 		"2026.10.5-beta.2",
+ 		"2026.10.5-beta.3",
+-		"2026.10.5-beta.4"
++		"2026.10.5-beta.4",
++		// ClawX native-first provider saves can precede shared journal creation.
++		"2026.10.5"
+ 	].map((version) => [version, 25]),
+ 	["2026.10.10-beta.1", 27]
+ ]);
