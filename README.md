@@ -232,6 +232,10 @@ Development file watching skips generated `build/`, `release/`, `dist-electron/`
 
 > For the project structure, complete command list, E2E parallel policy, performance diagnostics, communication regression checks, and tech stack, see [docs/en-US/development.md](docs/en-US/development.md).
 
+### Windows release signing
+
+ClawX and ClawX Biz use the same SSL.com OV + eSigner integration during Windows packaging. Release, preview and manual distribution workflows require signing credentials and stop on signing failures. Local builds remain unsigned unless `CLAWX_WINDOWS_SIGNING=1` is set. Signed builds verify the publisher of automatic updates. See the [Windows signing setup and operations guide (Chinese)](harness/reference/windows-code-signing.md) for Hong Kong company verification, certificate enrollment, GitHub configuration, trial releases and renewal. A valid signature does not guarantee immediate SmartScreen reputation.
+
 ## Contributing
 
 We welcome contributions from the community! Whether it's bug fixes, new features, documentation improvements, or translations, every contribution helps make ClawX better.

@@ -116,8 +116,8 @@ dmg:
 
 # Windows Configuration
 win:
-  # Skip update signature verification: we ship via OSS + GitHub without a
-  # code-signing certificate, so verifying would always fail on the updater.
+  # Local unsigned builds only. The shared release wrapper overrides this to
+  # true and sets the certificate publisher when CLAWX_WINDOWS_SIGNING=1.
   verifyUpdateCodeSignature: false
   extraResources:
     - from: resources/bin/win32-${arch}
