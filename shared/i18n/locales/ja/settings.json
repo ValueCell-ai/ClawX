@@ -10,7 +10,7 @@
     "system": "システム",
     "language": "言語",
     "menuLanguageUpdated": "メニューの言語を更新しました",
-    "launchAtStartup": "システム起動時に自動起動",
+    "launchAtStartup": "ログイン時に ClawX を起動",
     "launchAtStartupDesc": "ログイン時に ClawX を自動的に起動します"
   },
   "aiProviders": {
@@ -162,7 +162,7 @@
     "autoStart": "ローカルサービスを自動起動",
     "autoStartDesc": "ClawX の起動時にローカルサービスを起動します",
     "proxyTitle": "ネットワークプロキシ",
-    "proxyDesc": "Electron と Gateway の通信をローカルプロキシ経由にします。",
+    "proxyDesc": "ClawX とローカルサービスのネットワークプロキシを設定します。",
     "proxyServer": "プロキシサーバー",
     "proxyServerHelp": "すべてのリクエストで使う基本プロキシです。host:port のみの場合は HTTP 扱いです。",
     "proxyHttpServer": "HTTP プロキシ",
@@ -175,14 +175,14 @@
     "hideAdvancedProxy": "高度なプロキシ項目を非表示",
     "proxyBypass": "バイパスルール",
     "proxyBypassHelp": "直接接続するホストをセミコロン、カンマ、または改行で区切って指定します。",
-    "proxyRestartNote": "保存すると Electron のネットワーク設定を再適用し、Gateway をすぐ再起動します。プロキシ無効時の通常再起動では Telegram チャネルの既存プロキシ設定を保持し、無効状態で保存すると明示的に削除されます。",
+    "proxyRestartNote": "保存するとプロキシが適用され、ローカルサービスが再起動します。Telegram の既存のプロキシを消去するには、無効にして保存してください。",
     "proxySaved": "プロキシ設定を保存しました",
     "proxySaveFailed": "プロキシ設定の保存に失敗しました"
   },
   "updates": {
     "title": "アップデート",
     "description": "ClawX を最新に保つ",
-    "autoCheck": "自動更新チェック",
+    "autoCheck": "起動時に更新を確認",
     "autoCheckDesc": "起動時に更新を確認",
     "autoDownload": "更新通知",
     "autoDownloadDesc": "新しいバージョンが見つかったら通知し、選択後にのみダウンロードします",
@@ -194,7 +194,9 @@
       "autoInstalling": "{{seconds}} 秒後に再起動して更新をインストールします...",
       "failed": "更新の確認に失敗しました",
       "latest": "最新バージョンです",
-      "check": "更新を確認して最新の機能を入手"
+      "check": "更新を確認して最新の機能を入手",
+      "devUnavailable": "開発ビルドではアプリ内更新を利用できません。",
+      "progress": "{{percent}}% ダウンロード済み"
     },
     "action": {
       "checking": "確認中...",
@@ -222,9 +224,10 @@
     "title": "詳細設定",
     "description": "上級ユーザー向けオプション",
     "devMode": "開発者モード",
-    "devModeDesc": "開発者ツールとショートカットを表示",
+    "devModeDesc": "デバッグツールと実験的な機能を表示します。",
     "telemetry": "匿名利用データ",
-    "telemetryDesc": "ClawX 改善のため、匿名の基本的な利用データの提供を許可します"
+    "telemetryDesc": "ClawX 改善のため、匿名の基本的な利用データの提供を許可します",
+    "privacy": "プライバシー"
   },
   "developer": {
     "title": "開発者",
@@ -285,11 +288,11 @@
     "consoleUnavailable": "OpenClaw コンソールを開けません"
   },
   "support": {
-    "title": "サポート"
+    "title": "ヘルプとフィードバック"
   },
   "issueReport": {
     "actionTitle": "問題調査レポートをエクスポート",
-    "actionDescription": "トラブルシューティングとサポート用の診断 ZIP をデスクトップに作成します。",
+    "actionDescription": "診断用 ZIP をデスクトップに保存します。",
     "open": "内容を確認してエクスポート",
     "dialogTitle": "問題調査レポートをエクスポート",
     "dialogDescription": "含まれる内容を確認し、必要に応じて会話を選択してください。ZIP はデスクトップに保存されます。",

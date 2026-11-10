@@ -7,6 +7,8 @@ intent: Keep categorized settings and separate assistant and skill pages consist
 touchedAreas:
   - src/App.tsx
   - src/pages/Settings/**
+  - src/components/ui/tabs.tsx
+  - src/components/settings/UpdateSettings.tsx
   - src/pages/Models/index.tsx
   - src/pages/Channels/index.tsx
   - src/pages/ComputerUse/index.tsx
@@ -24,10 +26,13 @@ expectedUserBehavior:
   - The sidebar offers new tasks, separate Skills and Assistants entries, AI models, messaging remote control, scheduled tasks, computer operation, conversations, and settings.
   - Skills and Assistants each have a standard title, subtitle and page actions without duplicate in-page navigation.
   - App settings separates general preferences, advanced tools, and help/about; capability configuration is accessed directly in the sidebar.
+  - Settings uses the same horizontal page tabs as AI Models under a single page title.
+  - Advanced settings separates privacy preferences from local-service controls, and About & help shows the version once.
   - Legacy model/channel/computer routes and developer section links remain usable, including model tab query parameters.
   - Developer-only controls stay gated; moving a control never grants permissions or enables it.
 requiredProfiles:
   - fast
+  - e2e
 requiredRules:
   - settings-navigation
   - ui-i18n-design-tokens
@@ -41,6 +46,7 @@ requiredTests:
   - tests/unit/i18n-locale-parity.test.ts
 acceptance:
   - Only the selected settings category renders its configuration controls, with contained scrolling at desktop and narrow sizes.
+  - Switching categories keeps the tab strip in place and starts the newly selected category at the top unless a deep link requests a section.
   - Every category is keyboard-accessible and the selected category is indicated independently of color.
   - All four locales provide the new navigation labels and descriptions; skill names and descriptions are unchanged.
   - Configuration and permission behavior continue through existing host APIs; gateway-backend-communication remains the runtime boundary reference.

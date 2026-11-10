@@ -18,8 +18,9 @@ a single-option My skills sub-navigation. Keep
 local skill search and status filters in one toolbar; marketplace discovery opens
 from its capability-gated action without replacing the local browsing state.
 
-Settings categories MUST be URL-addressable, keyboard-accessible, and separately
-scrollable. Legacy routes and developer deep links MUST preserve intent and query
+Settings categories MUST use horizontal page tabs, be URL-addressable and keyboard-accessible,
+and keep the category controls in a single scroll area beneath the tabs.
+Legacy routes and developer deep links MUST preserve intent and query
 parameters. Moving configuration MUST NOT enable permissions or bypass developer gates.
 
 User-facing product terminology MUST use localized labels. Protocol identifiers,

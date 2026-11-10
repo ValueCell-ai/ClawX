@@ -53,7 +53,13 @@ test('exposes core capabilities in the sidebar and separates app preferences', a
   await navigateToSection(page, 'general');
   await expect(page.getByRole('button', { name: 'Light', exact: true })).toBeVisible();
   await expect(page.getByTestId('settings-dev-mode-switch')).toHaveCount(0);
-  await expect(page.getByTestId('settings-nav-general')).toHaveAttribute('aria-current', 'page');
+  const settings = page.getByTestId('settings-page');
+  await expect(settings.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible();
+  await expect(settings.getByRole('complementary')).toHaveCount(0);
+  const categories = settings.getByRole('tablist');
+  await expect(categories).toHaveAttribute('aria-orientation', 'horizontal');
+  await expect(categories.getByRole('tab', { selected: true, name: 'General' })).toBeVisible();
+  await expect(settings.getByRole('tabpanel', { name: 'General' })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('settings-general.png'), animations: 'disabled' });
 
   for (const name of ['models', 'channels', 'computer-use']) await expect(page.getByTestId(`settings-nav-${name}`)).toHaveCount(0);
@@ -76,9 +82,23 @@ test('exposes core capabilities in the sidebar and separates app preferences', a
   await expect(page.getByTestId('settings-open-dev-console')).toHaveCount(0);
   await page.getByTestId('settings-dev-mode-switch').click();
   await expect(page.getByTestId('settings-open-dev-console')).toBeVisible();
+  await expect(settings.getByRole('region', { name: 'Privacy' }).getByRole('switch')).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('settings-advanced.png'), animations: 'disabled' });
 
-  await page.getByTestId('settings-nav-about').click();
+  const advancedTab = page.getByTestId('settings-nav-advanced');
+  const aboutTab = page.getByTestId('settings-nav-about');
+  const panel = settings.getByTestId('settings-category-content');
+  await panel.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  expect(await panel.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await advancedTab.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(aboutTab).toBeFocused();
+  await expect(advancedTab).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/#\/settings\/about$/);
+  await expect(aboutTab).toHaveAttribute('aria-selected', 'true');
+  expect(await panel.evaluate((element) => element.scrollTop)).toBe(0);
+  await expect(settings.getByTestId('settings-current-version')).toHaveCount(1);
   await expect(page.getByTestId('settings-issue-report-open')).toBeVisible();
   await expect(page.getByTestId('settings-dev-mode-switch')).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath('settings-about.png'), animations: 'disabled' });
@@ -104,7 +124,7 @@ test('preserves legacy links, selected model tabs, browser history and developer
     await expect(page.getByTestId(testId)).toBeVisible();
   }
   await page.evaluate(() => { window.location.hash = '#/settings?section=developer'; });
-  await expect(page.getByTestId('settings-nav-advanced')).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByTestId('settings-nav-advanced')).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByTestId('settings-developer-section')).toBeFocused();
 });
 
@@ -114,7 +134,7 @@ test('localizes categories and keeps settings usable in narrow windows', async (
   for (const [language, heading] of [['中文', '消息遥控'], ['日本語', 'メッセージ遠隔操作'], ['Русский', 'Управление через мессенджеры']]) {
     await navigateToSection(page, 'general');
     await page.getByRole('button', { name: language, exact: true }).click();
-    await expect(page.getByRole('button', { name: language, exact: true })).toHaveClass(/(?:^|\s)bg-black\/5(?:\s|$)/);
+    await expect(page.getByRole('button', { name: language, exact: true })).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByTestId('sidebar-nav-channels')).toHaveText(heading);
     if (language === '中文') await page.screenshot({ path: testInfo.outputPath('settings-chinese-general.png'), animations: 'disabled' });
     await page.getByTestId('sidebar-nav-channels').focus();
@@ -133,6 +153,7 @@ test('localizes categories and keeps settings usable in narrow windows', async (
   await page.getByRole('button', { name: '深色', exact: true }).click();
   await page.getByTestId('settings-nav-about').click();
   await expect(page.getByTestId('settings-issue-report-open')).toBeVisible();
+  await expect(page.getByRole('tabpanel', { name: '关于与帮助' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   const main = await page.getByTestId('main-content').boundingBox();
   const settings = await page.getByTestId('settings-page').boundingBox();

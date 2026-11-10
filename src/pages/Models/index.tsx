@@ -328,24 +328,24 @@ export function Models({ embedded = false }: { embedded?: boolean }) {
             }}
             data-testid="models-management-tabs"
           >
-            <TabsList className="flex h-auto w-fit max-w-full flex-wrap justify-start gap-1 bg-transparent p-0">
-              <TabsTrigger className="rounded-lg px-3 data-[state=active]:bg-black/5 dark:data-[state=active]:bg-white/10 data-[state=active]:shadow-none" value="chat" data-testid="models-tab-chat">
+            <TabsList variant="page">
+              <TabsTrigger variant="page" value="chat" data-testid="models-tab-chat">
                 <MessageSquare aria-hidden="true" className="mr-2 h-4 w-4" />
                 {t('dashboard:models.tabs.chat')}
               </TabsTrigger>
               {devModeUnlocked && (
                 <>
-                  <TabsTrigger className="rounded-lg px-3 data-[state=active]:bg-black/5 dark:data-[state=active]:bg-white/10 data-[state=active]:shadow-none" value="voice" data-testid="models-tab-voice">
+                  <TabsTrigger variant="page" value="voice" data-testid="models-tab-voice">
                     <Mic aria-hidden="true" className="mr-2 h-4 w-4" />
                 {t('dashboard:models.tabs.voice')}
                   </TabsTrigger>
-                  <TabsTrigger className="rounded-lg px-3 data-[state=active]:bg-black/5 dark:data-[state=active]:bg-white/10 data-[state=active]:shadow-none" value="image-generation" data-testid="models-tab-image-generation">
+                  <TabsTrigger variant="page" value="image-generation" data-testid="models-tab-image-generation">
                     <ImagePlus aria-hidden="true" className="mr-2 h-4 w-4" />
                 {t('dashboard:models.tabs.imageGeneration')}
                   </TabsTrigger>
                 </>
               )}
-              <TabsTrigger className="rounded-lg px-3 data-[state=active]:bg-black/5 dark:data-[state=active]:bg-white/10 data-[state=active]:shadow-none" value="usage" data-testid="models-tab-usage"><ChartColumn aria-hidden="true" className="mr-2 h-4 w-4" />{t('dashboard:models.tabs.usage')}</TabsTrigger>
+              <TabsTrigger variant="page" value="usage" data-testid="models-tab-usage"><ChartColumn aria-hidden="true" className="mr-2 h-4 w-4" />{t('dashboard:models.tabs.usage')}</TabsTrigger>
             </TabsList>
             <TabsContent value="chat" className="mt-5">
               <ProvidersSettings />

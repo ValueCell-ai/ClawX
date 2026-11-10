@@ -10,7 +10,7 @@
     "system": "跟随系统",
     "language": "语言",
     "menuLanguageUpdated": "菜单语言已更新",
-    "launchAtStartup": "开机自动启动",
+    "launchAtStartup": "登录时启动 ClawX",
     "launchAtStartupDesc": "登录系统后自动启动 ClawX"
   },
   "aiProviders": {
@@ -162,7 +162,7 @@
     "autoStart": "自动启动本地服务",
     "autoStartDesc": "启动 ClawX 时自动启动本地服务",
     "proxyTitle": "网络代理",
-    "proxyDesc": "让 Electron 和 Gateway 的网络请求都走本地代理客户端。",
+    "proxyDesc": "为 ClawX 和本地服务配置网络代理。",
     "proxyServer": "代理服务器",
     "proxyServerHelp": "所有请求默认使用的代理。只填 host:port 时默认按 HTTP 处理。",
     "proxyHttpServer": "HTTP 代理",
@@ -175,14 +175,14 @@
     "hideAdvancedProxy": "隐藏高级代理字段",
     "proxyBypass": "绕过规则",
     "proxyBypassHelp": "使用分号、逗号或换行分隔需要直连的主机。",
-    "proxyRestartNote": "保存后会立即重新应用 Electron 网络代理，并自动重启 Gateway。若代理已关闭，Gateway 常规重启会保留 Telegram 频道已有代理；如需清空，请在关闭代理后手动保存一次。",
+    "proxyRestartNote": "保存后应用代理并重启本地服务。关闭后再保存，可清除 Telegram 已有的代理。",
     "proxySaved": "代理设置已保存",
     "proxySaveFailed": "保存代理设置失败"
   },
   "updates": {
     "title": "更新",
     "description": "保持 ClawX 最新",
-    "autoCheck": "自动检查更新",
+    "autoCheck": "启动时检查更新",
     "autoCheckDesc": "启动时检查更新",
     "autoDownload": "更新提示",
     "autoDownloadDesc": "发现新版本时显示通知；仅在您选择更新后才下载",
@@ -194,7 +194,9 @@
       "autoInstalling": "将在 {{seconds}} 秒后重启并安装更新...",
       "failed": "检查更新失败",
       "latest": "您已拥有最新版本",
-      "check": "检查更新以获取最新功能"
+      "check": "检查更新以获取最新功能",
+      "devUnavailable": "开发版本不支持应用内更新。",
+      "progress": "已下载 {{percent}}%"
     },
     "action": {
       "checking": "检查中...",
@@ -222,9 +224,10 @@
     "title": "高级",
     "description": "高级选项",
     "devMode": "开发者模式",
-    "devModeDesc": "显示开发者工具和快捷方式",
+    "devModeDesc": "显示调试工具和实验功能。",
     "telemetry": "匿名使用数据",
-    "telemetryDesc": "允许提供匿名的基础使用数据，用于改进 ClawX"
+    "telemetryDesc": "允许提供匿名的基础使用数据，用于改进 ClawX",
+    "privacy": "隐私"
   },
   "developer": {
     "title": "开发者",
@@ -285,11 +288,11 @@
     "consoleUnavailable": "暂时无法打开 OpenClaw 控制台"
   },
   "support": {
-    "title": "支持"
+    "title": "帮助与反馈"
   },
   "issueReport": {
     "actionTitle": "导出问题现场",
-    "actionDescription": "在桌面创建用于问题排查和支持的诊断 ZIP。",
+    "actionDescription": "在桌面生成诊断 ZIP。",
     "open": "查看并导出",
     "dialogTitle": "导出问题现场",
     "dialogDescription": "查看将要导出的内容，并按需选择会话。ZIP 将保存到桌面。",

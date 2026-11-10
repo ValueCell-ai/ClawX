@@ -17,8 +17,7 @@ test('management pages share compact headings, gutters and contained scrolling',
       await expect(heading).toBeVisible();
       await expect(heading).toHaveCSS('font-size', '24px');
       await expect(heading).toHaveCSS('font-weight', '500');
-      const contentSurface = name === 'settings' ? page.getByTestId('settings-preferences') : surface;
-      const body = contentSurface.locator(':scope > div').first();
+      const body = surface.locator(':scope > div').first();
       await expect(body).toHaveCSS('padding-bottom', '32px');
       await expect(body).toHaveCSS('padding-top', '32px');
       const mainBox = await page.getByTestId('main-content').boundingBox();
