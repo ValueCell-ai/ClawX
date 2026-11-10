@@ -3,6 +3,8 @@ id: gateway-backend-communication
 title: Gateway Backend Communication
 type: runtime-bridge
 ownedPaths:
+  - src/App.tsx
+  - src/extensions/registry.ts
   - src/lib/api-client.ts
   - src/lib/host-api.ts
   - src/stores/gateway.ts
@@ -57,6 +59,7 @@ requiredProfiles:
 conditionalProfiles:
   e2e:
     when:
+      - renderer extension route registration or startup lifecycle changes
       - user-visible gateway status changes
       - user-visible chat send/receive behavior changes
       - channels/agents/settings UI depends on new backend response shape

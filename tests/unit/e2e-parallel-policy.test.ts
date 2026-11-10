@@ -43,7 +43,7 @@ function isGlobalClipboardCall(node: ts.CallExpression): boolean {
   const pathParts = accessPath(node.expression);
   if (!pathParts) return false;
   if (pathParts.length === 1) {
-    return ['installWebBrowserPolicyInstrumentation', 'pressNativeNewChatShortcut'].includes(pathParts[0]);
+    return ['installWebBrowserPolicyInstrumentation', 'pressNativeNewChatShortcut', 'buildExtensionRenderer'].includes(pathParts[0]);
   }
 
   const method = pathParts.at(-1) ?? '';
@@ -133,10 +133,10 @@ describe('Electron E2E parallel policy', () => {
     expect(String(performance?.grep)).toContain(E2E_PERFORMANCE_TAG);
   });
 
-  it('keeps specs that access the real clipboard in the exclusive project', async () => {
+  it('keeps specs using shared host resources in the exclusive project', async () => {
     const specs = await readSpecTree(e2eDir);
     const untagged = specs.flatMap(({ file, source }) => untaggedGlobalClipboardCalls(file, source));
-    expect(untagged, 'OS clipboard calls must be enclosed by an exclusively tagged test or describe')
+    expect(untagged, 'Shared host resource calls must be enclosed by an exclusively tagged test or describe')
       .toEqual([]);
   });
 
@@ -167,6 +167,15 @@ describe('Electron E2E parallel policy', () => {
     const untagged = untaggedGlobalClipboardCalls(path.join(e2eDir, 'keyboard.spec.ts'), source);
     expect(untagged).toHaveLength(1);
     expect(untagged[0]).toMatch(/^keyboard\.spec\.ts:1:/);
+  });
+
+  it('requires exclusive execution for full renderer fixture builds', () => {
+    const source = [
+      "test('untagged', async () => buildExtensionRenderer(outDir));",
+      "test('tagged', { tag: E2E_EXCLUSIVE_TAG }, async () => buildExtensionRenderer(outDir));",
+    ].join('\n');
+    const untagged = untaggedGlobalClipboardCalls(path.join(e2eDir, 'renderer-build.spec.ts'), source);
+    expect(untagged).toEqual(['renderer-build.spec.ts:1:30']);
   });
 
   it('keeps renderer performance profiles in the performance project', async () => {

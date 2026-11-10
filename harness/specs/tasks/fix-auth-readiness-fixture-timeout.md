@@ -1,9 +1,9 @@
 ---
 id: fix-auth-readiness-fixture-timeout
-title: Batch native schema fixture creation in auth readiness tests
+title: Keep auth readiness fixture and binary checks within CI timeouts
 scenario: gateway-backend-communication
 taskType: runtime-bridge
-intent: Remove hundreds of unnecessary SQLite fixture commits that put read-only auth admission regressions near the five-second test timeout under parallel CI load.
+intent: Remove unnecessary SQLite fixture commits and recursive Buffer matcher overhead that put read-only auth admission regressions near the five-second test timeout under parallel CI load.
 touchedAreas:
   - tests/unit/openclaw-auth-readiness.test.ts
   - harness/specs/tasks/fix-auth-readiness-fixture-timeout.md
@@ -20,6 +20,7 @@ requiredTests:
 acceptance:
   - Build each shared or agent fixture schema and its metadata in one explicit transaction, then close it before calling production admission.
   - Retain the real bundled schemas, read-only assertions, per-test isolation, default SQLite durability and existing test timeouts.
+  - Compare full database bytes with native Buffer equality rather than recursively enumerating megabyte-sized Buffer properties.
   - Measure fixture construction separately from total test time and compare unchanged logical schema, metadata and database integrity.
   - Validate the affected suite and related SQLite tests, including a concurrent isolated run.
 docs:
@@ -29,7 +30,7 @@ docs:
 The reported full-suite run passed 3199 tests but timed out two shared-state
 admission cases at five seconds. The shared fixture contains 100 tables and
 121 indexes; its helper originally ran the DDL and metadata in autocommit mode.
-This task changes only fixture construction, not product persistence behavior.
+This task changes fixture construction and binary assertions, not product persistence behavior.
 README.md, README.zh-CN.md and README.ja-JP.md require no product-flow updates.
 
 Windows validation used Node 24.20.0 with the pinned OpenClaw runtime. The
@@ -53,3 +54,19 @@ durability setting was changed. Measurements remain under ignored
 Targeted ESLint, diff checks, task validation against HEAD and the task dry-run
 passed. Harness CI passed its 22 baseline tests using the existing temporary
 Windows frontmatter LF normalization; original spec bytes were restored.
+
+## Binary assertion follow-up
+
+A later CI run still timed out the two shared-state read-only cases after
+5524 ms and 5562 ms. The real shared schema file is about 1.45 MB; Vitest's
+`toEqual` recursively compares its Buffer elements and enumerable properties.
+The transaction optimization removed repeated SQLite commits but left this
+matcher cost. All six binary before/after assertions now use `Buffer.equals()`
+and assert the boolean result. This still detects every changed byte, including
+schema headers and markers, without changing timeouts or admission behavior.
+
+The follow-up passed all 31 readiness/auth-SQLite tests on Windows. Readiness
+also passed in the full local unit run, but that run was not green: 23 other
+test files failed with platform permissions/path/shell issues and separate
+runtime/import failures. The full-suite CI check runs on Ubuntu and remains
+the cross-platform verification for this follow-up.

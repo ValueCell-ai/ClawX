@@ -7,3 +7,7 @@ appliesTo:
 ---
 
 Renderer pages and components use the existing host API and API client modules as their only backend entrypoints. Main-process IPC details stay behind those modules.
+
+Root routing must observe renderer extension registration and teardown. Direct
+extension URLs and renderer reloads must render without an unrelated settings or
+Gateway update, and asynchronous extension setup must not block registered routes.
