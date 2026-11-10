@@ -20,6 +20,7 @@ interface ConfirmDialogProps {
   variant?: 'default' | 'destructive';
   onConfirm: () => void | Promise<void>;
   onCancel: () => void;
+  returnFocusTo?: HTMLElement | null;
   onError?: (error: unknown) => void;
 }
 
@@ -48,6 +49,7 @@ export function ConfirmDialog({
   variant = 'default',
   onConfirm,
   onCancel,
+  returnFocusTo,
   onError,
 }: ConfirmDialogProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
@@ -112,6 +114,12 @@ export function ConfirmDialog({
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           cancelRef.current?.focus();
+        }}
+        onCloseAutoFocus={(event) => {
+          if (returnFocusTo?.isConnected) {
+            event.preventDefault();
+            returnFocusTo.focus();
+          }
         }}
       >
         <DialogTitle className="text-lg font-semibold">

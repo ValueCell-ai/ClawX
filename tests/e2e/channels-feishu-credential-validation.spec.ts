@@ -61,11 +61,33 @@ test.describe('Feishu credential validation', () => {
 
     const channelsPage = page.getByTestId('channels-page');
     await expect(channelsPage).toBeVisible();
-    await channelsPage.getByRole('button', { name: /Feishu/ }).click();
+    const opener = channelsPage.getByRole('button', { name: /Feishu/ });
+    await opener.click();
+    const dialog = page.getByRole('dialog', { name: 'Configure Feishu / Lark' });
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(opener).toBeFocused();
 
-    await page.locator('#appId').fill('cli_a8cf7d97fbb8d00d');
-    await page.locator('#appSecret').fill('cli_a8cf7d97fbb8d00d');
-    await page.getByRole('button', { name: /Save & Connect|dialog\.saveAndConnect/i }).click();
+    await opener.click();
+    const appId = dialog.locator('#appId');
+    const appSecret = dialog.locator('#appSecret');
+    await dialog.getByRole('button', { name: 'Validate Configuration' }).click();
+    await expect(appId).toBeFocused();
+    await expect(appId).toHaveAccessibleDescription('App ID is required.');
+    await expect(appSecret).toHaveAccessibleDescription('App Secret is required.');
+    expect(await electronApp.evaluate(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (globalThis as any).__clawxFeishuValidationPayload;
+    })).toBeNull();
+    await dialog.getByRole('button', { name: 'Validate Configuration' }).focus();
+    await page.keyboard.press('Tab');
+    await expect(dialog.getByRole('button', { name: 'Close' })).toBeFocused();
+
+    await appId.fill('cli_a8cf7d97fbb8d00d');
+    await appSecret.fill('cli_a8cf7d97fbb8d00d');
+    await expect(appId).not.toHaveAttribute('aria-invalid', 'true');
+    await dialog.getByRole('button', { name: 'Save & Connect' }).click();
 
     await expect(
       page.getByText(/identical to App ID|与 App ID 相同|App ID と同一|совпадает с App ID/),

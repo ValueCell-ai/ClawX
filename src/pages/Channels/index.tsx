@@ -1,9 +1,10 @@
 import { Select, SelectItem } from '@/components/ui/select';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { RefreshCw, Trash2, AlertCircle, Plus, Copy, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
+import { RefreshCw, Trash2, AlertCircle, Plus, Copy, RotateCcw, ChevronDown, ChevronUp, MoreHorizontal, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import * as Menu from '@/components/ui/dropdown-menu';
 import { useGatewayStore } from '@/stores/gateway';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import {
@@ -118,6 +119,7 @@ export function Channels({ embedded = false }: { embedded?: boolean }) {
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
+  const configOpenerRef = useRef<HTMLElement | null>(null);
   const [selectedChannelType, setSelectedChannelType] = useState<ChannelType | null>(null);
   const [selectedAccountId, setSelectedAccountId] = useState<string | undefined>(undefined);
   const [allowExistingConfigInModal, setAllowExistingConfigInModal] = useState(true);
@@ -129,6 +131,7 @@ export function Channels({ embedded = false }: { embedded?: boolean }) {
   const [openDingTalkWorkspaceAuth, setOpenDingTalkWorkspaceAuth] = useState(false);
   const [resetDingTalkWorkspaceAccountId, setResetDingTalkWorkspaceAccountId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  const deleteOpenerRef = useRef<HTMLButtonElement | null>(null);
   const convergenceRefreshTimersRef = useRef<number[]>([]);
   const fetchInFlightRef = useRef(false);
   const queuedFetchOptionsRef = useRef<FetchPageDataOptions | null>(null);
@@ -660,7 +663,7 @@ export function Channels({ embedded = false }: { embedded?: boolean }) {
                     data-testid={`channel-group-${group.channelType}`}
                     className="rounded-xl border border-black/10 dark:border-white/10 p-4 bg-surface-modal"
                   >
-                    <div className="flex items-center justify-between gap-2 mb-3">
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-3 min-w-0">
                         <div className="h-[40px] w-[40px] shrink-0 flex items-center justify-center text-foreground bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-full shadow-sm">
                           <ChannelLogo type={group.channelType as ChannelType} />
@@ -670,8 +673,6 @@ export function Channels({ embedded = false }: { embedded?: boolean }) {
                             {CHANNEL_NAMES[group.channelType as ChannelType] || group.channelType}
                           </h3>
                           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            <span>{group.channelType}</span>
-                            <span className="w-1 h-1 rounded-full bg-black/20 dark:bg-white/20" />
                             <span
                               className="flex items-center gap-1"
                               data-testid={`channel-status-${group.channelType}`}
@@ -703,7 +704,8 @@ export function Channels({ embedded = false }: { embedded?: boolean }) {
                                   variant="outline"
                                   className="h-7 rounded-full px-3 text-xs"
                                   data-testid="dingtalk-workspace-authorize"
-                                  onClick={() => {
+                                  onClick={(event) => {
+                                    configOpenerRef.current = event.currentTarget;
                                     setSelectedChannelType('dingtalk');
                                     setSelectedAccountId(group.defaultAccountId);
                                     setAllowExistingConfigInModal(false);
@@ -738,7 +740,8 @@ export function Channels({ embedded = false }: { embedded?: boolean }) {
                           size="sm"
                           variant="outline"
                           className="h-8 text-xs rounded-full"
-                          onClick={() => {
+                          onClick={(event) => {
+                            configOpenerRef.current = event.currentTarget;
                             const shouldUseGeneratedAccountId = !usesPluginManagedQrAccounts(group.channelType);
                             const nextAccountId = shouldUseGeneratedAccountId
                               ? createNewAccountId(
@@ -758,35 +761,36 @@ export function Channels({ embedded = false }: { embedded?: boolean }) {
                           <Plus className="h-3.5 w-3.5 mr-1" />
                           {t('account.add')}
                         </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                          onClick={() => setDeleteTarget({ channelType: group.channelType })}
-                          title={t('account.deleteChannel')}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <ChannelActions scope="app" onDelete={(opener) => {
+                          deleteOpenerRef.current = opener;
+                          setDeleteTarget({ channelType: group.channelType });
+                        }} />
                       </div>
                     </div>
 
                     <div className="space-y-2">
                       {group.accounts.map((account) => {
+                        const showAccountId = account.name === account.accountId
+                          && account.accountId !== 'default'
+                          && usesPluginManagedQrAccounts(group.channelType);
                         const displayName =
                           account.accountId === 'default' && account.name === account.accountId
                             ? t('account.mainAccount')
-                            : account.name;
+                            : showAccountId ? t('account.linkedAccount') : account.name;
                         return (
                           <div
                             key={`${group.channelType}-${account.accountId}`}
                             data-testid={`channel-account-${group.channelType}-${account.accountId}`}
                             className="rounded-xl bg-black/5 dark:bg-white/5 px-3 py-2"
                           >
-                            <div className="flex items-center justify-between gap-3">
+                            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
                               <div className="min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <p className="text-meta font-medium text-foreground truncate">{displayName}</p>
-                                </div>
+                                <p className="text-meta font-medium text-foreground truncate">{displayName}</p>
+                                {showAccountId && (
+                                  <p className="truncate text-xs text-muted-foreground" title={account.accountId}>
+                                    {t('account.idLabel', { id: account.accountId })}
+                                  </p>
+                                )}
                                 {account.lastError && (
                                   <div className="text-xs text-destructive mt-1">{account.lastError}</div>
                                 )}
@@ -800,6 +804,7 @@ export function Channels({ embedded = false }: { embedded?: boolean }) {
                               <div className="flex items-center gap-2">
                                 <span className="text-xs text-muted-foreground">{t('account.bindAgentLabel')}</span>
                                 <Select
+                                  aria-label={t('account.bindAgentLabel')}
                                   className="h-8 w-auto min-w-28 max-w-48 rounded-lg border border-black/10 dark:border-white/10 bg-background px-2 text-xs"
                                   value={account.agentId || ''}
                                   onValueChange={(value) => {
@@ -813,11 +818,9 @@ export function Channels({ embedded = false }: { embedded?: boolean }) {
                                     </SelectItem>
                                   ))}
                                 </Select>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-8 text-xs rounded-full"
-                                  onClick={() => {
+                                <ChannelActions
+                                  scope="account"
+                                  onEdit={(opener) => {
                                     void (async () => {
                                       try {
                                         const result = await hostApi.channels.formValues(
@@ -831,6 +834,7 @@ export function Channels({ embedded = false }: { embedded?: boolean }) {
                                         // Fall back to modal-side loading when prefetch fails.
                                         setInitialConfigValuesForModal(undefined);
                                       }
+                                      configOpenerRef.current = opener;
                                       setSelectedChannelType(group.channelType as ChannelType);
                                       setSelectedAccountId(account.accountId);
                                       setAllowExistingConfigInModal(true);
@@ -839,20 +843,11 @@ export function Channels({ embedded = false }: { embedded?: boolean }) {
                                       setShowConfigModal(true);
                                     })();
                                   }}
-                                >
-                                  {t('account.edit')}
-                                </Button>
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                                  onClick={() =>
-                                    setDeleteTarget({ channelType: group.channelType, accountId: account.accountId })
-                                  }
-                                  title={t('account.delete')}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
+                                  onDelete={(opener) => {
+                                    deleteOpenerRef.current = opener;
+                                    setDeleteTarget({ channelType: group.channelType, accountId: account.accountId });
+                                  }}
+                                />
                               </div>
                             </div>
                           </div>
@@ -876,7 +871,8 @@ export function Channels({ embedded = false }: { embedded?: boolean }) {
                 return (
                   <button
                     key={type}
-                    onClick={() => {
+                    onClick={(event) => {
+                      configOpenerRef.current = event.currentTarget;
                       setSelectedChannelType(type);
                       setSelectedAccountId(undefined);
                       setAllowExistingConfigInModal(true);
@@ -927,6 +923,7 @@ export function Channels({ embedded = false }: { embedded?: boolean }) {
           initialConfigValues={initialConfigValuesForModal}
           openDingTalkWorkspaceAuth={openDingTalkWorkspaceAuth}
           showChannelName={false}
+          returnFocusTo={configOpenerRef.current}
           onClose={() => {
             setShowConfigModal(false);
             setSelectedChannelType(null);
@@ -954,7 +951,7 @@ export function Channels({ embedded = false }: { embedded?: boolean }) {
         title={t('account.resetWorkspaceAuth')}
         message={t('account.resetWorkspaceAuthConfirm')}
         confirmLabel={t('account.resetWorkspaceAuthConfirmAction')}
-        cancelLabel={t('common.cancel', 'Cancel')}
+        cancelLabel={t('common:actions.cancel')}
         variant="destructive"
         onConfirm={() => {
           void handleResetDingTalkWorkspaceAuth();
@@ -964,17 +961,56 @@ export function Channels({ embedded = false }: { embedded?: boolean }) {
 
       <ConfirmDialog
         open={!!deleteTarget}
-        title={t('common.confirm', 'Confirm')}
+        title={t(deleteTarget?.accountId ? 'account.delete' : 'account.deleteChannel')}
         message={deleteTarget?.accountId ? t('account.deleteConfirm') : t('deleteConfirm')}
-        confirmLabel={t('common.delete', 'Delete')}
-        cancelLabel={t('common.cancel', 'Cancel')}
+        confirmLabel={t('common:actions.delete')}
+        cancelLabel={t('common:actions.cancel')}
         variant="destructive"
+        returnFocusTo={deleteOpenerRef.current}
         onConfirm={() => {
           void handleDelete();
         }}
         onCancel={() => setDeleteTarget(null)}
       />
     </div>
+  );
+}
+
+function ChannelActions({ scope, onDelete, onEdit }: {
+  scope: 'app' | 'account';
+  onDelete: (opener: HTMLButtonElement) => void;
+  onEdit?: (opener: HTMLButtonElement) => void;
+}) {
+  const { t } = useTranslation('channels');
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const label = t(scope === 'app' ? 'account.appActions' : 'account.accountActions');
+
+  return (
+    <Menu.Root modal={false}>
+      <Menu.Trigger asChild>
+        <Button ref={triggerRef} size="icon" variant="ghost" className="h-8 w-8 shrink-0 text-muted-foreground" aria-label={label} title={label}>
+          <MoreHorizontal className="h-4 w-4" />
+        </Button>
+      </Menu.Trigger>
+      <Menu.Portal>
+        <Menu.Content align="end" sideOffset={6} className="clawx-menu-list min-w-40 rounded-xl border border-border bg-surface-modal p-1.5 shadow-xl">
+          {onEdit && (
+            <Menu.Item className="clawx-menu-item flex items-center gap-2 text-sm" onSelect={() => {
+              if (triggerRef.current) onEdit(triggerRef.current);
+            }}>
+              <Pencil className="h-3.5 w-3.5" />
+              {t('account.edit')}
+            </Menu.Item>
+          )}
+          <Menu.Item className="clawx-menu-item flex items-center gap-2 text-sm text-destructive" onSelect={() => {
+            if (triggerRef.current) onDelete(triggerRef.current);
+          }}>
+            <Trash2 className="h-3.5 w-3.5" />
+            {t(scope === 'app' ? 'account.deleteChannel' : 'account.delete')}
+          </Menu.Item>
+        </Menu.Content>
+      </Menu.Portal>
+    </Menu.Root>
   );
 }
 

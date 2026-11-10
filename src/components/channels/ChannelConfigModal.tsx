@@ -4,7 +4,6 @@ import {
   Loader2,
   QrCode,
   ExternalLink,
-  BookOpen,
   Eye,
   EyeOff,
   Check,
@@ -15,8 +14,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 
 import { hostApi, type DingTalkWorkspaceAuthResult } from '@/lib/host-api';
@@ -58,14 +56,13 @@ interface ChannelConfigModalProps {
   openDingTalkWorkspaceAuth?: boolean;
   agentId?: string;
   accountId?: string;
+  returnFocusTo?: HTMLElement | null;
   onClose: () => void;
   onChannelSaved?: (channelType: ChannelType) => void | Promise<void>;
 }
 
-const inputClasses = 'h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/10 focus-visible:border-foreground/30 focus-visible:ring-offset-0 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
-const labelClasses = 'text-sm text-foreground/80 font-bold';
-const outlineButtonClasses = 'h-9 text-meta font-medium rounded-full px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground';
-const primaryButtonClasses = 'h-9 text-meta font-medium rounded-full px-4 shadow-none';
+const inputClasses = 'h-9 rounded-lg bg-surface-modal font-sans text-sm shadow-none';
+const labelClasses = 'text-sm font-medium';
 
 export function ChannelConfigModal({
   initialSelectedType = null,
@@ -78,10 +75,15 @@ export function ChannelConfigModal({
   openDingTalkWorkspaceAuth = false,
   agentId,
   accountId,
-  onClose,
+  returnFocusTo,
+  onClose: onDismiss,
   onChannelSaved,
 }: ChannelConfigModalProps) {
   const { t, i18n } = useTranslation('channels');
+  const [open, setOpen] = useState(true);
+  const onClose = useCallback(() => setOpen(false), []);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
   const [selectedType, setSelectedType] = useState<ChannelType | null>(initialSelectedType);
   const [configValues, setConfigValues] = useState<Record<string, string>>({});
   const [channelName, setChannelName] = useState('');
@@ -91,6 +93,7 @@ export function ChannelConfigModal({
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [validating, setValidating] = useState(false);
+  const [showRequiredErrors, setShowRequiredErrors] = useState(false);
   const [loadingConfig, setLoadingConfig] = useState(false);
   const [isExistingConfig, setIsExistingConfig] = useState(false);
   const [dingtalkWorkspaceAuth, setDingtalkWorkspaceAuth] = useState<DingTalkWorkspaceAuthResult | null>(
@@ -106,6 +109,11 @@ export function ChannelConfigModal({
 
   const meta: ChannelMeta | null = selectedType ? CHANNEL_META[selectedType] : null;
   const shouldUseCredentialValidation = meta?.connectionType === 'token';
+  const isFeishu = selectedType === 'feishu';
+  const isWhatsApp = selectedType === 'whatsapp';
+  const missingFeishuField = isFeishu
+    ? meta?.configFields.find((field) => field.required && !configValues[field.key]?.trim())
+    : undefined;
 
   // Main returns stable error codes next to its English fallback text so the
   // modal can show localized messages (e.g. Feishu App Secret pasted as App ID).
@@ -311,7 +319,7 @@ export function ChannelConfigModal({
   }
 
   useEffect(() => {
-    if (!selectedType || meta?.connectionType !== 'qr') return;
+    if (!open || !selectedType || meta?.connectionType !== 'qr') return;
     const channelType = selectedType;
 
     const onQr = (data: ChannelQrEvent) => {
@@ -369,14 +377,19 @@ export function ChannelConfigModal({
       hostApi.channels.cancelLogin(channelType, resolvedAccountId ? { accountId: resolvedAccountId } : undefined)
         .catch(() => { });
     };
-  }, [meta?.connectionType, resolvedAccountId, selectedType]);
+  }, [meta?.connectionType, open, resolvedAccountId, selectedType]);
 
   const handleValidate = async () => {
     if (!selectedType || !shouldUseCredentialValidation) return;
 
-    setValidating(true);
     setValidationResult(null);
+    if (missingFeishuField) {
+      setShowRequiredErrors(true);
+      dialogRef.current?.querySelector<HTMLInputElement>(`#${missingFeishuField.key}`)?.focus();
+      return;
+    }
 
+    setValidating(true);
     try {
       const result = await hostApi.channels.validateCredentials(selectedType, configValues, resolvedAccountId);
 
@@ -547,51 +560,55 @@ export function ChannelConfigModal({
 
   const updateConfigValue = (key: string, value: string) => {
     setConfigValues((prev) => ({ ...prev, [key]: value }));
+    if (isFeishu) setValidationResult(null);
   };
 
   const toggleSecretVisibility = (key: string) => {
     setShowSecrets((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
+  const workspaceAuth = selectedType === 'dingtalk' ? dingtalkWorkspaceAuth : null;
+  const setupHint = isFeishu ? t('dialog.feishuSetupHint') : isWhatsApp ? t('dialog.whatsappSetupHint') : null;
+
   return (
-    <div
-      className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) {
-          onClose();
-        }
-      }}
-    >
-      <Card
-        className="w-full max-w-3xl max-h-[90vh] flex flex-col rounded-3xl border-0 shadow-2xl bg-surface-modal overflow-hidden"
-        onMouseDown={(event) => event.stopPropagation()}
-        onClick={(event) => event.stopPropagation()}
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent
+        ref={dialogRef}
+        className="flex max-h-[85vh] w-[calc(100vw-2rem)] max-w-xl flex-col gap-0 overflow-hidden rounded-xl bg-surface-modal p-0"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          titleRef.current?.focus();
+        }}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          if (returnFocusTo?.isConnected) returnFocusTo.focus();
+          onDismiss();
+        }}
       >
-        <CardHeader className="flex flex-row items-start justify-between pb-2 shrink-0">
-          <div>
-            <CardTitle className="text-xl font-sans font-medium tracking-normal">
-              {selectedType
+        <div className="shrink-0 px-5 pb-4 pt-5 pr-12">
+          <DialogTitle ref={titleRef} tabIndex={-1} className="font-sans text-xl font-medium tracking-normal outline-none">
+            {workspaceAuth
+              ? t('dialog.dingtalkWorkspaceAuthTitle')
+              : selectedType
                 ? isExistingConfig
                   ? t('dialog.updateTitle', { name: CHANNEL_NAMES[selectedType] })
                   : t('dialog.configureTitle', { name: CHANNEL_NAMES[selectedType] })
                 : t('dialog.addTitle')}
-            </CardTitle>
-            <CardDescription className="text-sm mt-1 text-foreground/70">
-              {selectedType && isExistingConfig
+          </DialogTitle>
+          <DialogDescription className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+            {workspaceAuth
+              ? t('dialog.dingtalkWorkspaceAuthDescription')
+              : isExistingConfig
                 ? t('dialog.existingDesc')
                 : meta ? t(meta.description.replace('channels:', '')) : t('dialog.selectDesc')}
-            </CardDescription>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onClose}
-            className="rounded-full h-8 w-8 -mr-2 -mt-2 text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
-          >
+          </DialogDescription>
+        </div>
+        <DialogClose asChild>
+          <Button variant="ghost" size="icon" aria-label={t('common:actions.close')} className="absolute right-3 top-3 h-8 w-8">
             <X className="h-4 w-4" />
           </Button>
-        </CardHeader>
-        <CardContent className="space-y-6 pt-4 overflow-y-auto flex-1 p-6">
+        </DialogClose>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
           {!selectedType ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {getPrimaryChannels().map((type) => {
@@ -639,47 +656,39 @@ export function ChannelConfigModal({
                 );
               })}
             </div>
-          ) : selectedType === 'dingtalk' && dingtalkWorkspaceAuth ? (
-            <div className="space-y-6" data-testid="dingtalk-workspace-auth">
-              <div className="text-center space-y-3">
-                <div className="mx-auto h-14 w-14 rounded-full bg-blue-500/10 text-blue-700 dark:text-blue-400 flex items-center justify-center">
-                  {dingtalkWorkspaceAuth.status === 'authorized' ? (
-                    <CheckCircle className="h-7 w-7" />
-                  ) : dingtalkWorkspaceAuth.status === 'error' ? (
-                    <AlertCircle className="h-7 w-7 text-destructive" />
-                  ) : (
-                    <ShieldCheck className="h-7 w-7" />
-                  )}
-                </div>
-                <h3 className="text-xl font-sans font-medium tracking-normal">
-                  {t('dialog.dingtalkWorkspaceAuthTitle')}
-                </h3>
-                <p className="text-sm text-muted-foreground max-w-lg mx-auto">
-                  {t('dialog.dingtalkWorkspaceAuthDescription')}
-                </p>
+          ) : workspaceAuth ? (
+            <div className="space-y-4" data-testid="dingtalk-workspace-auth">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 text-primary">
+                {workspaceAuth.status === 'authorized' ? (
+                  <CheckCircle className="h-7 w-7" />
+                ) : workspaceAuth.status === 'error' ? (
+                  <AlertCircle className="h-7 w-7 text-destructive" />
+                ) : (
+                  <ShieldCheck className="h-7 w-7" />
+                )}
               </div>
 
-              {dingtalkWorkspaceAuth.status === 'starting' && (
+              {workspaceAuth.status === 'starting' && (
                 <div className="flex items-center justify-center gap-2 rounded-2xl border border-black/10 dark:border-white/10 p-5 text-sm text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   {t('dialog.dingtalkWorkspaceAuthStarting')}
                 </div>
               )}
 
-              {dingtalkWorkspaceAuth.status === 'pending' && (
+              {workspaceAuth.status === 'pending' && (
                 <div className="rounded-2xl border border-black/10 dark:border-white/10 p-5 text-center space-y-4 bg-surface-input">
-                  {dingtalkWorkspaceAuth.userCode && (
+                  {workspaceAuth.userCode && (
                     <>
                       <p className="text-sm text-muted-foreground">{t('dialog.dingtalkWorkspaceAuthCodeHint')}</p>
                       <p className="font-mono text-3xl tracking-widest text-foreground" data-testid="dingtalk-workspace-code">
-                        {dingtalkWorkspaceAuth.userCode}
+                        {workspaceAuth.userCode}
                       </p>
                     </>
                   )}
-                  {dingtalkWorkspaceAuth.verificationUriComplete && (
+                  {workspaceAuth.verificationUriComplete && (
                     <Button
-                      className={primaryButtonClasses}
-                      onClick={() => void hostApi.shell.openExternal(dingtalkWorkspaceAuth.verificationUriComplete!)}
+                      size="sm"
+                      onClick={() => void hostApi.shell.openExternal(workspaceAuth.verificationUriComplete!)}
                     >
                       <ExternalLink className="h-4 w-4 mr-2" />
                       {t('dialog.dingtalkWorkspaceAuthOpen')}
@@ -689,61 +698,32 @@ export function ChannelConfigModal({
                 </div>
               )}
 
-              {(dingtalkWorkspaceAuth.status === 'error' || dingtalkWorkspaceAuth.status === 'unavailable') && (
+              {(workspaceAuth.status === 'error' || workspaceAuth.status === 'unavailable') && (
                 <div className="rounded-2xl border border-destructive/20 bg-destructive/10 p-4 text-sm text-destructive">
                   {t(`dialog.dingtalkWorkspaceAuthErrors.${
-                    dingtalkWorkspaceAuth.status === 'unavailable'
+                    workspaceAuth.status === 'unavailable'
                       ? 'unavailable'
-                      : dingtalkWorkspaceAuth.errorCode || 'authorization_failed'
+                      : workspaceAuth.errorCode || 'authorization_failed'
                   }`)}
                 </div>
               )}
-
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" className={outlineButtonClasses} onClick={skipDingtalkWorkspaceAuth}>
-                  {t('dialog.dingtalkWorkspaceAuthSkip')}
-                </Button>
-                {dingtalkWorkspaceAuth.status === 'needs_auth' && (
-                  <Button
-                    className={primaryButtonClasses}
-                    data-testid="dingtalk-workspace-auth-start"
-                    onClick={() => void startDingtalkWorkspaceAuth()}
-                  >
-                    {t('dialog.dingtalkWorkspaceAuthStart')}
-                  </Button>
-                )}
-                {(dingtalkWorkspaceAuth.status === 'error' || dingtalkWorkspaceAuth.status === 'unavailable') && (
-                  <Button className={primaryButtonClasses} onClick={() => void startDingtalkWorkspaceAuth()}>
-                    {t('dialog.dingtalkWorkspaceAuthRetry')}
-                  </Button>
-                )}
-              </div>
             </div>
           ) : qrCode ? (
-            <div className="text-center space-y-6">
-              <div className="bg-transparent p-4 rounded-3xl inline-block shadow-sm border border-black/10 dark:border-white/10">
+            <div className="space-y-4">
+              <div className="space-y-1.5 text-sm leading-relaxed">
+                <h3 className={labelClasses}>{t('dialog.howToConnect')}</h3>
+                <p className="text-muted-foreground">
+                  {isWhatsApp ? t('dialog.whatsappScanHint') : t('dialog.scanQR', { name: meta?.name })}
+                </p>
+              </div>
+              <div className="mx-auto w-fit max-w-full rounded-lg border border-border p-3">
                 {qrCode.startsWith('data:image') || qrCode.startsWith('http://') || qrCode.startsWith('https://') ? (
-                  <img src={qrCode} alt="Scan QR Code" className="w-64 h-64 object-contain rounded-2xl" />
+                  <img src={qrCode} alt={t('dialog.scanQR', { name: meta?.name })} className="aspect-square w-56 max-w-full object-contain rounded-2xl" />
                 ) : (
-                  <div className="w-64 h-64 bg-surface-modal rounded-2xl flex items-center justify-center">
+                  <div className="flex aspect-square w-56 max-w-full items-center justify-center">
                     <QrCode className="h-32 w-32 text-muted-foreground" />
                   </div>
                 )}
-              </div>
-              <p className="text-sm text-muted-foreground">
-                {t('dialog.scanQR', { name: meta?.name })}
-              </p>
-              <div className="flex justify-center gap-2">
-                <Button
-                  variant="outline"
-                  className={outlineButtonClasses}
-                  onClick={() => {
-                    setQrCode(null);
-                    void handleConnect();
-                  }}
-                >
-                  {t('dialog.refreshCode')}
-                </Button>
               </div>
             </div>
           ) : loadingConfig ? (
@@ -752,39 +732,19 @@ export function ChannelConfigModal({
               <span className="ml-2 text-sm text-muted-foreground">{t('dialog.loadingConfig')}</span>
             </div>
           ) : (
-            <div className="space-y-6">
-              {isExistingConfig && (
-                <div className="bg-blue-500/10 text-blue-600 dark:text-blue-400 p-4 rounded-2xl text-sm flex items-center gap-2 border border-blue-500/20">
-                  <CheckCircle className="h-4 w-4 shrink-0" />
-                  <span>{t('dialog.existingHint')}</span>
-                </div>
-              )}
-
-              <div className="bg-transparent p-4 rounded-2xl space-y-4 shadow-sm border border-black/10 dark:border-white/10">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className={labelClasses}>{t('dialog.howToConnect')}</p>
-                    <p className="text-meta text-muted-foreground mt-1">
-                      {meta ? t(meta.description.replace('channels:', '')) : ''}
-                    </p>
-                  </div>
-                  <Button
-                    variant="outline"
-                    className={cn(outlineButtonClasses, 'h-8 px-3 shrink-0')}
-                    onClick={openDocs}
-                  >
-                    <BookOpen className="h-3 w-3 mr-1" />
-                    {t('dialog.viewDocs')}
-                    <ExternalLink className="h-3 w-3 ml-1" />
-                  </Button>
-                </div>
-                <ol className="list-decimal pl-5 text-meta text-muted-foreground leading-relaxed space-y-1.5">
-                  {meta?.instructions.map((instruction, index) => (
-                    <li key={index}>{t(instruction)}</li>
-                  ))}
-                </ol>
+            <div className="space-y-5">
+              <div className="space-y-1.5 text-sm leading-relaxed">
+                <h3 className={labelClasses}>{t('dialog.howToConnect')}</h3>
+                {setupHint ? (
+                  <p className="text-muted-foreground">{setupHint}</p>
+                ) : (
+                  <ol className="list-decimal space-y-1 pl-5 text-muted-foreground">
+                    {meta?.instructions.map((instruction) => (
+                      <li key={instruction}>{t(instruction)}</li>
+                    ))}
+                  </ol>
+                )}
               </div>
-
               {showChannelName && (
                 <div className="space-y-2.5">
                   <Label htmlFor="name" className={labelClasses}>{t('dialog.channelName')}</Label>
@@ -822,8 +782,8 @@ export function ChannelConfigModal({
                 </div>
               )}
 
-              <div className="space-y-4">
-                {meta?.configFields.map((field) => (
+              {meta && meta.configFields.length > 0 && <div className="space-y-4">
+                {meta.configFields.map((field) => (
                   <ConfigField
                     key={field.key}
                     field={field}
@@ -831,9 +791,13 @@ export function ChannelConfigModal({
                     onChange={(value) => updateConfigValue(field.key, value)}
                     showSecret={showSecrets[field.key] || false}
                     onToggleSecret={() => toggleSecretVisibility(field.key)}
+                    showEnvVar={!isFeishu}
+                    error={isFeishu && showRequiredErrors && field.required && !configValues[field.key]?.trim()
+                      ? t(field.key === 'appId' ? 'dialog.validationErrors.feishuAppIdRequired' : 'dialog.validationErrors.feishuAppSecretRequired')
+                      : undefined}
                   />
                 ))}
-              </div>
+              </div>}
 
               {validationResult && (
                 <div
@@ -882,59 +846,82 @@ export function ChannelConfigModal({
                   </div>
                 </div>
               )}
-
-              <Separator className="bg-black/10 dark:bg-white/10" />
-
-              <div className="flex flex-col sm:flex-row sm:justify-end gap-3 pt-2">
-                <div className="flex flex-col sm:flex-row gap-2">
-                  {meta?.connectionType === 'token' && shouldUseCredentialValidation && (
-                    <Button
-                      variant="outline"
-                      onClick={handleValidate}
-                      disabled={validating}
-                      className={outlineButtonClasses}
-                    >
-                      {validating ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          {t('dialog.validating')}
-                        </>
-                      ) : (
-                        <>
-                          <ShieldCheck className="h-4 w-4 mr-2" />
-                          {t('dialog.validateConfig')}
-                        </>
-                      )}
-                    </Button>
-                  )}
-                  <Button
-                    onClick={() => {
-                      void handleConnect();
-                    }}
-                    disabled={connecting || !isFormValid() || (showAccountIdEditor && !accountIdInput.trim())}
-                    className={primaryButtonClasses}
-                  >
-                    {connecting ? (
+            </div>
+          )}
+        </div>
+        {meta && (!loadingConfig || workspaceAuth || qrCode) && (
+          <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-border px-5 py-3">
+            {!workspaceAuth && meta.docsUrl && (
+              <Button variant="ghost" size="sm" className="mr-auto gap-1.5 px-2 text-muted-foreground" onClick={openDocs}>
+                {t('dialog.viewDocs')}
+                <ExternalLink className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            {workspaceAuth ? (
+              <>
+                <Button variant="outline" size="sm" onClick={skipDingtalkWorkspaceAuth}>
+                  {t('dialog.dingtalkWorkspaceAuthSkip')}
+                </Button>
+                {workspaceAuth.status === 'needs_auth' && (
+                  <Button size="sm" data-testid="dingtalk-workspace-auth-start" onClick={() => void startDingtalkWorkspaceAuth()}>
+                    {t('dialog.dingtalkWorkspaceAuthStart')}
+                  </Button>
+                )}
+                {(workspaceAuth.status === 'error' || workspaceAuth.status === 'unavailable') && (
+                  <Button size="sm" onClick={() => void startDingtalkWorkspaceAuth()}>
+                    {t('dialog.dingtalkWorkspaceAuthRetry')}
+                  </Button>
+                )}
+              </>
+            ) : qrCode ? (
+              <Button variant="outline" size="sm" onClick={() => {
+                setQrCode(null);
+                void handleConnect();
+              }}>
+                {t('dialog.refreshCode')}
+              </Button>
+            ) : (
+              <>
+                {shouldUseCredentialValidation && (
+                  <Button variant="outline" size="sm" onClick={handleValidate} disabled={validating}>
+                    {validating ? (
                       <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        {meta?.connectionType === 'qr' ? t('dialog.generatingQR') : t('dialog.validatingAndSaving')}
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        {t('dialog.validating')}
                       </>
-                    ) : meta?.connectionType === 'qr' ? (
-                      t('dialog.generateQRCode')
                     ) : (
                       <>
-                        <Check className="h-4 w-4 mr-2" />
-                        {isExistingConfig ? t('dialog.updateAndReconnect') : t('dialog.saveAndConnect')}
+                        <ShieldCheck className="mr-2 h-4 w-4" />
+                        {t('dialog.validateConfig')}
                       </>
                     )}
                   </Button>
-                </div>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+                )}
+                <Button
+                  size="sm"
+                  onClick={() => void handleConnect()}
+                  disabled={connecting || !isFormValid() || (showAccountIdEditor && !accountIdInput.trim())}
+                >
+                  {connecting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      {meta.connectionType === 'qr' ? t('dialog.generatingQR') : t('dialog.validatingAndSaving')}
+                    </>
+                  ) : meta.connectionType === 'qr' ? (
+                    t('dialog.generateQRCode')
+                  ) : (
+                    <>
+                      <Check className="mr-2 h-4 w-4" />
+                      {isExistingConfig ? t('dialog.updateAndReconnect') : t('dialog.saveAndConnect')}
+                    </>
+                  )}
+                </Button>
+              </>
+            )}
+          </footer>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -944,6 +931,8 @@ interface ConfigFieldProps {
   onChange: (value: string) => void;
   showSecret: boolean;
   onToggleSecret: () => void;
+  showEnvVar: boolean;
+  error?: string;
 }
 
 function ChannelLogo({ type }: { type: ChannelType }) {
@@ -969,7 +958,7 @@ function ChannelLogo({ type }: { type: ChannelType }) {
   }
 }
 
-function ConfigField({ field, value, onChange, showSecret, onToggleSecret }: ConfigFieldProps) {
+function ConfigField({ field, value, onChange, showSecret, onToggleSecret, showEnvVar, error }: ConfigFieldProps) {
   const { t } = useTranslation('channels');
   const isPassword = field.type === 'password';
 
@@ -977,7 +966,7 @@ function ConfigField({ field, value, onChange, showSecret, onToggleSecret }: Con
     <div className="space-y-2.5">
       <Label htmlFor={field.key} className={labelClasses}>
         {t(field.label)}
-        {field.required && <span className="text-destructive ml-1">*</span>}
+        {field.required && <span aria-hidden="true" className="text-destructive ml-1">*</span>}
       </Label>
       <div className="flex gap-2">
         <Input
@@ -985,8 +974,11 @@ function ConfigField({ field, value, onChange, showSecret, onToggleSecret }: Con
           type={isPassword && !showSecret ? 'password' : 'text'}
           placeholder={field.placeholder ? t(field.placeholder) : undefined}
           value={value}
+          required={field.required}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? `${field.key}-error` : undefined}
           onChange={(event) => onChange(event.target.value)}
-          className={inputClasses}
+          className={cn(inputClasses, error && 'border-destructive/50 focus-visible:border-destructive')}
         />
         {isPassword && (
           <Button
@@ -994,18 +986,20 @@ function ConfigField({ field, value, onChange, showSecret, onToggleSecret }: Con
             variant="outline"
             size="icon"
             onClick={onToggleSecret}
-            className="h-[44px] w-[44px] rounded-xl bg-transparent border-black/10 dark:border-white/10 text-muted-foreground hover:text-foreground shrink-0 shadow-sm"
+            aria-label={t(showSecret ? 'common:actions.hide' : 'common:actions.show')}
+            className="h-9 w-9 shrink-0 rounded-lg text-muted-foreground"
           >
             {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </Button>
         )}
       </div>
+      {error && <p id={`${field.key}-error`} className="text-xs text-destructive">{error}</p>}
       {field.description && (
         <p className="text-meta text-muted-foreground leading-relaxed">
           {t(field.description)}
         </p>
       )}
-      {field.envVar && (
+      {showEnvVar && field.envVar && (
         <p className="text-xs text-muted-foreground/70 font-mono">
           {t('dialog.envVar', { var: field.envVar })}
         </p>
