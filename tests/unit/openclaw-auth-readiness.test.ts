@@ -47,11 +47,6 @@ async function inspect(ids: string[] = ['main']) {
   const { inspectAuthProfilesWriteReadiness } = await import('@electron/utils/openclaw-auth-sqlite');
   return inspectAuthProfilesWriteReadiness(ids);
 }
-async function expectUnchangedDatabase(pathname: string, before: Buffer) {
-  const after = await readFile(pathname);
-  // Compare every byte natively instead of deeply traversing multi-MB buffers.
-  expect(after.equals(before), `Database changed during read-only admission: ${pathname}`).toBe(true);
-}
 
 describe('read-only auth projection admission', () => {
   beforeEach(async () => {
@@ -71,7 +66,7 @@ describe('read-only auth projection admission', () => {
     new DatabaseSync(statePath()).close();
     const before = await readFile(statePath());
     expect(await inspect()).toEqual({ ready: false, reason: 'shared-state:empty' });
-    await expectUnchangedDatabase(statePath(), before);
+    expect((await readFile(statePath())).equals(before)).toBe(true);
     editState('CREATE TABLE unknown (value TEXT)');
     await expect(inspect()).rejects.toThrow();
   });
@@ -84,7 +79,9 @@ describe('read-only auth projection admission', () => {
     const { writeAuthProfilesToSqlite } = await import('@electron/utils/openclaw-auth-sqlite');
     writeAuthProfilesToSqlite({ version: 1, profiles: {} }, 'main');
     expect(await inspect()).toEqual({ ready: true });
-    await expectUnchangedDatabase(statePath(), sharedBefore);
+    // Native byte comparison avoids Vitest traversing every Buffer property in
+    // the full runtime schema while still detecting any changed database byte.
+    expect((await readFile(statePath())).equals(sharedBefore)).toBe(true);
   }, 20_000);
 
   it('recognizes the real prelaunch plugin-index producer as pending native bootstrap', async () => {
@@ -92,7 +89,7 @@ describe('read-only auth projection admission', () => {
     expect(upsertPluginInstallRecordsIntoSqlite({ example: { source: 'npm', spec: '@example/plugin', version: '1.0.0' } })).toBe(true);
     const before = await readFile(statePath());
     expect(await inspect()).toEqual({ ready: false, reason: 'shared-state:plugin-index-bootstrap' });
-    await expectUnchangedDatabase(statePath(), before);
+    expect((await readFile(statePath())).equals(before)).toBe(true);
     expect(existsSync(agentPath())).toBe(false);
     editState('CREATE TABLE unexpected (value TEXT)');
     await expect(inspect()).rejects.toThrow();
@@ -109,7 +106,7 @@ describe('read-only auth projection admission', () => {
     await seedState(20, 20);
     const before = await readFile(statePath());
     expect(await inspect()).toEqual({ ready: false, reason: 'shared-state:schema-20' });
-    await expectUnchangedDatabase(statePath(), before);
+    expect((await readFile(statePath())).equals(before)).toBe(true);
     expect(existsSync(agentPath())).toBe(false);
   });
 
@@ -118,7 +115,7 @@ describe('read-only auth projection admission', () => {
     editState('DROP TABLE agent_deletion_journal');
     const before = await readFile(statePath());
     expect(await inspect()).toEqual({ ready: false, reason: 'shared-state:deletion-journal' });
-    await expectUnchangedDatabase(statePath(), before);
+    expect((await readFile(statePath())).equals(before)).toBe(true);
     expect(existsSync(agentPath())).toBe(false);
   });
 
@@ -127,7 +124,7 @@ describe('read-only auth projection admission', () => {
     await seedAgent(version === 1 ? 25 : version, version);
     const before = await readFile(agentPath());
     expect(await inspect()).toEqual({ ready: false, reason: `agent:main:schema-${version}` });
-    await expectUnchangedDatabase(agentPath(), before);
+    expect((await readFile(agentPath())).equals(before)).toBe(true);
     expect(existsSync(`${agentPath()}.clawx-before-schema-repair`)).toBe(false);
   });
 

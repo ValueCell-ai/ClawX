@@ -1,9 +1,9 @@
 ---
 id: fix-auth-readiness-fixture-timeout
-title: Keep native auth readiness regression checks within their test budget
+title: Keep auth readiness fixture and binary checks within CI timeouts
 scenario: gateway-backend-communication
 taskType: runtime-bridge
-intent: Avoid unnecessary fixture commits and generic deep comparisons of large SQLite buffers while retaining exact read-only auth admission checks within the five-second test timeout under parallel CI load.
+intent: Remove unnecessary SQLite fixture commits and recursive Buffer matcher overhead that put read-only auth admission regressions near the five-second test timeout under parallel CI load.
 touchedAreas:
   - tests/unit/openclaw-auth-readiness.test.ts
   - harness/specs/tasks/fix-auth-readiness-fixture-timeout.md
@@ -20,7 +20,7 @@ requiredTests:
 acceptance:
   - Build each shared or agent fixture schema and its metadata in one explicit transaction, then close it before calling production admission.
   - Retain the real bundled schemas, read-only assertions, per-test isolation, default SQLite durability and existing test timeouts.
-  - Compare complete before-and-after database bytes with native Buffer equality, without object-property traversal or weakening the immutability assertion.
+  - Compare full database bytes with native Buffer equality rather than recursively enumerating megabyte-sized Buffer properties.
   - Measure fixture construction separately from total test time and compare unchanged logical schema, metadata and database integrity.
   - Validate the affected suite and related SQLite tests, including a concurrent isolated run.
 docs:
@@ -30,7 +30,7 @@ docs:
 The reported full-suite run passed 3199 tests but timed out two shared-state
 admission cases at five seconds. The shared fixture contains 100 tables and
 121 indexes; its helper originally ran the DDL and metadata in autocommit mode.
-This task changes only fixture construction and binary assertions, not product persistence behavior.
+This task changes fixture construction and binary assertions, not product persistence behavior.
 README.md, README.zh-CN.md and README.ja-JP.md require no product-flow updates.
 
 Windows validation used Node 24.20.0 with the pinned OpenClaw runtime. The
@@ -55,24 +55,18 @@ Targeted ESLint, diff checks, task validation against HEAD and the task dry-run
 passed. Harness CI passed its 22 baseline tests using the existing temporary
 Windows frontmatter LF normalization; original spec bytes were restored.
 
-## Byte comparison follow-up
+## Binary assertion follow-up
 
-PR #1337 still reached 5462 ms for the old shared-state admission case under the
-full Linux CI suite. With transactional fixtures already in place, a local
-isolated run passed but the old shared-state case took 2240 ms and the complete
-readiness suite spent 10.87 seconds in tests. Cases without full database buffer
-comparisons were much faster. Replace generic deep equality for SQLite file
-buffers with exact native byte equality and measure the affected cases again.
-Keep the production admission checks, complete before-and-after file reads,
-default five-second timeout and schema fixture durability unchanged.
+A later CI run still timed out the two shared-state read-only cases after
+5524 ms and 5562 ms. The real shared schema file is about 1.45 MB; Vitest's
+`toEqual` recursively compares its Buffer elements and enumerable properties.
+The transaction optimization removed repeated SQLite commits but left this
+matcher cost. All six binary before/after assertions now use `Buffer.equals()`
+and assert the boolean result. This still detects every changed byte, including
+schema headers and markers, without changing timeouts or admission behavior.
 
-The real old-state fixture was 1,454,080 bytes. Transactional construction took
-26.6 ms, Vitest's generic equality comparator took 1821.9 ms, and native
-`Buffer.equals` took 0.153 ms. Native comparison also rejected a last-byte change
-and a length change. With the byte assertions replaced, the previously failing
-case took 37 ms locally. This removes assertion overhead while retaining the
-complete file immutability check.
-
-The readiness and related auth SQLite suites passed all 31 tests after the
-change. Targeted lint, diff-aware task validation and dry-run against the
-preceding UI commit passed; harness CI passed its 22 baseline tests.
+The follow-up passed all 31 readiness/auth-SQLite tests on Windows. Readiness
+also passed in the full local unit run, but that run was not green: 23 other
+test files failed with platform permissions/path/shell issues and separate
+runtime/import failures. The full-suite CI check runs on Ubuntu and remains
+the cross-platform verification for this follow-up.

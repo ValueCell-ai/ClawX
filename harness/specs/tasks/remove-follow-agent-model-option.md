@@ -6,7 +6,6 @@ taskType: runtime-bridge
 intent: Remove the Follow Agent option from the conversation model picker while preserving existing session selections and implicit Agent defaults.
 touchedAreas:
   - harness/specs/tasks/remove-follow-agent-model-option.md
-  - harness/specs/tasks/fix-auth-readiness-fixture-timeout.md
   - harness/specs/scenarios/gateway-backend-communication.md
   - harness/specs/rules/provider-model-selection-authority.md
   - harness/reference/acp-chat.md
@@ -16,7 +15,6 @@ touchedAreas:
   - shared/i18n/locales/ja/chat.json
   - shared/i18n/locales/ru/chat.json
   - tests/unit/chat-input.test.tsx
-  - tests/unit/openclaw-auth-readiness.test.ts
   - tests/e2e/chat-model-picker.spec.ts
   - README.md
   - README.zh-CN.md
@@ -72,7 +70,7 @@ After automatic ACP preparation, verify that choosing a concrete model still
 applies before the first prompt while a deleted existing conversation is not
 recreated. Preserve the upstream first-message selection fix.
 
-The CI follow-up retains full-file auth readiness checks using native byte
-equality; see [Auth readiness test budget](fix-auth-readiness-fixture-timeout.md).
+The auth readiness byte-comparison optimization is now included in main and
+retained unchanged; see [Auth readiness test budget](fix-auth-readiness-fixture-timeout.md).
 
 See [Conversation model selection](../../reference/acp-chat.md#conversation-model-selection).

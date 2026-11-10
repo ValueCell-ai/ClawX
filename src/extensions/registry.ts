@@ -13,6 +13,22 @@ import type { ComponentType } from 'react';
 
 class RendererExtensionRegistry {
   private extensions: RendererExtension[] = [];
+  private revision = 0;
+  private listeners = new Set<() => void>();
+
+  // Stable external-store callbacks let routing observe registrations made in
+  // mount effects, including React StrictMode teardown and reinitialization.
+  getSnapshot = (): number => this.revision;
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => { this.listeners.delete(listener); };
+  };
+
+  private notifyChanged(): void {
+    this.revision += 1;
+    for (const listener of this.listeners) listener();
+  }
 
   register(extension: RendererExtension): void {
     if (this.extensions.some((e) => e.id === extension.id)) {
@@ -23,6 +39,7 @@ class RendererExtensionRegistry {
     if (extension.i18nResources) {
       this.loadI18nResources(extension.i18nResources);
     }
+    this.notifyChanged();
   }
 
   private loadI18nResources(resources: Record<string, Record<string, unknown>>): void {
@@ -111,6 +128,7 @@ class RendererExtensionRegistry {
       }
     }
     this.extensions = [];
+    this.notifyChanged();
   }
 }
 
