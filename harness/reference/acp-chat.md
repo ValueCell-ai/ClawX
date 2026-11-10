@@ -54,6 +54,14 @@ This extension has one removal condition: when the pinned ACP SDK accepts the na
 
 ## Conversation model selection
 
+The picker lists concrete configured models and marks the effective current
+model when it appears in that list. A session without an explicit choice keeps
+using its Agent's configured model internally; the composer exposes no separate
+Follow Agent action. Viewing that model does not write a preference. Selecting
+a concrete model, including the inherited one, stores an explicit choice for
+the destination session. When the current model is unknown, the button uses the
+localized model-selection prompt.
+
 Selecting an Agent mention directs the model picker, pre-send hooks and prompt
 to that Agent's main session. Removing the mention restores the visible
 conversation's model. The Gateway can have a main session that the sidebar
@@ -67,9 +75,10 @@ Gateway that rejects the field must surface the error. Retrying without the
 field could change sibling conversations.
 
 A local draft holds its choice until first send. After ACP session creation,
-the host confirms the selection before the first prompt. Clearing it resumes
-the Agent's configured model. On a 0.6.1 upgrade the runtime distinguishes old
-user overrides from the model a transcript recorded for a previous reply.
+the host confirms the selection before the first prompt. The Main-owned API
+retains its null selection semantics for inheritance, although the picker only
+submits concrete models. On a 0.6.1 upgrade the runtime distinguishes old user
+overrides from the model a transcript recorded for a previous reply.
 
 ## Identity And Race Protection
 
