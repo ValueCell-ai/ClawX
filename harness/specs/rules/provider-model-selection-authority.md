@@ -29,6 +29,10 @@ inherited default. A model reported for a previous response is usage history
 and cannot establish an override on upgrade. Apply a draft's choice to its own
 session before dispatching its first prompt.
 
+Preparing an ACP session does not establish a persisted Gateway conversation.
+Retain the local-draft marker until the first prompt; do not infer creation
+permission from an absent transcript ID or weaken existing-session write guards.
+
 Resolve an Agent mention to its main session for model reads, writes and prompt
 dispatch. The source conversation continues to own the message draft.
 

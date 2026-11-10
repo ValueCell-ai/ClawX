@@ -70,6 +70,10 @@ A local draft holds its choice until first send. After ACP session creation,
 the host confirms the selection before the first prompt. Clearing it resumes
 the Agent's configured model. On a 0.6.1 upgrade the runtime distinguishes old
 user overrides from the model a transcript recorded for a previous reply.
+Automatic ACP preparation also remains a local draft: an ACP handle alone does
+not mean that `sessions.describe` can find a persisted Gateway row. A later
+model selection must retain first-send creation permission without granting it
+to an existing conversation that was deleted elsewhere.
 
 ## Identity And Race Protection
 
