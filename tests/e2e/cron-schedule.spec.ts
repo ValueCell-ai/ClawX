@@ -64,8 +64,14 @@ test.describe('cron schedule builder', () => {
     await completeSetup(page);
 
     await page.getByTestId('sidebar-nav-cron').click();
-    await page.getByTestId('cron-new-task-button').click();
-    await expect(page.getByTestId('cron-task-dialog')).toBeVisible();
+    const opener = page.getByTestId('cron-new-task-button');
+    await opener.click();
+    const dialog = page.getByTestId('cron-task-dialog');
+    const footer = dialog.locator('footer');
+    const submit = footer.getByRole('button', { name: 'Create Task' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('textbox', { name: 'Task Name' })).toBeFocused();
+    await expect(submit).toBeInViewport();
 
     // The old preset template grid is gone.
     await expect(page.getByRole('button', { name: 'Every 5 minutes' })).toHaveCount(0);
@@ -73,6 +79,7 @@ test.describe('cron schedule builder', () => {
     // Recurring is the default tab and exposes the frequency dropdown.
     const recurrenceSelect = page.getByTestId('cron-recurrence-select');
     await expect(recurrenceSelect).toBeVisible();
+    await expect(recurrenceSelect).toHaveAccessibleName('Frequency');
 
     // Weekly recurrence reveals the weekday selector.
     await selectValue(recurrenceSelect, 'weekly');
@@ -104,5 +111,17 @@ test.describe('cron schedule builder', () => {
     await expect(page.getByRole('button', { name: '23', exact: true }).first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'AM' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'PM' })).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await expect(timePicker).toHaveCount(0);
+    await expect(dialog).toBeVisible();
+
+    const messaging = dialog.getByRole('button', { name: 'Messaging app' });
+    await messaging.click();
+    await expect(messaging).toHaveAttribute('aria-pressed', 'true');
+    await expect(dialog.getByText('Connect an app in Messaging remote first.')).toBeVisible();
+    await expect(submit).toBeInViewport();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(opener).toBeFocused();
   });
 });

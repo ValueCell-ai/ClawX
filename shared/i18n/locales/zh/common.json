@@ -1,20 +1,20 @@
 {
     "computerUse": {
         "title": "电脑操作",
-        "description": "允许助手查看屏幕并操作这台电脑，管理所需的系统权限。",
-        "enable": "启用操作计算机",
-        "warning": "启用后，推荐配合 /computer-use 技能指导 AI 操作你的计算机。",
-        "off": "已关闭。ClawX 管理的 CUA 服务已停止。",
-        "running": "本机驱动正在运行。",
-        "unavailable": "已启用，但驱动不可用。请查看下方原因，再重试启动。",
-        "loading": "正在检查操作计算机状态…",
-        "starting": "正在启动本机驱动…",
-        "stopping": "正在停止本机驱动…",
+        "description": "允许助手查看屏幕并操作这台电脑。",
+        "enable": "启用电脑操作",
+        "warning": "在任务中使用 /computer-use 技能。",
+        "off": "已关闭",
+        "running": "驱动运行中",
+        "unavailable": "驱动不可用",
+        "loading": "正在检查状态…",
+        "starting": "正在启动驱动…",
+        "stopping": "正在停止驱动…",
         "retry": "重试启动",
         "reasons": {
             "unsupported": "当前平台不支持操作计算机。",
             "missingBinary": "内置驱动文件缺失，请重新安装 ClawX。",
-            "permissions": "需要辅助功能和屏幕录制权限。请检查下方权限，修改授权后重启 ClawX。",
+            "permissions": "缺少 macOS 权限。",
             "startupFailed": "驱动启动失败，请重试启动。详细原因见应用日志。",
             "exited": "驱动意外退出，请重试启动以建立新会话。",
             "stopFailed": "驱动清理失败，请重启 ClawX 后再继续。"
@@ -25,10 +25,10 @@
         "screenRecording": "屏幕录制",
         "granted": "已授权",
         "notGranted": "未授权",
-        "permissionHint": "为 ClawX 开启「辅助功能」和「录屏与系统录音」权限，以让「操作计算机」功能正确工作。修改授权后需重启 ClawX 生效。如先前拒绝 / 忽略过权限请求，点击「请求权限」按钮可能不会弹出授权提示，此时请在「系统设置 > 隐私与安全性」中手动操作。",
-        "permissionRequestIncomplete": "权限请求已返回，但所需权限仍未授予。macOS 不一定会再次弹窗，尤其是在已有授权决定时。请检查系统设置中列出的应用，重启后刷新状态。此状态无法区分从未请求与此前已拒绝。",
+        "permissionHint": "授权后请重启 ClawX。",
+        "permissionRequestIncomplete": "权限仍未授予。请在「系统设置 → 隐私与安全性」为列表中的对应应用授权，再重启并刷新。",
         "request": "请求权限",
-        "error": "操作未能完成。请刷新状态后重试，详情请查看应用日志。"
+        "error": "操作未完成，请刷新后重试。"
     },
     "sidebar": {
         "collapseSidebar": "收起侧栏",

@@ -57,10 +57,10 @@ test('Computer Use is default off and only the explicit button requests permissi
   await enableDeveloperMode(page);
   await navigateToSection(page, 'computer-use');
   await expect(page.getByTestId('computer-use-page')).toBeVisible();
-  await expect(page.getByTestId('computer-use-page')).toContainText('Let assistants view the screen and operate this computer. Manage the required system permissions.');
-  await expect(page.getByTestId('computer-use-page')).toContainText('Once enabled, it is recommended to use the /computer-use skill to guide AI in operating your computer.');
+  await expect(page.getByTestId('computer-use-page')).toContainText('Let assistants view the screen and operate this computer.');
+  await expect(page.getByTestId('computer-use-page')).not.toContainText('/computer-use skill');
   await expect(page.getByTestId('computer-use-page')).not.toContainText('computer tool');
-  await expect(page.getByTestId('computer-use-runtime')).toHaveText('Disabled. The ClawX-managed CUA service is stopped.');
+  await expect(page.getByTestId('computer-use-runtime')).toHaveText('Disabled');
   const toggle = page.getByTestId('computer-use-toggle');
   const request = page.getByTestId('computer-use-request-permissions');
   await expect(toggle).not.toBeChecked();
@@ -74,11 +74,15 @@ test('Computer Use is default off and only the explicit button requests permissi
   await page.reload();
   await expect(toggle).toBeChecked();
   await request.click();
-  await expect(request).toBeDisabled();
+  await expect(request).toHaveCount(0);
+  await expect(page.getByTestId('computer-use-permission-hint')).toHaveCount(0);
+  await expect(page.getByTestId('computer-use-accessibility')).toHaveText('Granted');
+  await expect(page.getByTestId('computer-use-screen-recording')).toHaveText('Granted');
   await expect(page.getByTestId('computer-use-runtime')).toContainText(/running|运行|実行中|работает/);
+  await expect(page.getByTestId('computer-use-page')).toContainText('Use the /computer-use skill in a task.');
   await toggle.click();
   await expect(toggle).not.toBeChecked();
-  await expect(request).toBeDisabled();
+  await expect(request).toHaveCount(0);
   expect(await electronApp.evaluate(() => (globalThis as unknown as { computerUseCalls: string[] }).computerUseCalls.filter((action) => action === 'requestPermissions'))).toHaveLength(1);
 });
 
@@ -135,7 +139,7 @@ test('polls lifecycle changes and retries an exited driver without toggling or p
     const state = (globalThis as unknown as { computerUseFixtureState: Record<string, unknown> }).computerUseFixtureState;
     Object.assign(state, { state: 'starting', reason: null });
   });
-  await expect(page.getByTestId('computer-use-runtime')).toHaveText('Starting the local driver…');
+  await expect(page.getByTestId('computer-use-runtime')).toHaveText('Starting driver…');
   await expect(page.getByTestId('computer-use-retry')).toHaveCount(0);
   await electronApp.evaluate(() => {
     const state = (globalThis as unknown as { computerUseFixtureState: Record<string, unknown> }).computerUseFixtureState;
@@ -143,7 +147,7 @@ test('polls lifecycle changes and retries an exited driver without toggling or p
   });
   await expect(page.getByTestId('computer-use-reason')).toContainText('stopped unexpectedly');
   await page.getByTestId('computer-use-retry').click();
-  await expect(page.getByTestId('computer-use-runtime')).toHaveText('The local driver is running.');
+  await expect(page.getByTestId('computer-use-runtime')).toHaveText('Driver running');
   await expect(page.getByTestId('computer-use-reason')).toHaveCount(0);
   await expect(page.getByTestId('computer-use-toggle')).toBeChecked();
   const calls = await electronApp.evaluate(() => (globalThis as unknown as { computerUseCalls: string[] }).computerUseCalls);
