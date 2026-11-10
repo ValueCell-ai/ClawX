@@ -265,8 +265,6 @@
         "pickAgent": "Выбрать агента",
         "pickModel": "Выбрать модель",
         "modelPickerTitle": "Выбрать модель для этого чата",
-        "followAgentModel": "Как у агента ({{model}})",
-        "followAgentModelShort": "Как у агента",
         "modelReadFailed": "Не удалось получить модель этого чата: {{error}}",
         "modelSwitchFailed": "Не удалось переключить модель: {{error}}",
         "clearTarget": "Очистить целевого агента",

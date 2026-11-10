@@ -407,7 +407,7 @@ export function ChatInput({
   const effectiveModelRef = sessionModel.value?.modelRef || sessionModel.value?.effectiveModelRef || agentModelRef;
   const currentModelLabel = useMemo(() => {
     const matchedOption = modelOptions.find((option) => option.modelRef === effectiveModelRef);
-    return matchedOption?.modelId || (effectiveModelRef ? formatModelRefLabel(effectiveModelRef) : t('composer.followAgentModelShort'));
+    return matchedOption?.modelId || (effectiveModelRef ? formatModelRefLabel(effectiveModelRef) : t('composer.pickModel'));
   }, [effectiveModelRef, modelOptions, t]);
   const mentionableAgents = useMemo(
     () => (agents ?? []).filter((agent) => agent.id !== currentAgentId),
@@ -697,7 +697,7 @@ export function ChatInput({
     void loadQuickSkills();
   }, [skillPickerOpen, loadQuickSkills]);
 
-  const handleSelectModel = async (modelRef: string | null) => {
+  const handleSelectModel = async (modelRef: string) => {
     if (!destinationAgent || sessionModel.writing || admissionInFlight.current) return;
     setModelPickerOpen(false);
     if (modelRef === sessionModel.value?.modelRef) return;
@@ -1434,7 +1434,7 @@ export function ChatInput({
                     setWorkspaceMenuOpen(false);
                     setModelPickerOpen((open) => !open);
                   }}
-                  disabled={inputDisabled || sending || admitting || !destinationAgent || sessionModel.writing}
+                  disabled={inputDisabled || sending || admitting || !destinationAgent || sessionModel.writing || modelOptions.length === 0}
                   title={t('composer.pickModel')}
                 >
                   {sessionModel.writing ? (
@@ -1445,7 +1445,7 @@ export function ChatInput({
                   <span className="truncate">{sessionModel.value ? currentModelLabel : t('composer.pickModel')}</span>
                   <ChevronDown className={cn('h-3.5 w-3.5 shrink-0 transition-transform', modelPickerOpen && 'rotate-180')} />
                 </button>
-                {modelPickerOpen && (
+                {modelPickerOpen && modelOptions.length > 0 && (
                   <div
                     className="absolute left-0 bottom-full z-20 mb-2 w-72 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10"
                     data-testid="chat-model-picker-menu"
@@ -1454,19 +1454,6 @@ export function ChatInput({
                       {t('composer.modelPickerTitle')}
                     </div>
                     <div className="max-h-64 overflow-y-auto">
-                      <button
-                        type="button"
-                        data-testid="chat-model-picker-follow-agent"
-                        aria-pressed={sessionModel.value?.modelRef === null}
-                        onClick={() => void handleSelectModel(null)}
-                        className={cn(
-                          'flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-sm font-medium',
-                          sessionModel.value?.modelRef === null ? 'bg-black/5 dark:bg-white/10' : 'hover:bg-black/5 dark:hover:bg-white/5',
-                        )}
-                      >
-                        {agentModelRef ? t('composer.followAgentModel', { model: formatModelRefLabel(agentModelRef) }) : t('composer.followAgentModelShort')}
-                        {sessionModel.value?.modelRef === null && <Check className="h-4 w-4 shrink-0" />}
-                      </button>
                       {modelOptions.map((option) => (
                         <button
                           key={option.modelRef}
@@ -1474,9 +1461,9 @@ export function ChatInput({
                           onClick={() => void handleSelectModel(option.modelRef)}
                           className={cn(
                             'flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-sm font-medium transition-colors',
-                            option.modelRef === sessionModel.value?.modelRef ? 'bg-black/5 dark:bg-white/10' : 'hover:bg-black/5 dark:hover:bg-white/5'
+                            option.modelRef === effectiveModelRef ? 'bg-black/5 dark:bg-white/10' : 'hover:bg-black/5 dark:hover:bg-white/5'
                           )}
-                          aria-pressed={option.modelRef === sessionModel.value?.modelRef}
+                          aria-pressed={option.modelRef === effectiveModelRef}
                           data-testid={`chat-model-picker-option-${option.label}`}
                         >
                           <span className="flex min-w-0 items-center gap-2">
@@ -1491,7 +1478,7 @@ export function ChatInput({
                               ) : null}
                             </span>
                           </span>
-                          {option.modelRef === sessionModel.value?.modelRef && (
+                          {option.modelRef === effectiveModelRef && (
                             <span className="h-1.5 w-1.5 rounded-full bg-primary" />
                           )}
                         </button>

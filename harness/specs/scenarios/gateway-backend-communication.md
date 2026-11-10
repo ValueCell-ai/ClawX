@@ -116,6 +116,10 @@ The chat composer reads and updates session model selections through Main.
 Conversation switches, workspace changes and Agent routing must preserve the
 identity of both the selection and the next prompt. After a 0.6.1 upgrade,
 sessions without an explicit selection inherit the migrated Agent configuration.
+The picker lists concrete configured models and marks the effective model when
+it is listed. Inheritance remains implicit: no Follow Agent action is exposed,
+and displaying an inherited model does not create an override. Selecting that
+concrete model explicitly pins it to the destination conversation.
 See [Conversation model selection](../../reference/acp-chat.md#conversation-model-selection).
 
 Coordinator-owned OpenClaw config mutations, including model-switch retries after a confirmed publication rollback, and their `config.get`/`config.set` transaction contract are documented in `harness/reference/openclaw-config-delivery.md`.

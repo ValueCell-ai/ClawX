@@ -29,6 +29,15 @@ inherited default. A model reported for a previous response is usage history
 and cannot establish an override on upgrade. Apply a draft's choice to its own
 session before dispatching its first prompt.
 
+List concrete configured models in the conversation picker and use the effective
+model for its selected state, including inherited defaults. Do not expose a
+Follow Agent option or substitute that wording when the current model is unknown;
+use the localized model-selection prompt. Opening the picker must not turn an
+inherited default into a stored override. Clicking a concrete model persists an
+explicit session choice even when it matches the inherited default.
+When no configured models are available, retain an existing explicit model's
+label and disable the picker rather than opening an empty menu.
+
 Preparing an ACP session does not establish a persisted Gateway conversation.
 Retain the local-draft marker until the first prompt; do not infer creation
 permission from an absent transcript ID or weaken existing-session write guards.

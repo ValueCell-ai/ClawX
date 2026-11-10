@@ -146,7 +146,7 @@ On Windows, upgrade cleanup recognizes both drive-letter and network plugin path
 
 For valid ClawX 0.6.1 multi-Agent configurations, upgrade preserves each Agent's effective workspace and the recorded default Agent's responsibilities. Agent settings, later Agent edits, and workspace preparation use the same runtime path rules; explicitly configured external workspaces keep their paths.
 
-Use the model picker in a conversation to choose the model for its next messages. Select **Follow Agent** to use the Agent’s current model. When upgrading from 0.6.1, existing Agent model choices remain the defaults for conversations that follow them. Conversations with an explicit session model keep that selection.
+Use the model picker in a conversation to choose a specific model for its next messages. The picker shows the current model and lists configured models. Conversations without a selection automatically use the Agent’s default model; choosing a model saves it for that conversation. When upgrading from 0.6.1, existing Agent defaults and explicit conversation model selections are preserved.
 
 When you select an `@agent` in the composer, the picker shows and changes the model for that Agent’s main conversation. Remove the mention to see the original conversation’s model again.
 
