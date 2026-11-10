@@ -2651,7 +2651,7 @@ diff --git a/dist/clawx-cron-inference-migration.mjs b/dist/clawx-cron-inference
 new file mode 100644
 --- /dev/null
 +++ b/dist/clawx-cron-inference-migration.mjs
-@@ -0,0 +1,159 @@
+@@ -0,0 +1,167 @@
 +import { readFile } from "node:fs/promises";
 +import { createHash } from "node:crypto";
 +import { isDeepStrictEqual } from "node:util";
@@ -2693,7 +2693,7 @@ new file mode 100644
 +		&& !Object.hasOwn(job, "declarationKey") && !job.runtimeAuthorityRecoveryRequired;
 +}
 +export async function loadClawxCronMigrationAdapters() {
-+	const [{ n: capture }, { i: readStore }, { t: resolveSelection }, { y: resolveSubagentSelection }, { W: isPersonalProfile }, { r: resolveAgentId }, { w: resolveAmbientOwner }, { a: readSession }, { c: resolveStorePath }, { t: resolveSessionKey }] = await Promise.all([
++	const [{ n: capture }, { i: readStore }, { t: resolveSelection }, { y: resolveSubagentSelection }, { W: isPersonalProfile }, { r: resolveAgentId }, { w: resolveAmbientOwner }, { a: readSession }, { c: resolveStorePath }, { t: resolveSessionKey }, { n: getStartupAdmission }] = await Promise.all([
 +		import("./inference-binding.runtime-DjkOGhEL.mjs"),
 +		import("./store-runtime-BboObakU.mjs"),
 +		import("./simple-completion-selection-CVTZ9oOP.mjs"),
@@ -2703,9 +2703,11 @@ new file mode 100644
 +		import("./agent-scope-config-fjA2T9Gz.mjs"),
 +		import("./session-accessor.sqlite-entry-DpCsEkJi.mjs"),
 +		import("./paths-Bprr747h.mjs"),
-+		import("./session-key-B67S1q_z.mjs")
++		import("./session-key-B67S1q_z.mjs"),
++		import("./agent-database-startup-AXJFrv8D.mjs")
 +	]);
 +	return { capture, readStore, isPersonalProfile,
++		waitForStartup: () => getStartupAdmission()?.pendingPreparation,
 +		resolveAgentId: ({ cfg, job }) => resolveAgentId(job, resolveAmbientOwner(cfg)),
 +		readSession: ({ cfg, agentId, job }) => readSession({
 +			agentId,
@@ -2747,6 +2749,9 @@ new file mode 100644
 +	}
 +	if (!manifest.jobs.length) return { migrated: 0, skipped: 0 };
 +	const native = adapters ?? await loadClawxCronMigrationAdapters();
++	// The native scheduler's maintenance uses this same readiness barrier.
++	// Startup may still replace credential-reader ownership after HTTP readiness.
++	await native.waitForStartup();
 +	const counts = { migrated: 0, skipped: 0 };
 +	const seen = new Set();
 +	const duplicates = new Set();
@@ -2786,6 +2791,9 @@ new file mode 100644
 +			phase = "authorization";
 +			const binding = await native.capture({ cfg, agentId, model: `${selection.provider}/${selection.modelId}@${entry.profileId}`, retainAuthorization(value) { authority = value; } });
 +			if (!binding || !authority || binding.profileId !== entry.profileId || binding.provider !== selection.provider) throw new Error("account unavailable");
++			// Renew native authorization without turning an automatic account into
++			// a user pin merely because renewal requires explicit model@profile.
++			const inferenceBinding = entry.expectedPreviousBinding ? { ...binding, source: entry.expectedPreviousBinding.source } : binding;
 +			const capturedStore = await native.readStore(selection.agentDir, { profileId: entry.profileId, allowKeychainPrompt: false, config: cfg });
 +			if (!capturedStore.profiles[entry.profileId] || stableCredentialDigest(capturedStore.profiles[entry.profileId]) !== entry.credentialDigest) throw new Error("account changed during capture");
 +			const assertCurrent = () => {
@@ -2799,7 +2807,7 @@ new file mode 100644
 +			await cron.updateWithPrecondition(entry.jobId, {}, (current) => {
 +				assertCurrent();
 +				if (!eligible(current, entry.expectedPreviousBinding) || !isDeepStrictEqual(current, expected)) throw new Error("automation changed during migration");
-+			}, { inferenceBinding: binding, commitGuard: assertCurrent });
++			}, { inferenceBinding, commitGuard: assertCurrent });
 +			counts.migrated++;
 +		} catch {
 +			counts.skipped++;
@@ -2949,3 +2957,24 @@ diff --git a/dist/isolated-agent-CPxLr234.mjs b/dist/isolated-agent-CPxLr234.mjs
  					agentId: modelOwner.agentId,
  					provider: resolvedModelSelection.provider,
  					model: resolvedModelSelection.model,
+diff --git a/dist/authorization-DKL02XyX.mjs b/dist/authorization-DKL02XyX.mjs
+--- a/dist/authorization-DKL02XyX.mjs
++++ b/dist/authorization-DKL02XyX.mjs
+@@ -15,7 +15,7 @@
+ import { i as runOpenClawStateWorkerOperation } from "./openclaw-state-worker-store-1zOYxW7q.mjs";
+ import { r as assertAuthProfileMigrationCandidates } from "./legacy-source-diagnostic-DwVgCoi-.mjs";
+ import { H as mergeLocalAuthProfileStoreWithInheritedStore } from "./runtime-snapshots-BQ4m7S9U.mjs";
+-import { r as captureOpenClawAgentDatabaseExecution } from "./openclaw-agent-execution-D-FLGJqm.mjs";
++import { i as captureOpenClawAgentDatabasePreparationExecution } from "./openclaw-agent-execution-D-FLGJqm.mjs";
+ import { n as openOpenClawAgentSqliteWorkerStore } from "./openclaw-agent-worker-store-D4DpfXOb.mjs";
+ import { c as getScopedSharedAuthStore, f as resolveRuntimeAuthProfileAgentDir, l as isEnvOnlyAuthProfileRuntime, s as getScopedAuthProfileEnv } from "./store-BuHyZgtK.mjs";
+ import { i as readSharedAuthProfileRows, n as prepareAgentAuthProfileRowsRead, t as loadPersistedAuthProfileStoreFromRows } from "./sqlite-read-C__7itvd.mjs";
+@@ -54,7 +54,7 @@
+ 				path: databasePath,
+ 				env: params.env
+ 			};
+-			const execution = captureOpenClawAgentDatabaseExecution(options);
++			const execution = captureOpenClawAgentDatabasePreparationExecution(options);
+ 			try {
+ 				await execution.prepare({
+ 					assertCurrent,

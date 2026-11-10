@@ -18,6 +18,9 @@ const repository = resolve(import.meta.dirname, '..');
 const option = name => { const index = process.argv.indexOf(name); return index >= 0 ? process.argv[index + 1] : undefined; };
 const reuse = option('--reuse');
 const bizRoot = option('--biz-root');
+const autoContinuity = process.argv.includes('--auto-continuity');
+if (autoContinuity) assert(reuse && bizRoot, '--auto-continuity requires an existing isolated fixture and --biz-root');
+const evidencePrefix = autoContinuity ? 'auto-' : '';
 const root = reuse ? resolve(reuse) : await mkdtemp(join(homedir(), 'clawx-native-cron-upgrade-'));
 if (reuse) assert(root.startsWith(join(homedir(), 'clawx-native-cron-upgrade-')), 'Only this script\'s isolated fixtures may be resumed');
 const home = join(root, 'home');
@@ -114,7 +117,7 @@ async function cli(args, timeout = 120000) {
     child.on('error', reject);
     child.on('exit', async code => {
       clearTimeout(timer);
-      await writeFile(join(root, `cli-${commandIndex++}.log`), output);
+      await writeFile(join(root, `${evidencePrefix}cli-${commandIndex++}.log`), output);
       if (code !== 0) reject(new Error(`CLI ${args.join(' ')} failed (${code}): ${output.slice(-4000)}`));
       else resolveCommand(output);
     });
@@ -127,8 +130,8 @@ async function exerciseEnterpriseContinuity(snapshotManifest) {
   if (!bizRoot) { console.log('Native enterprise teardown continuity skipped: pass --biz-root to the separate enterprise repository'); return; }
   const source = resolve(bizRoot, 'extensions/enterprise-auth/cron-continuity.ts');
   assert(existsSync(source), 'The supplied enterprise repository must provide cron-continuity.ts');
-  const output = join(root, 'enterprise-continuity.json');
-  const script = join(root, 'enterprise-continuity.mjs');
+  const output = join(root, `${evidencePrefix}enterprise-continuity.json`);
+  const script = join(root, `${evidencePrefix}enterprise-continuity.mjs`);
   await build({
     stdin: { contents: `
       import assert from 'node:assert/strict';
@@ -163,7 +166,7 @@ async function exerciseEnterpriseContinuity(snapshotManifest) {
     let text = '';
     child.stdout.on('data', chunk => { text += chunk; }); child.stderr.on('data', chunk => { text += chunk; });
     const timeout = setTimeout(() => { child.kill(); reject(new Error('Native enterprise capture timed out')); }, 60000);
-    child.on('exit', async code => { clearTimeout(timeout); await writeFile(join(root, 'enterprise-continuity.log'), text); code === 0 ? resolveProgram() : reject(new Error(text)); });
+    child.on('exit', async code => { clearTimeout(timeout); await writeFile(join(root, `${evidencePrefix}enterprise-continuity.log`), text); code === 0 ? resolveProgram() : reject(new Error(text)); });
     child.on('error', reject);
   });
   const original = JSON.parse(await readFile(snapshotManifest, 'utf8'));
@@ -171,7 +174,7 @@ async function exerciseEnterpriseContinuity(snapshotManifest) {
   expectedPreviousEnterpriseBinding = captured.jobs[0].expectedPreviousBinding;
   assert(expectedPreviousEnterpriseBinding?.authorizationId, 'Native receipt must prove the previous authorization');
   original.jobs = [...original.jobs.filter(entry => !captured.jobs.some(current => current.jobId === entry.jobId)), ...captured.jobs];
-  const combined = join(root, 'launch-continuity.json');
+  const combined = join(root, `${evidencePrefix}launch-continuity.json`);
   await writeFile(combined, JSON.stringify(original));
   environment.CLAWX_CRON_MIGRATION_MANIFEST = combined;
 }
@@ -188,6 +191,8 @@ async function stop() {
 try {
   console.log(`Isolated evidence: ${root}`);
   if (!reuse) await cli(['doctor', '--fix', '--yes', '--non-interactive'], 240000);
+  const missingMainDatabaseAtBootstrap = !existsSync(join(state, 'agents/main/agent/openclaw-agent.sqlite'));
+  if (!reuse) assert(missingMainDatabaseAtBootstrap, 'This fixture must cover native authorization enrollment while the main agent database is first created');
   // The native release rejects pre-July JSON stores. Model the supported
   // post-schema-migration boundary with legacy unbound rows in canonical SQLite;
   // actual credential import, account capture, CAS commit and execution stay native.
@@ -199,6 +204,14 @@ try {
       seed.exec('BEGIN IMMEDIATE');
       for (const [index, old] of jobs.entries()) insert.run(join(state, 'cron/jobs.json'), old.id, old.agentId, old.name, 0, old.agentId, 'agentTurn', JSON.stringify(old), '{}', index, old.updatedAtMs);
       seed.exec('COMMIT');
+    }
+    if (autoContinuity) {
+      // Synthetic metadata-only seed: credentials and native authorization ID
+      // remain unchanged; the real acquire/capture/renewal paths run below.
+      const enterprise = jobs.find(old => old.id === 'enterprise-inherited');
+      assert(enterprise.inferenceBinding?.authorizationId);
+      enterprise.inferenceBinding.source = 'auto';
+      seed.prepare('UPDATE cron_jobs SET job_json=? WHERE job_id=?').run(JSON.stringify(enterprise), enterprise.id);
     }
   } finally { seed.close(); }
   if (!reuse) {
@@ -230,8 +243,14 @@ try {
   await writeFile(configPath, JSON.stringify(migratedConfig, null, 2));
   const wrapper = join(root, 'gateway.mjs');
   await writeFile(wrapper, `process.on('message', message => { if (message.shutdown) { process.emit('SIGTERM'); process.disconnect(); } }); process.argv = [process.execPath, ${JSON.stringify(entry)}, 'gateway', '--port', '${port}', '--token', '${token}', '--allow-unconfigured']; await import(${JSON.stringify(pathToFileURL(entry).href)});`);
-  for (let cycle = 0; cycle < 2; cycle++) {
-    const log = createWriteStream(join(root, `gateway-${cycle}.log`));
+  if (autoContinuity) {
+    await exerciseEnterpriseContinuity(manifest.manifestPath);
+    jobs = jobs.filter(old => old.id === 'enterprise-inherited');
+    assert.equal(expectedPreviousEnterpriseBinding.source, 'auto');
+  }
+  const cycles = autoContinuity ? 1 : 2;
+  for (let cycle = 0; cycle < cycles; cycle++) {
+    const log = createWriteStream(join(root, `${evidencePrefix}gateway-${cycle}.log`));
     gateway = fork(wrapper, [], { env: environment, cwd: root, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
     gateway.stdout.pipe(log, { end: false }); gateway.stderr.pipe(log, { end: false });
     const deadline = Date.now() + 180000;
@@ -295,14 +314,16 @@ try {
     }
     await stop(); log.end();
     console.log(`Native migration cycle ${cycle + 1} passed`);
-    if (cycle === 0) await exerciseEnterpriseContinuity(manifest.manifestPath);
+    if (!autoContinuity && cycle === 0) await exerciseEnterpriseContinuity(manifest.manifestPath);
   }
-  assert.equal(requests.length, jobs.length * 2);
+  assert.equal(requests.length, jobs.length * cycles);
   assert(requests.every(request => request.model === 'new-model'));
-  assert.equal(rejectedRequests.length, 2, 'Each explicit removed-model run must exercise the real fallback');
+  assert.equal(rejectedRequests.length, autoContinuity ? 0 : 2, 'Each explicit removed-model run must exercise the real fallback');
   if (bizRoot) assert(enterpriseContinuityVerified, 'The populated enterprise receipt must actually renew the native binding');
-  await writeFile(join(root, 'result.json'), JSON.stringify({ passed: true, cycles: 2, enterpriseContinuityVerified, jobs: jobs.map(job => job.id), requests, rejectedRequests }, null, 2));
-  console.log(`PASS: ${requests.length} real loopback inference requests, community and synthetic enterprise profiles, migration and restart; enterprise teardown continuity=${enterpriseContinuityVerified}.`);
+  await writeFile(join(root, `${evidencePrefix}result.json`), JSON.stringify({ passed: true, cycles, autoContinuity, missingMainDatabaseAtBootstrap, enterpriseContinuityVerified, jobs: jobs.map(job => job.id), requests, rejectedRequests }, null, 2));
+  console.log(autoContinuity
+    ? 'PASS: native enterprise automatic-account continuity preserved after authorization renewal and a real loopback inference run.'
+    : `PASS: ${requests.length} real loopback inference requests, community and synthetic enterprise profiles, migration and restart; enterprise teardown continuity=${enterpriseContinuityVerified}.`);
 } finally {
   await stop().catch(error => { console.error(`Cleanup: ${error.message}`); });
   await new Promise(resolveClose => modelServer.close(resolveClose));

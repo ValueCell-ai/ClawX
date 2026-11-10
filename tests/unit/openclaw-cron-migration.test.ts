@@ -47,6 +47,7 @@ async function fixture(agentId = 'main') {
   };
   const adapters = {
     isPersonalProfile: (id: string) => id.startsWith('user:'),
+    waitForStartup: vi.fn(async () => {}),
     resolveAgentId: ({ cfg: current, job: currentJob }: Json) => currentJob.agentId ?? current.owner,
     readSession: vi.fn(() => session),
     resolveSelection: ({ cfg: current }: Json) => {
@@ -58,8 +59,8 @@ async function fixture(agentId = 'main') {
   };
   const log = { warn: vi.fn(), info: vi.fn() };
   const run = () => runtime.migrateClawxCronInference({ cron, getConfig: () => cfg, env: { CLAWX_CRON_MIGRATION_MANIFEST: manifestPath }, log }, adapters);
-  const continuity = async () => {
-    const previous = { ...binding, authorizationId: 'a'.repeat(64) };
+  const continuity = async (source = 'user') => {
+    const previous = { ...binding, source, authorizationId: 'a'.repeat(64) };
     job.inferenceBinding = previous;
     entry.definition.inferenceBinding = previous;
     entry.expectedPreviousBinding = previous;
@@ -73,6 +74,7 @@ describe('pinned OpenClaw legacy cron account migration', () => {
     const adapters = await runtime.loadClawxCronMigrationAdapters();
     expect(adapters.capture.name).toBe('captureCronInferenceBinding');
     expect(adapters.readStore.name).toBe('ensureAuthProfileStoreAsync');
+    expect(adapters.waitForStartup()).toBeUndefined();
     const cfg = { agents: { defaults: { systemAgent: { agentId: 'secondary' } }, list: [{ id: 'main' }, { id: 'secondary' }] } };
     expect(adapters.resolveAgentId({ cfg, job: {} })).toBe('secondary');
     expect(adapters.resolveAgentId({ cfg, job: { sessionKey: 'agent:main:cron:water' } })).toBe('main');
@@ -83,6 +85,24 @@ describe('pinned OpenClaw legacy cron account migration', () => {
     const readJob = vi.fn();
     expect(await runtime.migrateClawxCronInference({ cron: { readJob }, env: {} })).toEqual({ migrated: 0, skipped: 0 });
     expect(readJob).not.toHaveBeenCalled();
+  });
+
+  it('joins native startup preparation before capturing any credential or session owner', async () => {
+    const f = await fixture();
+    let finishPreparation!: () => void;
+    let enteredPreparation!: () => void;
+    const entered = new Promise<void>(resolve => { enteredPreparation = resolve; });
+    const preparation = new Promise<void>(resolve => { finishPreparation = resolve; });
+    f.adapters.waitForStartup.mockImplementation(async () => { enteredPreparation(); await preparation; });
+    const migration = f.run();
+    await entered;
+    expect(f.cron.readJob).not.toHaveBeenCalled();
+    expect(f.adapters.readSession).not.toHaveBeenCalled();
+    expect(f.adapters.readStore).not.toHaveBeenCalled();
+    expect(f.adapters.capture).not.toHaveBeenCalled();
+    finishPreparation();
+    expect(await migration).toEqual({ migrated: 1, skipped: 0 });
+    expect(f.adapters.waitForStartup).toHaveBeenCalledOnce();
   });
 
   it.each(['main', 'secondary'])('binds %s once with its updated model and preserves inheritance/run state', async (agentId) => {
@@ -97,11 +117,11 @@ describe('pinned OpenClaw legacy cron account migration', () => {
     expect(f.cron.updateWithPrecondition).toHaveBeenCalledOnce();
   });
 
-  it('reauthorizes only the exact prior enterprise binding in trusted continuity evidence', async () => {
+  it.each(['auto', 'user'])('reauthorizes only the exact prior enterprise binding and retains its %s source', async (source) => {
     const f = await fixture();
-    await f.continuity();
+    await f.continuity(source);
     expect(await f.run()).toEqual({ migrated: 1, skipped: 0 });
-    expect(f.job.inferenceBinding).toEqual(f.binding);
+    expect(f.job.inferenceBinding).toEqual({ ...f.binding, source });
     expect(await f.run()).toEqual({ migrated: 0, skipped: 1 });
   });
 

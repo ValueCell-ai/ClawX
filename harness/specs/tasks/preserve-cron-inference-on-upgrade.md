@@ -37,6 +37,7 @@ requiredTests:
   - pnpm run comms:compare
 acceptance:
   - Restore legacy inference ownership from verified migration evidence using native authorization and persistence APIs before the scheduler starts.
+  - Await native agent database startup preparation before inspecting sessions or capturing account authorizations.
   - Keep existing bindings and runtime authority; ambiguous or changed credentials produce diagnostics without guessed ownership.
   - Same-session enterprise quit and restore use encrypted continuity evidence; logout and account replacement invalidate that evidence.
   - Remote catalog changes retain model inheritance and never authorize another account. Exhausted candidates produce a truthful failure.
