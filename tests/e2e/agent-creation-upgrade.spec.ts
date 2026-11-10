@@ -1,6 +1,36 @@
 import { join } from 'node:path';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { build } from 'esbuild';
 import { closeElectronApp, expect, getStableWindow, test } from './fixtures/electron';
+
+test('utility CLI completion reports migration refusal and Doctor success after cleanup', async ({ launchElectronApp, homeDir }) => {
+  const launcher = join(homeDir, 'utility-launcher.cjs');
+  await build({ entryPoints: ['electron/utils/openclaw-utility-process.ts'], outfile: launcher,
+    bundle: true, platform: 'node', format: 'cjs', external: ['electron'] });
+  const entry = join(homeDir, 'deferred-exit.mjs');
+  await writeFile(entry, `await new Promise(resolve => setTimeout(resolve, 50));
+process.stdout.write('cleanup completed\\n');
+process.exitCode = Number(process.argv[2]);
+`);
+  const app = await launchElectronApp({ skipSetup: true });
+  try {
+    for (const code of [78, 0]) {
+      const result = await app.evaluate(async (_electron, params) => {
+        const { forkOpenClawUtilityProcess } = process.mainModule!.require(params.launcher);
+        return await new Promise<{ code: number; output: string }>((resolve, reject) => {
+          const child = forkOpenClawUtilityProcess(params.entry, [String(params.code)], { stdio: 'pipe' },
+            { gatewayShutdownControl: params.code === 78 });
+          let output = '';
+          child.stdout.on('data', (data: Buffer) => { output += data.toString(); });
+          const timeout = setTimeout(() => { child.kill(); reject(new Error('Deferred CLI exit stalled')); }, 10000);
+          child.on('exit', (exitCode: number) => { clearTimeout(timeout); resolve({ code: exitCode, output }); });
+        });
+      }, { launcher, entry, code });
+      expect(result.code).toBe(code);
+      expect(result.output).toContain('cleanup completed');
+    }
+  } finally { await closeElectronApp(app); }
+});
 
 test('adding an Agent preserves the inherited workspace of a legacy multi-Agent roster', async ({ launchElectronApp, homeDir }) => {
   const stateDir = join(homeDir, '.openclaw');
@@ -58,7 +88,7 @@ test('new Agent publishes a current SQLite auth store with inherited credentials
           integrity: db.prepare('PRAGMA integrity_check').get().integrity_check };
       } finally { db.close(); }
     }, homeDir);
-    expect(persisted.version).toBe(25);
+    expect(persisted.version).toBe(27);
     expect(persisted.integrity).toBe('ok');
     expect(persisted.store.profiles['review:default'].key).toBe('synthetic-e2e-not-a-secret');
   } finally { await closeElectronApp(app); }

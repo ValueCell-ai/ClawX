@@ -11,7 +11,7 @@ interface WeComAccountConfig {
 function useWeComConfig(accounts: Record<string, WeComAccountConfig>, defaultAccount = 'default'): void {
   setWeComRuntime({
     config: {
-      loadConfig: () => ({
+      current: () => ({
         channels: {
           wecom: {
             enabled: true,

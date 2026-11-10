@@ -63,6 +63,7 @@ import { browserOAuthManager } from '../utils/browser-oauth';
 import { whatsAppLoginManager } from '../utils/whatsapp-login';
 import { cancelDingTalkDwsOAuth } from '../utils/dingtalk-dws';
 import { syncAllProviderAuthToRuntime } from '../services/providers/provider-runtime-sync';
+import { startGatewayAndSyncAuth } from '../gateway/startup-orchestrator';
 import { ensureOpenClawUpgradeSnapshot } from '../utils/openclaw-upgrade-snapshot';
 
 const WINDOWS_APP_USER_MODEL_ID = 'app.clawx.desktop';
@@ -590,13 +591,14 @@ async function initialize(): Promise<void> {
       // provider credentials. Writing legacy auth JSON or v1 SQLite rows before
       // doctor runs can invalidate OpenClaw's migration receipts.
       logger.debug('Auto-starting Gateway...');
-      await gatewayManager.start();
-      try {
-        await syncAllProviderAuthToRuntime();
-      } catch (error) {
-        logger.warn('Post-start Gateway provider auth sync failed:', error);
-      }
-      logger.info('Gateway auto-start succeeded');
+      const running = await startGatewayAndSyncAuth(gatewayManager, async () => {
+        try {
+          await syncAllProviderAuthToRuntime();
+        } catch (error) {
+          logger.warn('Post-start Gateway provider auth sync failed:', error);
+        }
+      });
+      if (running) logger.info('Gateway auto-start succeeded');
     } catch (error) {
       logger.error('Gateway auto-start failed:', error);
       mainWindow?.webContents.send('gateway:error', String(error));
@@ -730,12 +732,12 @@ if (gotTheLock) {
       return;
     }
 
-    void extensionRegistry.teardownAll();
-
     const stopPromise = Promise.all([
       (async () => {
         // Stop ACP before Gateway so the child cannot reconnect and outlive the app.
-        // Computer Use cleanup runs independently of this ordered pair.
+        // Keep extension cleanup after Gateway shutdown: runtime-backed teardown
+        // must not race the Gateway's shutdown guard or reload its live config.
+        // Computer Use cleanup runs independently of this ordered sequence.
         try {
           await getActiveAcpChatService()?.stop();
         } catch (err) {
@@ -745,6 +747,11 @@ if (gotTheLock) {
           await gatewayManager.stop();
         } catch (err) {
           logger.warn('gatewayManager.stop() error during quit:', err);
+        }
+        try {
+          await extensionRegistry.teardownAll();
+        } catch (err) {
+          logger.warn('extensionRegistry.teardownAll() error during quit:', err);
         }
       })(),
       (async () => {

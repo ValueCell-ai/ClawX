@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildPrelaunchMaintenanceCacheKey,
   runCachedPrelaunchMaintenanceTask,
+  runCachedPrelaunchMaintenanceTaskAsync,
 } from '@electron/gateway/prelaunch-maintenance-cache';
 
 describe('prelaunch maintenance cache', () => {
@@ -18,6 +19,27 @@ describe('prelaunch maintenance cache', () => {
 
   afterEach(() => {
     rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('waits for asynchronous plugin metadata commit and retries an unsuccessful transaction', async () => {
+    let signature = 'old';
+    const task = vi.fn().mockResolvedValueOnce(false).mockImplementationOnce(async () => {
+      await Promise.resolve();
+      signature = 'new';
+      return true;
+    });
+    const run = () => runCachedPrelaunchMaintenanceTaskAsync('plugin-maintenance', () => signature, task, { cachePath });
+    expect(await run()).toEqual({ executed: true, reason: 'task-failed' });
+    expect(await run()).toEqual({ executed: true, reason: 'cache-miss' });
+    expect(await run()).toEqual({ executed: false, reason: 'cache-hit' });
+    expect(task).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(readFileSync(cachePath, 'utf8')).tasks['plugin-maintenance'].key).toBe('new');
+  });
+
+  it('reports asynchronous maintenance failure even when the cache is unreadable', async () => {
+    mkdirSync(cachePath);
+    expect(await runCachedPrelaunchMaintenanceTaskAsync('plugin-maintenance', 'key', async () => false, { cachePath }))
+      .toEqual({ executed: true, reason: 'task-failed' });
   });
 
   it('runs a task on cache miss and skips it when the cache key is unchanged', () => {

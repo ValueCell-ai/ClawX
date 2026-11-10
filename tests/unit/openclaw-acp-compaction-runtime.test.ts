@@ -57,7 +57,7 @@ async function fixture() {
   });
   const port = (server.address() as { port: number }).port;
   async function startAcp() {
-    const child = spawn(process.execPath, [path.resolve('node_modules/openclaw/dist/server-DkfYuk25.mjs'), '--url', `ws://127.0.0.1:${port}`, '--token', 'fixture', '--verbose'], {
+    const child = spawn(process.execPath, [path.resolve('node_modules/openclaw/openclaw.mjs'), 'acp', '--url', `ws://127.0.0.1:${port}`, '--token', 'fixture', '--verbose'], {
       env: { ...process.env, HOME: home, OPENCLAW_STATE_DIR: home, OPENCLAW_CONFIG_PATH: config },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -191,7 +191,7 @@ describe('installed ACP compaction lifecycle', { timeout: 30_000 }, () => {
 describe('installed native compaction producers and subscribers', () => {
   async function producers() {
     const dist = path.resolve('node_modules/openclaw/dist');
-    const embedded = await readFile(path.join(dist, 'embedded-agent-w-EKmRVf.mjs'), 'utf8');
+    const embedded = await readFile(path.join(dist, 'embedded-agent-BgECZgbU.mjs'), 'utf8');
     const helper = embedded.slice(embedded.indexOf('async function withCompactionLifecycle('), embedded.indexOf('async function compactEmbeddedAgentSession(input, options)'));
     const events: Json[] = [];
     const outcome = { ok: true, compacted: true };
@@ -245,7 +245,7 @@ describe('installed native compaction producers and subscribers', () => {
   });
 
   it('unions authorized global and exact-session recipients once and retains scoped broadcast options', async () => {
-    const bundle = await readFile(path.resolve('node_modules/openclaw/dist/sessions-shared-Dr0eLQJX.mjs'), 'utf8');
+    const bundle = await readFile(path.resolve('node_modules/openclaw/dist/sessions-shared-BE446s4y.mjs'), 'utf8');
     const code = bundle.slice(bundle.indexOf('function emitSessionOperation('), bundle.indexOf('function isWorkerDispatchInputError('));
     const context: Record<string, unknown> = {};
     runInNewContext(`${code}\nglobalThis.emit = emitSessionOperation;`, context);

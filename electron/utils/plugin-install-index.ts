@@ -140,6 +140,17 @@ function readUserVersion(db: DatabaseSync): number {
   return typeof row?.user_version === 'number' ? row.user_version : 0;
 }
 
+/** Recognize only the index-only database this module creates before OpenClaw's first boot. */
+export function isClawXPluginIndexBootstrap(db: DatabaseSync): boolean {
+  if (readUserVersion(db) !== 0) return false;
+  const entries = db.prepare("SELECT type, name, sql FROM sqlite_master WHERE name NOT GLOB 'sqlite_*'").all() as {
+    type: string; name: string; sql: string | null;
+  }[];
+  if (entries.length !== 1 || entries[0].type !== 'table' || entries[0].name !== 'installed_plugin_index') return false;
+  const normalize = (sql: string) => sql.replace(/\bIF\s+NOT\s+EXISTS\b/gi, '').replace(/\s+/g, '').replace(/;$/, '').toLowerCase();
+  return entries[0].sql !== null && normalize(entries[0].sql) === normalize(INSTALLED_PLUGIN_INDEX_TABLE_SQL);
+}
+
 function usesMachineStateIndex(db: DatabaseSync): boolean {
   return readUserVersion(db) >= MACHINE_STATE_MIN_USER_VERSION && tableExists(db, 'config_machine_state');
 }
@@ -203,18 +214,21 @@ function mutateMachineStateIndex(
   db: DatabaseSync,
   sqlitePath: string,
   mutate: InstallRecordsMutation,
+  strict = false,
 ): boolean {
   db.exec('BEGIN IMMEDIATE;');
   let committed = false;
   try {
     const nowMs = Date.now();
     if (hasActivePluginLifecycleLease(db, nowMs)) {
+      if (strict) throw new Error('OpenClaw plugin lifecycle operation holds the state lease');
       logger.warn(`[plugin] Skipped install metadata update in ${sqlitePath}: an OpenClaw plugin lifecycle operation holds the state lease`);
       return false;
     }
 
     const current = readMachineStateIndex(db);
     if (current === 'invalid') {
+      if (strict) throw new Error('Invalid OpenClaw plugin index; run Doctor before replacing plugins');
       logger.warn(`[plugin] Skipped install metadata update in ${sqlitePath}: the OpenClaw plugin index row is invalid; run OpenClaw Doctor to repair it`);
       return false;
     }
@@ -309,11 +323,12 @@ function mutateStateDatabase(
   sqlitePath: string,
   mutate: InstallRecordsMutation,
   createIfMissing: boolean,
+  strict = false,
 ): boolean {
   const db = openStateDatabase(sqlitePath);
   try {
     if (usesMachineStateIndex(db)) {
-      return mutateMachineStateIndex(db, sqlitePath, mutate);
+      return mutateMachineStateIndex(db, sqlitePath, mutate, strict);
     }
     // Fresh or pre-2026.10 database: OpenClaw imports this table into
     // config_machine_state during its schema migration.
@@ -329,6 +344,7 @@ function mutateStateDatabase(
  */
 export function upsertPluginInstallRecordsIntoSqlite(
   records: Record<string, Record<string, unknown>>,
+  options: { removeIds?: string[]; throwOnError?: boolean } = {},
 ): boolean {
   if (Object.keys(records).length === 0) {
     return false;
@@ -339,12 +355,16 @@ export function upsertPluginInstallRecordsIntoSqlite(
   mkdirSync(join(resolveOpenClawStateDir(), 'state'), { recursive: true });
 
   try {
-    const changed = mutateStateDatabase(sqlitePath, upsertMutation(records), true);
+    const changed = mutateStateDatabase(sqlitePath, (current) => {
+      const removed = removeMutation((options.removeIds ?? []).filter(id => !Object.hasOwn(records, id)))(current);
+      return upsertMutation(records)(current) || removed;
+    }, true, options.throwOnError);
     if (changed) {
       logger.info(`[plugin] Persisted trusted install metadata to SQLite for: ${Object.keys(records).join(', ')}`);
     }
     return changed;
   } catch (error) {
+    if (options.throwOnError) throw error;
     logger.warn('[plugin] Failed to persist trusted install metadata to SQLite:', error);
     return false;
   }

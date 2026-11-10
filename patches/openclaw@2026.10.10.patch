@@ -1,8 +1,7 @@
-diff --git a/dist/agent-core-B94tJ7dr.mjs b/dist/agent-core-B94tJ7dr.mjs
-index 2a53cb90fe7b096afa825c2086dfc4d38b247b57..db5cc32b786a593329197a576920a780e3357904 100644
---- a/dist/agent-core-B94tJ7dr.mjs
-+++ b/dist/agent-core-B94tJ7dr.mjs
-@@ -2983,15 +2983,23 @@ function prepareCompaction(pathEntries, settings, requestState, constraints) {
+diff --git a/dist/agent-core-BucXfq8L.mjs b/dist/agent-core-BucXfq8L.mjs
+--- a/dist/agent-core-BucXfq8L.mjs
++++ b/dist/agent-core-BucXfq8L.mjs
+@@ -3049,15 +3049,23 @@
  	const triggerUnitScale = !constraints?.budget && totalEstimatedTokens > 0 && Number.isFinite(totalEstimatedTokens) && Number.isFinite(contextUsage.usageTokens) ? Math.min(Math.max(1, settings.keepRecentTokens), Math.max(1, contextUsage.usageTokens / totalEstimatedTokens)) : 1;
  	const resetPreludeTokens = resetPreludeMessages.reduce((total, message) => total + estimateTokens(message), 0);
  	const keepRecentTokens = Math.min(Number.MAX_SAFE_INTEGER, settings.keepRecentTokens / triggerUnitScale + resetPreludeTokens);
@@ -30,11 +29,10 @@ index 2a53cb90fe7b096afa825c2086dfc4d38b247b57..db5cc32b786a593329197a576920a780
  		const entry = effectiveEntries.at(i);
  		const msg = entry ? getMessageFromEntryForCompaction(entry) : void 0;
  		if (msg) (i < historyEnd ? messagesToSummarize : turnPrefixMessages).push(msg);
-diff --git a/dist/agent-events-CCeMHYh0.mjs b/dist/agent-events-CCeMHYh0.mjs
-index bce202b4e7f0d3f9e08104586ad31254f88aa738..8b05c459a94c013802985b60d421af53db19693d 100644
---- a/dist/agent-events-CCeMHYh0.mjs
-+++ b/dist/agent-events-CCeMHYh0.mjs
-@@ -297,6 +297,8 @@ function enrichAgentEvent(state, event, claimId, expectedContext, reservedPublic
+diff --git a/dist/agent-events-BkjBm4i4.mjs b/dist/agent-events-BkjBm4i4.mjs
+--- a/dist/agent-events-BkjBm4i4.mjs
++++ b/dist/agent-events-BkjBm4i4.mjs
+@@ -296,6 +296,8 @@
  	const agentId = event.agentId ?? routing?.agentId;
  	const enriched = {
  		...event,
@@ -43,20 +41,19 @@ index bce202b4e7f0d3f9e08104586ad31254f88aa738..8b05c459a94c013802985b60d421af53
  		data,
  		sessionKey,
  		...sessionId ? { sessionId } : {},
-diff --git a/dist/agent-job-DleplIFW.mjs b/dist/agent-job-DleplIFW.mjs
-index b449c635637822c59a4ec9464986704f81e24731..387c8cd3fa0d546cdfeef937d10a7097f3b8c560 100644
---- a/dist/agent-job-DleplIFW.mjs
-+++ b/dist/agent-job-DleplIFW.mjs
-@@ -5,7 +5,7 @@ import { r as getAsyncWorkSignal } from "./async-work-scope-DDiH0P7W.mjs";
+diff --git a/dist/agent-job-CrNm49jX.mjs b/dist/agent-job-CrNm49jX.mjs
+--- a/dist/agent-job-CrNm49jX.mjs
++++ b/dist/agent-job-CrNm49jX.mjs
+@@ -4,7 +4,7 @@
+ import { r as getAsyncWorkSignal } from "./async-work-scope-BH2yUdBz.mjs";
  import { a as asOptionalRecord } from "./record-coerce-TIsquoVR.mjs";
- import { t as setSafeTimeout } from "./timer-delay-D9eb6vIQ.mjs";
- import { a as hasExecutionSettlement } from "./agent-run-terminal-outcome-Ccvy5spR.mjs";
--import { f as getAgentRunLifecycleGeneration } from "./agent-run-registry-zReSioYT.mjs";
-+import { h as listLiveAgentRunIds, u as getAgentRunContext, f as getAgentRunLifecycleGeneration } from "./agent-run-registry-zReSioYT.mjs";
- import { m as onAgentEvent } from "./agent-events-CCeMHYh0.mjs";
- import { H as normalizeAgentRunTerminalReceipt, L as mergeAgentRunTerminalReplySnapshot, R as normalizeAgentRunTerminalReplySnapshot } from "./subagent-session-read-scope-BxmKFZMd.mjs";
- import { r as formatErrorMessageForDisplay } from "./error-diagnostics-BHdMc4ot.mjs";
-@@ -102,6 +102,7 @@ function mergeSnapshot(existing, incoming) {
+ import { a as hasExecutionSettlement } from "./agent-run-terminal-outcome-CrMEEYuY.mjs";
+-import { f as getAgentRunLifecycleGeneration } from "./agent-run-registry-Dvv4_0by.mjs";
++import { h as listLiveAgentRunIds, u as getAgentRunContext, f as getAgentRunLifecycleGeneration } from "./agent-run-registry-Dvv4_0by.mjs";
+ import { m as onAgentEvent } from "./agent-events-BkjBm4i4.mjs";
+ import { r as normalizeAgentRunTerminalReceipt } from "./agent-run-terminal-receipt-CTHBKIeW.mjs";
+ import { n as mergeAgentRunTerminalReplySnapshot, r as normalizeAgentRunTerminalReplySnapshot } from "./agent-run-terminal-reply-Brs2Lq3h.mjs";
+@@ -99,6 +99,7 @@
  	const terminalReceipt = incoming.terminalReceipt ?? existing.terminalReceipt;
  	return {
  		...canonical,
@@ -64,7 +61,7 @@ index b449c635637822c59a4ec9464986704f81e24731..387c8cd3fa0d546cdfeef937d10a7097
  		...terminalDelivery ? { terminalDelivery } : {},
  		...terminalReceipt ? { terminalReceipt } : {},
  		...terminalReply ? { terminalReply } : {},
-@@ -201,6 +202,7 @@ function createSnapshotFromLifecycleEvent(params) {
+@@ -192,6 +193,7 @@
  	const terminalReceipt = normalizedTerminalReceipt?.runId === runId ? normalizedTerminalReceipt : void 0;
  	return {
  		runId,
@@ -72,7 +69,7 @@ index b449c635637822c59a4ec9464986704f81e24731..387c8cd3fa0d546cdfeef937d10a7097
  		source: "lifecycle",
  		session: params.session,
  		recordedAt: Date.now(),
-@@ -235,6 +237,7 @@ function ensureAgentRunListener() {
+@@ -226,6 +228,7 @@
  			runId: evt.runId,
  			phase,
  			data: evt.data,
@@ -80,10 +77,11 @@ index b449c635637822c59a4ec9464986704f81e24731..387c8cd3fa0d546cdfeef937d10a7097
  			session: captureAgentJobSession(evt)
  		});
  		agentRunStarts.delete(evt.runId);
-@@ -372,6 +375,27 @@ function addAgentRunWaiter(runId, waiter) {
+@@ -353,6 +356,27 @@
+ 			}
  		}
  	};
- }
++}
 +// ClawX: locate only explicit admitted successors, including already-finished runs.
 +function resolveAgentRecoveryWaitTarget(runId, sessionKey) {
 +	if (!sessionKey) return runId;
@@ -104,21 +102,19 @@ index b449c635637822c59a4ec9464986704f81e24731..387c8cd3fa0d546cdfeef937d10a7097
 +		seen.add(runId);
 +	}
 +	return runId;
-+}
+ }
  function projectAgentJobObservation(snapshot) {
  	return {
- 		session: snapshot.session,
-@@ -448,4 +472,4 @@ async function waitForAgentJob(params) {
+@@ -429,4 +453,4 @@
  }
  ensureAgentRunListener();
  //#endregion
 -export { waitForAgentJob as a, setGatewayDedupeEntry as i, getAgentJobSession as n, projectAgentJobObservation as r, captureAgentJobSession as t };
 +export { resolveAgentRecoveryWaitTarget, waitForAgentJob as a, setGatewayDedupeEntry as i, getAgentJobSession as n, projectAgentJobObservation as r, captureAgentJobSession as t };
-diff --git a/dist/agent-run-registry-zReSioYT.mjs b/dist/agent-run-registry-zReSioYT.mjs
-index b2e5a2e78ba9d9d75a909c17e609c612192524f8..d8f54feb2804b55f6b6dbc170fb5c131bbcfd976 100644
---- a/dist/agent-run-registry-zReSioYT.mjs
-+++ b/dist/agent-run-registry-zReSioYT.mjs
-@@ -24,6 +24,7 @@ function recordAgentEventRouting(runId, context, predecessor) {
+diff --git a/dist/agent-run-registry-Dvv4_0by.mjs b/dist/agent-run-registry-Dvv4_0by.mjs
+--- a/dist/agent-run-registry-Dvv4_0by.mjs
++++ b/dist/agent-run-registry-Dvv4_0by.mjs
+@@ -23,6 +23,7 @@
  		projectSessionLifecycle: context.projectSessionLifecycle,
  		projectSessionMessages: context.projectSessionMessages,
  		mainSessionRestartRecovery: context.mainSessionRestartRecovery,
@@ -126,7 +122,7 @@ index b2e5a2e78ba9d9d75a909c17e609c612192524f8..d8f54feb2804b55f6b6dbc170fb5c131
  		lifecycleStartedAt: context.lifecycleStartedAt,
  		lifecycleGeneration: context.lifecycleGeneration,
  		isHeartbeat: context.isHeartbeat,
-@@ -353,7 +354,8 @@ function registerAgentRunContext(runId, context, claimId) {
+@@ -357,7 +358,8 @@
  	for (const key of [
  		"sessionKey",
  		"sessionId",
@@ -136,11 +132,10 @@ index b2e5a2e78ba9d9d75a909c17e609c612192524f8..d8f54feb2804b55f6b6dbc170fb5c131
  	]) if (context[key] && existing[key] !== context[key]) existing[key] = context[key];
  	if (context.verboseLevel && existing.verboseLevel !== context.verboseLevel) existing.verboseLevel = context.verboseLevel;
  	existing.completionSource ??= context.completionSource;
-diff --git a/dist/agent-settings-CZ8x5-4D.mjs b/dist/agent-settings-CZ8x5-4D.mjs
-index 2869acd0aca88e2affbbee97965b9524f6693586..76a4757a51913b9ed60d96e76b3defcb852bd24b 100644
---- a/dist/agent-settings-CZ8x5-4D.mjs
-+++ b/dist/agent-settings-CZ8x5-4D.mjs
-@@ -8,13 +8,17 @@ function toPositiveInt(value) {
+diff --git a/dist/agent-settings-CCvY95d8.mjs b/dist/agent-settings-CCvY95d8.mjs
+--- a/dist/agent-settings-CCvY95d8.mjs
++++ b/dist/agent-settings-CCvY95d8.mjs
+@@ -8,13 +8,17 @@
  	if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return;
  	return Math.floor(value);
  }
@@ -159,20 +154,19 @@ index 2869acd0aca88e2affbbee97965b9524f6693586..76a4757a51913b9ed60d96e76b3defcb
  	const contextTokenBudget = toPositiveInt(params.contextTokenBudget);
  	const requestedReserveTokens = Math.max(currentReserveTokens, DEFAULT_AGENT_COMPACTION_RESERVE_TOKENS_FLOOR);
  	const targetReserveTokens = contextTokenBudget === void 0 ? requestedReserveTokens : resolveEffectiveCompactionReserveTokens({
-diff --git a/dist/agent-turn-service-C_6ZJjkm.mjs b/dist/agent-turn-service-C_6ZJjkm.mjs
-index ea3f85d096ec999230b508b9596f8d5745020166..b64a0c585eb6209cf0fa63958d20a661f28a114f 100644
---- a/dist/agent-turn-service-C_6ZJjkm.mjs
-+++ b/dist/agent-turn-service-C_6ZJjkm.mjs
-@@ -20,7 +20,7 @@ import { i as resolveProviderIdForAuth } from "./provider-auth-aliases-K2SVB2uU.
- import "./gateway-request-scope-CiCNcBL9.mjs";
- import { t as bindGatewayContextResolver } from "./gateway-context-binding-VqB7gkMe.mjs";
- import { c as normalizeAgentRunTimeoutPhase, i as classifyAgentRunTerminalOutcome, n as AGENT_RUN_RESTART_ABORT_STOP_REASON } from "./agent-run-terminal-outcome-Ccvy5spR.mjs";
--import { i as claimAgentRunContext, j as validateAgentRunDelegatedAuthority, o as clearAgentRunContext } from "./agent-run-registry-zReSioYT.mjs";
-+import { b as registerAgentRunContext, i as claimAgentRunContext, j as validateAgentRunDelegatedAuthority, o as clearAgentRunContext } from "./agent-run-registry-zReSioYT.mjs";
- import { d as getAgentEventLifecycleGeneration, f as isAgentEventLifecycleGenerationCurrent, t as assertAgentRunLifecycleGenerationCurrent } from "./agent-events-CCeMHYh0.mjs";
- import { a as composeSessionSourceAssertion } from "./session-source-authority-h1UO3u0I.mjs";
- import { d as hasGatewayAdminScope, t as ADMIN_SCOPE } from "./operator-scopes-BO7_XQCg.mjs";
-@@ -2083,6 +2083,14 @@ async function admitAgentRestartRecovery(params) {
+diff --git a/dist/agent-turn-service-BFCTTTQP.mjs b/dist/agent-turn-service-BFCTTTQP.mjs
+--- a/dist/agent-turn-service-BFCTTTQP.mjs
++++ b/dist/agent-turn-service-BFCTTTQP.mjs
+@@ -14,7 +14,7 @@
+ import { t as _usingCtx } from "./usingCtx-BhiZp_rS.mjs";
+ import { g as readRuntimeConfig } from "./runtime-snapshot-vj1MIh8M.mjs";
+ import { c as normalizeAgentRunTimeoutPhase, i as classifyAgentRunTerminalOutcome, n as AGENT_RUN_RESTART_ABORT_STOP_REASON } from "./agent-run-terminal-outcome-CrMEEYuY.mjs";
+-import { i as claimAgentRunContext, j as validateAgentRunDelegatedAuthority, o as clearAgentRunContext } from "./agent-run-registry-Dvv4_0by.mjs";
++import { b as registerAgentRunContext, i as claimAgentRunContext, j as validateAgentRunDelegatedAuthority, o as clearAgentRunContext } from "./agent-run-registry-Dvv4_0by.mjs";
+ import { d as getAgentEventLifecycleGeneration, f as isAgentEventLifecycleGenerationCurrent, t as assertAgentRunLifecycleGenerationCurrent } from "./agent-events-BkjBm4i4.mjs";
+ import { o as composeSessionSourceAssertion } from "./session-source-authority-fdILH-PW.mjs";
+ import { i as isIncognitoSessionKey } from "./incognito-session-key-BWpn88lo.mjs";
+@@ -2045,6 +2045,14 @@
  	if (admission.transition.kind !== "admitted_recovery") throw new Error(`Session "${params.sessionKey}" restart recovery reservation is stale; recovery was skipped.`);
  	const sessionKey = admission.sessionKey ?? params.sessionKey;
  	const admittedAttempt = admission.transition.admission;
@@ -187,61 +181,19 @@ index ea3f85d096ec999230b508b9596f8d5745020166..b64a0c585eb6209cf0fa63958d20a661
  	let restored = false;
  	return async () => {
  		if (restored) return;
-diff --git a/dist/builtin-openclaw-CLelpwAr.mjs b/dist/builtin-openclaw-CLelpwAr.mjs
-index 12e2cacc6c8159530178d84bd44765ee8f7babc2..088f1c5cd132ca0bd0afce27dc5ccfff34b38e76 100644
---- a/dist/builtin-openclaw-CLelpwAr.mjs
-+++ b/dist/builtin-openclaw-CLelpwAr.mjs
-@@ -4892,8 +4892,19 @@ function handleCompactionStart(ctx, evt) {
- 		reason,
- 		consoleMessage: `embedded run ${kind} start: runId=${ctx.params.runId} reason=${reason}`
- 	});
-+	// ClawX: a stable compaction identity lets ACP clients project the full
-+	// lifecycle as session_info_update metadata.
-+	const compactionId = `cmp-${Date.now().toString(36)}-${randomUUID().replace(/-/g, "").slice(0, 16)}`;
-+	ctx.state.activeCompactionId = compactionId;
-+	const timestamp = new Date().toISOString();
- 	emitCompactionAgentEvent(ctx, {
- 		phase: "start",
-+		compactionId,
-+		source: reason,
-+		reason,
-+		timestamp,
-+		aborted: false,
-+		completed: false,
- 		...evt.itemId ? { itemId: evt.itemId } : {}
- 	});
- 	runBestEffortCompactionHook(ctx, "before");
-@@ -4966,9 +4977,15 @@ function handleCompactionEnd(ctx, evt) {
- 		const benign = outcome.status === "aborted" || outcome.status === "skipped" && (reasonClass === "no_compactable_entries" || reasonClass === "below_threshold" || reasonClass === "already_compacted");
- 		ctx.log[benign ? "info" : "warn"](`embedded run ${kind} ${outcome.status}`, metadata);
- 	}
-+	const compactionId = ctx.state.activeCompactionId;
-+	ctx.state.activeCompactionId = void 0;
- 	emitCompactionAgentEvent(ctx, {
- 		phase: "end",
--		...evt.itemId ? { itemId: evt.itemId } : {},
-+		...compactionId ? { compactionId } : {},
-+		source: reason,
-+		reason: outcomeReason ?? reason,
-+		timestamp: new Date().toISOString(),
-+		aborted: outcome.status === "aborted",
- 		completed,
- 		willRetry,
- 		outcome: outcome.status,
-diff --git a/dist/embedded-agent-w-EKmRVf.mjs b/dist/embedded-agent-w-EKmRVf.mjs
-index 9b9128c5c8d1c1a3d451a211fd0b4801b149a852..dc78fd38772e7f61ca347ace703d41e872a2667b 100644
---- a/dist/embedded-agent-w-EKmRVf.mjs
-+++ b/dist/embedded-agent-w-EKmRVf.mjs
-@@ -259,7 +259,7 @@ import { t as buildEmbeddedRunPayloads } from "./payloads-BUFeh5w2.mjs";
- import path from "node:path";
- import { AsyncLocalStorage } from "node:async_hooks";
- import fs from "node:fs/promises";
+diff --git a/dist/embedded-agent-BgECZgbU.mjs b/dist/embedded-agent-BgECZgbU.mjs
+--- a/dist/embedded-agent-BgECZgbU.mjs
++++ b/dist/embedded-agent-BgECZgbU.mjs
+@@ -262,7 +262,7 @@
+ import { t as applyPreparedReplyMedia } from "./reply-media-paths-NJv_uWUs.mjs";
+ import { t as buildEmbeddedRunPayloads } from "./payloads-CS3wTzHc.mjs";
+ import { r as isBackgroundWorkLane } from "./background-work-YKvAAC4l.mjs";
 -import { randomBytes } from "node:crypto";
 +import { randomBytes, randomUUID } from "node:crypto";
- import { isContextOverflow } from "@openclaw/ai/internal/runtime";
- import { CompactionReplayRefreshRequiredError, isCompactionReplayCheckpoint } from "@openclaw/ai/transports";
- import { isResponsesOutputLimitToolCallError } from "@openclaw/ai/diagnostics";
-@@ -662,7 +662,48 @@ function resolveManualCompactionActiveRunSessionId(params) {
+ import fs from "node:fs/promises";
+ import path from "node:path";
+ import { AsyncLocalStorage } from "node:async_hooks";
+@@ -674,7 +674,48 @@
  * Use this from outside a lane context. If already inside a lane, use
  * `compactEmbeddedAgentSessionDirect` to avoid deadlocks.
  */
@@ -290,7 +242,7 @@ index 9b9128c5c8d1c1a3d451a211fd0b4801b149a852..dc78fd38772e7f61ca347ace703d41e8
  	return await runWithAsyncWorkResources(async (onAcquired) => {
  		onAcquired({
  			release: retainAgentHarnessCompactionSource(options.sourceAuthority),
-@@ -2872,6 +2913,22 @@ async function claimAgentSessionWriter(params) {
+@@ -2851,6 +2892,22 @@
  //#region src/agents/embedded-agent-runner/run/compaction-runtime.ts
  /** Preserve one prepared owner snapshot throughout context and timeout recovery. */
  async function compactEmbeddedRunForRecovery(input, recovery) {
@@ -313,19 +265,18 @@ index 9b9128c5c8d1c1a3d451a211fd0b4801b149a852..dc78fd38772e7f61ca347ace703d41e8
  	const { runParams } = input;
  	const owner = input.prepareRecoveryOwner();
  	const activeSession = owner.session;
-diff --git a/dist/error-coercion-W9BtigRm.mjs b/dist/error-coercion-W9BtigRm.mjs
-index 12fddaf22c215a45b11765098fa42da4d213c478..1ddb95bf6bc4b07bb35b326f398b133e4c8e9877 100644
---- a/dist/error-coercion-W9BtigRm.mjs
-+++ b/dist/error-coercion-W9BtigRm.mjs
-@@ -115,8 +115,19 @@ function formatErrorMessage(value, options) {
+diff --git a/dist/error-coercion-BwMr25F8.mjs b/dist/error-coercion-BwMr25F8.mjs
+--- a/dist/error-coercion-BwMr25F8.mjs
++++ b/dist/error-coercion-BwMr25F8.mjs
+@@ -115,7 +115,18 @@
  		} else if (typeof cause === "string") appendCauseMessage(cause);
  		else appendCauseMessage(formatStatusAndCode(cause) ?? stringifyUnknown(cause));
  	} else formatted = formatStatusAndCode(value) ?? stringifyUnknown(value);
 +	// ClawX: surface documented TokenDance recovery actions from provider headers.
 +	const tokenDanceRecoveryAction = extractTokenDanceRecoveryAction(value);
 +	if (tokenDanceRecoveryAction) formatted += ` [TokenDance-Recovery-Action:${tokenDanceRecoveryAction}]`;
- 	return options.redact(formatted);
- }
+ 	return options.redact ? options.redact(formatted) : formatted;
++}
 +const TOKENDANCE_RECOVERY_ACTIONS = /* @__PURE__ */ new Set(["top_up_balance", "reauthorize_api_key", "api_key_quota"]);
 +function extractTokenDanceRecoveryAction(err) {
 +	if (!err || typeof err !== "object") return;
@@ -333,24 +284,41 @@ index 12fddaf22c215a45b11765098fa42da4d213c478..1ddb95bf6bc4b07bb35b326f398b133e
 +	if (!headers || typeof headers.get !== "function") return;
 +	const action = headers.get("TokenDance-Recovery-Action")?.trim();
 +	return TOKENDANCE_RECOVERY_ACTIONS.has(action) ? action : void 0;
-+}
+ }
  /**
  * Normalizes an unknown thrown value into an Error. Non-Error objects become
- * the `cause` and have their enumerable fields copied so structured details
-diff --git a/dist/exec-approval-DbnOAIQO.mjs b/dist/exec-approval-DbnOAIQO.mjs
-index 2f891103a260a63465790be0bb057b809f816372..84600290cdb4016a414b5c60c2c341dec10f5d9c 100644
---- a/dist/exec-approval-DbnOAIQO.mjs
-+++ b/dist/exec-approval-DbnOAIQO.mjs
-@@ -27,6 +27,7 @@ import { t as handlePendingApprovalRequestWithDelivery } from "./approval-reques
- import { t as InvalidApprovalIdError } from "./exec-approval-registration-BaE9pc8t.mjs";
- import { t as createApprovalRequestAuthority } from "./approval-request-authority-l05pcSPy.mjs";
- import { t as resolveGrantExpiryDaysConfig } from "./standing-grant-expiry-config-CqUe6ux8.mjs";
-+import { u as getAgentRunContext } from "./agent-run-registry-zReSioYT.mjs";
- //#region src/infra/command-analysis/explain.ts
- function riskLabel(risk) {
- 	switch (risk.kind) {
-@@ -299,6 +300,7 @@ function createExecApprovalHandlers(manager, opts) {
- 				sessionKey: effectiveSessionKey ?? null,
+diff --git a/dist/event-ledger.worker-Dfl_XAm4.mjs b/dist/event-ledger.worker-Dfl_XAm4.mjs
+--- a/dist/event-ledger.worker-Dfl_XAm4.mjs
++++ b/dist/event-ledger.worker-Dfl_XAm4.mjs
+@@ -232,10 +232,18 @@
+ 		trimSqliteLedger(database.db, input.limits);
+ 	}, { operationLabel: "acp.replay.start" }),
+ 	"acpReplay.append": (input, { write }) => write((database) => {
++		// ClawX: the worker owns the transaction. A stale replay plan must be
++		// recomputed before append, so concurrent ACP writers cannot duplicate it.
++		if (input.transcriptTail) {
++			const replay = readSqliteReplay(database.db, { kind: "bound", ...input.session });
++			if (!replay.complete || replay.sessionKey !== input.session.sessionKey) return { replay };
++			if ((replay.events.at(-1)?.seq ?? 0) !== input.transcriptTail.afterSeq) return { retry: true };
++		}
+ 		for (const event of input.events) appendSqliteUpdate(database.db, input.limits, {
+ 			...event,
+ 			...input.session
+ 		});
++		if (input.transcriptTail) return { replay: readSqliteReplay(database.db, { kind: "bound", ...input.session }) };
+ 	}, { operationLabel: "acp.replay.append" }),
+ 	"acpReplay.incomplete": (input, { write }) => write((database) => {
+ 		executeSqliteQuerySync(database.db, getNodeSqliteKysely(database.db).updateTable("acp_replay_sessions").set({
+diff --git a/dist/exec-approval-DuJx32oo.mjs b/dist/exec-approval-DuJx32oo.mjs
+--- a/dist/exec-approval-DuJx32oo.mjs
++++ b/dist/exec-approval-DuJx32oo.mjs
+@@ -1,3 +1,4 @@
++import { u as getAgentRunContext } from "./agent-run-registry-Dvv4_0by.mjs";
+ import { l as normalizeOptionalString } from "./string-coerce-1VuiLaaR.mjs";
+ import { y as uniqueStrings } from "./string-normalization-D6DKCpwE.mjs";
+ import { n as normalizeAgentId } from "./agent-id-D1-Q6vR4.mjs";
+@@ -298,6 +299,7 @@
+ 				sessionKey: trustedAgentRuntime?.sessionKey ?? effectiveSessionKey ?? null,
  				sessionId: trustedAgentRuntime ? null : normalizeOptionalString(p.sessionId) ?? null,
  				runId: requestRunId ?? null,
 +				resumedFromRunId: requestRunId ? getAgentRunContext(requestRunId)?.resumedFromRunId : void 0,
@@ -358,10 +326,9 @@ index 2f891103a260a63465790be0bb057b809f816372..84600290cdb4016a414b5c60c2c341de
  				turnSourceChannel: trustedAgentRuntime ? trustedAgentRuntime.turnSourceChannel ?? null : normalizeOptionalString(p.turnSourceChannel) ?? null,
  				turnSourceTo: trustedAgentRuntime ? trustedAgentRuntime.turnSourceTo ?? null : normalizeOptionalString(p.turnSourceTo) ?? null,
 diff --git a/dist/infra/sqlite-readonly-location.worker.js b/dist/infra/sqlite-readonly-location.worker.js
-index 427fc417bfc45cfbe5b8090092b5776db976edce..4b84e49828bd9015f2ac20f307b2c747917bba49 100644
 --- a/dist/infra/sqlite-readonly-location.worker.js
 +++ b/dist/infra/sqlite-readonly-location.worker.js
-@@ -41445,6 +41445,12 @@ function readLockFileOwnerPayload(payload) {
+@@ -20213,6 +20213,12 @@
  function inspectStaleLockOwner(params) {
  	const payload = readLockFileOwnerPayload(params.payload);
  	if (!payload?.pid) return null;
@@ -374,20 +341,18 @@ index 427fc417bfc45cfbe5b8090092b5776db976edce..4b84e49828bd9015f2ac20f307b2c747
  	const observedStarttime = payload.starttime === void 0 ? null : (params.getProcessStartTime ?? getFileLockProcessStartTime)(payload.pid);
  	const identity = {
  		pid: payload.pid,
-diff --git a/dist/legacy-webhook-pins-Bn7D4Mti.mjs b/dist/legacy-webhook-pins-Bn7D4Mti.mjs
-index 9a8779e0660962703e7b755eca543c53e4d44993..7c2b5580e5f03a2395d2a54ad30e55e49329aac4 100644
---- a/dist/legacy-webhook-pins-Bn7D4Mti.mjs
-+++ b/dist/legacy-webhook-pins-Bn7D4Mti.mjs
+diff --git a/dist/legacy-webhook-pins-CkRppjqt.mjs b/dist/legacy-webhook-pins-CkRppjqt.mjs
+--- a/dist/legacy-webhook-pins-CkRppjqt.mjs
++++ b/dist/legacy-webhook-pins-CkRppjqt.mjs
 @@ -1,2 +1,2 @@
--import { r as recordUnwrittenWebhookCompletion, t as HISTORICAL_WEBHOOK_CHANNELS } from "./legacy-webhook-pins-Bucp571j.mjs";
+-import { r as recordUnwrittenWebhookCompletion, t as HISTORICAL_WEBHOOK_CHANNELS } from "./legacy-webhook-pins-kZ3wrtWe.mjs";
 -export { HISTORICAL_WEBHOOK_CHANNELS, recordUnwrittenWebhookCompletion };
-+import { r as recordUnwrittenWebhookCompletion, s as shouldRunHistoricalWebhookMigration, t as HISTORICAL_WEBHOOK_CHANNELS } from "./legacy-webhook-pins-Bucp571j.mjs";
-+export { HISTORICAL_WEBHOOK_CHANNELS, shouldRunHistoricalWebhookMigration, recordUnwrittenWebhookCompletion };
-diff --git a/dist/legacy-webhook-pins-Bucp571j.mjs b/dist/legacy-webhook-pins-Bucp571j.mjs
-index b40e69e7a094ffea9a59f5c829f480e989c7bd91..f526f6735e33b2939bc4aa54d372cf3af7f69e82 100644
---- a/dist/legacy-webhook-pins-Bucp571j.mjs
-+++ b/dist/legacy-webhook-pins-Bucp571j.mjs
-@@ -23,6 +23,37 @@ const HISTORICAL_WEBHOOK_CHANNELS = [
++import { r as recordUnwrittenWebhookCompletion, s as shouldRunHistoricalWebhookMigration, t as HISTORICAL_WEBHOOK_CHANNELS } from "./legacy-webhook-pins-kZ3wrtWe.mjs";
++export { shouldRunHistoricalWebhookMigration, HISTORICAL_WEBHOOK_CHANNELS, recordUnwrittenWebhookCompletion };
+diff --git a/dist/legacy-webhook-pins-kZ3wrtWe.mjs b/dist/legacy-webhook-pins-kZ3wrtWe.mjs
+--- a/dist/legacy-webhook-pins-kZ3wrtWe.mjs
++++ b/dist/legacy-webhook-pins-kZ3wrtWe.mjs
+@@ -23,6 +23,37 @@
  function webhookCompletionKey(env) {
  	return `webhookListeners:${resolveConfigPath(env)}`;
  }
@@ -425,26 +390,25 @@ index b40e69e7a094ffea9a59f5c829f480e989c7bd91..f526f6735e33b2939bc4aa54d372cf3a
  /** No config bytes changed, so this completion does not depend on config rollback. */
  function recordUnwrittenWebhookCompletion(snapshot, mutation, env) {
  	const readOnly = resolveIsConfigReadOnly(env);
-@@ -40,7 +71,7 @@ function recordUnwrittenWebhookCompletion(snapshot, mutation, env) {
+@@ -45,7 +76,7 @@
  /** Pins and completion travel together through Doctor's config backup and publication. */
- function applyHistoricalWebhookPins(mutation, declaration, context = {}) {
- 	const env = context.env ?? process.env;
--	const marker = mutation.config.meta?.migrations?.webhookListeners ?? readConfigMachineState(webhookCompletionKey(env), { env });
+ function applyHistoricalWebhookPins(state, mutation, declaration, context = {}) {
+ 	const { env } = state;
+-	const marker = mutation.config.meta?.migrations?.webhookListeners ?? (state.completion ??= { marker: readConfigMachineState(webhookCompletionKey(env), { env }) }).marker;
 +	const marker = readHistoricalWebhookCompletion(mutation.config, env);
  	if (marker === true || mutation.warnings?.length) return mutation;
  	const accountIds = context.startup && mutation.historicalWebhookAccountIds === null || context.pluginId && !passesManifestOwnerBasePolicy({
  		plugin: { id: context.pluginId },
-@@ -103,4 +134,4 @@ function applyHistoricalWebhookPins(mutation, declaration, context = {}) {
+@@ -111,4 +142,4 @@
  	return result;
  }
  //#endregion
--export { applyHistoricalWebhookPins as n, recordUnwrittenWebhookCompletion as r, HISTORICAL_WEBHOOK_CHANNELS as t };
-+export { readHistoricalWebhookCompletion as i, applyHistoricalWebhookPins as n, recordUnwrittenWebhookCompletion as r, shouldRunHistoricalWebhookMigration as s, HISTORICAL_WEBHOOK_CHANNELS as t };
+-export { createHistoricalWebhookPinMigration as n, recordUnwrittenWebhookCompletion as r, HISTORICAL_WEBHOOK_CHANNELS as t };
++export { shouldRunHistoricalWebhookMigration as s, readHistoricalWebhookCompletion as i, createHistoricalWebhookPinMigration as n, recordUnwrittenWebhookCompletion as r, HISTORICAL_WEBHOOK_CHANNELS as t };
 diff --git a/dist/managed-handoff-runtime.mjs b/dist/managed-handoff-runtime.mjs
-index 703c02cd93951c618cf51c4ca77ae42dd5da778f..0fca4be2697facbc3f5496cd48d2d76139178588 100644
 --- a/dist/managed-handoff-runtime.mjs
 +++ b/dist/managed-handoff-runtime.mjs
-@@ -43007,6 +43007,12 @@ function readLockFileOwnerPayload(payload) {
+@@ -45298,6 +45298,12 @@
  function inspectStaleLockOwner(params) {
  	const payload = readLockFileOwnerPayload(params.payload);
  	if (!payload?.pid) return null;
@@ -457,11 +421,10 @@ index 703c02cd93951c618cf51c4ca77ae42dd5da778f..0fca4be2697facbc3f5496cd48d2d761
  	const observedStarttime = payload.starttime === void 0 ? null : (params.getProcessStartTime ?? getFileLockProcessStartTime)(payload.pid);
  	const identity = {
  		pid: payload.pid,
-diff --git a/dist/native-hook-relay/sqlite-snapshot-staging-owner-Coa4BeBx.mjs b/dist/native-hook-relay/sqlite-snapshot-staging-owner-Coa4BeBx.mjs
-index 1538dd7b49bc95c4efb4515819df998a334745e1..65d048124f44a5e6362344bc926f3757fe309184 100644
---- a/dist/native-hook-relay/sqlite-snapshot-staging-owner-Coa4BeBx.mjs
-+++ b/dist/native-hook-relay/sqlite-snapshot-staging-owner-Coa4BeBx.mjs
-@@ -6358,6 +6358,12 @@ function readLockFileOwnerPayload(payload) {
+diff --git a/dist/native-hook-relay/worker-task-pool-DUF3lmpK.mjs b/dist/native-hook-relay/worker-task-pool-DUF3lmpK.mjs
+--- a/dist/native-hook-relay/worker-task-pool-DUF3lmpK.mjs
++++ b/dist/native-hook-relay/worker-task-pool-DUF3lmpK.mjs
+@@ -6002,6 +6002,12 @@
  function inspectStaleLockOwner(params) {
  	const payload = readLockFileOwnerPayload(params.payload);
  	if (!payload?.pid) return null;
@@ -475,10 +438,9 @@ index 1538dd7b49bc95c4efb4515819df998a334745e1..65d048124f44a5e6362344bc926f3757
  	const identity = {
  		pid: payload.pid,
 diff --git a/dist/package-update-activation-recovery.mjs b/dist/package-update-activation-recovery.mjs
-index ae4446a8861cbc2b6c722b22e890a9b7b50bff19..f1b43865bdb9666395547cda5c38a8d03634ea68 100644
 --- a/dist/package-update-activation-recovery.mjs
 +++ b/dist/package-update-activation-recovery.mjs
-@@ -72315,6 +72315,12 @@ function readLockFileOwnerPayload(payload) {
+@@ -78161,6 +78161,12 @@
  function inspectStaleLockOwner(params) {
  	const payload = readLockFileOwnerPayload(params.payload);
  	if (!payload?.pid) return null;
@@ -491,20 +453,19 @@ index ae4446a8861cbc2b6c722b22e890a9b7b50bff19..f1b43865bdb9666395547cda5c38a8d0
  	const observedStarttime = payload.starttime === void 0 ? null : (params.getProcessStartTime ?? getFileLockProcessStartTime)(payload.pid);
  	const identity = {
  		pid: payload.pid,
-diff --git a/dist/plugin-generation-source-lookup-Dg6DuWgm.mjs b/dist/plugin-generation-source-lookup-Dg6DuWgm.mjs
-index 19956c366dfa4a3c3037e2d2e6b42905e31014a0..5efd5698acd25520b83a2a689a6b8437b5a0b399 100644
---- a/dist/plugin-generation-source-lookup-Dg6DuWgm.mjs
-+++ b/dist/plugin-generation-source-lookup-Dg6DuWgm.mjs
-@@ -3,7 +3,7 @@ import { k as PluginSourceRecoveryUnavailableError, o as getPluginCache } from "
+diff --git a/dist/plugin-generation-source-lookup-EtpFx0hb.mjs b/dist/plugin-generation-source-lookup-EtpFx0hb.mjs
+--- a/dist/plugin-generation-source-lookup-EtpFx0hb.mjs
++++ b/dist/plugin-generation-source-lookup-EtpFx0hb.mjs
+@@ -3,7 +3,7 @@
  import { a as asOptionalRecord } from "./record-coerce-TIsquoVR.mjs";
  import { o as openRootFileSync$1 } from "./boundary-file-read-CCth2Hwg.mjs";
  import { t as hasErrnoCode } from "./errno-FR4CRyya.mjs";
 -import { r as isPathInside } from "./path-guards-CH7noY0Z.mjs";
 +import { o as normalizeWindowsPathPreservingCase, r as isPathInside } from "./path-guards-CH7noY0Z.mjs";
  import { t as escapeRegExp } from "./regexp-BZyMFTlj.mjs";
- import { t as formatErrorMessage } from "./errors-J9olDZqH.mjs";
- import { a as createSqliteLifecycleAggregateError } from "./sqlite-lifecycle-errors-DuOygjcn.mjs";
-@@ -1145,6 +1145,17 @@ function createRecoverySourceResolver(rootDir, sourceRoot, sources) {
+ import { t as formatErrorMessage } from "./errors-CQHIobuu.mjs";
+ import { a as createSqliteLifecycleAggregateError } from "./sqlite-lifecycle-errors-Ca_9goHE.mjs";
+@@ -989,6 +989,17 @@
  		return captured;
  	};
  }
@@ -522,34 +483,18 @@ index 19956c366dfa4a3c3037e2d2e6b42905e31014a0..5efd5698acd25520b83a2a689a6b8437
  function copyRecoverySource({ rootDir, sourceRoot, capturedRoot, boundaryRoot, sources, native: suppliedNative }) {
  	let native = suppliedNative;
  	let recovery;
-@@ -1156,7 +1167,7 @@ function copyRecoverySource({ rootDir, sourceRoot, capturedRoot, boundaryRoot, s
- 			verbatimSymlinks: true,
+@@ -1003,6 +1014,7 @@
  			filter: (from, to) => {
  				const fact = native?.references.get(from);
--				if (!fact) return true;
-+				if (!fact) return !copyWindowsRecoveryJunction(boundaryRoot, recovery.directory, from, to);
- 				const retained = {
- 					...fact,
- 					sourceIdentity: fact.capturedIdentity
-diff --git a/dist/process/spawn-broker/worker.js b/dist/process/spawn-broker/worker.js
-index f7c5c13e9c6be532408d6bb4cd53b664f1372d5e..90ff28d5afaefb150d3646e32048056c3db201ef 100644
---- a/dist/process/spawn-broker/worker.js
-+++ b/dist/process/spawn-broker/worker.js
-@@ -1678,7 +1678,8 @@ function shutdown() {
- 		process.exit(0);
- 	};
- 	signalGroup("SIGTERM");
--	if (owned.size === 0 && starting.size === 0 && !resources?.size && hasLiveOwnedProcessGroupMembers() === false) {
-+	// Windows has no POSIX process groups; an empty broker must not wait for the Unix census.
-+	if (owned.size === 0 && starting.size === 0 && !resources?.size && (process.platform === "win32" || hasLiveOwnedProcessGroupMembers() === false)) {
- 		finish();
- 		return;
- 	}
+ 				if (!fact) {
++					if (copyWindowsRecoveryJunction(boundaryRoot, recovery.directory, from, to)) return false;
+ 					if (fs.lstatSync(from).isSymbolicLink()) {
+ 						const target = fs.readlinkSync(from);
+ 						const relative = path.isAbsolute(target) ? relativePluginPathInsideRootSync(boundaryRoot, target) : void 0;
 diff --git a/dist/process/supervisor/service-child-group-anchor.js b/dist/process/supervisor/service-child-group-anchor.js
-index b610adb18a916b7a95c99ff22f950b1624c96c29..17ba52a9ca222210466d6bc285757cf9ddfd2048 100644
 --- a/dist/process/supervisor/service-child-group-anchor.js
 +++ b/dist/process/supervisor/service-child-group-anchor.js
-@@ -35458,6 +35458,12 @@ function readLockFileOwnerPayload(payload) {
+@@ -37694,6 +37694,12 @@
  function inspectStaleLockOwner(params) {
  	const payload = readLockFileOwnerPayload(params.payload);
  	if (!payload?.pid) return null;
@@ -562,58 +507,99 @@ index b610adb18a916b7a95c99ff22f950b1624c96c29..17ba52a9ca222210466d6bc285757cf9
  	const observedStarttime = payload.starttime === void 0 ? null : (params.getProcessStartTime ?? getFileLockProcessStartTime)(payload.pid);
  	const identity = {
  		pid: payload.pid,
-diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
-index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb0453680704430 100644
---- a/dist/server-DkfYuk25.mjs
-+++ b/dist/server-DkfYuk25.mjs
-@@ -6,6 +6,7 @@ import { a as asOptionalRecord, c as isRecord, o as asRecord } from "./record-co
- import { r as truncateUtf16Safe } from "./utf16-slice-D_ngcYKd.mjs";
- import { p as shortenHomePath } from "./utils-CitNzLyF.mjs";
- import { t as formatErrorMessage } from "./errors-J9olDZqH.mjs";
+diff --git a/dist/sdk-B0aTjN8h.mjs b/dist/sdk-B0aTjN8h.mjs
+--- a/dist/sdk-B0aTjN8h.mjs
++++ b/dist/sdk-B0aTjN8h.mjs
+@@ -1104,8 +1104,19 @@
+ 		reason,
+ 		consoleMessage: `embedded run ${kind} start: runId=${ctx.params.runId} reason=${reason}`
+ 	});
++	// ClawX: a stable compaction identity lets ACP clients project the full
++	// lifecycle as session_info_update metadata.
++	const compactionId = `cmp-${Date.now().toString(36)}-${randomUUID().replace(/-/g, "").slice(0, 16)}`;
++	ctx.state.activeCompactionId = compactionId;
++	const timestamp = new Date().toISOString();
+ 	emitCompactionAgentEvent(ctx, {
+ 		phase: "start",
++		compactionId,
++		source: reason,
++		reason,
++		timestamp,
++		aborted: false,
++		completed: false,
+ 		...evt.itemId ? { itemId: evt.itemId } : {}
+ 	});
+ 	if (!evt.hooksHandled) runBestEffortCompactionHook(ctx, "before");
+@@ -1178,9 +1189,15 @@
+ 		const benign = outcome.status === "aborted" || outcome.status === "skipped" && (reasonClass === "no_compactable_entries" || reasonClass === "below_threshold" || reasonClass === "already_compacted");
+ 		ctx.log[benign ? "info" : "warn"](`embedded run ${kind} ${outcome.status}`, metadata);
+ 	}
++	const compactionId = ctx.state.activeCompactionId;
++	ctx.state.activeCompactionId = void 0;
+ 	emitCompactionAgentEvent(ctx, {
+ 		phase: "end",
+-		...evt.itemId ? { itemId: evt.itemId } : {},
++		...compactionId ? { compactionId } : {},
++		source: reason,
++		reason: outcomeReason ?? reason,
++		timestamp: new Date().toISOString(),
++		aborted: outcome.status === "aborted",
+ 		completed,
+ 		willRetry,
+ 		outcome: outcome.status,
+diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
+--- a/dist/server-D2T0Amp5.mjs
++++ b/dist/server-D2T0Amp5.mjs
+@@ -1,3 +1,4 @@
 +import { c as resolveAssistantEventPhase } from "./chat-message-content-C-d0FKNG.mjs";
- import { t as finalizeActiveDebugProxyCaptures } from "./runtime-cleanup-AyeSBMlV.mjs";
- import { a as executeSqliteQueryTakeFirstSync, i as executeSqliteQuerySync, l as prepareSqliteQuerySync, n as createSqliteQueryCache, o as getNodeSqliteKysely } from "./kysely-sync-_Jx0TluS.mjs";
- import { i as routeLogsToStderr } from "./console-Dzm4OzJw.mjs";
-@@ -36,7 +37,7 @@ import path from "node:path";
+ import { a as normalizeFastMode, g as readStringValue, l as normalizeOptionalString, o as normalizeLowercaseStringOrEmpty, t as hasNonEmptyString } from "./string-coerce-1VuiLaaR.mjs";
+ import { R as timestampMsToIsoString, j as resolveIntegerOption } from "./number-coercion-CkhMiRw8.mjs";
+ import { t as createDeferredCore } from "./deferred-D0La5CRk.mjs";
+@@ -36,7 +37,7 @@
  import os from "node:os";
- import { randomUUID } from "node:crypto";
+ import path from "node:path";
  import { Readable, Writable } from "node:stream";
 -import { AGENT_METHODS, AgentSideConnection, PROTOCOL_VERSION, ndJsonStream } from "@agentclientprotocol/sdk";
 +import { AGENT_METHODS, AgentSideConnection, PROTOCOL_VERSION, RequestError, ndJsonStream } from "@agentclientprotocol/sdk";
- //#region src/acp/event-ledger.types.ts
- const DEFAULT_MAX_SESSIONS = 200;
- const DEFAULT_MAX_EVENTS_PER_SESSION = 5e3;
-@@ -254,7 +255,7 @@ function appendSqliteUpdate(db, state, params) {
- 	queries.insertEvent({
- 		sessionId: params.sessionId,
- 		seq: nextSeq,
--		at: now,
-+		at: Number.isFinite(params.sourceRecordTimestampMs) ? params.sourceRecordTimestampMs : now,
- 		sessionKey: params.sessionKey,
- 		runId: params.runId ?? null,
- 		updateJson,
-@@ -321,6 +322,20 @@ function createSqliteAcpEventLedger(params = {}) {
- 				appendSqliteUpdate(db, state, updateParams);
- 			});
- 		},
-+		async importTranscriptTail(tailParams) {
-+			return mutate((db) => {
-+				// Read again inside the transaction: another ACP writer may have advanced it.
-+				const replay = buildSqliteReplay(db, readSqliteSessionById(db, tailParams.sessionId));
-+				if (replay.complete && replay.sessionKey !== tailParams.sessionKey) return;
-+				if (!replay.complete) return replay;
-+				for (const event of planAcpTranscriptTail(replay.events, tailParams.transcript)) appendSqliteUpdate(db, state, {
-+					sessionId: tailParams.sessionId,
-+					sessionKey: tailParams.sessionKey,
-+					...event
+ //#region src/acp/event-ledger.ts
+ function createSqliteAcpEventLedger(params = {}) {
+ 	const { now, ...limits } = normalizeAcpLedgerOptions(params);
+@@ -65,15 +66,32 @@
+ 				at: now()
+ 			}))
+ 		}),
+-		recordUpdate: ({ update, ...session }) => execute("acpReplay.append", {
++		recordUpdate: ({ update, sourceRecordTimestampMs, ...session }) => execute("acpReplay.append", {
+ 			session,
+ 			limits,
+ 			events: [{
+ 				update: structuredClone(update),
+ 				createdAt: now(),
+-				at: now()
++				at: Number.isFinite(sourceRecordTimestampMs) ? sourceRecordTimestampMs : now()
+ 			}]
+ 		}),
++		async importTranscriptTail({ sessionId, sessionKey, transcript }) {
++			for (let attempt = 0; attempt < 8; attempt++) {
++				const replay = await execute("acpReplay.read", { kind: "bound", sessionId, sessionKey });
++				if (!replay.complete || replay.sessionKey !== sessionKey) return replay;
++				const planned = planAcpTranscriptTail(replay.events, transcript);
++				if (!planned.length) return replay;
++				const result = await execute("acpReplay.append", {
++					session: { sessionId, sessionKey }, limits,
++					transcriptTail: { afterSeq: replay.events.at(-1)?.seq ?? 0 },
++					events: planned.map(({ update, runId, sourceRecordTimestampMs }) => ({
++						update, runId, at: sourceRecordTimestampMs, createdAt: now()
++					}))
 +				});
-+				return buildSqliteReplay(db, readSqliteSessionById(db, tailParams.sessionId));
-+			});
++				if (!result.retry) return result.replay;
++			}
++			throw new Error("ACP transcript ledger changed repeatedly; retry replay");
 +		},
- 		async markIncomplete(markParams) {
- 			mutate((db) => {
- 				db.prepare(`UPDATE acp_replay_sessions
-@@ -902,16 +917,56 @@ var AcpTranslatorAgentEvents = class {
+ 		markIncomplete: (session) => execute("acpReplay.incomplete", {
+ 			...session,
+ 			now: now()
+@@ -648,12 +666,52 @@
  			if (approvalEvent) this.startApprovalRelay({
  				sessionKey,
  				runId,
@@ -661,17 +647,13 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
 +			});
 +			return;
 +		}
- 		if (stream !== "tool") return;
- 		const phase = data.phase;
- 		const name = data.name;
- 		const toolCallId = data.toolCallId;
- 		if (!toolCallId) return;
+ 		if (stream !== "tool" && (stream !== "item" || data.kind !== "preamble")) return;
 -		const pending = this.findPendingBySessionKey(sessionKey, runId);
 +		const pending = this.findPendingBySessionKey(sessionKey, runId, payload.resumedFromRunId);
  		if (!pending) return;
  		let update;
- 		if (phase === "start") {
-@@ -967,6 +1022,8 @@ var AcpTranslatorAgentEvents = class {
+ 		if (stream === "item") {
+@@ -772,6 +830,8 @@
  		if (!sessionKey) return;
  		this.startApprovalRelay({
  			sessionKey,
@@ -680,7 +662,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
  			approvalEvent
  		});
  	}
-@@ -1001,7 +1058,7 @@ var AcpTranslatorAgentEvents = class {
+@@ -806,7 +866,7 @@
  		this.runApprovalRelay(relay, correlatedApprovalEvent);
  	}
  	findPendingForApproval(params) {
@@ -689,7 +671,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
  		const toolCallId = params.approvalEvent.toolCallId;
  		let match;
  		for (const pending of this.pendingPrompts.values()) {
-@@ -1078,106 +1135,94 @@ var AcpTranslatorAgentEvents = class {
+@@ -883,106 +943,94 @@
  //#endregion
  //#region src/acp/translator.disconnects.ts
  const ACP_GATEWAY_DISCONNECT_GRACE_MS = 5e3;
@@ -834,26 +816,28 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
 -			this.log(`agent.wait reconcile failed for ${pending.idempotencyKey}: ${String(err)}`);
 -			if (deadlineExpired) return await this.expirePendingPrompt(pending, disconnectContext);
 -			return true;
-+			this.log(`agent.wait reconcile failed for ${observedRunId}: ${String(err)}`);
-+			return;
- 		}
+-		}
 -		const currentPending = this.getPendingPrompt(sessionId, pending.idempotencyKey);
 -		if (!currentPending) return false;
 -		const hasVisibleReply = result?.terminalReply?.disposition === "visible";
 -		if (result?.status === "ok" || result?.status === "error" || result?.status === "timeout" && hasVisibleReply) {
 -			await this.settleRecoveredPrompt(sessionId, currentPending, result);
 -			return false;
+-		}
+-		if (deadlineExpired) return await this.expirePendingPrompt(currentPending, disconnectContext);
+-		return true;
++			this.log(`agent.wait reconcile failed for ${observedRunId}: ${String(err)}`);
++			return;
++		}
 +		if (!isCurrent()) return;
 +		if (result?.runId && result.runId !== observedRunId) {
 +			if (result.resumedFromRunId !== observedRunId || this.findPendingBySessionKey(pending.sessionKey, result.runId, result.resumedFromRunId) !== pending) return;
- 		}
--		if (deadlineExpired) return await this.expirePendingPrompt(currentPending, disconnectContext);
--		return true;
++		}
 +		if (result?.status === "ok" || result?.status === "error" || result?.status === "timeout" && result?.terminalReply?.disposition === "visible") await this.settleRecoveredPrompt(sessionId, pending, result);
  	}
  };
  //#endregion
-@@ -1191,7 +1236,7 @@ function isGatewayCloseError(err) {
+@@ -996,7 +1044,7 @@
  	return (err instanceof Error ? err.message : String(err)).startsWith("gateway closed (");
  }
  var AcpTranslatorPromptStream = class {
@@ -862,7 +846,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
  		this.gateway = gateway;
  		this.opts = opts;
  		this.sessionStore = sessionStore;
-@@ -1199,16 +1244,19 @@ var AcpTranslatorPromptStream = class {
+@@ -1004,16 +1052,19 @@
  		this.sessionState = sessionState;
  		this.approvalRelays = approvalRelays;
  		this.log = log;
@@ -872,9 +856,9 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
  		this.pendingPromptAdmissions = /* @__PURE__ */ new Map();
  		this.settlingPromptKeys = /* @__PURE__ */ new Set();
  		this.stopped = false;
--		this.agentEvents = new AcpTranslatorAgentEvents(connection, gateway, sessionUpdates, this.pendingPrompts, this.approvalRelays, (sessionId, runId) => this.getPendingPrompt(sessionId, runId), (sessionKey, runId) => this.findPendingBySessionKey(sessionKey, runId), log);
+-		this.agentEvents = new AcpTranslatorAgentEvents(connection, gateway, sessionUpdates, this.pendingPrompts, this.approvalRelays, (sessionKey, runId) => this.findPendingBySessionKey(sessionKey, runId), log);
 -		this.disconnects = new AcpTranslatorDisconnects(gateway, this.pendingPrompts, (sessionId, runId) => this.getPendingPrompt(sessionId, runId), (sessionId, pending, result) => this.settleRecoveredPrompt(sessionId, pending, result), (pending, error, options) => this.rejectPendingPrompt(pending, error, options), log);
-+		this.agentEvents = new AcpTranslatorAgentEvents(connection, gateway, sessionUpdates, this.pendingPrompts, this.approvalRelays, (sessionId, runId) => this.getPendingPrompt(sessionId, runId), (sessionKey, runId, sourceRunId) => this.findPendingBySessionKey(sessionKey, runId, sourceRunId), log);
++		this.agentEvents = new AcpTranslatorAgentEvents(connection, gateway, sessionUpdates, this.pendingPrompts, this.approvalRelays, (sessionKey, runId, sourceRunId) => this.findPendingBySessionKey(sessionKey, runId, sourceRunId), log);
 +		this.disconnects = new AcpTranslatorDisconnects(gateway, this.pendingPrompts, (sessionId, runId) => this.getPendingPrompt(sessionId, runId), (sessionId, pending, result) => this.settleRecoveredPrompt(sessionId, pending, result), (pending, error, options) => this.rejectPendingPrompt(pending, error, options), log, (sessionKey, runId, sourceRunId) => this.findPendingBySessionKey(sessionKey, runId, sourceRunId), (sessionKey) => this.ambient.retrySessionMessageSubscription(sessionKey));
  	}
  	async shutdown() {
@@ -884,7 +868,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
  		const sessions = /* @__PURE__ */ new Map();
  		for (const pending of this.pendingPrompts.values()) sessions.set(pending.sessionId, {
  			sessionId: pending.sessionId,
-@@ -1218,14 +1266,24 @@ var AcpTranslatorPromptStream = class {
+@@ -1023,14 +1074,24 @@
  		for (const admission of this.pendingPromptAdmissions.values()) sessions.set(admission.session.sessionId, admission.session);
  		await Promise.all([...sessions.values()].map((session) => this.cancelSessionWork(session, ACP_SHUTDOWN_ABORT_TIMEOUT_MS)));
  	}
@@ -910,7 +894,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
  		if (evt.event === "chat") {
  			await this.handleChatEvent(evt);
  			return;
-@@ -1234,7 +1292,21 @@ var AcpTranslatorPromptStream = class {
+@@ -1039,7 +1100,21 @@
  			this.agentEvents.handleExecApprovalRequestEvent(evt);
  			return;
  		}
@@ -933,7 +917,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
  	}
  	async prompt(params) {
  		const session = this.sessionStore.getSession(params.sessionId);
-@@ -1247,7 +1319,13 @@ var AcpTranslatorPromptStream = class {
+@@ -1052,7 +1127,13 @@
  			settled: createDeferredCore()
  		};
  		this.pendingPromptAdmissions.set(params.sessionId, admission);
@@ -948,7 +932,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
  		try {
  			if (!this.ownsPromptAdmission(admission)) return { stopReason: "cancelled" };
  			if (session.abortController || this.pendingPrompts.has(params.sessionId)) {
-@@ -1259,8 +1337,24 @@ var AcpTranslatorPromptStream = class {
+@@ -1064,8 +1145,24 @@
  				if (!this.ownsPromptAdmission(admission)) return { stopReason: "cancelled" };
  				admission.previous = void 0;
  			}
@@ -973,7 +957,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
  			admission.settled.resolve();
  			if (this.pendingPromptAdmissions.get(params.sessionId) === admission) this.pendingPromptAdmissions.delete(params.sessionId);
  		}
-@@ -1318,6 +1412,8 @@ var AcpTranslatorPromptStream = class {
+@@ -1123,6 +1220,8 @@
  					const pending = this.getPendingPrompt(params.sessionId, runId);
  					if (!pending) return false;
  					pending.sendAccepted = true;
@@ -982,7 +966,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
  					return true;
  				};
  				const applyTerminalAck = async (ack) => {
-@@ -1432,8 +1528,11 @@ var AcpTranslatorPromptStream = class {
+@@ -1237,8 +1336,11 @@
  		const state = payload.state;
  		const runId = payload.runId;
  		if (!sessionKey || !state) return;
@@ -996,7 +980,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
  		const messageData = state === "delta" ? mergeChatStreamMessage(pending.streamMessage, payload) : payload.message;
  		if (isRecord(messageData) && (state === "delta" || state === "final")) {
  			pending.streamMessage = messageData;
-@@ -1450,8 +1549,10 @@ var AcpTranslatorPromptStream = class {
+@@ -1255,8 +1357,10 @@
  			return;
  		}
  		if (state === "error") {
@@ -1009,14 +993,14 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
  		}
  	}
  	async handleDeltaEvent(pending, messageData) {
-@@ -1470,10 +1571,12 @@ var AcpTranslatorPromptStream = class {
+@@ -1275,10 +1379,12 @@
  			"agent_message_chunk"
  		]]) {
  			const fullText = content?.filter((block) => block?.type === blockType).map((block) => block[field] ?? "").join("\n").trimEnd();
--			const sentSoFar = pending[sentField]?.length ?? 0;
--			if (!fullText || fullText.length <= sentSoFar) continue;
+-			const sent = pending[sentField] ?? "";
+-			if (!fullText || fullText.length <= sent.length || !fullText.startsWith(sent)) continue;
 -			pending[sentField] = fullText;
--			await this.emitPromptChunk(pending, kind, fullText.slice(sentSoFar));
+-			await this.emitPromptChunk(pending, kind, fullText.slice(sent.length));
 +			const previousText = pending[sentField] ?? "";
 +			const nextText = resolveAcpEventTextSnapshot(previousText, { text: fullText });
 +			const delta = resolveAcpTextDelta(previousText, nextText);
@@ -1026,7 +1010,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
  			if (this.getPendingPrompt(sessionId, pending.idempotencyKey) !== pending) return false;
  		}
  		return true;
-@@ -1521,6 +1624,7 @@ var AcpTranslatorPromptStream = class {
+@@ -1326,6 +1432,7 @@
  		});
  	}
  	async settleRecoveredPrompt(sessionId, pending, result) {
@@ -1034,7 +1018,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
  		const signal = this.sessionStore.getSession(sessionId)?.abortController?.signal ?? new AbortController().signal;
  		const reply = await recoverTerminalReply({
  			runId: pending.idempotencyKey,
-@@ -1532,7 +1636,7 @@ var AcpTranslatorPromptStream = class {
+@@ -1337,7 +1444,7 @@
  			outputText: void 0,
  			unavailable: "recovery-cancelled"
  		}));
@@ -1043,7 +1027,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
  		const sentText = pending.sentText ?? "";
  		const outputText = reply.outputText;
  		const unavailable = reply.unavailable ?? (outputText?.startsWith(sentText) === false ? "reply-rewritten" : void 0);
-@@ -1552,7 +1656,27 @@ var AcpTranslatorPromptStream = class {
+@@ -1357,7 +1464,27 @@
  		await this.emitPromptChunk(pending, "agent_message_chunk", `[OpenClaw interruption] ${message}`, false);
  		await this.rejectPendingPrompt(pending, new Error(message), { claimed: true });
  	}
@@ -1072,10 +1056,11 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
  		for (const pending of this.pendingPrompts.values()) {
  			if (pending.sessionKey !== sessionKey) continue;
  			if (runId && pending.idempotencyKey !== runId) continue;
-@@ -1564,6 +1688,16 @@ var AcpTranslatorPromptStream = class {
+@@ -1368,6 +1495,16 @@
+ 			this.reconcilePendingSessionKey(pending, sessionKey);
  			return pending;
  		}
- 	}
++	}
 +	/** ClawX: resolve an operation event without a run id only when unambiguous. */
 +	findUniquePendingBySessionKey(sessionKey) {
 +		let found;
@@ -1085,11 +1070,10 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
 +			found = pending;
 +		}
 +		return found;
-+	}
+ 	}
  	reconcilePendingSessionKey(pending, sessionKey) {
  		if (pending.sessionKey === sessionKey) return;
- 		this.log(`session key reconciled: ${pending.sessionKey} -> ${sessionKey}`);
-@@ -1590,8 +1724,89 @@ var AcpTranslatorPromptStream = class {
+@@ -1395,8 +1532,89 @@
  };
  //#endregion
  //#region src/acp/translator.replay.ts
@@ -1179,7 +1163,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
  	if (role !== "user" && role !== "assistant") return [];
  	if (typeof message.content === "string") return message.content.length > 0 ? [{
  		sessionUpdate: role === "user" ? "user_message_chunk" : "agent_message_chunk",
-@@ -1613,10 +1828,119 @@ function extractReplayChunks(message) {
+@@ -1418,8 +1636,117 @@
  			sessionUpdate: "agent_thought_chunk",
  			text: typedBlock.thinking
  		});
@@ -1200,8 +1184,8 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
 +		}
  	}
  	return replayChunks;
- }
- //#endregion
++}
++//#endregion
 +//#region src/acp/translator.transcript-tail.ts
 +const ACP_TRANSCRIPT_REPLAY_META = "openclaw.ai/transcript-replay";
 +function readAcpTranscriptIdentity(message) {
@@ -1294,12 +1278,10 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
 +		}
 +	}
 +	return planned;
-+}
-+//#endregion
+ }
+ //#endregion
  //#region src/acp/translator.session-list.ts
- const ACP_LIST_SESSIONS_DEFAULT_PAGE_SIZE = 100;
- const ACP_LIST_SESSIONS_MAX_PAGE_SIZE = 100;
-@@ -1660,10 +1984,497 @@ function resolveListSessionsPageSize(meta) {
+@@ -1465,10 +1792,497 @@
  	return Math.min(ACP_LIST_SESSIONS_MAX_PAGE_SIZE, Math.max(1, Math.floor(requested)));
  }
  //#endregion
@@ -1798,7 +1780,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
  		this.gateway = gateway;
  		this.opts = opts;
  		this.sessionStore = sessionStore;
-@@ -1672,9 +2483,11 @@ var AcpTranslatorSessionLifecycle = class {
+@@ -1477,9 +2291,11 @@
  		this.sessionCreateRateLimiter = sessionCreateRateLimiter;
  		this.cancelSessionWork = cancelSessionWork;
  		this.log = log;
@@ -1810,7 +1792,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
  		this.enforceSessionCreateRateLimit("newSession");
  		const sessionId = randomUUID();
  		const meta = parseSessionMeta(params["_meta"]);
-@@ -1701,6 +2514,7 @@ var AcpTranslatorSessionLifecycle = class {
+@@ -1506,6 +2322,7 @@
  	}
  	async loadSession(params) {
  		this.assertSupportedSessionSetup(params.mcpServers);
@@ -1818,7 +1800,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
  		if (!this.sessionStore.hasSession(params.sessionId)) this.enforceSessionCreateRateLimit("loadSession");
  		const meta = parseSessionMeta(params["_meta"]);
  		const hasExplicitRouting = Boolean(meta.sessionKey || meta.sessionLabel || this.opts.defaultSessionKey || this.opts.defaultSessionLabel);
-@@ -1717,7 +2531,7 @@ var AcpTranslatorSessionLifecycle = class {
+@@ -1522,7 +2339,7 @@
  			meta,
  			fallbackKey: routedLedgerReplay.sessionKey ?? params.sessionId
  		});
@@ -1827,7 +1809,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
  			sessionId: params.sessionId,
  			sessionKey
  		});
-@@ -1729,29 +2543,35 @@ var AcpTranslatorSessionLifecycle = class {
+@@ -1534,29 +2351,35 @@
  		});
  		await this.sessionUpdates.startLedgerSession(session, { complete: ledgerReplay.complete });
  		this.log(`loadSession: ${session.sessionId} -> ${session.sessionKey}`);
@@ -1884,7 +1866,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
  		const requestedCwd = normalizeOptionalString(params.cwd);
  		if (requestedCwd) assertAbsoluteCwd(requestedCwd, "session/list");
  		const fallbackCwd = requestedCwd ?? process.cwd();
-@@ -1785,6 +2605,7 @@ var AcpTranslatorSessionLifecycle = class {
+@@ -1590,6 +2413,7 @@
  	}
  	async resumeSession(params) {
  		this.assertSupportedSessionSetup(params.mcpServers ?? []);
@@ -1892,7 +1874,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
  		assertAbsoluteCwd(params.cwd, "session/resume");
  		const existingSession = this.sessionStore.getSession(params.sessionId);
  		if (!existingSession) this.enforceSessionCreateRateLimit("resumeSession");
-@@ -1801,11 +2622,13 @@ var AcpTranslatorSessionLifecycle = class {
+@@ -1606,11 +2430,13 @@
  			cwd: params.cwd
  		});
  		await this.sessionUpdates.startLedgerSession(session, { complete: false });
@@ -1906,7 +1888,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
  		await this.cancelSessionWork(session);
  		this.sessionStore.deleteSession(params.sessionId);
  		this.log(`closeSession: ${params.sessionId}`);
-@@ -2309,6 +3132,16 @@ var AcpTranslatorSessionUpdates = class {
+@@ -2121,6 +2947,16 @@
  			this.options.log(`event ledger session start failed for ${session.sessionId}: ${String(err)}`);
  		}
  	}
@@ -1923,7 +1905,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
  	readLedgerReplay(params) {
  		return this.readReplay(() => this.options.eventLedger.readReplay(params), `replay fallback for ${params.sessionId}`);
  	}
-@@ -2426,12 +3259,13 @@ var AcpGatewayAgent = class {
+@@ -2238,12 +3074,13 @@
  			log: this.log
  		});
  		const sessionState = new AcpTranslatorSessionState(gateway, this.sessionUpdates, this.log);
@@ -1939,7 +1921,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
  		this.newSession = sessionLifecycle.newSession.bind(sessionLifecycle);
  		this.loadSession = sessionLifecycle.loadSession.bind(sessionLifecycle);
  		this.listSessions = sessionLifecycle.listSessions.bind(sessionLifecycle);
-@@ -2455,7 +3289,7 @@ var AcpGatewayAgent = class {
+@@ -2268,7 +3105,7 @@
  		}
  	}
  	handleGatewayReconnect() {
@@ -1948,7 +1930,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
  	}
  	handleGatewayDisconnect(reason) {
  		this.promptStream.handleGatewayDisconnect(reason);
-@@ -2490,6 +3324,67 @@ var AcpGatewayAgent = class {
+@@ -2303,6 +3140,67 @@
  };
  //#endregion
  //#region src/acp/server.ts
@@ -2016,7 +1998,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
  const MAX_STARTUP_ACP_BUFFER_BYTES = 1048576;
  function createStartupInputMonitor(input) {
  	const [monitor, readable] = input.tee();
-@@ -2552,6 +3447,7 @@ async function serveAcpGateway(opts = {}) {
+@@ -2365,6 +3263,7 @@
  	const startupAbortController = new AbortController();
  	let stopped = false;
  	let gatewayConnected = false;
@@ -2024,7 +2006,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
  	const { promise: gatewayReady, resolve: resolveGatewayReady, reject: rejectReady } = createDeferredCore();
  	const rejectGatewayReady = (err) => {
  		rejectReady(err instanceof Error ? err : new Error(String(err)));
-@@ -2595,13 +3491,15 @@ async function serveAcpGateway(opts = {}) {
+@@ -2408,13 +3307,15 @@
  		onHelloOk: () => {
  			gatewayConnected = true;
  			resolveGatewayReady();
@@ -2041,7 +2023,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
  			rejectGatewayReady(/* @__PURE__ */ new Error(`gateway closed before ready (${code}): ${reason}`));
  			agent?.handleGatewayDisconnect(`${code}: ${reason}`);
  		}
-@@ -2614,6 +3512,7 @@ async function serveAcpGateway(opts = {}) {
+@@ -2433,6 +3334,7 @@
  		shuttingDown = (async () => {
  			if (!stopped) {
  				stopped = true;
@@ -2049,22 +2031,21 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..8121782956b97c03d46a4171aeb04536
  				startupAbortController.abort();
  				startupInput.dispose();
  				process.stdin.pause();
-@@ -2676,6 +3575,10 @@ async function serveAcpGateway(opts = {}) {
- 	new AgentSideConnection((conn) => {
- 		agent = new AcpGatewayAgent(conn, gateway, {
- 			...opts,
+@@ -2503,6 +3405,10 @@
+ 		connection = new AgentSideConnection((conn) => {
+ 			agent = new AcpGatewayAgent(conn, gateway, {
+ 				...opts,
 +			waitForGatewayReady: (signal, deadline) => {
 +				if (!gateway.connected) connectionReadiness.invalidate("gateway not connected");
 +				return connectionReadiness.wait(signal, deadline);
 +			},
- 			eventLedger,
- 			sessionStore: sessionStore ?? void 0
- 		});
-diff --git a/dist/server-chat-M7FtQZJ3.mjs b/dist/server-chat-M7FtQZJ3.mjs
-index c15a706d139ffaae89c5742a5d8c6d9090926a95..6f63bbe7fad6cfef531ca57eba5631f43490e50e 100644
---- a/dist/server-chat-M7FtQZJ3.mjs
-+++ b/dist/server-chat-M7FtQZJ3.mjs
-@@ -742,6 +742,7 @@ function createAgentEventHandler({ broadcast, broadcastToConnIds, nodeSendToSess
+ 				eventLedger,
+ 				sessionStore: sessionStore ?? void 0
+ 			});
+diff --git a/dist/server-chat-ClNqZaT1.mjs b/dist/server-chat-ClNqZaT1.mjs
+--- a/dist/server-chat-ClNqZaT1.mjs
++++ b/dist/server-chat-ClNqZaT1.mjs
+@@ -793,6 +793,7 @@
  		sendLivePayload("chat", sessionKey, payload, {
  			agentId,
  			controlUiVisible: delivery.controlUiVisible ?? true,
@@ -2072,7 +2053,7 @@ index c15a706d139ffaae89c5742a5d8c6d9090926a95..6f63bbe7fad6cfef531ca57eba5631f4
  			dropIfSlow: true,
  			liveText: liveTextDelivery(chatRunState, clientRunId, broadcastDelta.replace ? void 0 : {
  				key: deliveryKey,
-@@ -805,6 +806,8 @@ function createAgentEventHandler({ broadcast, broadcastToConnIds, nodeSendToSess
+@@ -856,6 +857,8 @@
  		})
  	});
  	const sendLivePayload = (event, sessionKey, payload, opts) => {
@@ -2081,7 +2062,7 @@ index c15a706d139ffaae89c5742a5d8c6d9090926a95..6f63bbe7fad6cfef531ca57eba5631f4
  		if (event === "chat" && "state" in payload && (payload.state === "final" || payload.state === "error" || payload.state === "aborted") && transcriptPublication.holdTerminal(payload.runId, () => sendLivePayload(event, sessionKey, payload, opts))) return;
  		const visible = opts?.controlUiVisible ?? true;
  		const deliverySessionKeys = sessionKey ? resolveSessionDeliveryKeys(sessionKey, opts?.agentId) : void 0;
-@@ -1041,6 +1044,7 @@ function createAgentEventHandler({ broadcast, broadcastToConnIds, nodeSendToSess
+@@ -1094,6 +1097,7 @@
  			agentId: sessionAgentId,
  			clientRunId,
  			sourceRunId: evt.runId,
@@ -2089,7 +2070,7 @@ index c15a706d139ffaae89c5742a5d8c6d9090926a95..6f63bbe7fad6cfef531ca57eba5631f4
  			seq: evt.seq,
  			controlUiVisible: isControlUiVisible
  		} : void 0;
-@@ -1192,6 +1196,20 @@ function createAgentEventHandler({ broadcast, broadcastToConnIds, nodeSendToSess
+@@ -1249,6 +1253,20 @@
  					dropIfSlow: true,
  					liveText: liveTextDelivery(chatRunState, clientRunId)
  				});
@@ -2110,7 +2091,7 @@ index c15a706d139ffaae89c5742a5d8c6d9090926a95..6f63bbe7fad6cfef531ca57eba5631f4
  			}
  		} else {
  			const itemPhase = isItemEvent && typeof evt.data?.phase === "string" ? evt.data.phase : "";
-@@ -1202,7 +1220,7 @@ function createAgentEventHandler({ broadcast, broadcastToConnIds, nodeSendToSess
+@@ -1259,7 +1277,7 @@
  				});
  				flushBufferedAgentDeltaIfNeeded(clientRunId);
  			}
@@ -2119,11 +2100,10 @@ index c15a706d139ffaae89c5742a5d8c6d9090926a95..6f63bbe7fad6cfef531ca57eba5631f4
  				sessionKey,
  				agentId: sessionAgentId,
  				controlUiVisible: isControlUiVisible,
-diff --git a/dist/server-request-context-DMwOlR6u.mjs b/dist/server-request-context-DMwOlR6u.mjs
-index aa0619947a03845ba844a68548bb47f92a758ac1..be0e64a150536a1e1db2c9661042157316bb01e8 100644
---- a/dist/server-request-context-DMwOlR6u.mjs
-+++ b/dist/server-request-context-DMwOlR6u.mjs
-@@ -403,6 +403,7 @@ function createGatewayRequestContext(params) {
+diff --git a/dist/server-request-context-D1AcKlEV.mjs b/dist/server-request-context-D1AcKlEV.mjs
+--- a/dist/server-request-context-D1AcKlEV.mjs
++++ b/dist/server-request-context-D1AcKlEV.mjs
+@@ -407,6 +407,7 @@
  			runtimeState.sessionViewerPresence?.unsubscribe(connId);
  		},
  		getSessionEventSubscriberConnIds: sessionEventSubscribers.getAll,
@@ -2131,11 +2111,10 @@ index aa0619947a03845ba844a68548bb47f92a758ac1..be0e64a150536a1e1db2c96610421573
  		registerToolEventRecipient: runtime.toolEventRecipients.add,
  		dedupe: runtime.dedupe,
  		wizardSessions: runtime.wizardSessions,
-diff --git a/dist/session-method-scopes-base-CuhU2F_D.mjs b/dist/session-method-scopes-base-CuhU2F_D.mjs
-index 5a07641113ee4094cc1b413f4a11b92f4b605667..c85e837330bd19531a1d3e160d4f4cb8383e7b84 100644
---- a/dist/session-method-scopes-base-CuhU2F_D.mjs
-+++ b/dist/session-method-scopes-base-CuhU2F_D.mjs
-@@ -85,6 +85,7 @@
+diff --git a/dist/session-method-scopes-base-DP0bm9jg.mjs b/dist/session-method-scopes-base-DP0bm9jg.mjs
+--- a/dist/session-method-scopes-base-DP0bm9jg.mjs
++++ b/dist/session-method-scopes-base-DP0bm9jg.mjs
+@@ -90,6 +90,7 @@
  ]);
  const SESSIONS_PATCH_WRITE_SCOPE_ENVELOPE_FIELDS = /* @__PURE__ */ new Set([
  	"key",
@@ -2143,24 +2122,27 @@ index 5a07641113ee4094cc1b413f4a11b92f4b605667..c85e837330bd19531a1d3e160d4f4cb8
  	"agentId",
  	"expectedSessionId",
  	"expectedLifecycleRevision",
-diff --git a/dist/session-request-targets-BAGtAj-T.mjs b/dist/session-request-targets-BAGtAj-T.mjs
-index 91d059287a8e37e382d0be7510868a7885aaba12..078d1bcaebbc454846a32d04e5ffd6759eded39e 100644
---- a/dist/session-request-targets-BAGtAj-T.mjs
-+++ b/dist/session-request-targets-BAGtAj-T.mjs
-@@ -5,11 +5,30 @@ import { d as getAgentEventLifecycleGeneration } from "./agent-events-CCeMHYh0.m
- import { r as validateAgentWaitParams } from "./src-yRoHchex.mjs";
+diff --git a/dist/session-request-targets-BBjJJMd3.mjs b/dist/session-request-targets-BBjJJMd3.mjs
+--- a/dist/session-request-targets-BBjJJMd3.mjs
++++ b/dist/session-request-targets-BBjJJMd3.mjs
+@@ -1,3 +1,4 @@
++import { g as resolveSessionSharingTargetAsync } from "./session-sharing-policy-C-hSbyhj.mjs";
+ import { l as normalizeOptionalString } from "./string-coerce-1VuiLaaR.mjs";
+ import { a as asOptionalRecord } from "./record-coerce-TIsquoVR.mjs";
+ import { u as getAgentRunContext } from "./agent-run-registry-Dvv4_0by.mjs";
+@@ -5,11 +6,29 @@
+ import { r as validateAgentWaitParams } from "./src-SkiwT5zi.mjs";
  import { r as isDirectSessionReadMethod } from "./session-method-policy-B7o-3I76.mjs";
- import { d as resolveTalkSessionTargetInput, l as resolveDirectSessionTargets, u as resolveSessionMutationTargets } from "./session-sharing-target-read-xGVQqwEk.mjs";
--import { a as waitForAgentJob, n as getAgentJobSession, r as projectAgentJobObservation, t as captureAgentJobSession } from "./agent-job-DleplIFW.mjs";
-+import { resolveAgentRecoveryWaitTarget, a as waitForAgentJob, n as getAgentJobSession, r as projectAgentJobObservation, t as captureAgentJobSession } from "./agent-job-DleplIFW.mjs";
- import { c as resolveAgentWaitSource } from "./agent-dedupe-BdNZwCMG.mjs";
-+import { _ as resolveSessionSharingTarget } from "./session-sharing-policy-CMWQKtE0.mjs";
+ import { c as resolveTalkSessionTargetInput, i as resolveDirectSessionTargets, s as resolveSessionMutationTargets } from "./session-sharing-target-input-D8FX__iV.mjs";
+-import { a as waitForAgentJob, n as getAgentJobSession, r as projectAgentJobObservation, t as captureAgentJobSession } from "./agent-job-CrNm49jX.mjs";
++import { resolveAgentRecoveryWaitTarget, a as waitForAgentJob, n as getAgentJobSession, r as projectAgentJobObservation, t as captureAgentJobSession } from "./agent-job-CrNm49jX.mjs";
+ import { c as resolveAgentWaitSource } from "./agent-dedupe-CLZNkkkN.mjs";
  //#region src/gateway/agent-turn/agent-wait.ts
 +// ClawX: after another process restart, only the durable terminal owner can
 +// vouch for the requested run. Never settle from session-wide status alone.
-+function readAcpTerminalOwner(context, runId, sessionKey) {
++async function readAcpTerminalOwner(context, runId, sessionKey) {
 +	if (!sessionKey) return;
-+	const target = resolveSessionSharingTarget({ cfg: context.getRuntimeConfig(), sessionKey });
++	const target = await resolveSessionSharingTargetAsync({ cfg: context.getRuntimeConfig(), sessionKey });
 +	const entry = target?.entry;
 +	if (!entry || entry.lastRunId !== runId || entry.lifecycleRunId || !Number.isFinite(entry.endedAt) || !["done", "error", "aborted"].includes(entry.status)) return;
 +	return {
@@ -2180,21 +2162,16 @@ index 91d059287a8e37e382d0be7510868a7885aaba12..078d1bcaebbc454846a32d04e5ffd675
  	const timeoutMs = params.timeoutMs ?? 3e4;
  	const source = resolveAgentWaitSource(context, runId);
  	const lifecycleGeneration = getAgentEventLifecycleGeneration();
-@@ -30,11 +49,11 @@ function prepareAgentWaitForTurn(context, params) {
- 	};
- 	const queuedBeforeWait = queuedResult();
- 	const runContext = getAgentRunContext(runId);
--	const initialSession = queuedBeforeWait?.session ?? getAgentJobSession(runId, source === "chat" ? "chat" : void 0) ?? captureAgentJobSession(runContext);
-+	const initialSession = queuedBeforeWait?.session ?? getAgentJobSession(runId, source === "chat" ? "chat" : void 0) ?? captureAgentJobSession(runContext) ?? readAcpTerminalOwner(context, runId, normalizeOptionalString(params.sessionKey))?.session;
+@@ -34,7 +53,7 @@
  	const wait = async () => {
  		if (queuedBeforeWait) return queuedBeforeWait;
  		let queuedDuringWait;
 -		const snapshot = await waitForAgentJob({
-+		const snapshot = readAcpTerminalOwner(context, runId, normalizeOptionalString(params.sessionKey)) ?? await waitForAgentJob({
++		const snapshot = await readAcpTerminalOwner(context, runId, normalizeOptionalString(params.sessionKey)) ?? await waitForAgentJob({
  			runId,
  			timeoutMs,
  			source,
-@@ -48,6 +67,7 @@ function prepareAgentWaitForTurn(context, params) {
+@@ -48,6 +67,7 @@
  		if (!snapshot) return {
  			result: {
  				runId,
@@ -2202,7 +2179,7 @@ index 91d059287a8e37e382d0be7510868a7885aaba12..078d1bcaebbc454846a32d04e5ffd675
  				status: "timeout"
  			},
  			session: captureAgentJobSession(runContext) ?? initialSession
-@@ -57,7 +77,8 @@ function prepareAgentWaitForTurn(context, params) {
+@@ -57,7 +77,8 @@
  			session,
  			result: {
  				runId,
@@ -2212,11 +2189,10 @@ index 91d059287a8e37e382d0be7510868a7885aaba12..078d1bcaebbc454846a32d04e5ffd675
  			}
  		};
  	};
-diff --git a/dist/session-utils-model-BlhsDR0j.mjs b/dist/session-utils-model-BlhsDR0j.mjs
-index b497a21e5a6a6ae0d45a1ebd052e92b571cd215e..2b10aa6d1e9a18659762581752e0d22ddaa1c7a6 100644
---- a/dist/session-utils-model-BlhsDR0j.mjs
-+++ b/dist/session-utils-model-BlhsDR0j.mjs
-@@ -379,6 +379,7 @@
+diff --git a/dist/session-utils-model-h78SGs03.mjs b/dist/session-utils-model-h78SGs03.mjs
+--- a/dist/session-utils-model-h78SGs03.mjs
++++ b/dist/session-utils-model-h78SGs03.mjs
+@@ -380,6 +380,7 @@
  			runtimeSelectionLocked: thinking.runtimeSelectionLocked,
  			...modelCatalog ? {
  				contextWindow: contextWindow.contextWindow,
@@ -2224,19 +2200,15 @@ index b497a21e5a6a6ae0d45a1ebd052e92b571cd215e..2b10aa6d1e9a18659762581752e0d22d
  				contextWindows: contextWindow.contextWindows,
  				thinkingLevel: thinking.effectiveThinkingLevel,
  				thinkingLevels: thinking.thinkingLevels
-diff --git a/dist/sessions-compact-BHqjQkq-.mjs b/dist/sessions-compact-BHqjQkq-.mjs
-index 8ea14aae3da0f6480841ce7108e83b94733ceedc..17166e4db9e8958f768ea45f9ab30fcafc79bbd2 100644
---- a/dist/sessions-compact-BHqjQkq-.mjs
-+++ b/dist/sessions-compact-BHqjQkq-.mjs
-@@ -45,6 +45,7 @@ import { t as assertValidParams } from "./validation-CX4u4B7f.mjs";
- import { o as requireSessionKey, t as emitSessionOperation } from "./sessions-shared-Dr0eLQJX.mjs";
- import { t as waitForTerminalSessionRunSettlement } from "./session-run-settlement-Bkcbqzad.mjs";
- import { randomUUID } from "node:crypto";
-+import { i as classifyCompactionReason } from "./request-error-facts-3oWuPbKO.mjs";
- //#region src/gateway/server-methods/sessions-compaction-runner.ts
- /** Returns only definitive legacy-runtime no-op verdicts; other runtimes decide for themselves. */
- async function preflightGatewaySessionCompaction(params) {
-@@ -96,6 +97,7 @@ async function runGatewaySessionCompaction(params, host) {
+diff --git a/dist/sessions-compact-BHiWjMnG.mjs b/dist/sessions-compact-BHiWjMnG.mjs
+--- a/dist/sessions-compact-BHiWjMnG.mjs
++++ b/dist/sessions-compact-BHiWjMnG.mjs
+@@ -1,3 +1,4 @@
++import { r as classifyCompactionReason } from "./compact-reasons-jw5u-q-r.mjs";
+ import { l as normalizeOptionalString } from "./string-coerce-1VuiLaaR.mjs";
+ import { t as formatErrorMessage } from "./errors-CQHIobuu.mjs";
+ import { o as composeSessionSourceAssertion } from "./session-source-authority-fdILH-PW.mjs";
+@@ -93,6 +94,7 @@
  	const primaryConversation = await resolveCurrentSessionPrimaryConversation(transcriptTarget);
  	params.abortSignal?.throwIfAborted();
  	return await compactEmbeddedAgentSession({
@@ -2244,8 +2216,8 @@ index 8ea14aae3da0f6480841ce7108e83b94733ceedc..17166e4db9e8958f768ea45f9ab30fca
  		abortSignal: params.abortSignal,
  		contextEngineAgentId: params.agentId,
  		runId: params.runId,
-@@ -354,22 +356,45 @@ const sessionCompactHandlers = { "sessions.compact": async (options) => {
- 					respondNotCompacted({ reason: "no transcript" });
+@@ -325,22 +327,45 @@
+ 					respond(false, void 0, sessionChangedError());
  					return;
  				}
 +				// ClawX: carry a stable compaction identity and outcome metadata so ACP
@@ -2258,21 +2230,22 @@ index 8ea14aae3da0f6480841ce7108e83b94733ceedc..17166e4db9e8958f768ea45f9ab30fca
  					phase: "start",
  					sessionKey: target.canonicalKey,
 -					agentId: target.agentId
--				});
--				const emitCompactionEnd = (completed, reason) => emitSessionOperation(context, {
--					operationId,
--					operation: "compact",
--					phase: "end",
--					sessionKey: target.canonicalKey,
- 					agentId: target.agentId,
--					completed,
--					reason
++					agentId: target.agentId,
 +					source: "manual",
 +					reason: "manual",
 +					timestamp: new Date().toISOString(),
 +					aborted: false,
 +					completed: false
  				});
+-				const emitCompactionEnd = (completed, reason) => emitSessionOperation(context, {
+-					operationId,
+-					operation: "compact",
+-					phase: "end",
+-					sessionKey: target.canonicalKey,
+-					agentId: target.agentId,
+-					completed,
+-					reason
+-				});
 +				const emitCompactionEnd = (completed, detail) => {
 +					const detailText = detail == null ? void 0 : formatErrorMessage(detail);
 +					const aborted = !completed && (detail instanceof Error && detail.name === "AbortError" || detailText?.toLowerCase() === "aborted" || detailText?.toLowerCase() === "operation aborted");
@@ -2299,20 +2272,31 @@ index 8ea14aae3da0f6480841ce7108e83b94733ceedc..17166e4db9e8958f768ea45f9ab30fca
  				let result;
  				let persisted = false;
  				let expectedEntry = latestEntry;
-@@ -420,7 +445,7 @@ const sessionCompactHandlers = { "sessions.compact": async (options) => {
- 						}
- 					})).ok;
+@@ -389,7 +414,7 @@
+ 						persisted = persistedEntry !== null && persistedEntry.sessionId === expectedEntry.sessionId && persistedEntry.lifecycleRevision === expectedEntry.lifecycleRevision && persistedEntry.activeWriterRunId === expectedEntry.activeWriterRunId;
+ 					}
  				} catch (err) {
 -					emitCompactionEnd(false, formatErrorMessage(err));
 +					emitCompactionEnd(false, err);
  					throw err;
  				}
  				if (result.ok && result.compacted) {
-diff --git a/dist/sessions-patch-model-selection-CzvkKtKF.mjs b/dist/sessions-patch-model-selection-CzvkKtKF.mjs
-index d9835a63cd166c82bbbd3fbdc48556c2f61ef3ef..4ec6c30ea212566de941098222f3bf10add30fc9 100644
---- a/dist/sessions-patch-model-selection-CzvkKtKF.mjs
-+++ b/dist/sessions-patch-model-selection-CzvkKtKF.mjs
-@@ -30,7 +30,8 @@
+diff --git a/dist/sessions-patch-5NnOA6iw.mjs b/dist/sessions-patch-5NnOA6iw.mjs
+--- a/dist/sessions-patch-5NnOA6iw.mjs
++++ b/dist/sessions-patch-5NnOA6iw.mjs
+@@ -589,7 +589,7 @@
+ 			if (!resolved.ok) return invalidSessionRequest(resolved.error);
+ 			selection = {
+ 				...resolved,
+-				isDefault: !params.pinModelSelection && resolved.isDefault
++				isDefault: !(params.pinModelSelection || patch.modelScope === "session") && resolved.isDefault
+ 			};
+ 		}
+ 		if (selection) {
+diff --git a/dist/sessions-patch-model-selection-DG4p4dpp.mjs b/dist/sessions-patch-model-selection-DG4p4dpp.mjs
+--- a/dist/sessions-patch-model-selection-DG4p4dpp.mjs
++++ b/dist/sessions-patch-model-selection-DG4p4dpp.mjs
+@@ -31,7 +31,8 @@
  	if (isSessionStatusModelPatchOrigin() || typeof params.patch.model !== "string" || params.patch.sandboxMode !== void 0 || params.patch.nativeRuntimeConsent !== void 0 || params.entry.nativeRuntimeConsent !== void 0) return;
  	const policy = resolveGatewayModelSelectionPolicy({
  		callerScopes: params.callerScopes,
@@ -2322,12 +2306,11 @@ index d9835a63cd166c82bbbd3fbdc48556c2f61ef3ef..4ec6c30ea212566de941098222f3bf10
  	});
  	if (policy.target === "session") return;
  	const agentId = resolveSessionAgentId({
-diff --git a/dist/sessions-shared-Dr0eLQJX.mjs b/dist/sessions-shared-Dr0eLQJX.mjs
-index 44fe0dfa5f272229fae9e14e79a6965fba93f939..f6b729cbd012b2db983ce936e9c7139413bfd741 100644
---- a/dist/sessions-shared-Dr0eLQJX.mjs
-+++ b/dist/sessions-shared-Dr0eLQJX.mjs
-@@ -67,12 +67,13 @@ function loadAccessorSessionEntryForGatewayTarget(params) {
- 	};
+diff --git a/dist/sessions-shared-BE446s4y.mjs b/dist/sessions-shared-BE446s4y.mjs
+--- a/dist/sessions-shared-BE446s4y.mjs
++++ b/dist/sessions-shared-BE446s4y.mjs
+@@ -67,12 +67,13 @@
+ 	return normalized;
  }
  function emitSessionOperation(context, payload) {
 -	const connIds = context.getSessionEventSubscriberConnIds();
@@ -2342,11 +2325,10 @@ index 44fe0dfa5f272229fae9e14e79a6965fba93f939..f6b729cbd012b2db983ce936e9c71394
  }
  function isWorkerDispatchInputError(error) {
  	if (typeof error !== "object" || error === null || !("code" in error)) return false;
-diff --git a/dist/src-yRoHchex.mjs b/dist/src-yRoHchex.mjs
-index e0465d9952603588ad8e666f2361c6d545cd0eca..5ac5996ab22e7ca83b530bf9975ccea2de0dbd89 100644
---- a/dist/src-yRoHchex.mjs
-+++ b/dist/src-yRoHchex.mjs
-@@ -1737,6 +1737,7 @@
+diff --git a/dist/src-SkiwT5zi.mjs b/dist/src-SkiwT5zi.mjs
+--- a/dist/src-SkiwT5zi.mjs
++++ b/dist/src-SkiwT5zi.mjs
+@@ -1923,6 +1923,7 @@
  /** Mutable per-session preferences and routing metadata. */
  const SessionsPatchParamsSchema = closedObject({
  	key: NonEmptyString,
@@ -2354,7 +2336,7 @@ index e0465d9952603588ad8e666f2361c6d545cd0eca..5ac5996ab22e7ca83b530bf9975ccea2
  	agentId: Type.Optional(NonEmptyString),
  	/** Reject the mutation if the session was reset or replaced before it commits. */
  	expectedSessionId: Type.Optional(NonEmptyString),
-@@ -2486,6 +2487,7 @@
+@@ -2696,6 +2697,7 @@
  /** Stream event emitted by the agent runtime over the gateway protocol. */
  const AgentEventSchema = closedObject({
  	runId: NonEmptyString,
@@ -2362,7 +2344,7 @@ index e0465d9952603588ad8e666f2361c6d545cd0eca..5ac5996ab22e7ca83b530bf9975ccea2
  	seq: Type.Integer({ minimum: 0 }),
  	stream: NonEmptyString,
  	ts: Type.Integer({ minimum: 0 }),
-@@ -2790,6 +2792,7 @@
+@@ -3002,6 +3004,7 @@
  /** Waits for a submitted agent run to complete or time out. */
  const AgentWaitParamsSchema = closedObject({
  	runId: NonEmptyString,
@@ -2370,11 +2352,10 @@ index e0465d9952603588ad8e666f2361c6d545cd0eca..5ac5996ab22e7ca83b530bf9975ccea2
  	timeoutMs: Type.Optional(Type.Integer({ minimum: 0 }))
  });
  /** Wake request from external schedulers or devices into an agent session. */
-diff --git a/dist/stale-lock-file-BXwDVcTj.mjs b/dist/stale-lock-file-BXwDVcTj.mjs
-index 4b3f3ecfbf822335736f30d7af7c07910ec85862..28c1ea60a6d9e7de15b4aa4a985aac96179103a9 100644
---- a/dist/stale-lock-file-BXwDVcTj.mjs
-+++ b/dist/stale-lock-file-BXwDVcTj.mjs
-@@ -13,6 +13,12 @@ function readLockFileOwnerPayload(payload) {
+diff --git a/dist/stale-lock-file-C8DeVq8b.mjs b/dist/stale-lock-file-C8DeVq8b.mjs
+--- a/dist/stale-lock-file-C8DeVq8b.mjs
++++ b/dist/stale-lock-file-C8DeVq8b.mjs
+@@ -13,6 +13,12 @@
  function inspectStaleLockOwner(params) {
  	const payload = readLockFileOwnerPayload(params.payload);
  	if (!payload?.pid) return null;
@@ -2387,27 +2368,25 @@ index 4b3f3ecfbf822335736f30d7af7c07910ec85862..28c1ea60a6d9e7de15b4aa4a985aac96
  	const observedStarttime = payload.starttime === void 0 ? null : (params.getProcessStartTime ?? getFileLockProcessStartTime)(payload.pid);
  	const identity = {
  		pid: payload.pid,
-diff --git a/dist/startup-config-preflight-C4G3Hbkd.mjs b/dist/startup-config-preflight-C4G3Hbkd.mjs
-index 55b5b4b01b6b417387363f37b01ca071667794e6..e9ec6cf9e8b9e4e6b59484dce7a9c551628e428c 100644
---- a/dist/startup-config-preflight-C4G3Hbkd.mjs
-+++ b/dist/startup-config-preflight-C4G3Hbkd.mjs
-@@ -152,9 +152,8 @@ async function prepareStartupConfig(options) {
+diff --git a/dist/startup-config-preflight-DHWKqSAo.mjs b/dist/startup-config-preflight-DHWKqSAo.mjs
+--- a/dist/startup-config-preflight-DHWKqSAo.mjs
++++ b/dist/startup-config-preflight-DHWKqSAo.mjs
+@@ -172,9 +172,8 @@
  		await beforeStatePreparation(read.snapshot);
  		assertLeaseCurrent();
- 		initializeNativeOpenClawStateDatabase({ env });
--		const { HISTORICAL_WEBHOOK_CHANNELS, recordUnwrittenWebhookCompletion } = await import("./legacy-webhook-pins-Bn7D4Mti.mjs");
+ 		if (!isStatePostgres()) initializeNativeOpenClawStateDatabase({ env });
+-		const { HISTORICAL_WEBHOOK_CHANNELS, recordUnwrittenWebhookCompletion } = await import("./legacy-webhook-pins-CkRppjqt.mjs");
 -		const webhookCompletion = read.snapshot.sourceConfig.meta?.migrations?.webhookListeners;
 -		if (webhookCompletion !== true && !HISTORICAL_WEBHOOK_CHANNELS.every((id) => Object.hasOwn(webhookCompletion ?? {}, id))) {
-+		const { HISTORICAL_WEBHOOK_CHANNELS, shouldRunHistoricalWebhookMigration, recordUnwrittenWebhookCompletion } = await import("./legacy-webhook-pins-Bn7D4Mti.mjs");
++		const { HISTORICAL_WEBHOOK_CHANNELS, shouldRunHistoricalWebhookMigration, recordUnwrittenWebhookCompletion } = await import("./legacy-webhook-pins-CkRppjqt.mjs");
 +		if (shouldRunHistoricalWebhookMigration(read.snapshot.sourceConfig, env)) {
  			const migration = await measureDoctorConfigPreflightStep("webhook-readiness", async () => {
- 				const { applyPluginDoctorCompatibilityMigrations } = await import("./doctor-contract-registry-B6owxf6p.mjs");
+ 				const { applyPluginDoctorCompatibilityMigrations } = await import("./doctor-contract-registry-DZgGuyBC.mjs");
  				return applyPluginDoctorCompatibilityMigrations(read.snapshot.sourceConfig, {
 diff --git a/dist/state/openclaw-state-lease-heartbeat.worker.js b/dist/state/openclaw-state-lease-heartbeat.worker.js
-index bca369557d5ab54ac107df5096779caad1f14632..be28bf78e088a0e48dea083e9a7c596fa0798dcd 100644
 --- a/dist/state/openclaw-state-lease-heartbeat.worker.js
 +++ b/dist/state/openclaw-state-lease-heartbeat.worker.js
-@@ -13019,6 +13019,12 @@ function readLockFileOwnerPayload(payload) {
+@@ -12976,6 +12976,12 @@
  function inspectStaleLockOwner(params) {
  	const payload = readLockFileOwnerPayload(params.payload);
  	if (!payload?.pid) return null;
@@ -2420,11 +2399,10 @@ index bca369557d5ab54ac107df5096779caad1f14632..be28bf78e088a0e48dea083e9a7c596f
  	const observedStarttime = payload.starttime === void 0 ? null : (params.getProcessStartTime ?? getFileLockProcessStartTime)(payload.pid);
  	const identity = {
  		pid: payload.pid,
-diff --git a/dist/state/openclaw-state-read.worker.js b/dist/state/openclaw-state-read.worker.js
-index b9372e56cee980d3f075bc1b90f9916410638fcd..af0bd18d183ea3c458b552bc9de436f60a061a3e 100644
---- a/dist/state/openclaw-state-read.worker.js
-+++ b/dist/state/openclaw-state-read.worker.js
-@@ -43956,6 +43956,12 @@ function readLockFileOwnerPayload(payload) {
+diff --git a/dist/state/openclaw-state-read-stale-lock-file-DPz9P2Cl.mjs b/dist/state/openclaw-state-read-stale-lock-file-DPz9P2Cl.mjs
+--- a/dist/state/openclaw-state-read-stale-lock-file-DPz9P2Cl.mjs
++++ b/dist/state/openclaw-state-read-stale-lock-file-DPz9P2Cl.mjs
+@@ -22,6 +22,12 @@
  function inspectStaleLockOwner(params) {
  	const payload = readLockFileOwnerPayload(params.payload);
  	if (!payload?.pid) return null;
@@ -2437,11 +2415,10 @@ index b9372e56cee980d3f075bc1b90f9916410638fcd..af0bd18d183ea3c458b552bc9de436f6
  	const observedStarttime = payload.starttime === void 0 ? null : (params.getProcessStartTime ?? getFileLockProcessStartTime)(payload.pid);
  	const identity = {
  		pid: payload.pid,
-diff --git a/dist/zod-schema-BVpLKnmq.mjs b/dist/zod-schema-BVpLKnmq.mjs
-index 65b5da005ee3290812423c1d898ba88c4db1d6f0..d92cdcd1edcb82f69ad529b8760b0ffee3bbb7a9 100644
---- a/dist/zod-schema-BVpLKnmq.mjs
-+++ b/dist/zod-schema-BVpLKnmq.mjs
-@@ -135,7 +135,7 @@ const AgentDefaultsSchema = strictObject({
+diff --git a/dist/zod-schema-BhFMUqIz.mjs b/dist/zod-schema-BhFMUqIz.mjs
+--- a/dist/zod-schema-BhFMUqIz.mjs
++++ b/dist/zod-schema-BhFMUqIz.mjs
+@@ -136,7 +136,7 @@
  		/** Thinking level for embedded OpenClaw compaction summaries. Default: low. */
  		thinkingLevel: union([AgentThinkingLevelSchema, literal("inherit")]).optional(),
  		/** Embedded OpenClaw keepRecentTokens budget used for cut-point selection. */
@@ -2450,3 +2427,223 @@ index 65b5da005ee3290812423c1d898ba88c4db1d6f0..d92cdcd1edcb82f69ad529b8760b0ffe
  		/** Identifier-preservation instruction policy for compaction summaries. */
  		identifierPolicy: union([literal("strict"), literal("off")]).optional(),
  		/** Preserve this many most-recent user/assistant turns verbatim in compaction summary context. */
+diff --git a/dist/sqlite-readonly-location-cleanup-Cck2PywQ.mjs b/dist/sqlite-readonly-location-cleanup-Cck2PywQ.mjs
+--- a/dist/sqlite-readonly-location-cleanup-Cck2PywQ.mjs
++++ b/dist/sqlite-readonly-location-cleanup-Cck2PywQ.mjs
+@@ -352,11 +352,14 @@
+ function sealRetainedSnapshotTempDirectory(directory, options) {
+ 	const owner = snapshotDirectories.get(directory);
+ 	if (!owner?.releaseRetained) throw new SqliteSnapshotCleanupError("SQLite snapshot has no retained cleanup owner");
+ 	if (options?.requireRequested && !owner.retirementStarted) throw new SqliteSnapshotCleanupError("SQLite snapshot is still owned; cleanup has not been requested");
+ 	assertSnapshotReadersRetired(owner);
+ 	owner.retirementStarted = true;
++	// ClawX: the host retains identity descriptors that a cleanup child cannot close.
++	for (const location of owner.admissionLocations ?? []) retireSqliteDatabaseAdmissionForPath(location);
+ }
+ function adoptPreparedLocation(location, ownedRoot, requireCleanup = false, onCleanupFailure) {
+ 	const tempDir = ownedRoot ?? path.dirname(location);
+ 	registerSnapshotTempDirectory(tempDir);
++	(snapshotDirectory(tempDir).admissionLocations ??= new Set()).add(location);
+ 	let active = true;
+diff --git a/dist/infra/sqlite-readonly-location.worker.js b/dist/infra/sqlite-readonly-location.worker.js
+--- a/dist/infra/sqlite-readonly-location.worker.js
++++ b/dist/infra/sqlite-readonly-location.worker.js
+@@ -14242,11 +14242,14 @@
+ function sealRetainedSnapshotTempDirectory(directory, options) {
+ 	const owner = snapshotDirectories.get(directory);
+ 	if (!owner?.releaseRetained) throw new SqliteSnapshotCleanupError("SQLite snapshot has no retained cleanup owner");
+ 	if (options?.requireRequested && !owner.retirementStarted) throw new SqliteSnapshotCleanupError("SQLite snapshot is still owned; cleanup has not been requested");
+ 	assertSnapshotReadersRetired(owner);
+ 	owner.retirementStarted = true;
++	// ClawX: the host retains identity descriptors that a cleanup child cannot close.
++	for (const location of owner.admissionLocations ?? []) retireSqliteDatabaseAdmissionForPath(location);
+ }
+ function adoptPreparedLocation(location, ownedRoot, requireCleanup = false, onCleanupFailure) {
+ 	const tempDir = ownedRoot ?? path.dirname(location);
+ 	registerSnapshotTempDirectory(tempDir);
++	(snapshotDirectory(tempDir).admissionLocations ??= new Set()).add(location);
+ 	let active = true;
+diff --git a/dist/config-doctor/openclaw-state-db-cache-BBhRV-OR.js b/dist/config-doctor/openclaw-state-db-cache-BBhRV-OR.js
+--- a/dist/config-doctor/openclaw-state-db-cache-BBhRV-OR.js
++++ b/dist/config-doctor/openclaw-state-db-cache-BBhRV-OR.js
+@@ -4357,11 +4357,14 @@
+ function sealRetainedSnapshotTempDirectory(directory, options) {
+ 	const owner = snapshotDirectories.get(directory);
+ 	if (!owner?.releaseRetained) throw new SqliteSnapshotCleanupError("SQLite snapshot has no retained cleanup owner");
+ 	if (options?.requireRequested && !owner.retirementStarted) throw new SqliteSnapshotCleanupError("SQLite snapshot is still owned; cleanup has not been requested");
+ 	assertSnapshotReadersRetired(owner);
+ 	owner.retirementStarted = true;
++	// ClawX: the host retains identity descriptors that a cleanup child cannot close.
++	for (const location of owner.admissionLocations ?? []) retireSqliteDatabaseAdmissionForPath(location);
+ }
+ function adoptPreparedLocation(location, ownedRoot, requireCleanup = false, onCleanupFailure) {
+ 	const tempDir = ownedRoot ?? path.dirname(location);
+ 	registerSnapshotTempDirectory(tempDir);
++	(snapshotDirectory(tempDir).admissionLocations ??= new Set()).add(location);
+ 	let active = true;
+diff --git a/dist/managed-handoff-runtime.mjs b/dist/managed-handoff-runtime.mjs
+--- a/dist/managed-handoff-runtime.mjs
++++ b/dist/managed-handoff-runtime.mjs
+@@ -69228,11 +69228,14 @@
+ function sealRetainedSnapshotTempDirectory(directory, options) {
+ 	const owner = snapshotDirectories.get(directory);
+ 	if (!owner?.releaseRetained) throw new SqliteSnapshotCleanupError("SQLite snapshot has no retained cleanup owner");
+ 	if (options?.requireRequested && !owner.retirementStarted) throw new SqliteSnapshotCleanupError("SQLite snapshot is still owned; cleanup has not been requested");
+ 	assertSnapshotReadersRetired(owner);
+ 	owner.retirementStarted = true;
++	// ClawX: the host retains identity descriptors that a cleanup child cannot close.
++	for (const location of owner.admissionLocations ?? []) retireSqliteDatabaseAdmissionForPath(location);
+ }
+ function adoptPreparedLocation(location, ownedRoot, requireCleanup = false, onCleanupFailure) {
+ 	const tempDir = ownedRoot ?? path.dirname(location);
+ 	registerSnapshotTempDirectory(tempDir);
++	(snapshotDirectory(tempDir).admissionLocations ??= new Set()).add(location);
+ 	let active = true;
+diff --git a/dist/native-hook-relay/sqlite-snapshot-staging-owner-DhKDO7I3.mjs b/dist/native-hook-relay/sqlite-snapshot-staging-owner-DhKDO7I3.mjs
+--- a/dist/native-hook-relay/sqlite-snapshot-staging-owner-DhKDO7I3.mjs
++++ b/dist/native-hook-relay/sqlite-snapshot-staging-owner-DhKDO7I3.mjs
+@@ -1534,11 +1534,14 @@
+ function sealRetainedSnapshotTempDirectory(directory, options) {
+ 	const owner = snapshotDirectories.get(directory);
+ 	if (!owner?.releaseRetained) throw new SqliteSnapshotCleanupError("SQLite snapshot has no retained cleanup owner");
+ 	if (options?.requireRequested && !owner.retirementStarted) throw new SqliteSnapshotCleanupError("SQLite snapshot is still owned; cleanup has not been requested");
+ 	assertSnapshotReadersRetired(owner);
+ 	owner.retirementStarted = true;
++	// ClawX: the host retains identity descriptors that a cleanup child cannot close.
++	for (const location of owner.admissionLocations ?? []) retireSqliteDatabaseAdmissionForPath(location);
+ }
+ function adoptPreparedLocation(location, ownedRoot, requireCleanup = false, onCleanupFailure) {
+ 	const tempDir = ownedRoot ?? path.dirname(location);
+ 	registerSnapshotTempDirectory(tempDir);
++	(snapshotDirectory(tempDir).admissionLocations ??= new Set()).add(location);
+ 	let active = true;
+diff --git a/dist/package-update-activation-recovery.mjs b/dist/package-update-activation-recovery.mjs
+--- a/dist/package-update-activation-recovery.mjs
++++ b/dist/package-update-activation-recovery.mjs
+@@ -69568,11 +69568,14 @@
+ function sealRetainedSnapshotTempDirectory(directory, options) {
+ 	const owner = snapshotDirectories.get(directory);
+ 	if (!owner?.releaseRetained) throw new SqliteSnapshotCleanupError("SQLite snapshot has no retained cleanup owner");
+ 	if (options?.requireRequested && !owner.retirementStarted) throw new SqliteSnapshotCleanupError("SQLite snapshot is still owned; cleanup has not been requested");
+ 	assertSnapshotReadersRetired(owner);
+ 	owner.retirementStarted = true;
++	// ClawX: the host retains identity descriptors that a cleanup child cannot close.
++	for (const location of owner.admissionLocations ?? []) retireSqliteDatabaseAdmissionForPath(location);
+ }
+ function adoptPreparedLocation(location, ownedRoot, requireCleanup = false, onCleanupFailure) {
+ 	const tempDir = ownedRoot ?? path.dirname(location);
+ 	registerSnapshotTempDirectory(tempDir);
++	(snapshotDirectory(tempDir).admissionLocations ??= new Set()).add(location);
+ 	let active = true;
+diff --git a/dist/process/supervisor/service-child-group-anchor.js b/dist/process/supervisor/service-child-group-anchor.js
+--- a/dist/process/supervisor/service-child-group-anchor.js
++++ b/dist/process/supervisor/service-child-group-anchor.js
+@@ -39721,11 +39721,14 @@
+ function sealRetainedSnapshotTempDirectory(directory, options) {
+ 	const owner = snapshotDirectories.get(directory);
+ 	if (!owner?.releaseRetained) throw new SqliteSnapshotCleanupError("SQLite snapshot has no retained cleanup owner");
+ 	if (options?.requireRequested && !owner.retirementStarted) throw new SqliteSnapshotCleanupError("SQLite snapshot is still owned; cleanup has not been requested");
+ 	assertSnapshotReadersRetired(owner);
+ 	owner.retirementStarted = true;
++	// ClawX: the host retains identity descriptors that a cleanup child cannot close.
++	for (const location of owner.admissionLocations ?? []) retireSqliteDatabaseAdmissionForPath(location);
+ }
+ function adoptPreparedLocation(location, ownedRoot, requireCleanup = false, onCleanupFailure) {
+ 	const tempDir = ownedRoot ?? path.dirname(location);
+ 	registerSnapshotTempDirectory(tempDir);
++	(snapshotDirectory(tempDir).admissionLocations ??= new Set()).add(location);
+ 	let active = true;
+diff --git a/dist/state-retention/openclaw-state-db-cache-R82_ufLk.js b/dist/state-retention/openclaw-state-db-cache-R82_ufLk.js
+--- a/dist/state-retention/openclaw-state-db-cache-R82_ufLk.js
++++ b/dist/state-retention/openclaw-state-db-cache-R82_ufLk.js
+@@ -4884,11 +4884,14 @@
+ function sealRetainedSnapshotTempDirectory(directory, options) {
+ 	const owner = snapshotDirectories.get(directory);
+ 	if (!owner?.releaseRetained) throw new SqliteSnapshotCleanupError("SQLite snapshot has no retained cleanup owner");
+ 	if (options?.requireRequested && !owner.retirementStarted) throw new SqliteSnapshotCleanupError("SQLite snapshot is still owned; cleanup has not been requested");
+ 	assertSnapshotReadersRetired(owner);
+ 	owner.retirementStarted = true;
++	// ClawX: the host retains identity descriptors that a cleanup child cannot close.
++	for (const location of owner.admissionLocations ?? []) retireSqliteDatabaseAdmissionForPath(location);
+ }
+ function adoptPreparedLocation(location, ownedRoot, requireCleanup = false, onCleanupFailure) {
+ 	const tempDir = ownedRoot ?? path.dirname(location);
+ 	registerSnapshotTempDirectory(tempDir);
++	(snapshotDirectory(tempDir).admissionLocations ??= new Set()).add(location);
+ 	let active = true;
+diff --git a/dist/state/openclaw-state-read-sqlite-snapshot-staging-owner-DazbInYM.mjs b/dist/state/openclaw-state-read-sqlite-snapshot-staging-owner-DazbInYM.mjs
+--- a/dist/state/openclaw-state-read-sqlite-snapshot-staging-owner-DazbInYM.mjs
++++ b/dist/state/openclaw-state-read-sqlite-snapshot-staging-owner-DazbInYM.mjs
+@@ -1034,11 +1034,14 @@
+ function sealRetainedSnapshotTempDirectory(directory, options) {
+ 	const owner = snapshotDirectories.get(directory);
+ 	if (!owner?.releaseRetained) throw new SqliteSnapshotCleanupError("SQLite snapshot has no retained cleanup owner");
+ 	if (options?.requireRequested && !owner.retirementStarted) throw new SqliteSnapshotCleanupError("SQLite snapshot is still owned; cleanup has not been requested");
+ 	assertSnapshotReadersRetired(owner);
+ 	owner.retirementStarted = true;
++	// ClawX: the host retains identity descriptors that a cleanup child cannot close.
++	for (const location of owner.admissionLocations ?? []) retireSqliteDatabaseAdmissionForPath(location);
+ }
+ function adoptPreparedLocation(location, ownedRoot, requireCleanup = false, onCleanupFailure) {
+ 	const tempDir = ownedRoot ?? path.dirname(location);
+ 	registerSnapshotTempDirectory(tempDir);
++	(snapshotDirectory(tempDir).admissionLocations ??= new Set()).add(location);
+ 	let active = true;
+diff --git a/dist/session-sqlite-transcript-verification-DHMFn-A2.mjs b/dist/session-sqlite-transcript-verification-DHMFn-A2.mjs
+--- a/dist/session-sqlite-transcript-verification-DHMFn-A2.mjs
++++ b/dist/session-sqlite-transcript-verification-DHMFn-A2.mjs
+@@ -2,6 +2,7 @@ import { c as isRecord } from "./record-coerce-TIsquoVR.mjs";
+ import { c as readFileDescriptorBoundedSync } from "./boundary-file-read-CCth2Hwg.mjs";
+ import { t as hasErrnoCode } from "./errno-FR4CRyya.mjs";
+ import { r as openNodeSqliteDatabase } from "./node-sqlite-BksPWqrD.mjs";
++import { I as retireSqliteDatabaseAdmissionForPath } from "./sqlite-database-admission-BmDJq98c.mjs";
+ import { a as executeSqliteQueryTakeFirstSync, s as iterateSqliteQuerySync } from "./kysely-sync-B4IoHDWv.mjs";
+ import { n as normalizeAgentId } from "./agent-id-D1-Q6vR4.mjs";
+ import { p as createPrivateSqliteTempDirectorySync } from "./sqlite-snapshot-staging-CLXGJ4ir.mjs";
+@@ -247,9 +248,9 @@ function transcriptRepairUserKey(entry, strip) {
+ //#region src/config/sessions/session-accessor.sqlite-import-stage.ts
+ function withSqliteSessionImportStage(run) {
+ 	const directory = createPrivateSqliteTempDirectorySync(os.tmpdir(), "openclaw-session-import-");
++	const filename = path.join(directory, "transcripts.sqlite");
+ 	let database;
+ 	try {
+-		const filename = path.join(directory, "transcripts.sqlite");
+ 		fs.closeSync(fs.openSync(filename, "wx", 384));
+ 		database = openNodeSqliteDatabase(filename);
+ 		database.exec(`
+@@ -270,14 +271,13 @@ function withSqliteSessionImportStage(run) {
+     `);
+ 		return run(new SqliteSessionImportStage(database));
+ 	} finally {
+-		try {
+-			database?.close();
+-		} finally {
+-			fs.rmSync(directory, {
+-				recursive: true,
+-				force: true
+-			});
+-		}
++		database?.close();
++		// ClawX: native close leaves the host identity descriptor open on Windows.
++		retireSqliteDatabaseAdmissionForPath(filename);
++		fs.rmSync(directory, {
++			recursive: true,
++			force: true
++		});
+ 	}
+ }
+ var SqliteSessionImportStage = class {
+diff --git a/dist/doctor-agent-deletion-journal-m5o6mZHM.mjs b/dist/doctor-agent-deletion-journal-m5o6mZHM.mjs
+--- a/dist/doctor-agent-deletion-journal-m5o6mZHM.mjs
++++ b/dist/doctor-agent-deletion-journal-m5o6mZHM.mjs
+@@ -214,7 +214,9 @@ const AFFECTED_AGENT_SCHEMAS = new Map([
+ 		"2026.10.5-beta.1",
+ 		"2026.10.5-beta.2",
+ 		"2026.10.5-beta.3",
+-		"2026.10.5-beta.4"
++		"2026.10.5-beta.4",
++		// ClawX native-first provider saves can precede shared journal creation.
++		"2026.10.5"
+ 	].map((version) => [version, 25]),
+ 	["2026.10.10-beta.1", 27]
+ ]);

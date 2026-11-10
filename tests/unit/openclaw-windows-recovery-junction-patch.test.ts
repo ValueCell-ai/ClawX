@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 
 const root = path.resolve(import.meta.dirname, '../..');
 const dist = path.join(root, 'node_modules/openclaw/dist');
-const lookupBundle = path.join(dist, 'plugin-generation-source-lookup-Dg6DuWgm.mjs');
+const lookupBundle = path.join(dist, 'plugin-generation-source-lookup-EtpFx0hb.mjs');
 
 const SOURCE_BUILD = 'C:\\Users\\u\\AppData\\Local\\Temp\\captures\\openclaw-plugin-build-S7rlrN';
 const RECOVERY_BUILD = 'C:\\Users\\u\\AppData\\Local\\Temp\\captures\\openclaw-plugin-build-H5eml4';
@@ -70,7 +70,7 @@ describe('OpenClaw Windows plugin capture recovery junctions', () => {
     const filter = bundle.slice(start, bundle.indexOf('const assertReference', start));
 
     expect(filter).toContain('verbatimSymlinks: true');
-    expect(filter).toContain('if (!fact) return !copyWindowsRecoveryJunction(boundaryRoot, recovery.directory, from, to);');
+    expect(filter).toContain('if (copyWindowsRecoveryJunction(boundaryRoot, recovery.directory, from, to)) return false;');
   });
 
   it('recreates captured dependency junctions inside the recovery capture', async () => {

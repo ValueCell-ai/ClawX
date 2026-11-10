@@ -1036,9 +1036,22 @@ if (missingRuntimePackages.length > 0) {
   process.exit(1);
 }
 
-// OpenClaw's Windows state-database snapshot staging loads koffi; a pruned
-// koffi makes Gateway startup and Doctor fail with an opaque AggregateError.
-// The bundle is built on the target platform, so the host can load it.
+// Process ownership in 2026.10.10 uses proc-safe's platform native package.
+// Resolve it from the flattened output so a working development tree cannot
+// hide a missing packaged binary. The bundle is built on the target platform.
+const procSafeLoad = spawnSync(process.execPath, ['--input-type=module', '-e', `
+  import { readProcessIdentity } from '@openclaw/proc-safe/identity';
+  const identity = readProcessIdentity(process.pid);
+  if (identity?.pid !== process.pid || !identity.startTimeMicros) process.exit(1);
+`], { cwd: OUTPUT, encoding: 'utf8' });
+if (procSafeLoad.status !== 0) {
+  echo`❌ Bundle verification failed: bundled proc-safe cannot read process identity:`;
+  echo`${(procSafeLoad.stderr || procSafeLoad.stdout || String(procSafeLoad.error ?? '')).trim()}`;
+  process.exit(1);
+}
+echo`   proc-safe: ✓`;
+
+// Retain verification for plugins that still carry koffi transitively.
 const koffiDir = path.join(outputNodeModules, 'koffi');
 if (fs.existsSync(path.join(koffiDir, 'package.json'))) {
   const koffiLoad = spawnSync(process.execPath, ['-e', 'require(process.argv[1]).sizeof("int")', koffiDir], {

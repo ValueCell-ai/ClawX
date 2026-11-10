@@ -307,6 +307,30 @@ describe('plugin install index sqlite persistence', () => {
       expect(value.revision).toBe(1_000);
       expect(value.index.installRecords).not.toHaveProperty('openclaw-qqbot');
       expect(mockLoggerWarn).toHaveBeenCalledWith(expect.stringContaining('holds the state lease'));
+      expect(() => upsertPluginInstallRecordsIntoSqlite({ 'openclaw-qqbot': qqbotRecord }, {
+        removeIds: ['qqbot'], throwOnError: true,
+      })).toThrow('holds the state lease');
+      expect((await readModernIndex()).value.index.installRecords).toHaveProperty('qqbot');
+    });
+
+    it('commits alias removal with its replacement and rolls both back on write failure', async () => {
+      await seedModernStateDatabase();
+      const { upsertPluginInstallRecordsIntoSqlite } = await import('@electron/utils/plugin-install-index');
+      const { DatabaseSync } = await import('node:sqlite');
+      const db = new DatabaseSync(join(stateDir, 'state', 'openclaw.sqlite'));
+      db.exec("CREATE TRIGGER fail_index BEFORE UPDATE ON config_machine_state BEGIN SELECT RAISE(ABORT, 'injected failure'); END;");
+      expect(() => upsertPluginInstallRecordsIntoSqlite({ 'openclaw-qqbot': qqbotRecord }, {
+        removeIds: ['qqbot'], throwOnError: true,
+      })).toThrow('injected failure');
+      expect((await readModernIndex()).value.index.installRecords).toHaveProperty('qqbot');
+      expect((await readModernIndex()).value.index.installRecords).not.toHaveProperty('openclaw-qqbot');
+      db.exec('DROP TRIGGER fail_index');
+      db.close();
+      expect(upsertPluginInstallRecordsIntoSqlite({ 'openclaw-qqbot': qqbotRecord }, {
+        removeIds: ['qqbot'], throwOnError: true,
+      })).toBe(true);
+      expect((await readModernIndex()).value.index.installRecords).not.toHaveProperty('qqbot');
+      expect((await readModernIndex()).value.index.installRecords).toHaveProperty('openclaw-qqbot');
     });
 
     it('ignores an expired plugin lifecycle lease', async () => {

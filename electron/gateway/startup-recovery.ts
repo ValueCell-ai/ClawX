@@ -19,6 +19,11 @@ const INVALID_CONFIG_PATTERNS: RegExp[] = [
   /\bconfig needs correction\b/i,
   /\blegacy config keys detected\b/i,
   /\bgateway\.maintenance_required\b/i,
+  // 10.10's agent-only v25 admission refusal exits 78 without the gateway
+  // maintenance suffix. This is the starting-main upgrade, whose shared
+  // state schema may already be current while Agent identities still need Doctor.
+  /\bOpenClaw agent database\b.*\buses schema version \d+;.*\bopenclaw doctor --fix to migrate session identities\b/i,
+  /\bSessions remain unavailable\. Stop the Gateway, run "openclaw doctor --fix" to inspect and repair this agent database, and restart\b/i,
 ];
 
 const FATAL_RUNTIME_PATTERNS: RegExp[] = [

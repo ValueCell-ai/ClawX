@@ -21,7 +21,7 @@ type Ambient = {
 let bundle: string;
 
 beforeAll(async () => {
-  bundle = await readFile(path.join(dist, 'server-DkfYuk25.mjs'), 'utf8');
+  bundle = await readFile(path.join(dist, 'server-D2T0Amp5.mjs'), 'utf8');
 });
 
 function loadAmbientClass() {

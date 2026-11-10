@@ -15,7 +15,6 @@ import { join } from 'node:path';
 import { logger } from './logger';
 import { getOpenClawResolvedDir } from './paths';
 import {
-  DINGTALK_COMMUNITY_NPM,
   DINGTALK_OFFICIAL_NPM,
   DINGTALK_OFFICIAL_PLUGIN_ID,
   DINGTALK_PLUGIN_ID,
@@ -92,7 +91,8 @@ const PLUGIN_STAGING_DIR = '.clawx-plugin-staging';
  * only once it holds a manifest, and the previous mirror is restored if the
  * swap fails.
  */
-export function replacePluginMirror(targetDir: string, populate: (stagedDir: string) => void): void {
+export function replacePluginMirror(targetDir: string, populate: (stagedDir: string) => void,
+  retainPrevious = false): { commit: () => void; rollback: () => void } | undefined {
   const extensionsRoot = path.dirname(targetDir);
   const stagingDir = join(
     path.dirname(extensionsRoot),
@@ -103,6 +103,11 @@ export function replacePluginMirror(targetDir: string, populate: (stagedDir: str
   const previousDir = join(stagingDir, 'previous');
   let movedPrevious = false;
   let previousRestored = true;
+  let published = false;
+  const cleanup = () => {
+    try { safeRmSync(fsPath(stagingDir)); }
+    catch (error) { logger.warn(`[plugin] Failed to remove plugin staging directory ${stagingDir}:`, error); }
+  };
   try {
     mkdirSync(fsPath(stagingDir), { recursive: true });
     populate(stagedDir);
@@ -118,6 +123,7 @@ export function replacePluginMirror(targetDir: string, populate: (stagedDir: str
     }
     try {
       renameSync(fsPath(stagedDir), fsPath(targetDir));
+      published = true;
     } catch (error) {
       if (movedPrevious) {
         try {
@@ -128,16 +134,20 @@ export function replacePluginMirror(targetDir: string, populate: (stagedDir: str
       }
       throw error;
     }
+    if (retainPrevious) return {
+      commit: cleanup,
+      rollback: () => {
+        // Keep the rejected payload outside discovery until the old mirror is
+        // back. If restoration fails, retain both copies for offline recovery.
+        renameSync(fsPath(targetDir), fsPath(stagedDir));
+        if (movedPrevious) renameSync(fsPath(previousDir), fsPath(targetDir));
+        cleanup();
+      },
+    };
   } finally {
     if (!previousRestored) {
       logger.warn(`[plugin] Retained previous plugin mirror for recovery: ${previousDir}`);
-    } else {
-      try {
-        safeRmSync(fsPath(stagingDir));
-      } catch (error) {
-        logger.warn(`[plugin] Failed to remove plugin staging directory ${stagingDir}:`, error);
-      }
-    }
+    } else if (!retainPrevious || !published) cleanup();
   }
 }
 
@@ -584,6 +594,12 @@ function buildTrustedOfficialPluginInstallRecord(
   if (!version || !installPath) return null;
 
   const pluginId = definition.pluginId ?? pluginDirName;
+  // An old mirror may survive a failed copy. Never label it with the new
+  // package/id merely because this ClawX build knows the successor's name.
+  try {
+    const manifest = JSON.parse(readFileSync(fsPath(join(targetDir, 'openclaw.plugin.json')), 'utf8'));
+    if (manifest.id !== pluginId || readPluginName(join(targetDir, 'package.json')) !== definition.npmName) return null;
+  } catch { return null; }
   const installedAt = new Date().toISOString();
   if (definition.recordSource === 'path') {
     return {
@@ -776,12 +792,6 @@ export function repairPluginOpenClawPeerLink(
   }
 }
 
-function persistTrustedOfficialPluginInstallRecordsToSqlite(
-  records: Record<string, Record<string, unknown>>,
-): boolean {
-  return upsertPluginInstallRecordsIntoSqlite(records);
-}
-
 /**
  * Persist a ClawX-mirrored plugin install record in OpenClaw's canonical SQLite
  * index. OpenClaw 2026.7.1 treats config-level plugins.installs as legacy
@@ -805,6 +815,12 @@ export async function syncTrustedOfficialPluginInstallRecord(
   repairPluginOpenClawPeerLink(targetDir);
 
   const recordIds = pluginInstallRecordIds(pluginDirName);
+  const staleRecordIds = recordIds.filter((pluginId) => pluginId !== expected.pluginId);
+  // Upsert and alias removal share one SQLite transaction. On failure the
+  // caller can restore the previous payload without losing its index row.
+  const sqliteChanged = upsertPluginInstallRecordsIntoSqlite({
+    [expected.pluginId]: expected.record,
+  }, { removeIds: staleRecordIds, throwOnError: true });
   let jsonChanged = false;
   try {
     ensureOpenClawStateDirExists();
@@ -818,11 +834,7 @@ export async function syncTrustedOfficialPluginInstallRecord(
   // Remove aliases left by older ClawX/OpenClaw ownership conventions, but do
   // not delete the canonical id first: upsert can replace npm/path ownership
   // atomically without creating a missing-record window.
-  const staleRecordIds = recordIds.filter((pluginId) => pluginId !== expected.pluginId);
   const removedLegacyRecord = removePluginInstallRecordsFromSqlite(staleRecordIds);
-  const sqliteChanged = persistTrustedOfficialPluginInstallRecordsToSqlite({
-    [expected.pluginId]: expected.record,
-  });
   return jsonChanged || removedLegacyRecord || sqliteChanged;
 }
 
@@ -1067,6 +1079,26 @@ export async function ensurePluginInstalled(
     return { installed: true, peerLinkOk: repairPluginOpenClawPeerLink(targetDir) };
   }
 
+  async function publish(populate: (stagedDir: string) => void): Promise<PluginInstallResult> {
+    const transaction = replacePluginMirror(targetDir, (stagedDir) => {
+      populate(stagedDir);
+      fixupPluginManifest(stagedDir);
+      if (TRUSTED_OFFICIAL_EXTENSION_PLUGINS[pluginDirName]
+        && !buildTrustedOfficialPluginInstallRecord(pluginDirName, stagedDir)) {
+        throw new Error(`Invalid bundled ${pluginLabel} identity`);
+      }
+    }, true)!;
+    try {
+      const result = await finalizeInstalledMirror();
+      transaction.commit();
+      return result;
+    } catch (error) {
+      try { transaction.rollback(); }
+      catch (restoreError) { throw new AggregateError([error, restoreError], `Plugin recovery required: ${targetDir}`, { cause: restoreError }); }
+      throw error;
+    }
+  }
+
   // If already installed, check whether an upgrade is available
   if (existsSync(fsPath(targetManifest))) {
     if (!sourceDir) {
@@ -1076,10 +1108,8 @@ export async function ensurePluginInstalled(
     const sourceVersion = readPluginVersion(join(sourceDir, 'package.json'));
     const installedName = readPluginName(targetPkgJson);
     const sourceName = readPluginName(join(sourceDir, 'package.json'));
-    const communityDingTalkMirror = pluginDirName === DINGTALK_PLUGIN_ID
-      && installedName === DINGTALK_COMMUNITY_NPM
-      && sourceName === DINGTALK_OFFICIAL_NPM;
-    if (!communityDingTalkMirror && (!sourceVersion || !installedVersion || sourceVersion === installedVersion)) {
+    const packageOwnerChanged = Boolean(sourceName && sourceName !== installedName);
+    if (!packageOwnerChanged && (!sourceVersion || !installedVersion || sourceVersion === installedVersion)) {
       return await finalizeInstalledMirror(); // same version or unable to compare
     }
     // Version differs — fall through to overwrite install
@@ -1097,8 +1127,7 @@ export async function ensurePluginInstalled(
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         mkdirSync(fsPath(extensionsRoot), { recursive: true });
-        replacePluginMirror(targetDir, (stagedDir) => cpSyncSafe(sourceDir, stagedDir));
-        const installed = await finalizeInstalledMirror();
+        const installed = await publish((stagedDir) => cpSyncSafe(sourceDir, stagedDir));
         logger.info(`Installed ${pluginLabel} plugin from bundled mirror: ${sourceDir}`);
         return installed;
       } catch (error) {
@@ -1137,8 +1166,7 @@ export async function ensurePluginInstalled(
           );
           try {
             mkdirSync(fsPath(join(homedir(), '.openclaw', 'extensions')), { recursive: true });
-            replacePluginMirror(targetDir, (stagedDir) => copyPluginFromNodeModules(npmPkgPath, stagedDir, npmName));
-            return await finalizeInstalledMirror();
+            return await publish((stagedDir) => copyPluginFromNodeModules(npmPkgPath, stagedDir, npmName));
           } catch (err) {
             logger.warn(
               `[plugin] Failed to install ${pluginLabel} plugin from node_modules`,
