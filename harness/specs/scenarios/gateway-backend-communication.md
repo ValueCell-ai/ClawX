@@ -108,6 +108,11 @@ forbiddenPatterns:
 
 Gateway backend communication covers all ClawX paths that move data between the visual desktop UI and OpenClaw runtime/backend services.
 
+Scheduled runs may return a queue acknowledgment before their result exists.
+Gateway `cron` completion notifications reconcile task state and force a fresh
+session catalog read so new internal results appear in the sidebar. See
+[scheduled-task result discovery](../tasks/fix-cron-result-discovery.md).
+
 Native Windows upgrade evidence for the independent official 0.6.1 and main
 inputs is recorded in `harness/reference/windows-sqlite-upgrade-validation-20261109.md`,
 including SQLite snapshot cleanup diagnostics and the limits of isolated probes.

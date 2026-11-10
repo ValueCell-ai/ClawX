@@ -14,6 +14,10 @@ const hostApiMock = vi.hoisted(() => ({
     delete: vi.fn(),
     rename: vi.fn(),
   },
+  cron: {
+    list: vi.fn(),
+    trigger: vi.fn(),
+  },
 }));
 const hostEventSubscriptionMock = vi.fn();
 
@@ -29,6 +33,19 @@ function deferred<T>() {
 
 async function flushAsyncImports(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+async function captureCronNotifications() {
+  const handlers = new Map<string, (payload: unknown) => void>();
+  hostEventSubscriptionMock.mockImplementation((eventName: string, handler: (payload: unknown) => void) => {
+    handlers.set(eventName, handler);
+    return () => {};
+  });
+  // Keep startup hydration separate from the notification being exercised.
+  hostApiMock.gateway.status.mockResolvedValue({ state: 'stopped', port: 18789 });
+  const { useGatewayStore } = await import('@/stores/gateway');
+  await useGatewayStore.getState().init();
+  return (params: unknown) => handlers.get('gateway:notification')?.({ method: 'cron', params });
 }
 
 vi.mock('@/lib/host-api', () => ({ hostApi: hostApiMock }));
@@ -56,9 +73,14 @@ describe('gateway store event wiring', () => {
       method === 'sessions.list' ? { ts: 1, sessions: [] } : {}
     ));
     hostApiMock.sessions.summaries.mockResolvedValue({ success: true, summaries: [] });
+    hostApiMock.cron.list.mockReset().mockResolvedValue([]);
+    hostApiMock.cron.trigger.mockReset().mockResolvedValue({ ok: true, queued: true });
   });
 
   it('keeps status, presence, channel, and catalog subscriptions out of legacy chat projections', async () => {
+    // This checks subscription wiring; avoid leaving startup hydration alive
+    // across resetModules while the next test creates a new runtime identity.
+    hostApiMock.gateway.status.mockResolvedValue({ state: 'stopped', port: 18789 });
     const handlers = new Map<string, (payload: unknown) => void>();
     hostEventSubscriptionMock.mockImplementation((eventName: string, handler: (payload: unknown) => void) => {
       handlers.set(eventName, handler);
@@ -145,6 +167,95 @@ describe('gateway store event wiring', () => {
     expect(handleSessionsChanged).toHaveBeenCalledWith({
       key: 'agent:main:main', ts: 2, status: 'running',
     });
+  });
+
+  it.each(['ok', 'error'] as const)('refreshes jobs and the authoritative catalog after a cron %s result', async (status) => {
+    const { useChatStore } = await import('@/stores/chat');
+    const { useCronStore } = await import('@/stores/cron');
+    const loadSessions = vi.fn().mockResolvedValue(undefined);
+    const handleSessionsChanged = vi.fn();
+    useChatStore.setState({ loadSessions, handleSessionsChanged });
+    const job = {
+      id: 'water-job',
+      lastRun: { time: '2026-11-10T08:40:00Z', success: status === 'ok' },
+    };
+    hostApiMock.cron.list.mockResolvedValue([job]);
+    const notify = await captureCronNotifications();
+
+    notify({
+      jobId: 'water-job', action: 'finished', status,
+      sessionKey: 'agent:main:cron:water-job:run:run-1',
+      summary: 'A result which must not be projected into chat by this event handler',
+    });
+
+    await vi.waitFor(() => {
+      expect(loadSessions).toHaveBeenCalledExactlyOnceWith({ force: true });
+      expect(useCronStore.getState().jobs).toEqual([job]);
+    });
+    expect(hostApiMock.cron.list).toHaveBeenCalledTimes(1);
+    expect(hostApiMock.cron.trigger).not.toHaveBeenCalled();
+    expect(handleSessionsChanged).not.toHaveBeenCalled();
+  });
+
+  it('refreshes the task state on cron start without forcing the conversation catalog', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    const loadSessions = vi.fn().mockResolvedValue(undefined);
+    useChatStore.setState({ loadSessions });
+    const notify = await captureCronNotifications();
+
+    notify({ jobId: 'water-job', action: 'started' });
+
+    await vi.waitFor(() => expect(hostApiMock.cron.list).toHaveBeenCalledTimes(1));
+    expect(loadSessions).not.toHaveBeenCalled();
+    expect(hostApiMock.cron.trigger).not.toHaveBeenCalled();
+  });
+
+  it('ignores malformed cron events and actions that do not change execution state', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    const loadSessions = vi.fn().mockResolvedValue(undefined);
+    useChatStore.setState({ loadSessions });
+    const notify = await captureCronNotifications();
+
+    for (const params of [
+      undefined, null, {},
+      { action: 'finished' },
+      { jobId: 7, action: 'finished' },
+      { jobId: '', action: 'finished' },
+      { jobId: '  ', action: 'started' },
+      { jobId: 'water-job', action: 'added' },
+      { jobId: 'water-job', action: 'removed' },
+    ]) notify(params);
+    await flushAsyncImports();
+
+    expect(hostApiMock.cron.list).not.toHaveBeenCalled();
+    expect(loadSessions).not.toHaveBeenCalled();
+    expect(hostApiMock.cron.trigger).not.toHaveBeenCalled();
+  });
+
+  it('accepts a later completion after task and catalog refreshes fail', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    const { useCronStore } = await import('@/stores/cron');
+    const loadSessions = vi.fn()
+      .mockRejectedValueOnce(new Error('catalog temporarily unavailable'))
+      .mockResolvedValue(undefined);
+    useChatStore.setState({ loadSessions });
+    hostApiMock.cron.list
+      .mockRejectedValueOnce(new Error('task list temporarily unavailable'))
+      .mockResolvedValue([{ id: 'water-job' }]);
+    const notify = await captureCronNotifications();
+
+    notify({ jobId: 'water-job', action: 'finished', status: 'error' });
+    await vi.waitFor(() => {
+      expect(loadSessions).toHaveBeenCalledTimes(1);
+      expect(useCronStore.getState().error).toContain('task list temporarily unavailable');
+    });
+    notify({ jobId: 'water-job', action: 'finished', status: 'ok' });
+
+    await vi.waitFor(() => {
+      expect(loadSessions).toHaveBeenCalledTimes(2);
+      expect(useCronStore.getState()).toMatchObject({ jobs: [{ id: 'water-job' }], error: null });
+    });
+    expect(hostApiMock.cron.trigger).not.toHaveBeenCalled();
   });
 
   it('queues a new generation behind an in-flight list and fences the old response', async () => {
