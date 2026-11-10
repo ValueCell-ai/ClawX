@@ -3,12 +3,13 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
 
 describe('openclaw bundle config', () => {
-  it('pins the OpenClaw 2026.10.5 runtime compatibility matrix', () => {
+  it('pins the OpenClaw 2026.10.10 runtime compatibility matrix', () => {
     const packageJson = JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf8')) as {
       dependencies?: Record<string, string>;
       devDependencies?: Record<string, string>;
@@ -16,16 +17,16 @@ describe('openclaw bundle config', () => {
     expect(packageJson.dependencies?.['@agentclientprotocol/sdk']).toBe('1.7.0');
     expect(packageJson.dependencies?.['@trycua/cua-driver']).toBe('0.37.0');
     expect(packageJson.devDependencies).toMatchObject({
-      openclaw: '2026.10.5',
+      openclaw: '2026.10.10',
       electron: '41.10.7',
-      '@openclaw/discord': '2026.10.5',
+      '@openclaw/discord': '2026.10.10',
       '@tencent-connect/openclaw-qqbot': '2.0.3',
       '@tencent-connect/qqbot-connector': '1.2.0',
-      '@openclaw/whatsapp': '2026.10.5',
+      '@openclaw/whatsapp': '2026.10.10',
       '@dingtalk-real-ai/dingtalk-connector': '0.8.26',
       'dingtalk-workspace-cli': '1.0.30',
-      '@wecom/wecom-openclaw-plugin': '2026.9.15',
-      '@openclaw/feishu': '2026.10.5',
+      '@wecom/wecom-openclaw-plugin': '2026.10.30',
+      '@openclaw/feishu': '2026.10.10',
       '@tencent-weixin/openclaw-weixin': '2.4.10',
     });
 
@@ -36,15 +37,14 @@ describe('openclaw bundle config', () => {
     expect(nodeDownloadScript).toContain("const NODE_VERSION = '24.18.1'");
   });
 
-  it('keeps the koffi JavaScript entry that OpenClaw loads for Windows state snapshots', () => {
-    const koffiEntry = require.resolve('koffi', {
-      paths: [realpathSync(resolve(process.cwd(), 'node_modules/openclaw'))],
-    });
-    expect(readFileSync(koffiEntry, 'utf8')).toContain('./src/koffi/index.cjs');
-
-    const bundleScript = readFileSync(resolve(process.cwd(), 'scripts/bundle-openclaw.mjs'), 'utf8');
-    expect(bundleScript).not.toContain("'node_modules/koffi/src'");
-    expect(bundleScript).toContain('bundled koffi cannot be loaded');
+  it('loads the process and filesystem native dependencies used by the bundled runtime', async () => {
+    const host = realpathSync(resolve(process.cwd(), 'node_modules/openclaw'));
+    const procEntry = require.resolve('@openclaw/proc-safe', { paths: [host] });
+    const { getProcSafeNativeStatus } = await import(pathToFileURL(procEntry).href);
+    expect(await getProcSafeNativeStatus({ probe: true })).toMatchObject({ loaded: true });
+    const runtime = JSON.parse(readFileSync(resolve(host, 'package.json'), 'utf8'));
+    expect(runtime.dependencies['@openclaw/fs-safe']).toBe('0.26.5');
+    expect(runtime.dependencies['@openclaw/proc-safe']).toBe('0.4.2');
   });
 
   it('unpacks every native CUA SDK library required by Electron Main', () => {
@@ -52,6 +52,7 @@ describe('openclaw bundle config', () => {
 
     expect(builderConfig).toContain('- "**/node_modules/@trycua/**"');
     expect(builderConfig).toContain('- "**/node_modules/@ubjs/**"');
+    expect(builderConfig).toContain('from: resources/cli/restore-openclaw-upgrade.mjs\n    to: cli/restore-openclaw-upgrade.mjs');
   });
 
   it('uses an Electron runtime with OpenClaw-compatible Node and SQLite versions', () => {
@@ -102,12 +103,12 @@ describe('openclaw bundle config', () => {
     expect(lockfile).not.toContain("'@larksuite/openclaw-lark@2026.6.10':");
     expect(lockfile).not.toContain("'@larksuite/openclaw-lark@2026.7.9':");
     expect(lockfile).not.toContain("'@larksuite/openclaw-lark@2026.7.16':");
-    expect(lockfile).toContain("'@openclaw/feishu@2026.10.5':");
+    expect(lockfile).toContain("'@openclaw/feishu@2026.10.10':");
     expect(lockfile).not.toContain("'@openclaw/qqbot@2026.7.1':");
     expect(lockfile).toContain("'@tencent-connect/openclaw-qqbot@2.0.3':");
     expect(lockfile).not.toContain("'@tencent-weixin/openclaw-weixin@2.4.6':");
     expect(lockfile).not.toContain("'@openclaw/ai@2026.7.1-2':");
-    expect(lockfile).toContain("'@openclaw/ai@2026.10.5':");
+    expect(lockfile).toContain("'@openclaw/ai@2026.10.10':");
   });
 
   it('includes Electron runtime-only packages needed in packaged builds', async () => {

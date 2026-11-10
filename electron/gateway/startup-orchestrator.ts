@@ -1,5 +1,6 @@
 import { logger } from '../utils/logger';
 import { LifecycleSupersededError } from './lifecycle-controller';
+import { GatewayStartupMigrationRequiredError, GatewayStartupPreparationError } from './startup-preparation';
 import {
   connectGatewayWithStartupRetry,
   getGatewayStartupFailureReason,
@@ -7,6 +8,17 @@ import {
 } from './startup-recovery';
 
 const MAX_DOCTOR_REPAIRS = 2;
+
+/** start() reports some failures through status; they must not trigger auth writes. */
+export async function startGatewayAndSyncAuth(
+  gateway: { start(): Promise<void>; getStatus(): { state: string } },
+  syncAuth: () => Promise<void>,
+): Promise<boolean> {
+  await gateway.start();
+  if (gateway.getStatus().state !== 'running') return false;
+  await syncAuth();
+  return true;
+}
 
 export interface ExistingGatewayInfo {
   port: number;
@@ -126,20 +138,25 @@ export async function runGatewayStartupSequence(hooks: StartupHooks): Promise<vo
       // stop() can make waitForReady reject with an ordinary process-exit error.
       // Verify the epoch before classifying that exit or starting recovery work.
       hooks.assertLifecycle('start/recovery');
+      if (error instanceof GatewayStartupPreparationError) throw error;
       const startupStderrLines = hooks.getStartupStderrLines();
-      const failureReason = getGatewayStartupFailureReason(startupStderrLines);
+      const failureReason = error instanceof GatewayStartupMigrationRequiredError
+        ? error.reason
+        : getGatewayStartupFailureReason(startupStderrLines);
       // Another Doctor run is useful only when the previous one made progress,
       // which shows as the Gateway refusing for a different reason.
       const repairExhausted = doctorRepairs >= MAX_DOCTOR_REPAIRS
         || (doctorRepairs > 0 && failureReason === lastRepairedReason);
-      const recoveryAction = getGatewayStartupRecoveryAction({
-        startupError: error,
-        startupStderrLines,
-        processExitCode: hooks.getProcessExitCode(),
-        configRepairAttempted: repairExhausted,
-        attempt: startAttempts,
-        maxAttempts: maxStartAttempts,
-      });
+      const recoveryAction = error instanceof GatewayStartupMigrationRequiredError
+        ? (repairExhausted ? 'fail' : 'repair')
+        : getGatewayStartupRecoveryAction({
+          startupError: error,
+          startupStderrLines,
+          processExitCode: hooks.getProcessExitCode(),
+          configRepairAttempted: repairExhausted,
+          attempt: startAttempts,
+          maxAttempts: maxStartAttempts,
+        });
 
       if (recoveryAction === 'repair') {
         doctorRepairs++;

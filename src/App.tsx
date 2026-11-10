@@ -3,7 +3,7 @@
  * Handles routing and global providers
  */
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
-import { Component, useEffect } from 'react';
+import { Component, useEffect, useSyncExternalStore } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 import { Toaster } from 'sonner';
 import i18n from './i18n';
@@ -185,6 +185,7 @@ function App() {
     return () => rendererExtensionRegistry.teardownAll();
   }, []);
 
+  useSyncExternalStore(rendererExtensionRegistry.subscribe, rendererExtensionRegistry.getSnapshot);
   const extraRoutes = rendererExtensionRegistry.getExtraRoutes();
 
   return (

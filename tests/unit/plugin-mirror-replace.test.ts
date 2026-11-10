@@ -3,6 +3,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+const { home, persist } = vi.hoisted(() => ({ home: { path: '' }, persist: vi.fn(() => true) }));
+vi.mock('node:os', async () => ({ ...await vi.importActual('node:os'), homedir: () => home.path }));
 
 vi.mock('electron', () => ({
   app: { isPackaged: true, getAppPath: () => '/mock/app' },
@@ -13,7 +15,7 @@ vi.mock('@electron/utils/logger', () => ({
 }));
 
 vi.mock('@electron/utils/plugin-install-index', () => ({
-  upsertPluginInstallRecordsIntoSqlite: vi.fn(() => true),
+  upsertPluginInstallRecordsIntoSqlite: persist,
   removePluginInstallRecordsFromSqlite: vi.fn(() => true),
   ensureOpenClawStateDirExists: vi.fn(),
 }));
@@ -40,6 +42,8 @@ describe('replacePluginMirror', () => {
 
   beforeEach(() => {
     openclawDir = mkdtempSync(join(tmpdir(), 'clawx-plugin-mirror-'));
+    home.path = openclawDir;
+    persist.mockReset().mockReturnValue(true);
     targetDir = join(openclawDir, 'extensions', 'feishu-openclaw-plugin');
   });
 
@@ -99,5 +103,30 @@ describe('replacePluginMirror', () => {
 
     expect(JSON.parse(readFileSync(join(targetDir, 'package.json'), 'utf8')).version).toBe('1.0.0');
     expect(stagingEntries()).toEqual([]);
+  });
+  it('keeps the previous payload until metadata commits and can undo a publication', async () => {
+    writeMirror(targetDir, '1.0.0');
+    const { replacePluginMirror } = await import('@electron/utils/plugin-install');
+    const transaction = replacePluginMirror(targetDir, (dir) => writeMirror(dir, '2.0.0'), true)!;
+    expect(stagingEntries()).toHaveLength(1);
+    expect(JSON.parse(readFileSync(join(targetDir, 'package.json'), 'utf8')).version).toBe('2.0.0');
+    transaction.rollback();
+    expect(JSON.parse(readFileSync(join(targetDir, 'package.json'), 'utf8')).version).toBe('1.0.0');
+    expect(stagingEntries()).toEqual([]);
+  });
+  it('restores an installed payload when SQLite metadata publication fails', async () => {
+    const target = join(openclawDir, '.openclaw/extensions/wecom');
+    const source = join(openclawDir, 'bundle/wecom');
+    for (const [dir, version] of [[target, '2026.8.17'], [source, '2026.10.30']]) {
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'openclaw.plugin.json'), JSON.stringify({ id: 'wecom' }));
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: '@wecom/wecom-openclaw-plugin', version }));
+    }
+    persist.mockImplementationOnce(() => { throw new Error('disk full'); });
+    const { ensurePluginInstalled } = await import('@electron/utils/plugin-install');
+    expect(await ensurePluginInstalled('wecom', [source], 'WeCom')).toMatchObject({ installed: false });
+    expect(JSON.parse(readFileSync(join(target, 'package.json'), 'utf8')).version).toBe('2026.8.17');
+    expect(await ensurePluginInstalled('wecom', [source], 'WeCom')).toMatchObject({ installed: true });
+    expect(JSON.parse(readFileSync(join(target, 'package.json'), 'utf8')).version).toBe('2026.10.30');
   });
 });

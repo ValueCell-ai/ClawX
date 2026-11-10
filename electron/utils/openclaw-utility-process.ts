@@ -218,13 +218,14 @@ if (process.env.OPENCLAW_DEBUG === '1') {
 
 /** Private to the explicitly opted-in Gateway child; never inherited by runtime children. */
 export const OPENCLAW_GATEWAY_CONTROL_SOURCE = `
+let releaseGatewayControl = () => {};
 const gatewayControlEnabled = process.env.${OPENCLAW_GATEWAY_CONTROL_ENV} === '1';
 delete process.env.${OPENCLAW_GATEWAY_CONTROL_ENV};
 if (gatewayControlEnabled && process.parentPort) {
   const parentPort = process.parentPort;
   let shutdownRequested = false;
   let shutdownError;
-  parentPort.on('message', ({ data }) => {
+  const onParentMessage = ({ data }) => {
     if (data?.type !== '${OPENCLAW_GATEWAY_SHUTDOWN_REQUEST}' || typeof data.requestId !== 'string') return;
     const reply = (accepted, reason) => {
       try {
@@ -253,7 +254,9 @@ if (gatewayControlEnabled && process.parentPort) {
       shutdownError = 'SIGTERM handler failed';
     }
     reply(!shutdownError, shutdownError);
-  });
+  };
+  parentPort.on('message', onParentMessage);
+  releaseGatewayControl = () => parentPort.off('message', onParentMessage);
 }
 `;
 
@@ -269,6 +272,18 @@ export const OPENCLAW_UTILITY_BOOTSTRAP_SOURCE = [
   'process.argv[1] = entry;',
   OPENCLAW_GATEWAY_CONTROL_SOURCE,
   'await import(pathToFileURL(entry).href);',
+  // 10.10 awaits CLI cleanup, then sets exitCode instead of calling exit().
+  // Electron utility processes do not exit when Node's event loop drains,
+  // even without a parent-port listener. Finish only after the entry resolved
+  // and its stdout/stderr writes drained; a running Gateway has no exitCode.
+  'if (process.parentPort && process.exitCode !== undefined) {',
+  '  releaseGatewayControl();',
+  '  await Promise.all([process.stdout, process.stderr].map((stream) => new Promise((done) => {',
+  '    if (!stream || stream.destroyed || !stream.writable) return done();',
+  "    stream.write('', () => done());",
+  '  })));',
+  '  process.exit(process.exitCode);',
+  '}',
   '',
 ].join('\n');
 

@@ -79,7 +79,7 @@ async function runtime(options: { acknowledge?: boolean; grace?: number; unmater
     });
   });
   const port = (server.address() as { port: number }).port;
-  const child = spawn(process.execPath, [path.resolve('node_modules/openclaw/dist/server-DkfYuk25.mjs'), '--url', `ws://127.0.0.1:${port}`, '--token', 'fixture', '--verbose'], {
+  const child = spawn(process.execPath, [path.resolve('node_modules/openclaw/openclaw.mjs'), 'acp', '--url', `ws://127.0.0.1:${port}`, '--token', 'fixture', '--verbose'], {
     env: { ...process.env, HOME: home, OPENCLAW_STATE_DIR: home, OPENCLAW_CONFIG_PATH: config,
       OPENCLAW_ACP_ACCEPTED_PROMPT_RECOVERY_GRACE_MS: String(options.grace ?? 480_000),
       ...(options.readinessTimeout ? { OPENCLAW_ACP_GATEWAY_RECONNECT_TIMEOUT_MS: String(options.readinessTimeout) } : {}) },

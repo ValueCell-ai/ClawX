@@ -564,6 +564,34 @@ describe('OpenClaw utility-process bootstrap', () => {
     expect(shutdown).toHaveBeenCalledOnce();
   });
 
+  it.each([0, 1, 78, undefined])('finishes a deferred CLI exit %s only after output drains', async (code) => {
+    const { OPENCLAW_GATEWAY_CONTROL_SOURCE, OPENCLAW_UTILITY_BOOTSTRAP_SOURCE } =
+      await import('@electron/utils/openclaw-utility-process');
+    const parentPort = Object.assign(new EventEmitter(), { postMessage: vi.fn() });
+    const unrelated = vi.fn();
+    parentPort.on('message', unrelated);
+    const child = Object.assign(new EventEmitter(), {
+      env: { CLAWX_OPENCLAW_GATEWAY_CONTROL: '1' }, parentPort, exitCode: code,
+      stdout: { writable: true, write: vi.fn() }, stderr: { writable: true, write: vi.fn() }, exit: vi.fn(),
+    });
+    const completion = OPENCLAW_UTILITY_BOOTSTRAP_SOURCE.split("await import(pathToFileURL(entry).href);")[1];
+    const finished = runInNewContext(`(async () => {${OPENCLAW_GATEWAY_CONTROL_SOURCE + completion}})()`, { process: child });
+    expect(child.exit).not.toHaveBeenCalled();
+    if (code === undefined) {
+      await finished;
+      expect(parentPort.listenerCount('message')).toBe(2);
+      expect(child.stdout.write).not.toHaveBeenCalled();
+      return;
+    }
+    child.stdout.write.mock.calls[0][1]();
+    await Promise.resolve();
+    expect(child.exit).not.toHaveBeenCalled();
+    child.stderr.write.mock.calls[0][1]();
+    await finished;
+    expect(parentPort.listeners('message')).toEqual([unrelated]);
+    expect(child.exit).toHaveBeenCalledExactlyOnceWith(code);
+  });
+
   it.each(['missing', 'throwing'])('rejects shutdown when its SIGTERM handler is %s', async (handler) => {
     const { OPENCLAW_GATEWAY_CONTROL_SOURCE, OPENCLAW_GATEWAY_CONTROL_ENV, OPENCLAW_GATEWAY_SHUTDOWN_REQUEST } =
       await import('@electron/utils/openclaw-utility-process');

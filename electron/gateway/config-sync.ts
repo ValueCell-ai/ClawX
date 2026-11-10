@@ -38,7 +38,7 @@ import { syncProxyConfigToOpenClaw } from '../utils/openclaw-proxy';
 import { logger } from '../utils/logger';
 import { prependPathEntry } from '../utils/env-path';
 import { ensureDingTalkDwsInstalled, resolveDingTalkDwsBinDir } from '../utils/dingtalk-dws';
-import { copyPluginFromNodeModules, fixupPluginManifest, cpSyncSafe, replacePluginMirror, buildCandidateSources, repairTrustedOfficialPluginInstallRecords, removeTrustedOfficialPluginInstallRecord, removeLegacyOfficialDingTalkExtension, resolvePluginNpmPackagePath } from '../utils/plugin-install';
+import { ensurePluginInstalled, buildCandidateSources, repairTrustedOfficialPluginInstallRecords, removeTrustedOfficialPluginInstallRecord, removeLegacyOfficialDingTalkExtension } from '../utils/plugin-install';
 import { ensureClawXPluginCapabilityConsent } from '../utils/plugin-capability-consent';
 import { safeRmSync } from '../utils/safe-fs';
 import { CLAWX_OPENAI_IMAGE_PROVIDER_KEY } from '../utils/openclaw-image-relay-constants';
@@ -54,6 +54,7 @@ import {
   directoryChildrenSignature,
   pathSignature,
   runCachedPrelaunchMaintenanceTask,
+  runCachedPrelaunchMaintenanceTaskAsync,
   type PrelaunchMaintenanceRunResult,
   type PrelaunchMaintenanceTaskName,
 } from './prelaunch-maintenance-cache';
@@ -192,80 +193,20 @@ export function provisionConfiguredDingTalkDws(configuredChannels: readonly stri
  * - Packaged mode: uses bundled plugins from resources/ (includes deps)
  * - Dev mode: falls back to node_modules/ with pnpm-aware dep collection
  */
-function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): boolean {
+export async function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): Promise<boolean> {
   let succeeded = true;
   for (const channelType of configuredChannels) {
     const pluginInfo = CHANNEL_PLUGIN_MAP[channelType];
     if (!pluginInfo) continue;
-    const { dirName, npmName } = pluginInfo;
-
-    const targetDir = join(homedir(), '.openclaw', 'extensions', dirName);
-    const targetManifest = join(targetDir, 'openclaw.plugin.json');
-    const isInstalled = existsSync(fsPath(targetManifest));
-    const installedPackage = isInstalled
-      ? readPluginPackageMetadata(join(targetDir, 'package.json'))
-      : { name: null, version: null };
-    const installedVersion = installedPackage.version;
-
-    // Try bundled sources first (packaged mode or if bundle-plugins was run)
-    const bundledSources = buildCandidateSources(dirName);
-    const bundledDir = bundledSources.find((dir) => existsSync(fsPath(join(dir, 'openclaw.plugin.json'))));
-
-    if (bundledDir) {
-      const sourcePackage = readPluginPackageMetadata(join(bundledDir, 'package.json'));
-      const sourceVersion = sourcePackage.version;
-      const packageOwnerChanged = Boolean(
-        sourcePackage.name
-        && sourcePackage.name !== installedPackage.name,
-      );
-      // A package ownership change is an upgrade even if the two publishers
-      // happen to use the same version string.
-      if (!isInstalled || packageOwnerChanged || (sourceVersion && installedVersion && sourceVersion !== installedVersion)) {
-        logger.info(`[plugin] ${isInstalled ? 'Auto-upgrading' : 'Installing'} ${channelType} plugin${isInstalled ? `: ${installedVersion} → ${sourceVersion}` : `: ${sourceVersion}`} (bundled)`);
-        try {
-          mkdirSync(fsPath(join(homedir(), '.openclaw', 'extensions')), { recursive: true });
-          replacePluginMirror(targetDir, (stagedDir) => cpSyncSafe(bundledDir, stagedDir));
-          fixupPluginManifest(targetDir);
-        } catch (err) {
-          logger.warn(`[plugin] Failed to ${isInstalled ? 'auto-upgrade' : 'install'} ${channelType} plugin:`, err);
-          succeeded = false;
-        }
-      } else if (isInstalled) {
-        // Same version already installed — still patch manifest ID in case it was
-        // never corrected (e.g. installed before MANIFEST_ID_FIXES included this plugin).
-        fixupPluginManifest(targetDir);
+    try {
+      const result = await ensurePluginInstalled(pluginInfo.dirName, buildCandidateSources(pluginInfo.dirName), channelType);
+      if (!result.installed) {
+        logger.warn(`[plugin] Failed to prepare ${channelType}: ${result.warning ?? 'installation_failed'}`);
+        succeeded = false;
       }
-      continue;
-    }
-
-    // Dev mode fallback: copy from node_modules/ with pnpm dep resolution
-    if (!app.isPackaged) {
-      const npmPkgPath = resolvePluginNpmPackagePath(npmName);
-      if (npmPkgPath && existsSync(fsPath(join(npmPkgPath, 'openclaw.plugin.json')))) {
-        const sourcePackage = readPluginPackageMetadata(join(npmPkgPath, 'package.json'));
-        const sourceVersion = sourcePackage.version;
-        if (!sourceVersion) continue;
-        const packageOwnerChanged = Boolean(
-          sourcePackage.name
-          && sourcePackage.name !== installedPackage.name,
-        );
-        // Skip only if both package owner and version already match.
-        if (isInstalled && !packageOwnerChanged && installedVersion && sourceVersion === installedVersion) {
-          fixupPluginManifest(targetDir);
-          continue;
-        }
-
-        logger.info(`[plugin] ${isInstalled ? 'Auto-upgrading' : 'Installing'} ${channelType} plugin${isInstalled ? `: ${installedVersion} → ${sourceVersion}` : `: ${sourceVersion}`} (dev/node_modules)`);
-
-        try {
-          mkdirSync(fsPath(join(homedir(), '.openclaw', 'extensions')), { recursive: true });
-          replacePluginMirror(targetDir, (stagedDir) => copyPluginFromNodeModules(npmPkgPath, stagedDir, npmName));
-          fixupPluginManifest(targetDir);
-        } catch (err) {
-          logger.warn(`[plugin] Failed to ${isInstalled ? 'auto-upgrade' : 'install'} ${channelType} plugin from node_modules:`, err);
-          succeeded = false;
-        }
-      }
+    } catch (error) {
+      logger.warn(`[plugin] Failed to prepare ${channelType}:`, error);
+      succeeded = false;
     }
   }
   return succeeded;
@@ -336,6 +277,20 @@ function withConfiguredImageGenerationPlugins(configuredChannels: string[], rawC
   return next;
 }
 
+/** Disabled accounts still own plugin data and need a compatible schema. */
+export function retainedChannelPluginsForMaintenance(active: string[], rawConfig: unknown): string[] {
+  const retained = new Set(active);
+  const channels = (rawConfig as { channels?: Record<string, unknown> } | null)?.channels;
+  if (channels && typeof channels === 'object') {
+    for (const [id, config] of Object.entries(channels)) {
+      // Feishu deliberately keeps the starting-main maintenance policy.
+      if (id !== 'feishu' && CHANNEL_PLUGIN_MAP[id] && config && typeof config === 'object'
+        && !Array.isArray(config) && Object.keys(config).length > 0) retained.add(id);
+    }
+  }
+  return [...retained];
+}
+
 function buildPluginSourceSignatures(configuredChannels: string[]): Record<string, unknown> {
   const signatures: Record<string, unknown> = {};
   for (const channelType of [...configuredChannels].sort()) {
@@ -348,6 +303,7 @@ function buildPluginSourceSignatures(configuredChannels: string[]): Record<strin
     signatures[channelType] = sourceDir
       ? {
         sourceDir,
+        packageMetadata: readPluginPackageMetadata(join(sourceDir, 'package.json')),
         manifest: pathSignature(join(sourceDir, 'openclaw.plugin.json')),
         packageJson: pathSignature(join(sourceDir, 'package.json')),
       }
@@ -361,6 +317,7 @@ function buildPluginMaintenanceCacheKey(openclawDir: string, configuredChannels:
     task: 'plugin-maintenance',
     appVersion: appVersionForCache(),
     openclawDir,
+    runtimePackage: readPluginPackageMetadata(join(openclawDir, 'package.json')),
     cwd: process.cwd(),
     configuredChannels: [...configuredChannels].sort(),
     extensionsDir: directoryChildrenSignature(join(homedir(), '.openclaw', 'extensions')),
@@ -550,24 +507,28 @@ export async function syncGatewayConfigBeforeLaunch(
   // Only install/upgrade plugins for channels that are actually configured
   // in openclaw.json — do NOT expand the list from plugins.allow.
   try {
+    let maintainedPlugins: string[] = [];
     configuredChannels = await measureAsync(timingsMs, 'configuredChannelsMs', async () => {
       const rawCfg = await readOpenClawConfig();
-      return withConfiguredImageGenerationPlugins(
+      const active = withConfiguredImageGenerationPlugins(
         await listConfiguredChannelsFromConfig(rawCfg),
         rawCfg,
       );
+      maintainedPlugins = retainedChannelPluginsForMaintenance(active, rawCfg);
+      return active;
     });
 
-    const result = measureSync(timingsMs, 'pluginMaintenanceMs', () => runCachedPrelaunchMaintenanceTask(
+    const result = await measureAsync(timingsMs, 'pluginMaintenanceMs', () => runCachedPrelaunchMaintenanceTaskAsync(
       'plugin-maintenance',
-      () => buildPluginMaintenanceCacheKey(openclawDir, configuredChannels),
-      () => {
-        const upgradeOk = ensureConfiguredPluginsUpgraded(configuredChannels);
-        const cleanupOk = cleanupUnconfiguredChannelPlugins(configuredChannels);
+      () => buildPluginMaintenanceCacheKey(openclawDir, maintainedPlugins),
+      async () => {
+        const upgradeOk = await ensureConfiguredPluginsUpgraded(maintainedPlugins);
+        const cleanupOk = cleanupUnconfiguredChannelPlugins(maintainedPlugins);
         return upgradeOk && cleanupOk;
       },
     ));
     maintenance['plugin-maintenance'] = result;
+    if (result.reason === 'task-failed') throw new Error('Configured channel plugin maintenance failed; restart ClawX to retry from the retained upgrade snapshot.');
 
     if (configuredChannels.includes('feishu')) {
       await syncFeishuPluginRegistrationWithInstalledPlugin();
@@ -576,7 +537,7 @@ export async function syncGatewayConfigBeforeLaunch(
     // This legacy directory can coexist with ClawX's remapped `dingtalk`
     // mirror and create a second Stream client. Remove it on upgrade before
     // Gateway starts, but only after the canonical official mirror exists.
-    if (configuredChannels.includes('dingtalk')) {
+    if (maintainedPlugins.includes('dingtalk')) {
       removeLegacyOfficialDingTalkExtension({ requireCanonicalMirror: true });
     } else {
       removeLegacyOfficialDingTalkExtension();
@@ -586,11 +547,12 @@ export async function syncGatewayConfigBeforeLaunch(
     // be skipped when plugin-maintenance is cache-hit, otherwise official
     // external plugins like WhatsApp fail openKeyedStore at runtime.
     await measureAsync(timingsMs, 'trustedPluginInstallSyncMs', async () => {
-      await cleanupUnconfiguredChannelPluginInstallRecords(configuredChannels);
+      await cleanupUnconfiguredChannelPluginInstallRecords(maintainedPlugins);
       await repairTrustedOfficialPluginInstallRecords();
     });
   } catch (err) {
     logger.warn('Failed to auto-upgrade plugins:', err);
+    throw err;
   }
 
   // Runs offline before Gateway start: with a Gateway up, the CLI would apply
@@ -698,7 +660,10 @@ async function resolveChannelStartupPolicy(): Promise<{
   }
 }
 
-export async function prepareGatewayLaunchContext(port: number): Promise<GatewayLaunchContext> {
+export async function prepareGatewayLaunchContext(
+  port: number,
+  prepareRuntime?: () => Promise<void>,
+): Promise<GatewayLaunchContext> {
   const timingsMs: Record<string, number> = {};
   const totalStartedAt = Date.now();
   const openclawDir = getOpenClawDir();
@@ -732,6 +697,11 @@ export async function prepareGatewayLaunchContext(port: number): Promise<Gateway
   const prelaunchSummary = await measureAsync(timingsMs, 'prelaunchSyncMs', async () => (
     await syncGatewayConfigBeforeLaunch(appSettings, openclawDir)
   ));
+
+  // Extensions may need to project runtime credentials after offline migration.
+  // The upgrade snapshot and config/plugin preparation must precede their writes;
+  // environment and channel decisions below must see their completed projection.
+  if (prepareRuntime) await measureAsync(timingsMs, 'runtimePreparationMs', prepareRuntime);
 
   if (!existsSync(entryScript)) {
     throw new Error(`OpenClaw entry script not found at: ${entryScript}`);

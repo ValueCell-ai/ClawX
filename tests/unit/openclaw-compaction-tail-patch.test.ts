@@ -38,7 +38,7 @@ function messageEntry(
 
 describe('OpenClaw no-retained-tail compaction', () => {
   it('accepts keepRecentTokens=0 in OpenClaw configuration', async () => {
-    const schemaPath = path.join(dist, 'zod-schema-BVpLKnmq.mjs');
+    const schemaPath = path.join(dist, 'zod-schema-BhFMUqIz.mjs');
     const { t: OpenClawSchema } = await import(pathToFileURL(schemaPath).href) as {
       t: { safeParse: (value: unknown) => { success: boolean } };
     };
@@ -53,7 +53,7 @@ describe('OpenClaw no-retained-tail compaction', () => {
   });
 
   it('applies keepRecentTokens=0 to the runtime settings manager', async () => {
-    const settingsPath = path.join(dist, 'agent-settings-CZ8x5-4D.mjs');
+    const settingsPath = path.join(dist, 'agent-settings-CCvY95d8.mjs');
     const { r: applyAgentCompactionSettingsFromConfig } = await import(
       pathToFileURL(settingsPath).href
     ) as {
@@ -86,9 +86,9 @@ describe('OpenClaw no-retained-tail compaction', () => {
   });
 
   it('summarizes the entire completed turn when keepRecentTokens is zero', async () => {
-    const corePath = path.join(dist, 'agent-core-B94tJ7dr.mjs');
-    const { b: prepareCompaction } = await import(pathToFileURL(corePath).href) as {
-      b: (
+    const corePath = path.join(dist, 'agent-core-BucXfq8L.mjs');
+    const { y: prepareCompaction } = await import(pathToFileURL(corePath).href) as {
+      y: (
         entries: Array<Record<string, unknown>>,
         settings: { enabled: boolean; reserveTokens: number; keepRecentTokens: number },
       ) => { ok: boolean; value?: CompactionPreparation };

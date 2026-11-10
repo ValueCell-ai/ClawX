@@ -79,6 +79,12 @@ describe('gateway startup recovery heuristics', () => {
     expect(isInvalidConfigSignal('[openclaw] The CLI command failed.')).toBe(false);
   });
 
+  it('matches the 10.10 Agent refusal without interpreting future schema errors as migrations', () => {
+    expect(isInvalidConfigSignal('OpenClaw agent database /tmp/main/openclaw-agent.sqlite uses schema version 25; stop active agents and run openclaw doctor --fix to migrate session identities before using it.')).toBe(true);
+    expect(isInvalidConfigSignal('Sessions remain unavailable. Stop the Gateway, run "openclaw doctor --fix" to inspect and repair this agent database, and restart.')).toBe(true);
+    expect(isInvalidConfigSignal('OpenClaw agent database /tmp/main/openclaw-agent.sqlite uses schema version 99; a newer OpenClaw release is required.')).toBe(false);
+  });
+
   it('repairs the 2026.10.5 agent-roster migration that only reports a legacy key', () => {
     const lines = [
       'File: ~/.openclaw/openclaw.json',

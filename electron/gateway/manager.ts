@@ -98,6 +98,13 @@ import {
   GATEWAY_AGENT_DATABASE_ADMISSION_WAIT_MS,
 } from './recovery-budget';
 import { probeAgentDatabaseAdmissions } from './agent-database-admission';
+import { isQuitting } from '../main/app-state';
+import {
+  GatewayStartupPreparationError,
+  GatewayStartupMigrationRequiredError,
+  GatewayStartupPreparations,
+  type GatewayStartupPreparation,
+} from './startup-preparation';
 import { collectGatewayProcessDiagnostics, getGatewayDiagnosticEnvironment } from './process-diagnostics';
 import { OPENCLAW_GATEWAY_SHUTDOWN_REQUEST, OPENCLAW_GATEWAY_SHUTDOWN_RESULT } from '../utils/openclaw-utility-process';
 
@@ -237,6 +244,7 @@ export class GatewayManager extends EventEmitter {
   private restartInFlight: Promise<void> | null = null;
   private readonly connectionMonitor = new GatewayConnectionMonitor();
   private readonly lifecycleController = new GatewayLifecycleController();
+  private readonly startupPreparations = new GatewayStartupPreparations();
   private readonly restartController = new GatewayRestartController();
   private readonly restartGovernor = new GatewayRestartGovernor();
   private readonly recoveryController: GatewayRecoveryController;
@@ -501,7 +509,20 @@ export class GatewayManager extends EventEmitter {
   /**
    * Start Gateway process
    */
+  registerStartupPreparation(id: string, preparation: GatewayStartupPreparation): () => void {
+    return this.startupPreparations.register(id, preparation);
+  }
+
+  private assertStartupActive(epoch: number, phase: string): void {
+    this.lifecycleController.assert(epoch, phase);
+    if (isQuitting()) throw new LifecycleSupersededError(`Gateway ${phase} cancelled by app quit`);
+  }
+
   async start(): Promise<void> {
+    if (isQuitting()) {
+      logger.debug('Gateway start ignored during app quit');
+      return;
+    }
     if (this.startLock) {
       logger.debug('Gateway start ignored because a start flow is already in progress');
       return;
@@ -519,39 +540,40 @@ export class GatewayManager extends EventEmitter {
     this.recordDiagnosticStage('start-requested');
     this.startDiagnosticTimer();
     const startEpoch = this.lifecycleController.bump('start');
+    this.startupPreparations.cancelActive();
     logger.info(`Gateway start requested (port=${this.status.port})`);
     this.lastSpawnSummary = null;
     this.shouldReconnect = true;
-    // Lazily load device identity (async file I/O + key generation).
-    // Must happen before connect() which uses the identity for the handshake.
-    await this.initDeviceIdentity();
-
-    // Manual start should override and cancel any pending reconnect timer.
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-      logger.debug('Cleared pending reconnect timer because start was requested manually');
-    }
-
-    // Only reset reconnectAttempts on manual start, not on auto-reconnect.
-    // Auto-reconnect calls start() via scheduleReconnect(); those should
-    // accumulate attempts so the maxAttempts cap works correctly.
-    if (!this.isAutoReconnectStart) {
-      this.reconnectAttempts = 0;
-    }
-    this.isAutoReconnectStart = false; // consume the flag
-    this.setStatus({ state: 'starting', reconnectAttempts: this.reconnectAttempts, gatewayReady: false });
-    this.resetGatewayReadyFallback();
-
-    // Check if Python environment is ready (self-healing) asynchronously.
-    // Fire-and-forget: only needs to run once, not on every retry.
-    warmupManagedPythonReadiness();
-
-    const t0 = Date.now();
+    let t0 = Date.now();
     let tSpawned = 0;
     let tReady = 0;
 
     try {
+      // Lazily load device identity (async file I/O + key generation).
+      // Quit/stop can begin during this read; do not re-enter startup afterward.
+      await this.initDeviceIdentity();
+      this.assertStartupActive(startEpoch, 'start/identity-ready');
+
+      // Manual start should override and cancel any pending reconnect timer.
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = null;
+        logger.debug('Cleared pending reconnect timer because start was requested manually');
+      }
+
+      // Only reset reconnectAttempts on manual start, not on auto-reconnect.
+      // Auto-reconnect calls start() via scheduleReconnect(); those should
+      // accumulate attempts so the maxAttempts cap works correctly.
+      if (!this.isAutoReconnectStart) {
+        this.reconnectAttempts = 0;
+      }
+      this.isAutoReconnectStart = false; // consume the flag
+      this.setStatus({ state: 'starting', reconnectAttempts: this.reconnectAttempts, gatewayReady: false });
+      this.resetGatewayReadyFallback();
+
+      // Check Python readiness asynchronously, once per cold startup.
+      warmupManagedPythonReadiness();
+      t0 = Date.now();
       await runGatewayStartupSequence({
         port: this.status.port,
         shouldWaitForPortFree: process.platform === 'win32',
@@ -562,7 +584,7 @@ export class GatewayManager extends EventEmitter {
         getStartupStderrLines: () => this.recentStartupStderrLines,
         getProcessExitCode: () => this.processExitCode,
         assertLifecycle: (phase) => {
-          this.lifecycleController.assert(startEpoch, phase);
+          this.assertStartupActive(startEpoch, phase);
         },
         findExistingGateway: async (port) => {
           // Always read the current process pid dynamically so that retries
@@ -600,7 +622,7 @@ export class GatewayManager extends EventEmitter {
           await waitForPortFree(port);
         },
         startProcess: async () => {
-          await this.startProcess();
+          await this.startProcess(startEpoch);
           tSpawned = Date.now();
         },
         waitForReady: async (port) => {
@@ -620,7 +642,7 @@ export class GatewayManager extends EventEmitter {
                 : { getLastProgressAt: () => this.lastProcessOutputAt }),
             });
           } catch (error) {
-            this.lifecycleController.assert(startEpoch, 'start/wait-ready-failed');
+            this.assertStartupActive(startEpoch, 'start/wait-ready-failed');
             // A process that remains alive but never emits a challenge is
             // stale. Reclaim it before the outer startup recovery schedules a
             // new attempt; otherwise every retry would wait on the same PID.
@@ -638,7 +660,7 @@ export class GatewayManager extends EventEmitter {
           try {
             await this.forceTerminateOwnedProcessForQuit();
           } finally {
-            this.shouldReconnect = shouldReconnect;
+            this.shouldReconnect = shouldReconnect && !isQuitting();
           }
         },
         onConnectedToManagedGateway: () => {
@@ -664,7 +686,7 @@ export class GatewayManager extends EventEmitter {
           }
         },
         runDoctorRepair: async () => await runOpenClawDoctorRepair({
-          assertLifecycle: () => this.lifecycleController.assert(startEpoch, 'start/doctor-prepare'),
+          assertLifecycle: () => this.assertStartupActive(startEpoch, 'start/doctor-prepare'),
         }),
         onDoctorRepairSuccess: () => {
           this.setStatus({ state: 'starting', error: undefined, reconnectAttempts: 0 });
@@ -676,6 +698,13 @@ export class GatewayManager extends EventEmitter {
     } catch (error) {
       if (error instanceof LifecycleSupersededError) {
         this.finishGatewayDiagnostics('superseded', diagnosticAttempt);
+        if (isQuitting()) this.shouldReconnect = false;
+        // Replacing/unregistering a preparation cancels its context without
+        // starting a newer manager lifecycle. Settle this attempt so an explicit
+        // deferred restart is not left waiting on "starting" indefinitely.
+        if (this.lifecycleController.getCurrentEpoch() === startEpoch && this.status.state === 'starting') {
+          this.setStatus({ state: 'stopped', gatewayReady: false, error: undefined });
+        }
         logger.debug(error.message);
         return;
       }
@@ -686,6 +715,8 @@ export class GatewayManager extends EventEmitter {
       this.setStatus({ state: 'error', error: String(error) });
       this.finishGatewayDiagnostics('failed', diagnosticAttempt);
       const fatalStartupFailure = isOpenClawFatalConfigExitCode(this.processExitCode)
+        || error instanceof GatewayStartupPreparationError
+        || error instanceof GatewayStartupMigrationRequiredError
         || this.processExitCode === 1
         || hasFatalRuntimeFailureSignal(error, this.recentStartupStderrLines)
         || hasGatewayStateOwnershipContentionSignal(error, this.recentStartupStderrLines)
@@ -697,7 +728,7 @@ export class GatewayManager extends EventEmitter {
         // by restarting the same binary, so leave recovery to a manual start.
         this.shouldReconnect = false;
         logger.error('Gateway startup failed fatally; automatic reconnect disabled');
-      } else if (this.shouldReconnect) {
+      } else if (this.shouldReconnect && !isQuitting()) {
         logger.warn('Gateway start failed; scheduling auto-reconnect recovery');
         this.scheduleReconnect();
       }
@@ -709,7 +740,7 @@ export class GatewayManager extends EventEmitter {
         {
           state: this.status.state,
           startLock: this.startLock,
-          shouldReconnect: this.shouldReconnect,
+          shouldReconnect: this.shouldReconnect && !isQuitting(),
         },
         () => {
           void this.restart().catch((error) => {
@@ -782,6 +813,7 @@ export class GatewayManager extends EventEmitter {
     this.recordDiagnosticStage('stopping');
     cancelLocalDeviceAutoApproval();
     this.lifecycleController.bump('stop');
+    this.startupPreparations.cancelActive();
     // Disable auto-reconnect
     this.shouldReconnect = false;
 
@@ -871,6 +903,10 @@ export class GatewayManager extends EventEmitter {
    * Restart Gateway process
    */
   async restart(deadlineProbeFailure?: 'deadline-probe-timeout' | 'deadline-probe-failed'): Promise<void> {
+    if (isQuitting()) {
+      logger.debug('Gateway restart ignored during app quit');
+      return;
+    }
     this.cancelDeadlineRecovery();
     if (this.restartController.isRestartDeferred({
       state: this.status.state,
@@ -917,9 +953,11 @@ export class GatewayManager extends EventEmitter {
     logger.info(`[gateway-refresh] mode=restart requested pidBefore=${pidBefore ?? 'n/a'}${trigger}`);
     this.restartInFlight = (async () => {
       await this.stop();
+      if (isQuitting()) return;
       try {
         await this.start();
       } catch (err) {
+        if (isQuitting()) throw err;
         if (this.status.state === 'error' && !this.shouldReconnect) {
           // start() deliberately disables recovery for fatal startup failures.
           // A restart must preserve that decision instead of recreating a loop.
@@ -937,6 +975,10 @@ export class GatewayManager extends EventEmitter {
 
     try {
       await this.restartInFlight;
+      if (isQuitting()) {
+        this.finishGatewayDiagnostics('stopped', diagnosticAttempt);
+        return;
+      }
       this.restartGovernor.recordExecuted();
       this.restartController.recordRestartCompleted();
       const observability = this.restartGovernor.getObservability();
@@ -962,7 +1004,7 @@ export class GatewayManager extends EventEmitter {
         {
           state: this.status.state,
           startLock: this.startLock,
-          shouldReconnect: this.shouldReconnect,
+          shouldReconnect: this.shouldReconnect && !isQuitting(),
         },
         () => {
           void this.restart().catch((error) => {
@@ -981,7 +1023,9 @@ export class GatewayManager extends EventEmitter {
    * of each other during setup.
    */
   debouncedRestart(delayMs = 2000): void {
+    if (isQuitting()) return;
     this.restartController.debouncedRestart(delayMs, () => {
+      if (isQuitting()) return;
       void this.restart().catch((err) => {
         logger.warn('Debounced Gateway restart failed:', err);
       });
@@ -1390,11 +1434,19 @@ export class GatewayManager extends EventEmitter {
    * Start Gateway process
    * Uses OpenClaw npm package from node_modules (dev) or resources (production)
    */
-  private async startProcess(): Promise<void> {
+  private async startProcess(startEpoch = this.lifecycleController.getCurrentEpoch()): Promise<void> {
+    const assertLifecycle = () => this.assertStartupActive(startEpoch, 'start/runtime-preparation');
     const diagnosticAttempt = this.diagnosticAttempt;
     this.recordDiagnosticStage('preparing-launch', diagnosticAttempt);
-    const launchContext = await prepareGatewayLaunchContext(this.status.port);
+    assertLifecycle();
+    const launchContext = await prepareGatewayLaunchContext(this.status.port, async () => {
+      assertLifecycle();
+      await this.startupPreparations.run(assertLifecycle);
+      assertLifecycle();
+    });
+    assertLifecycle();
     await unloadLaunchctlGatewayService();
+    assertLifecycle();
     this.processExitCode = null;
 
     // Per-process diagnostics reset on each new spawn so retries never mix
@@ -1748,6 +1800,7 @@ export class GatewayManager extends EventEmitter {
    * Schedule reconnection attempt with exponential backoff
    */
   private scheduleReconnect(mode: 'gateway' | 'transport' = 'gateway'): void {
+    if (isQuitting()) return;
     const decision = getReconnectScheduleDecision({
       shouldReconnect: this.shouldReconnect,
       hasReconnectTimer: this.reconnectTimer !== null,
@@ -1790,6 +1843,7 @@ export class GatewayManager extends EventEmitter {
 
     this.reconnectTimer = setTimeout(async () => {
       this.reconnectTimer = null;
+      if (isQuitting()) return;
       const skipReason = getReconnectSkipReason({
         scheduledEpoch,
         currentEpoch: this.lifecycleController.getCurrentEpoch(),

@@ -288,8 +288,6 @@
         "pickAgent": "アシスタントを選択",
         "pickModel": "モデルを選択",
         "modelPickerTitle": "このタスクのモデルを選択",
-        "followAgentModel": "エージェントに従う（{{model}}）",
-        "followAgentModelShort": "エージェントに従う",
         "modelReadFailed": "この会話のモデルを取得できませんでした：{{error}}",
         "modelSwitchFailed": "モデルの切り替えに失敗しました: {{error}}",
         "clearTarget": "送信先アシスタントを解除",

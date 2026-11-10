@@ -7,7 +7,7 @@ const root = process.cwd();
 
 describe('TokenDance OpenClaw recovery bridge', () => {
   it('keeps the response-header bridge in the pinned OpenClaw patch', async () => {
-    const patch = await readFile(path.join(root, 'patches/openclaw@2026.10.5.patch'), 'utf8');
+    const patch = await readFile(path.join(root, 'patches/openclaw@2026.10.10.patch'), 'utf8');
     expect(patch).toContain('TokenDance-Recovery-Action');
     expect(patch).toContain('top_up_balance');
     expect(patch).toContain('reauthorize_api_key');
@@ -16,7 +16,7 @@ describe('TokenDance OpenClaw recovery bridge', () => {
 
   it('adds only documented recovery actions to formatted runtime errors', async () => {
     const errorModule = await import(pathToFileURL(
-      path.join(root, 'node_modules/openclaw/dist/error-coercion-W9BtigRm.mjs'),
+      path.join(root, 'node_modules/openclaw/dist/error-coercion-BwMr25F8.mjs'),
     ).href) as {
       s: (error: unknown, options: { includeCode: boolean; redact: (text: string) => string }) => string;
     };

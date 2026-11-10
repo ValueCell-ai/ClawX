@@ -33,7 +33,7 @@ export type { FileAttachment } from '@/types/attachment';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import { buildPreviewTarget } from '@/components/file-preview/build-preview-target';
 import { useProviderStore } from '@/stores/providers';
-import { buildConfiguredModelOptions, formatModelRefLabel, resolveConfiguredModelRef } from '@/lib/model-options';
+import { buildConfiguredModelOptions, formatModelRefLabel } from '@/lib/model-options';
 import { getSessionModelSelectionError, readSessionModel, useSessionModel } from './session-model';
 import { getPromptSessionKey } from '@/stores/chat/session-key-utils';
 import type { AgentSummary } from '@/types/agent';
@@ -411,13 +411,13 @@ export function ChatInput({
   const destinationKeyRef = useRef(destinationKey);
   destinationKeyRef.current = destinationKey;
   const destinationAgent = selectedTarget ?? currentAgent;
-  const agentModelRef = destinationAgent?.modelRef || defaultModelRef || resolveConfiguredModelRef(null, null, modelOptions);
+  const agentModelRef = destinationAgent?.modelRef || defaultModelRef;
   const sessionModel = useSessionModel(destinationKey, destination,
     gatewayStatus.state === 'running' && gatewayStatus.gatewayReady !== false, sending, agentModelRef);
   const effectiveModelRef = sessionModel.value?.modelRef || sessionModel.value?.effectiveModelRef || agentModelRef;
   const currentModelLabel = useMemo(() => {
     const matchedOption = modelOptions.find((option) => option.modelRef === effectiveModelRef);
-    return matchedOption?.modelId || (effectiveModelRef ? formatModelRefLabel(effectiveModelRef) : t('composer.followAgentModelShort'));
+    return matchedOption?.modelId || (effectiveModelRef ? formatModelRefLabel(effectiveModelRef) : t('composer.pickModel'));
   }, [effectiveModelRef, modelOptions, t]);
   const mentionableAgents = useMemo(
     () => (agents ?? []).filter((agent) => agent.id !== currentAgentId),
@@ -526,6 +526,10 @@ export function ChatInput({
     setModelPickerOpen(false);
     setWorkspaceMenuOpen(false);
   }, [inputDisabled]);
+
+  useEffect(() => {
+    if (modelOptions.length === 0) setModelPickerOpen(false);
+  }, [modelOptions.length]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -705,7 +709,7 @@ export function ChatInput({
     });
   };
 
-  const handleSelectModel = async (modelRef: string | null) => {
+  const handleSelectModel = async (modelRef: string) => {
     if (!destinationKey || !destinationAgent || sessionModel.writing || admissionInFlight.current) return;
     setModelPickerOpen(false);
     if (modelRef === sessionModel.value?.modelRef && !sessionModel.failed) return;
@@ -1448,14 +1452,7 @@ export function ChatInput({
                   />
                 )}
                 {showModelPicker && <ModelPicker
-                  options={modelOptions} value={sessionModel.value?.modelRef ?? null} label={currentModelLabel}
-                  followAgent={{
-                    label: agentModelRef
-                      ? t('composer.followAgentModel', { model: formatModelRefLabel(agentModelRef) })
-                      : t('composer.followAgentModelShort'),
-                    selected: sessionModel.value?.modelRef === null,
-                    onSelect: () => void handleSelectModel(null),
-                  }}
+                  options={modelOptions} value={effectiveModelRef} label={currentModelLabel}
                   title={t('composer.modelPickerTitle')} testIdPrefix="chat-model-picker"
                   open={modelPickerOpen} onOpenChange={open => {
                     if (open && !sessionModel.value) sessionModel.refresh();

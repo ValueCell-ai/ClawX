@@ -129,8 +129,8 @@ function translate(key: string, vars?: Record<string, unknown>): string {
       return 'Gateway not connected...';
     case 'composer.send':
       return 'Send';
-    case 'composer.followAgentModel':
-      return `Follow agent (${String(vars?.model)})`;
+    case 'composer.pickModel':
+      return 'Choose model';
     case 'composer.stop':
       return 'Stop';
     case 'composer.thinking':
@@ -363,7 +363,62 @@ describe('ChatInput execution agent and composer', () => {
     expect(agentsState.updateAgentModel).not.toHaveBeenCalled();
   });
 
-  it('clears an existing session override and restores a rejected model selection', async () => {
+  it.each([
+    { effectiveModelRef: undefined, label: 'gpt-a', modelRef: 'custom-aaaaaaaa/gpt-a' },
+    { effectiveModelRef: 'custom-bbbbbbbb/gpt-b', label: 'gpt-b', modelRef: 'custom-bbbbbbbb/gpt-b' },
+  ])('shows and pins the concrete inherited model ($label)', async ({ effectiveModelRef, label, modelRef }) => {
+    configureAgentAndModelPickers();
+    modelApi.getModel.mockResolvedValue({ modelRef: null, effectiveModelRef });
+    renderChatInput();
+    const picker = screen.getByTestId('chat-model-picker-button');
+    await waitFor(() => expect(picker).toHaveTextContent(label));
+    fireEvent.keyDown(picker, { key: 'ArrowDown' });
+    expect(screen.queryByTestId('chat-model-picker-follow-agent')).not.toBeInTheDocument();
+    const selected = screen.getByRole('menuitemradio', { name: label, exact: true });
+    expect(selected).toHaveAttribute('aria-checked', 'true');
+    expect(modelApi.setModel).not.toHaveBeenCalled();
+    fireEvent.click(selected);
+    await waitFor(() => expect(modelApi.setModel).toHaveBeenCalledWith(chatState.currentSessionKey, modelRef));
+    await waitFor(() => expect(picker).toBeEnabled());
+    fireEvent.keyDown(picker, { key: 'ArrowDown' });
+    expect(screen.getByRole('menuitemradio', { name: label, exact: true })).toHaveAttribute('aria-checked', 'true');
+    expect(agentsState.updateAgentModel).not.toHaveBeenCalled();
+  });
+
+  it('uses the choose-model prompt when no effective model is known', async () => {
+    configureAgentAndModelPickers();
+    delete agentsState.agents[0].modelRef;
+    agentsState.defaultModelRef = null;
+    renderChatInput();
+    const picker = screen.getByTestId('chat-model-picker-button');
+    await waitFor(() => expect(modelApi.getModel).toHaveBeenCalled());
+    expect(picker).toHaveTextContent('Choose model');
+    fireEvent.keyDown(picker, { key: 'ArrowDown' });
+    expect(screen.queryByTestId('chat-model-picker-follow-agent')).not.toBeInTheDocument();
+    expect(screen.queryByRole('menuitemradio', { checked: true })).not.toBeInTheDocument();
+    expect(modelApi.setModel).not.toHaveBeenCalled();
+  });
+
+  it('keeps the selected model visible and hides the menu when configured options disappear', async () => {
+    configureAgentAndModelPickers();
+    modelApi.getModel.mockResolvedValue({ modelRef: 'removed-provider/old-model' });
+    const { rerender } = renderChatInput();
+    const picker = await screen.findByTestId('chat-model-picker-button');
+    await waitFor(() => expect(picker).toHaveTextContent('old-model'));
+    fireEvent.keyDown(picker, { key: 'ArrowDown' });
+    expect(screen.getByTestId('chat-model-picker-menu')).toBeInTheDocument();
+    providersState.accounts = [];
+    providersState.statuses = [];
+    rerender(<TooltipProvider><ChatInput onSend={vi.fn()} /></TooltipProvider>);
+    expect(picker).toHaveTextContent('old-model');
+    expect(picker).toBeDisabled();
+    expect(screen.queryByTestId('chat-model-picker-menu')).not.toBeInTheDocument();
+    fireEvent.click(picker);
+    expect(screen.queryByTestId('chat-model-picker-menu')).not.toBeInTheDocument();
+    expect(modelApi.setModel).not.toHaveBeenCalled();
+  });
+
+  it('preserves an existing session override after a rejected selection and allows retry', async () => {
     configureAgentAndModelPickers();
     modelApi.getModel.mockResolvedValue({ modelRef: 'custom-bbbbbbbb/gpt-b' });
     modelApi.setModel.mockRejectedValueOnce(new Error('unavailable'));
@@ -372,7 +427,7 @@ describe('ChatInput execution agent and composer', () => {
     const picker = screen.getByTestId('chat-model-picker-button');
     await waitFor(() => expect(picker).toHaveTextContent('gpt-b'));
     fireEvent.keyDown(picker, { key: 'ArrowDown' });
-    fireEvent.click(screen.getByTestId('chat-model-picker-follow-agent'));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'gpt-a', exact: true }));
     await waitFor(() => expect(toastErrorMock).toHaveBeenCalled());
     expect(picker).toHaveTextContent('gpt-b');
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Keep this draft' } });
@@ -380,9 +435,26 @@ describe('ChatInput execution agent and composer', () => {
     expect(send).not.toHaveBeenCalled();
     expect(screen.getByRole('textbox')).toHaveValue('Keep this draft');
     fireEvent.keyDown(picker, { key: 'ArrowDown' });
-    fireEvent.click(screen.getByTestId('chat-model-picker-follow-agent'));
+    expect(screen.getByRole('menuitemradio', { name: 'gpt-b', exact: true })).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'gpt-a', exact: true }));
     await waitFor(() => expect(picker).toHaveTextContent('gpt-a'));
-    expect(modelApi.setModel).toHaveBeenLastCalledWith(chatState.currentSessionKey, null);
+    expect(modelApi.setModel).toHaveBeenLastCalledWith(chatState.currentSessionKey, 'custom-aaaaaaaa/gpt-a');
+  });
+
+  it('does not stage a model for an existing conversation that Gateway reports as deleted', async () => {
+    configureAgentAndModelPickers();
+    modelApi.getModel.mockResolvedValue({ modelRef: null, exists: false });
+    modelApi.setModel.mockRejectedValue(new Error('Session no longer exists'));
+    chatState.currentSessionKey = 'agent:main:deleted-session';
+    chatState.sessions = [{ key: chatState.currentSessionKey }];
+    renderChatInput();
+    await waitFor(() => expect(modelApi.getModel).toHaveBeenCalledWith(chatState.currentSessionKey));
+    fireEvent.keyDown(screen.getByTestId('chat-model-picker-button'), { key: 'ArrowDown' });
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'gpt-b', exact: true }));
+    await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith('composer.modelSwitchFailed'));
+    expect(modelApi.setModel.mock.calls).toEqual([[chatState.currentSessionKey, 'custom-bbbbbbbb/gpt-b']]);
+    expect(useComposerDraftStore.getState().modelRefs).toEqual({});
+    expect(screen.getByTestId('chat-model-picker-button')).toHaveTextContent('gpt-a');
   });
 
   it('picks a model for a local draft without creating or updating a Gateway session', async () => {
@@ -456,7 +528,8 @@ describe('ChatInput execution agent and composer', () => {
     fireEvent.click(screen.getByTestId('chat-agent-target-research'));
     if (!listed) await waitFor(() => expect(modelApi.getModel).toHaveBeenCalledWith(target));
     fireEvent.keyDown(picker, { key: 'ArrowDown' });
-    expect(screen.getByTestId('chat-model-picker-follow-agent')).toHaveTextContent('Follow agent (gpt-b)');
+    await waitFor(() => expect(screen.getByRole('menuitemradio', { name: 'gpt-b', exact: true })).toHaveAttribute('aria-checked', 'true'));
+    expect(screen.queryByTestId('chat-model-picker-follow-agent')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('menuitemradio', { name: 'gpt-a', exact: true }));
     await waitFor(() => expect(picker).toHaveTextContent('gpt-a'));
     expect(useComposerDraftStore.getState().modelRefs).toEqual({ [target]: 'custom-aaaaaaaa/gpt-a' });

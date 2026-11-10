@@ -492,22 +492,20 @@ export function Chat() {
     if (currentSession?.createdLocally) return;
     const createIfMissing = !currentSession;
     acpLoadInFlightKeyRef.current = acpLoadKey;
+    // ACP preparation does not persist a Gateway session. Keep its local-draft
+    // marker until first send so a model choice is staged with creation permission.
     if (createIfMissing) selectAcpSession(currentSessionKey, cwd);
     void loadAcpSession({
       sessionKey: currentSessionKey,
       workspaceRoot: cwd,
       cwd,
       ...(createIfMissing ? { createIfMissing: true } : {}),
-    }).then((loaded) => {
-      if (loaded && createIfMissing) {
-        acknowledgeAcpSessionCreated(currentSessionKey, cwd);
-      }
     }).finally(() => {
       if (acpLoadInFlightKeyRef.current === acpLoadKey) {
         acpLoadInFlightKeyRef.current = null;
       }
     });
-  }, [acknowledgeAcpSessionCreated, acpActiveSessionKey, acpCwd, acpWorkspaceRoot, currentSessionKey, cwd, loadAcpSession, promptOrigin, selectAcpSession, sessionDiscoveryAttempted, sessions, workspaceContextAvailable]);
+  }, [acpActiveSessionKey, acpCwd, acpWorkspaceRoot, currentSessionKey, cwd, loadAcpSession, promptOrigin, selectAcpSession, sessionDiscoveryAttempted, sessions, workspaceContextAvailable]);
 
   const platform = window.electron?.platform;
   const isMac = platform === 'darwin';

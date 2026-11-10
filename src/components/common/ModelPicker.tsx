@@ -13,7 +13,6 @@ interface ModelPickerProps {
   label: string;
   title: string;
   onValueChange: (value: string) => void;
-  followAgent?: { label: string; selected: boolean; onSelect: () => void };
   disabled?: boolean;
   busy?: boolean;
   open?: boolean;
@@ -28,7 +27,7 @@ interface ModelPickerProps {
 
 /** Shared model UI; callers retain ownership of assistant or task-specific changes. */
 export const ModelPicker = forwardRef<HTMLButtonElement, ModelPickerProps>(function ModelPicker({
-  options, value, label, title, onValueChange, followAgent, disabled, busy = false,
+  options, value, label, title, onValueChange, disabled, busy = false,
   open, onOpenChange, onCloseAutoFocus, side = 'top', align = 'end',
   className, labelledBy, testIdPrefix,
 }, ref) {
@@ -51,7 +50,7 @@ export const ModelPicker = forwardRef<HTMLButtonElement, ModelPickerProps>(funct
       <DropdownMenu.Trigger asChild>
         <button
           ref={ref} aria-labelledby={labelledBy} type="button" data-testid={`${testIdPrefix}-button`}
-          disabled={disabled || busy || (!options.length && !followAgent)} title={title}
+          disabled={disabled || busy || !options.length} title={title}
           className={cn(
             'inline-flex h-8 min-w-0 max-w-[140px] items-center gap-1 rounded-lg px-1.5 text-meta font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 sm:max-w-[220px]',
             (isOpen || busy) && 'text-foreground', className,
@@ -67,19 +66,8 @@ export const ModelPicker = forwardRef<HTMLButtonElement, ModelPickerProps>(funct
           className="w-72 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10"
           data-testid={`${testIdPrefix}-menu`}>
           <div className="px-3 py-1.5 text-tiny font-medium text-muted-foreground/80">{title}</div>
-          <DropdownMenu.RadioGroup value={followAgent?.selected ? 'follow-agent' : value ?? ''}
-            onValueChange={next => {
-              if (followAgent && next === 'follow-agent') followAgent.onSelect();
-              else onValueChange(next);
-            }}
+          <DropdownMenu.RadioGroup value={value ?? ''} onValueChange={onValueChange}
             className="max-h-[min(16rem,calc(var(--radix-dropdown-menu-content-available-height)-3rem))] space-y-1 overflow-y-auto">
-            {followAgent && <DropdownMenu.RadioItem value="follow-agent" asChild>
-              <button type="button" data-testid={`${testIdPrefix}-follow-agent`} title={followAgent.label}
-                className={cn('clawx-menu-item flex w-full items-center justify-between gap-3 text-left text-sm font-medium transition-colors', menuOptionStateClass(followAgent.selected))}>
-                <span className="min-w-0 truncate">{followAgent.label}</span>
-                <MenuSelectionIndicator selected={followAgent.selected} />
-              </button>
-            </DropdownMenu.RadioItem>}
             {groups.map(([key, group]) => <div key={key} role="group" aria-label={group.name} data-testid={`${testIdPrefix}-provider-group-${key}`}>
               <div title={group.name} className="truncate px-3 pb-0.5 pt-1 text-tiny font-medium text-muted-foreground">{group.name}</div>
               <div className="clawx-menu-list">

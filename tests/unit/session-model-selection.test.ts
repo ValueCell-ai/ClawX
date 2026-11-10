@@ -75,18 +75,18 @@ describe('bundled OpenClaw session model selection', () => {
     vi.stubEnv('OPENCLAW_CONFIG_PATH', join(home, 'openclaw.json'));
   });
   afterEach(async () => {
-    const { c: closeAgentDatabases } = await import(runtime('openclaw-agent-db-lifecycle-ZqXeNM4P.mjs'));
-    const { s: closeStateDatabase } = await import(runtime('openclaw-state-db-cache-BL6j0gPB.mjs'));
-    closeAgentDatabases(home);
-    closeStateDatabase(join(home, 'state/openclaw.sqlite'));
+    const { s: closeAgentDatabases } = await import(runtime('openclaw-agent-db-lifecycle-Cl48HKPu.mjs'));
+    const { s: closeStateDatabase } = await import(runtime('openclaw-state-db-cache-SfxRpkii.mjs'));
+    await closeAgentDatabases(home);
+    await closeStateDatabase(join(home, 'state/openclaw.sqlite'));
     vi.unstubAllEnvs();
     await rm(home, { recursive: true, force: true });
   });
 
   it('recovers explicit version 0.6.1 overrides without promoting historical usage to a selection', async () => {
-    const { P: buildSessionRow } = await import(runtime('session-row-prepared-read-B7BTs5-H.mjs'));
-    const { n: buildReadIndex } = await import(runtime('subagent-registry-read-cGgKzZ-U.mjs'));
-    const { n: buildContext } = await import(runtime('session-utils-projection-DpomJZTy.mjs'));
+    const { P: buildSessionRow } = await import(runtime('session-row-prepared-read-BTwaWWsn.mjs'));
+    const { n: buildReadIndex } = await import(runtime('subagent-registry-read-buyFwKXs.mjs'));
+    const { n: buildContext } = await import(runtime('session-utils-projection-CsKOIaJd.mjs'));
     const now = Date.now();
     const rowContext = buildContext({ now, sessionKeys: [key], subagentRuns: buildReadIndex(now, [key], new Map()) });
     const history = { sessionId: existing.sessionId, updatedAt: now, modelProvider: 'openai', model: 'gpt-5' };
@@ -102,9 +102,9 @@ describe('bundled OpenClaw session model selection', () => {
   }, 30_000);
 
   it('keeps an explicit choice equal to the Agent default pinned and suppresses sticky Gateway configuration writes', async () => {
-    const { aa: validatePatch } = await import(runtime('src-yRoHchex.mjs'));
-    const { n: projectPatch } = await import(runtime('sessions-patch-_LW-92XG.mjs'));
-    const { t: persistConfiguredModel } = await import(runtime('sessions-patch-model-selection-CzvkKtKF.mjs'));
+    const { Ta: validatePatch } = await import(runtime('src-SkiwT5zi.mjs'));
+    const { n: projectPatch } = await import(runtime('sessions-patch-5NnOA6iw.mjs'));
+    const { t: persistConfiguredModel } = await import(runtime('sessions-patch-model-selection-DG4p4dpp.mjs'));
     const cfg = { agents: { defaults: { model: { primary: 'openai/gpt-4.1' }, modelSelectionScope: 'global' } } };
     const patch = { key, model: 'openai/gpt-4.1', modelScope: 'session' };
     expect(validatePatch(patch)).toBe(true);
@@ -115,7 +115,7 @@ describe('bundled OpenClaw session model selection', () => {
     };
     const pinned = await projectPatch(params);
     expect(pinned).toMatchObject({ ok: true, entry: { modelOverride: 'gpt-4.1', providerOverride: 'openai', modelOverrideSource: 'user' } });
-    const { n: projectReceipt } = await import(runtime('session-utils-model-BlhsDR0j.mjs'));
+    const { n: projectReceipt } = await import(runtime('session-utils-model-h78SGs03.mjs'));
     const receipt = projectReceipt({
       cfg, canonicalKey: key, targetAgentId: 'main', storePath: join(home, 'agents/main/sessions/sessions.json'),
       entry: pinned.entry, modelCatalog: catalog, preparedAcpMeta: null,

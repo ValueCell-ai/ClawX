@@ -9,13 +9,13 @@ import { join, resolve } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import * as paths from './paths';
 
-function loadSchemaHelper<T>(name: string): T {
+function loadSchemaHelper<T>(name: string, filePattern = /^openclaw-agent-db-schema-helpers-.*\.mjs$/): T {
   const root = typeof paths.getOpenClawResolvedDir === 'function'
     ? paths.getOpenClawResolvedDir()
     : join(process.cwd(), 'node_modules/openclaw');
   const requireRuntime = createRequire(join(root, 'package.json'));
   const candidates = readdirSync(join(root, 'dist'))
-    .filter(file => /^openclaw-agent-db-schema-helpers-.*\.mjs$/.test(file));
+    .filter(file => filePattern.test(file));
   for (const file of candidates) {
     const module = requireRuntime(join(root, 'dist', file)) as Record<string, unknown>;
     const fn = Object.values(module).find(value => typeof value === 'function' && value.name === name);
@@ -48,4 +48,17 @@ export function assertBundledAgentStructure(db: DatabaseSync, pathname: string, 
   loadSchemaHelper<(db: DatabaseSync, pathname: string, schema: string) => void>(
     'assertOpenClawAgentSchemaContains',
   )(db, pathname, getBundledAgentSchema(version));
+}
+
+/** Read-only runtime schema admission, including the runtime's additive compatibility. */
+export function assertBundledStateStructure(db: DatabaseSync, pathname: string): void {
+  loadSchemaHelper<(db: DatabaseSync, pathname: string) => void>(
+    'assertCurrentStateRuntimeSchema', /^openclaw-state-db-fast-path-.*\.mjs$/,
+  )(db, pathname);
+}
+
+export function getBundledStateSchema(): string {
+  return loadSchemaHelper<(options: Record<string, boolean>) => string>(
+    'getOpenClawStateRuntimeSchema', /^openclaw-state-db-fast-path-.*\.mjs$/,
+  )({ includeVersionLazyAdditiveTables: true, includeAgentDeletionJournal: true });
 }

@@ -11,6 +11,8 @@ import { join } from 'path';
 import { homedir } from 'os';
 import { DatabaseSync } from 'node:sqlite';
 import * as persistenceRuntime from './openclaw-persistence-runtime';
+import type { GatewayStartupReadiness } from '../gateway/startup-preparation';
+import { isClawXPluginIndexBootstrap } from './plugin-install-index';
 
 const AUTH_PROFILE_FILENAME = 'auth-profiles.json';
 const AUTH_SQLITE_FILENAME = 'openclaw-agent.sqlite';
@@ -24,7 +26,11 @@ const SHARED_AUTH_STORE_CELL_KEY = 'authProfiles.store';
 const SHARED_AUTH_STATE_CELL_KEY = 'authProfiles.state';
 const STATE_BUSY_TIMEOUT_MS = 5_000;
 // Admission ceiling, never a substitute for migrating a database's structure.
-const OPENCLAW_OWNED_AGENT_SCHEMA_VERSION = 25;
+const OPENCLAW_OWNED_AGENT_SCHEMA_VERSION = 27;
+const OPENCLAW_OWNED_STATE_CONTENT_VERSION = 22;
+// This repair describes a historical ClawX bug, not the current runtime schema.
+// Repair its verified v25 marker first; upstream Doctor then owns v25 -> v27.
+const CLOBBERED_AGENT_SCHEMA_VERSION = 25;
 
 export class OpenClawAgentSchemaMigrationPendingError extends Error {
   constructor(version: number) {
@@ -104,7 +110,7 @@ function repairKnownClobberedSchema(db: DatabaseSync, agentId: string, sqlitePat
   const meta = readSchemaMetadata(db);
   if (meta?.app_version !== '2026.10.5' || meta.schema_version !== 1 || meta.agent_id !== agentId) return;
   try {
-    persistenceRuntime.assertBundledAgentStructure(db, sqlitePath, OPENCLAW_OWNED_AGENT_SCHEMA_VERSION);
+    persistenceRuntime.assertBundledAgentStructure(db, sqlitePath, CLOBBERED_AGENT_SCHEMA_VERSION);
   } catch {
     return; // Not a fully migrated v25 structure: never pretend otherwise.
   }
@@ -120,10 +126,10 @@ function repairKnownClobberedSchema(db: DatabaseSync, agentId: string, sqlitePat
     if (readUserVersion(db) !== 1 || current?.schema_version !== 1 || current.app_version !== '2026.10.5') {
       throw new Error('Agent schema changed during repair');
     }
-    persistenceRuntime.assertBundledAgentStructure(db, sqlitePath, OPENCLAW_OWNED_AGENT_SCHEMA_VERSION);
-    db.exec(`PRAGMA user_version = ${OPENCLAW_OWNED_AGENT_SCHEMA_VERSION}`);
+    persistenceRuntime.assertBundledAgentStructure(db, sqlitePath, CLOBBERED_AGENT_SCHEMA_VERSION);
+    db.exec(`PRAGMA user_version = ${CLOBBERED_AGENT_SCHEMA_VERSION}`);
     db.prepare('UPDATE schema_meta SET schema_version = ? WHERE meta_key = ?')
-      .run(OPENCLAW_OWNED_AGENT_SCHEMA_VERSION, PRIMARY_ROW_KEY);
+      .run(CLOBBERED_AGENT_SCHEMA_VERSION, PRIMARY_ROW_KEY);
     db.exec('COMMIT');
   } catch (error) {
     db.exec('ROLLBACK');
@@ -272,6 +278,75 @@ export function usesSharedStateAuthStore(agentId: string): boolean {
   } finally {
     db.close();
   }
+}
+
+/**
+ * Admit offline auth projection without initializing, repairing, or importing
+ * anything. Doctor owns old schemas and legacy sources. In particular, shared
+ * state must exist before a fresh agent is created, or its missing deletion
+ * journal can be mistaken for historical state requiring recovery.
+ */
+export function inspectAuthProfilesWriteReadiness(agentIds: readonly string[]): GatewayStartupReadiness {
+  const pending: string[] = [];
+  const statePath = getOpenClawStateSqlitePath();
+  if (!existsSync(statePath)) {
+    pending.push('shared-state:missing');
+  } else {
+    const db = new DatabaseSync(statePath, { readOnly: true });
+    try {
+      const headerVersion = readUserVersion(db);
+      const rawContentVersion = readConfigMachineStateCell(db, 'state.schema.contentVersion');
+      const contentVersion: unknown = rawContentVersion === undefined ? 0 : JSON.parse(rawContentVersion);
+      if (typeof contentVersion !== 'number' || !Number.isSafeInteger(contentVersion) || contentVersion < 0) {
+        throw new Error('Invalid OpenClaw shared state content version');
+      }
+      const version = Math.max(headerVersion, contentVersion);
+      if (version > OPENCLAW_OWNED_STATE_CONTENT_VERSION) throw new Error(`Refusing auth preparation for newer OpenClaw shared schema (${version})`);
+      if (version === 0 && !db.prepare("SELECT 1 FROM sqlite_master WHERE name NOT GLOB 'sqlite_*' LIMIT 1").get()) {
+        pending.push('shared-state:empty');
+      } else if (isClawXPluginIndexBootstrap(db)) {
+        pending.push('shared-state:plugin-index-bootstrap');
+      } else {
+        const metadata = db.prepare("SELECT role, schema_version, agent_id FROM schema_meta WHERE meta_key = 'primary'")
+          .get() as { role?: string; schema_version?: number; agent_id?: string | null } | undefined;
+        if (metadata?.role !== 'global' || metadata.schema_version !== headerVersion || metadata.agent_id != null) {
+          throw new Error('OpenClaw shared state schema owner or version mismatch');
+        }
+        // Validate an existing ownership marker even while its schema is old.
+        readsSharedStateAuthStore(db, statePath);
+        if (version !== OPENCLAW_OWNED_STATE_CONTENT_VERSION) pending.push(`shared-state:schema-${version}`);
+        else {
+          persistenceRuntime.assertBundledStateStructure(db, statePath);
+          const journal = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'agent_deletion_journal'").get();
+          if (!journal) pending.push('shared-state:deletion-journal');
+        }
+      }
+    } finally { db.close(); }
+  }
+
+  for (const agentId of [...new Set(agentIds)].sort()) {
+    if (!agentId || agentId === '.' || agentId === '..' || /[\\/:\0]/.test(agentId)) throw new Error('Invalid OpenClaw auth agent id');
+    const sqlitePath = getAuthProfilesSqlitePath(agentId);
+    if (existsSync(sqlitePath)) {
+      const db = new DatabaseSync(sqlitePath, { readOnly: true });
+      try {
+        const version = readUserVersion(db);
+        const meta = db.prepare("SELECT role, schema_version, agent_id FROM schema_meta WHERE meta_key = 'primary'")
+          .get() as { role?: string; schema_version?: number; agent_id?: string } | undefined;
+        if (version > OPENCLAW_OWNED_AGENT_SCHEMA_VERSION || (meta?.schema_version ?? 0) > OPENCLAW_OWNED_AGENT_SCHEMA_VERSION) {
+          throw new Error(`Refusing auth preparation for newer OpenClaw agent schema (${version})`);
+        }
+        if (meta?.role !== 'agent' || meta.agent_id !== agentId || meta.schema_version !== version) {
+          throw new Error('OpenClaw agent schema owner or version mismatch');
+        }
+        if (version !== OPENCLAW_OWNED_AGENT_SCHEMA_VERSION) pending.push(`agent:${agentId}:schema-${version}`);
+        else persistenceRuntime.assertBundledAgentStructure(db, sqlitePath, version);
+      } finally { db.close(); }
+    }
+    if (existsSync(getAuthProfilesJsonPath(agentId))) pending.push(`agent:${agentId}:legacy-auth`);
+    if (existsSync(join(getAgentAuthDir(agentId), '..', 'sessions', 'sessions.json'))) pending.push(`agent:${agentId}:legacy-sessions`);
+  }
+  return pending.length ? { ready: false, reason: pending.join(';') } : { ready: true };
 }
 
 function readSharedStateAuthProfiles(): PersistedAuthProfilesStore | null {

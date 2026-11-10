@@ -1,3 +1,5 @@
 # pnpm hashes patch bytes; keep the same content on Windows and Unix.
 # Diff context has a leading space, including before tabs and on blank lines.
 patches/*.patch text eol=lf whitespace=-space-before-tab,-blank-at-eol
+# Vite's SSR shebang stripping requires LF when unit tests import this CLI.
+resources/cli/restore-openclaw-upgrade.mjs text eol=lf

@@ -25,8 +25,9 @@ belongs only to its destination task/session (the visible chat or the selected
 recipient’s main session) and must never call agents.updateModel or clear
 an Agent override while browsing. Blank drafts hold their choice locally until
 the first prompt creates a native session; existing session overrides persist
-through Main-owned Gateway session APIs. Following the Agent clears only the
-conversation override. Do not edit native session stores or
+through Main-owned Gateway session APIs. The picker displays the effective
+model and persists only a concrete selection. Sessions without an explicit
+selection inherit their Agent's model. Do not edit native session stores or
 change global/Agent config to emulate a task override.
 
 Read and write results are scoped to the requested session. Stale completions

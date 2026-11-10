@@ -305,6 +305,8 @@ function deferredPromise() {
 
 describe('ACP Chat page', () => {
   beforeEach(() => {
+    setSessionModel.mockReset().mockImplementation(async (_key, modelRef) => ({ modelRef }));
+    useComposerDraftStore.setState({ drafts: {}, modelRefs: {} });
     targetPromptAdmitted.mockReset();
     ensureAcpChatSubscriptions.mockReset();
     acpState.loading = false;
@@ -456,11 +458,11 @@ describe('ACP Chat page', () => {
     expect(acpState.loadSession).toHaveBeenCalledTimes(2);
   });
 
-  it('discovers sessions once before loading the default ACP session when ACP has no active session', async () => {
+  it('keeps an automatically prepared default ACP session as a draft until its first prompt', async () => {
     acpState.activeSessionKey = null;
     chatState.sessions = [];
 
-    render(<Chat />);
+    const { rerender } = render(<Chat />);
 
     await waitFor(() => {
       expect(chatState.loadSessions).toHaveBeenCalledTimes(1);
@@ -469,11 +471,20 @@ describe('ACP Chat page', () => {
       expect(acpState.loadSession).toHaveBeenCalledWith({
         sessionKey: 'agent:main:main', workspaceRoot: '/workspace', cwd: '/workspace', createIfMissing: true,
       });
-      expect(chatState.acknowledgeAcpSessionCreated).toHaveBeenCalledWith(
-        'agent:main:main',
-        '/workspace',
-      );
     });
+    expect(chatState.acknowledgeAcpSessionCreated).not.toHaveBeenCalled();
+    expect(chatState.sessions).toEqual([{
+      key: 'agent:main:main', workspacePath: '/workspace', createdLocally: true,
+    }]);
+
+    useComposerDraftStore.getState().setModelRef('agent:main:main', 'custom-id/model');
+    rerender(<Chat />);
+    expect(setSessionModel).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('mock-send'));
+    await waitFor(() => expect(acpState.sendPrompt).toHaveBeenCalled());
+    expect(setSessionModel).toHaveBeenCalledWith('agent:main:main', 'custom-id/model', { createIfMissing: true });
+    expect(setSessionModel.mock.invocationCallOrder[0]).toBeLessThan(acpState.sendPrompt.mock.invocationCallOrder[0]);
+    expect(chatState.acknowledgeAcpSessionCreated).toHaveBeenCalledWith('agent:main:main', '/workspace', 'Ship it');
   });
 
   it('does not load ACP until session discovery publishes the hydrated workspace', async () => {

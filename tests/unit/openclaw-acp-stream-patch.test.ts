@@ -18,7 +18,7 @@ describe('OpenClaw ACP assistant stream patch', () => {
   let bundle: string;
 
   beforeAll(async () => {
-    bundle = await readFile(path.join(dist, 'server-DkfYuk25.mjs'), 'utf8');
+    bundle = await readFile(path.join(dist, 'server-D2T0Amp5.mjs'), 'utf8');
   });
 
   function loadSnapshotHelpers() {
@@ -172,7 +172,7 @@ describe('OpenClaw ACP assistant stream patch', () => {
   });
 
   it('keeps the patched ACP chunk syntactically valid', async () => {
-    await expect(execFileAsync(process.execPath, ['--check', path.join(dist, 'server-DkfYuk25.mjs')]))
+    await expect(execFileAsync(process.execPath, ['--check', path.join(dist, 'server-D2T0Amp5.mjs')]))
       .resolves.toMatchObject({ stderr: '' });
   });
 });

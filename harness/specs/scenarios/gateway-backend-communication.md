@@ -3,6 +3,8 @@ id: gateway-backend-communication
 title: Gateway Backend Communication
 type: runtime-bridge
 ownedPaths:
+  - src/App.tsx
+  - src/extensions/registry.ts
   - src/lib/api-client.ts
   - src/lib/host-api.ts
   - src/stores/gateway.ts
@@ -18,6 +20,8 @@ ownedPaths:
   - electron/gateway/**
   - electron/preload/**
   - electron/utils/**
+  - resources/cli/restore-openclaw-upgrade.mjs
+  - tests/unit/openclaw-restore-offline.test.ts
   - resources/skills/computer-use/**
   - src/pages/ComputerUse/**
   - src/hooks/useVoiceDictation.ts
@@ -38,8 +42,8 @@ ownedPaths:
   - tests/e2e/chat-sidebar-session-attention.spec.ts
   - tests/unit/session-key-utils.test.ts
   - tests/unit/openclaw-acp-stream-patch.test.ts
-  - patches/openclaw@2026.10.5.patch
-  - patches/@wecom__wecom-openclaw-plugin@2026.9.15.patch
+  - patches/openclaw@2026.10.10.patch
+  - patches/@wecom__wecom-openclaw-plugin@2026.10.30.patch
   - pnpm-lock.yaml
   - shared/web-browser.ts
   - electron/main/web-browser-policy.ts
@@ -55,6 +59,7 @@ requiredProfiles:
 conditionalProfiles:
   e2e:
     when:
+      - renderer extension route registration or startup lifecycle changes
       - user-visible gateway status changes
       - user-visible chat send/receive behavior changes
       - channels/agents/settings UI depends on new backend response shape
@@ -103,10 +108,23 @@ forbiddenPatterns:
 
 Gateway backend communication covers all ClawX paths that move data between the visual desktop UI and OpenClaw runtime/backend services.
 
+Scheduled runs may return a queue acknowledgment before their result exists.
+Gateway `cron` completion notifications reconcile task state and force a fresh
+session catalog read so new internal results appear in the sidebar. See
+[scheduled-task result discovery](../tasks/fix-cron-result-discovery.md).
+
+Native Windows upgrade evidence for the independent official 0.6.1 and main
+inputs is recorded in `harness/reference/windows-sqlite-upgrade-validation-20261109.md`,
+including SQLite snapshot cleanup diagnostics and the limits of isolated probes.
+
 The chat composer reads and updates session model selections through Main.
 Conversation switches, workspace changes and Agent routing must preserve the
 identity of both the selection and the next prompt. After a 0.6.1 upgrade,
 sessions without an explicit selection inherit the migrated Agent configuration.
+The picker lists concrete configured models and marks the effective model when
+it is listed. Inheritance remains implicit: no Follow Agent action is exposed,
+and displaying an inherited model does not create an override. Selecting that
+concrete model explicitly pins it to the destination conversation.
 See [Conversation model selection](../../reference/acp-chat.md#conversation-model-selection).
 
 Coordinator-owned OpenClaw config mutations, including model-switch retries after a confirmed publication rollback, and their `config.get`/`config.set` transaction contract are documented in `harness/reference/openclaw-config-delivery.md`.
@@ -166,3 +184,7 @@ Gateway session-catalog subscription, normalization, ordered list/event replay, 
 Native subagent sidebar hiding is presentation-only. An exact four-part `agent:<agentId>:subagent:<childId>` row stays in the shared Gateway catalog for exact-key attention, run status, routing, workspace cleanup, and exact non-cascading deletion, but it is excluded from sidebar groups and every implicit fallback candidate set. Main queries bounded ACP `session/list` through the typed Host API; ACP `session/list` is the sole lineage membership and title authority for the selected session's direct family, while a completed structured `sessions_spawn` result is only an invalidation signal. Latest exact-key Gateway catalog presence gates current child visibility and actionability plus direct-parent return-target availability. Presence never creates lineage membership or titles. For available children, Gateway `status` and `hasActiveRun` remain the sole run-state authority through the shared run projection, with exact-key `observedBusy` only as the existing unknown-state fallback and explicit terminal state overriding that fallback. ACP prompt and local sending state are not child run-status authorities. Ordinary Chat remains ACP-owned: a loaded ACP session may retain a passive Main-owned `sessions.messages` subscription so a later no-pending `announce:v1` run for that exact session can be emitted as recorded ACP updates. The adapter subscribes before fetching replay and buffers exact-session Chat and Agent events until its replay baseline is established. The same bridge may carry an ordinary no-pending run only for the exact loaded canonical native subagent, whose `sessions_spawn` run was started outside the ACP connection; it carries assistant, commentary thought, and tool lifecycle updates while preserving replay-seeded cumulative text baselines across tool boundaries. Renderer and Main do not read Gateway history or transcript text as an alternate Chat transport.
 
 Gateway WebSocket heartbeat misses are diagnostic availability signals only and must never directly interrupt the socket or process. A pong, any incoming Gateway frame, or a successful Gateway RPC is trusted liveness evidence and resets the 180 seconds silence deadline. After one uninterrupted deadline, Main runs exactly one 5000ms `system-presence` verification. A successful probe records liveness and cancels recovery. A failed probe may request guarded restart only for a ClawX-owned process; for an externally managed Gateway, Main may reconnect its own transport and expose unavailable diagnostics but never stop, shut down, or restart the Gateway automatically. This path does not track chat, tool, cron, or other workloads. Process exit, ordinary socket close, code 1012, and explicit user restart retain their separate lifecycle behavior.
+
+OpenClaw 2026.10.10 baseline, channel version and offline recovery contracts are documented in `harness/reference/openclaw-2026-10-10-upgrade.md`.
+
+Extension runtime restoration is a Main-owned startup boundary. `GatewayManager.registerStartupPreparation` admits all registered participants with read-only checks after snapshot/config preparation, then awaits their writes before collecting the launch environment and spawning a managed Gateway. Pending native migration uses the bounded Doctor recovery path and is rechecked after every repair outcome. Cancellation or ordinary projection failure must prevent that launch and any unconditional post-start credential synchronization. Existing external/owned process attachment does not run offline projections. Enterprise-specific encrypted-session queues, login/refresh policy and SkillsHub remain in ClawX-biz. See `harness/specs/tasks/fix-enterprise-runtime-migration-order.md` and `harness/reference/enterprise-windows-upgrade-validation-20261109.md` for both Windows upgrade routes and the explicit real-authentication exclusion.

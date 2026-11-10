@@ -54,12 +54,21 @@ This extension has one removal condition: when the pinned ACP SDK accepts the na
 
 ## Conversation model selection
 
+The picker lists concrete configured models and marks the effective current
+model when it appears in that list. A session without an explicit choice keeps
+using its Agent's configured model internally; the composer exposes no separate
+Follow Agent action. Viewing that model does not write a preference. Selecting
+a concrete model, including the inherited one, stores an explicit choice for
+the destination session. When the current model is unknown, the button uses the
+localized model-selection prompt.
+
 The Agent menu offers two actions. Selecting the execution Agent starts a new
 task with the draft's text and attachments. Selecting a recipient under
-**Send the next message to another assistant** directs the model picker, pre-send hooks and prompt
-to that Agent's main session in its bound workspace. Removing the mention restores the visible
-conversation's model. The Gateway can have a main session that the sidebar
-omits, so the picker reads the destination before staging a first-prompt choice.
+**Send the next message to another assistant** directs the model picker, pre-send
+hooks and prompt to that Agent's main session in its bound workspace. Removing
+the mention restores the visible conversation's model. The Gateway can have a
+main session that the sidebar omits, so the picker reads the destination before
+staging a first-prompt choice.
 
 Main reads the Gateway's
 `sessions.describe` projection and writes `sessions.patch` with
@@ -69,9 +78,14 @@ Gateway that rejects the field must surface the error. Retrying without the
 field could change sibling conversations.
 
 A local draft holds its choice until first send. After ACP session creation,
-the host confirms the selection before the first prompt. Clearing it resumes
-the Agent's configured model. On a 0.6.1 upgrade the runtime distinguishes old
-user overrides from the model a transcript recorded for a previous reply.
+the host confirms the selection before the first prompt. The Main-owned API
+retains its null selection semantics for inheritance, although the picker only
+submits concrete models. On a 0.6.1 upgrade the runtime distinguishes old user
+overrides from the model a transcript recorded for a previous reply.
+Automatic ACP preparation also remains a local draft: an ACP handle alone does
+not mean that `sessions.describe` can find a persisted Gateway row. A later
+model selection must retain first-send creation permission without granting it
+to an existing conversation that was deleted elsewhere.
 
 ## Identity And Race Protection
 
