@@ -65,8 +65,7 @@ concurrent edits; and enterprise quit/restore, cancellation and login boundaries
 Native Gateway execution against a local synthetic inference endpoint is a
 separate validation layer from fixture tests. Real enterprise authentication,
 customer state and installed application upgrades are not proved by synthetic
-tests. Record actual commands/results in the task or a dated follow-up; this
-document does not claim those layers passed before they are run.
+tests. Actual commands and results are recorded below.
 
 ## Validation on 2026-11-10
 
@@ -74,3 +73,42 @@ A read-only evidence check of the original drink-water task's pre-migration
 snapshot produced one eligible task and no skipped tasks, retaining the original
 `custom-enterpri:default` account. The helper's output was intercepted in memory;
 this check did not write to the user's runtime state or run their task.
+
+The fresh native probe passed on Windows with Node 24.20.0 and the patched
+OpenClaw 2026.10.10 runtime:
+
+```sh
+node scripts/test-cron-upgrade.mjs --biz-root D:/GitHub/clawx-biz
+```
+
+Three synthetic tasks ran successfully across two Gateway starts: community
+and enterprise inherited models, plus an explicit removed community model.
+All six runs returned `ok` using the current model. Both attempts at the removed
+model returned a real loopback HTTP 404 before succeeding through fallback.
+The fixture included a historical automatic enterprise account selection and
+an initially absent main-agent database, exercising native account enrollment
+during startup. Disabled state and payloads remained unchanged.
+
+Between starts, the probe captured a populated receipt through the Biz helper,
+removed the enterprise profile and projected the same key again. Native
+continuation changed the authorization ID while retaining every other binding
+field. The final artifact was
+`clawx-native-cron-upgrade-Sms7jr/result.json`, with `passed`,
+`missingMainDatabaseAtBootstrap` and `enterpriseContinuityVerified` all true.
+
+A focused follow-up also passed:
+
+```sh
+node scripts/test-cron-upgrade.mjs --biz-root D:/GitHub/clawx-biz --reuse C:/Users/70954/clawx-native-cron-upgrade-Sms7jr --auto-continuity
+```
+
+After setting only the synthetic binding's source metadata to `auto`, native
+capture, profile removal/reprojection and continuation retained that source,
+provider and profile while renewing the authorization ID. One further enterprise
+run succeeded; `auto-result.json` records `passed: true`.
+
+These were Doctor-bootstrapped canonical fixtures and actual local inference
+requests. Runs were forced only after observing completed binding recovery.
+They do not establish full old-installer conversion, real enterprise login or
+a packaged application restart. The Biz suite separately passed 37 files /
+317 tests plus `pnpm typecheck` against the matching community checkout.
