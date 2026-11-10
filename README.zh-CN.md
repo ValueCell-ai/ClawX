@@ -154,6 +154,10 @@ Windows 上清理 SQLite 临时快照和旧会话导入目录时，会先释放�
 
 Doctor 也识别已验证的 `2026.10.5`/schema 25 情况：首次启动 Gateway 前保存 Provider，导致旧版未初始化删除日志。恢复仍须满足配置的 Agent 路径一致、原始数据库来源未变化、存在缺失日志恢复凭据、没有删除记录且备份验证通过等条件。
 
+扩展恢复运行时凭据时也遵循同样的升级顺序：先保留快照、完成离线 schema 准备，再恢复扩展所需的配置，最后启动 ClawX 管理的 Gateway。准备失败或被取消会阻止该次启动，不会强行向旧 schema 写入凭据。验证范围和限制见[企业版升级验证记录](harness/reference/enterprise-windows-upgrade-validation-20261109.md)。
+
+应用退出时会取消会话写入和排队的启动请求，先停止 ACP 和 ClawX 管理的 Gateway，再由扩展清理临时运行时凭据。加密登录状态保留供下次启动恢复，整个退出流程仍受原有超时限制。
+
 官方 Discord、飞书和 WhatsApp 依赖同步到 `2026.10.10`；企业微信升级到 `2026.10.30` 以适配当前配置 API，钉钉保持 `0.8.26`，微信保持 `2.4.10`。飞书沿用 main 已有迁移逻辑。
 
 OpenClaw 2026.10.5 更换了两个渠道插件，ClawX 会在首次启动 Gateway 前完成迁移。QQ 机器人从 `@openclaw/qqbot` 切换到腾讯 QQBot 2.0（`@tencent-connect/openclaw-qqbot`，插件 id `openclaw-qqbot`），默认账号移到 `channels.qqbot` 顶层，原本开放的私聊保持开放（使用审批标记 `openclaw:approval-disabled`）。带审批、密钥文件或群命令策略的 QQ 机器人配置交给 OpenClaw Doctor 处理。飞书从 `@larksuite/openclaw-lark` 切换到官方 `@openclaw/feishu`，应用凭据保持不变；官方插件提供 14 个飞书工具（原为 39 个），不再提供日历、任务、用户 OAuth、表格和搜索类工具。

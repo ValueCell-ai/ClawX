@@ -101,6 +101,89 @@ The offline restore guard also rejected a second 0.6.1 restore before publicatio
 
 The final four logs contain no snapshot `EPERM`, import-stage `ENOTEMPTY` or incomplete shared-state snapshot cleanup warning. Both fresh upgrades still warn that native Doctor's additional original-state capture is unavailable because a repository ancestor grants access to `Authenticated Users`. The task did not alter the workspace/drive ACL. ClawX's separate pre-upgrade snapshots were successfully created, hash-verified and used for the offline restorations; native Doctor's additional capture path is not counted as validated under this directory ACL.
 
+## Final current-host package regression
+
+After the enterprise investigation, the community host was rebuilt with the
+generic startup-preparation gate, native-store readiness checks, bounded exit
+ordering and quit-time restart cancellation. The independent package is
+`target-host-fixed-package/win-unpacked`, community 0.6.2 / OpenClaw 2026.10.10.
+It retains the same eleven SQLite runtime repairs and adds the current host
+changes. Its `resources/app.asar` SHA-256 is
+`62063db9b48e8d89fe7b440cb201bd028e8d386c020d9e39bda92be24ad55aa2`.
+The build records commit `23778449` plus the captured working-tree diff, whose
+SHA-256 is `5a1a193d93ea9018270d84af3130f7bd69d0b68b46eb8673ca69da76e3da800b`.
+Separate Main/renderer typechecks and the Vite build passed. Assembly verified
+54,364 copied files, 2,655 retained archive files, 487 rebuilt files and all
+eleven runtime-fix files; the earlier package and enterprise v2 archive remained
+unchanged. Receipts are in `target-host-fixed-package/`.
+
+Both original community baselines were restored through the verified core
+snapshot helper and exercised against this package. The control upgrades used
+the diagnostic loader and CPU profiler, but the loader returned the original
+module bytes: both receipts record one load, equal source/evaluated hashes,
+valid exit and unchanged package files. Their subsequent ordinary restarts
+disabled the profiling and source hook. These control runs establish the final
+package's unchanged-code regression result:
+
+| Route / phase | Full Gateway readiness after Main initialization | Model requests | History, credentials and workspace | Four connections | Offline SQLite integrity | Result |
+| --- | ---: | ---: | --- | --- | --- | --- |
+| main `perf-host-main-a2` | 111.510 s | 2 | Passed | Confirmed | Agent 27 / shared 22, both `ok` | Passed |
+| main `perf-host-main-a2-restart` | 26.360 s | 0 | Passed | Confirmed | Agent 27 / shared 22, both `ok` | Passed |
+| 0.6.1 `perf-host-061-a1` | 133.792 s | 2 | Passed | Confirmed | Agent 27 / shared 22, both `ok` | Passed |
+| 0.6.1 `perf-host-061-a1-restart` | 24.687 s | 0 | Passed | Confirmed | Agent 27 / shared 22, both `ok` | Passed |
+
+Each upgrade read back both old assistant histories and two new replies; each
+restart retained both generations without a new model request or Doctor repair.
+All eight channel credential fields matched, the Chinese workspace marker was
+retained, and all four apps exited with code 0. Connection verification requires
+configured/running accounts plus an explicit connection or current-run
+authentication evidence, and rejects explicit `connected=false`. The community
+runner stops Gateway before closing the app; normal application-quit extension
+cleanup is separately covered by the fresh-C enterprise runs in
+[enterprise validation](enterprise-windows-upgrade-validation-20261109.md).
+
+The main `perf-host-main-b2` and 0.6.1 `perf-host-061-b1` diagnostic candidate
+upgrades and their ordinary restarts also passed the same functional checks.
+Those candidate upgrades substituted one function in memory in the root Doctor
+thread only. They are separate experimental evidence, not additional proof of
+the final package's unmodified implementation. No production performance patch
+was adopted. The observed timing and cache-carryover limits are documented in
+[Doctor performance](windows-doctor-performance-20261109.md); these runs are not
+unprofiled startup benchmarks or complete cache resets.
+
+`current-host-validation-summary.json` independently checks all eight result
+files and records both `finalPackageControlFourRunsVerified=true` and
+`allEightRecordedRunsVerified=true`. It contains only marker-match booleans,
+credential-match booleans, connection evidence status, schemas, integrity and
+timings. The D: ancestor ACL limitation still applies: both control Doctors
+explicitly refused the additional native original-state capture. Successful
+core-snapshot restoration and database integrity do not establish that capture
+path. No directory permissions were weakened or native capture guards bypassed.
+
+The final current-host installer is
+`installer-host-final/ClawX-0.6.2-win-x64.exe`, 411,836,291 bytes, SHA-256
+`6b5931413a59776e5ff221a35f35052c9f809a64e70215fe885df8b5e684eb99`.
+Its extracted `app.asar` matches the tested hash above, and all eleven repaired
+runtime files match: twelve extracted hashes passed. The complete source
+payload inventory and hashes also remain unchanged across all 54,365 files.
+`latest.yml` size/SHA-512 checks passed; Authenticode reports `NotSigned`.
+`installer-host-final/verification.json` records the completed verification.
+This installer supersedes the earlier SQLite-only `installer-final` artifact
+for delivery of the later host changes.
+
+Packaging retained the frozen NSIS templates and used electron-builder 26.16.0's
+existing `UninstallerReader` to extract the intermediate uninstaller without
+executing it. The first post-build verifier expected a nested
+`$PLUGINSDIR/app-64.7z`; its failed extraction log remains preserved. The final
+independent verifier used 7-Zip's observed direct embedded-7z view at offset
+635,340 and completed the checks above. Signing and publishing were disabled.
+Although the configuration requested `compression=normal`, the actual embedded
+archive used `-mx=9`; no compression speedup is claimed.
+Neither installer nor packaged application was executed by the packaging or
+verification helpers. NSIS registration, active-installation overwrite and
+uninstall behavior remain untested. `final-installers-ready.json` records both
+final editions and no remaining task processes or test listeners at completion.
+
 ## Checks and scope
 
 The final focused run passed 87 tests across five files: the existing auth/startup suites, four descriptor-lifecycle cases and ten producer-eligibility cases. Each new fix had a failing baseline reproduction or regression before repair. The final dependency install with `--frozen-lockfile` passed; the OpenClaw patch hash is `5028de814f5cdebc00d0e7152c16d602301074dbb5a28347054861fc96ec7fcc`. Targeted ESLint, communication replay and comparison completed successfully. Node and web TypeScript checks passed.

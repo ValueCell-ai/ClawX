@@ -37,7 +37,163 @@ describe('GatewayManager restart recovery', () => {
     vi.doUnmock('@electron/gateway/process-launcher');
     vi.doUnmock('@electron/gateway/config-sync');
     vi.doUnmock('@electron/gateway/supervisor');
+    vi.doUnmock('@electron/main/app-state');
     vi.useRealTimers();
+  });
+
+  it.each(['replace', 'unregister', 'new-epoch', 'quitting'] as const)('settles preparation cancellation after %s without overwriting a newer lifecycle', async (action) => {
+    let quitting = false;
+    let release!: () => void;
+    let entered!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    const admissionEntered = new Promise<void>((resolve) => { entered = resolve; });
+    const launched = vi.fn();
+    vi.doMock('@electron/main/app-state', () => ({ isQuitting: () => quitting }));
+    vi.doMock('@electron/gateway/config-sync', () => ({
+      prepareGatewayLaunchContext: vi.fn(async (_port: number, prepare: () => Promise<void>) => {
+        await prepare();
+        return {};
+      }),
+    }));
+    vi.doMock('@electron/gateway/process-launcher', () => ({ launchGatewayProcess: launched }));
+    vi.doMock('@electron/gateway/supervisor', async (importOriginal) => ({
+      ...await importOriginal<typeof import('@electron/gateway/supervisor')>(),
+      findExistingGatewayProcess: vi.fn(async () => null),
+      waitForPortFree: vi.fn(async () => {}),
+      warmupManagedPythonReadiness: vi.fn(),
+    }));
+    const { GatewayManager } = await import('@electron/gateway/manager');
+    const manager = new GatewayManager();
+    const internals = manager as unknown as {
+      initDeviceIdentity(): Promise<void>;
+      shouldReconnect: boolean;
+      setStatus(update: { state: string; gatewayReady?: boolean }): void;
+      lifecycleController: { bump(reason: string): number };
+      restartController: { markDeferredRestart(reason: string, context: { state: string; startLock: boolean }): void };
+    };
+    vi.spyOn(internals, 'initDeviceIdentity').mockResolvedValue();
+    const restart = vi.spyOn(manager, 'restart').mockResolvedValue();
+    const write = vi.fn();
+    const unsubscribe = manager.registerStartupPreparation('auth', {
+      checkReady: async () => { entered(); await pending; return { ready: true }; }, run: write,
+    });
+    const start = manager.start();
+    await admissionEntered;
+    quitting = action === 'quitting';
+    if (action === 'new-epoch') {
+      internals.lifecycleController.bump('new-start');
+      internals.setStatus({ state: 'running', gatewayReady: true });
+      unsubscribe();
+    } else {
+      internals.restartController.markDeferredRestart('session-changed', { state: 'starting', startLock: true });
+      if (action === 'replace') manager.registerStartupPreparation('auth', { checkReady: () => ({ ready: true }), run: write });
+      else unsubscribe();
+    }
+    release();
+    await start;
+    expect(manager.getStatus().state).toBe(action === 'new-epoch' ? 'running' : 'stopped');
+    expect(restart).toHaveBeenCalledTimes(action === 'new-epoch' || action === 'quitting' ? 0 : 1);
+    if (action === 'quitting') expect(internals.shouldReconnect).toBe(false);
+    expect(write).not.toHaveBeenCalled();
+    expect(launched).not.toHaveBeenCalled();
+  });
+
+  it('ignores new starts and restart scheduling after app quit begins', async () => {
+    vi.doMock('@electron/main/app-state', () => ({ isQuitting: () => true }));
+    const { GatewayManager } = await import('@electron/gateway/manager');
+    const manager = new GatewayManager();
+    const internals = manager as unknown as {
+      initDeviceIdentity(): Promise<void>;
+      scheduleReconnect(): void;
+      reconnectTimer: NodeJS.Timeout | null;
+    };
+    const identity = vi.spyOn(internals, 'initDeviceIdentity').mockResolvedValue();
+    const stop = vi.spyOn(manager, 'stop').mockResolvedValue();
+    await manager.start();
+    await manager.restart();
+    manager.debouncedRestart(1);
+    internals.scheduleReconnect();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(identity).not.toHaveBeenCalled();
+    expect(stop).not.toHaveBeenCalled();
+    expect(internals.reconnectTimer).toBeNull();
+    expect(manager.getStatus().state).toBe('stopped');
+  });
+
+  it('does not resume a restart when quit begins while its stop is pending', async () => {
+    let quitting = false;
+    vi.doMock('@electron/main/app-state', () => ({ isQuitting: () => quitting }));
+    const { GatewayManager } = await import('@electron/gateway/manager');
+    const manager = new GatewayManager();
+    const stopped = Promise.withResolvers<void>();
+    const internals = manager as unknown as {
+      status: { state: string; port: number };
+      shouldReconnect: boolean;
+      restartInFlight: Promise<void> | null;
+    };
+    internals.status = { state: 'running', port: 18789 };
+    vi.spyOn(manager, 'stop').mockImplementation(async () => {
+      await stopped.promise;
+      internals.shouldReconnect = false;
+      internals.status = { state: 'stopped', port: 18789 };
+    });
+    const start = vi.spyOn(manager, 'start').mockResolvedValue();
+    const restarting = manager.restart();
+    expect(manager.stop).toHaveBeenCalledOnce();
+    quitting = true;
+    stopped.resolve();
+    await restarting;
+    expect(start).not.toHaveBeenCalled();
+    expect(internals.shouldReconnect).toBe(false);
+    expect(internals.restartInFlight).toBeNull();
+    expect(manager.getStatus().state).toBe('stopped');
+  });
+
+  it.each(['debounced', 'gateway', 'transport'] as const)('drops an already queued %s recovery on quit', async (mode) => {
+    let quitting = false;
+    vi.doMock('@electron/main/app-state', () => ({ isQuitting: () => quitting }));
+    const { GatewayManager } = await import('@electron/gateway/manager');
+    const manager = new GatewayManager();
+    const internals = manager as unknown as {
+      connect(port: number): Promise<void>;
+      scheduleReconnect(mode: 'gateway' | 'transport'): void;
+      reconnectTimer: NodeJS.Timeout | null;
+    };
+    const start = vi.spyOn(manager, 'start').mockResolvedValue();
+    const restart = vi.spyOn(manager, 'restart').mockResolvedValue();
+    const connect = vi.spyOn(internals, 'connect').mockResolvedValue();
+    if (mode === 'debounced') manager.debouncedRestart(50);
+    else internals.scheduleReconnect(mode);
+    quitting = true;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(start).not.toHaveBeenCalled();
+    expect(restart).not.toHaveBeenCalled();
+    expect(connect).not.toHaveBeenCalled();
+    expect(internals.reconnectTimer).toBeNull();
+  });
+
+  it('cancels a start paused in identity initialization without entering launch preparation', async () => {
+    let quitting = false;
+    vi.doMock('@electron/main/app-state', () => ({ isQuitting: () => quitting }));
+    const { GatewayManager } = await import('@electron/gateway/manager');
+    const manager = new GatewayManager();
+    const initialized = Promise.withResolvers<void>();
+    const internals = manager as unknown as {
+      initDeviceIdentity(): Promise<void>;
+      startProcess(): Promise<void>;
+      startLock: boolean;
+      shouldReconnect: boolean;
+    };
+    vi.spyOn(internals, 'initDeviceIdentity').mockReturnValue(initialized.promise);
+    const launch = vi.spyOn(internals, 'startProcess').mockResolvedValue();
+    const starting = manager.start();
+    quitting = true;
+    initialized.resolve();
+    await starting;
+    expect(launch).not.toHaveBeenCalled();
+    expect(internals.startLock).toBe(false);
+    expect(internals.shouldReconnect).toBe(false);
+    expect(manager.getStatus().state).toBe('stopped');
   });
 
   it('gracefully shuts down an owned Gateway before terminating its process', async () => {

@@ -660,7 +660,10 @@ async function resolveChannelStartupPolicy(): Promise<{
   }
 }
 
-export async function prepareGatewayLaunchContext(port: number): Promise<GatewayLaunchContext> {
+export async function prepareGatewayLaunchContext(
+  port: number,
+  prepareRuntime?: () => Promise<void>,
+): Promise<GatewayLaunchContext> {
   const timingsMs: Record<string, number> = {};
   const totalStartedAt = Date.now();
   const openclawDir = getOpenClawDir();
@@ -694,6 +697,11 @@ export async function prepareGatewayLaunchContext(port: number): Promise<Gateway
   const prelaunchSummary = await measureAsync(timingsMs, 'prelaunchSyncMs', async () => (
     await syncGatewayConfigBeforeLaunch(appSettings, openclawDir)
   ));
+
+  // Extensions may need to project runtime credentials after offline migration.
+  // The upgrade snapshot and config/plugin preparation must precede their writes;
+  // environment and channel decisions below must see their completed projection.
+  if (prepareRuntime) await measureAsync(timingsMs, 'runtimePreparationMs', prepareRuntime);
 
   if (!existsSync(entryScript)) {
     throw new Error(`OpenClaw entry script not found at: ${entryScript}`);

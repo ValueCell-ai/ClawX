@@ -158,6 +158,10 @@ Windows で SQLite の一時スナップショットと旧セッションのイ�
 
 Doctor は、Gateway の初回起動前に Provider を保存すると削除ジャーナルが未初期化になる、確認済みの `2026.10.5`/schema 25 のケースも認識します。復元には引き続き、設定された Agent パスの一致、元の作成元情報が不変であること、ジャーナル欠落の復旧記録、削除記録がないこと、検証済みバックアップが必要です。
 
+拡張機能の実行時認証情報も同じ順序で復元します。まずスナップショットを保存し、オフラインでのスキーマ準備を完了してから必要な拡張設定を復元し、ClawX が管理する Gateway を起動します。準備の失敗やキャンセル時は起動を止め、旧スキーマへの書き込みを強行しません。検証範囲と制限は[企業版アップグレード検証記録](harness/reference/enterprise-windows-upgrade-validation-20261109.md)を参照してください。
+
+アプリ終了時はセッションへの書き込みと待機中の起動要求を取り消します。ACP と管理対象の Gateway を停止してから拡張機能の一時的な実行時認証情報を削除し、暗号化されたログイン状態は次回起動のために保持します。終了処理全体には従来のタイムアウトが適用されます。
+
 公式 Discord、Feishu、WhatsApp は `2026.10.10` に統一します。WeCom は新しい設定 API に対応する `2026.10.30`、DingTalk は `0.8.26`、Weixin は `2.4.10` です。Feishu の移行処理は main と同じです。
 
 OpenClaw 2026.10.5 では 2 つのチャネルプラグインの提供元が変わり、ClawX は最初の Gateway 起動前に両方を移行します。QQ ボットは `@openclaw/qqbot` から Tencent QQBot 2.0（`@tencent-connect/openclaw-qqbot`、プラグイン id `openclaw-qqbot`）に切り替わり、デフォルトアカウントは `channels.qqbot` の最上位に移動します。開放されていた DM は承認マーカー `openclaw:approval-disabled` を使って開放のまま維持されます。承認、シークレットファイル、グループコマンドのポリシーを含む QQ ボット設定は OpenClaw Doctor に任せます。Feishu は `@larksuite/openclaw-lark` から公式の `@openclaw/feishu` に切り替わり、アプリの認証情報はそのまま使えます。公式プラグインの Feishu ツールは 39 個から 14 個になり、カレンダー、タスク、ユーザー OAuth、シート、検索のツールは使えなくなります。

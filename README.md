@@ -158,6 +158,10 @@ On Windows, SQLite snapshot and legacy-session import cleanup release the parent
 
 Doctor also recognizes the verified `2026.10.5`/schema-25 case where saving a provider before the first Gateway start left the deletion journal uninitialized. Recovery still requires the configured agent path, an unchanged original producer, a missing-journal receipt, no deletion record and verified backups.
 
+Extensions restoring runtime credentials follow the same upgrade order: preserve the snapshot, finish offline schema preparation, restore the required extension configuration, then start the managed Gateway. Failed or cancelled preparation prevents that start; credentials are not forced into an older schema. See the [enterprise upgrade validation](harness/reference/enterprise-windows-upgrade-validation-20261109.md) for coverage and limitations.
+
+During app quit, session writes and queued starts are cancelled. ACP and the managed Gateway stop before extensions remove their temporary runtime credentials; encrypted login state remains available for the next launch. All shutdown work shares the existing timeout.
+
 The official Discord, Feishu and WhatsApp dependencies match `2026.10.10`. WeCom moves to `2026.10.30` for the current configuration API; DingTalk stays at `0.8.26` and Weixin at `2.4.10`. Existing Feishu migration behavior remains unchanged.
 
 Two channel plugins change providers with OpenClaw 2026.10.5, and ClawX migrates both before the first Gateway start. QQ Bot moves from `@openclaw/qqbot` to Tencent QQBot 2.0 (`@tencent-connect/openclaw-qqbot`, plugin id `openclaw-qqbot`). Its default account moves to the top level of `channels.qqbot`. Open DM access stays open, using the approval marker `openclaw:approval-disabled`. QQ Bot configs with approval, secret-file or group command policies are left for OpenClaw Doctor. Feishu moves from `@larksuite/openclaw-lark` to the official `@openclaw/feishu`, with the same app credentials. The official plugin provides 14 Feishu tools instead of 39: calendar, task, user OAuth, sheet and search tools are no longer available.

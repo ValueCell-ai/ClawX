@@ -140,6 +140,17 @@ function readUserVersion(db: DatabaseSync): number {
   return typeof row?.user_version === 'number' ? row.user_version : 0;
 }
 
+/** Recognize only the index-only database this module creates before OpenClaw's first boot. */
+export function isClawXPluginIndexBootstrap(db: DatabaseSync): boolean {
+  if (readUserVersion(db) !== 0) return false;
+  const entries = db.prepare("SELECT type, name, sql FROM sqlite_master WHERE name NOT GLOB 'sqlite_*'").all() as {
+    type: string; name: string; sql: string | null;
+  }[];
+  if (entries.length !== 1 || entries[0].type !== 'table' || entries[0].name !== 'installed_plugin_index') return false;
+  const normalize = (sql: string) => sql.replace(/\bIF\s+NOT\s+EXISTS\b/gi, '').replace(/\s+/g, '').replace(/;$/, '').toLowerCase();
+  return entries[0].sql !== null && normalize(entries[0].sql) === normalize(INSTALLED_PLUGIN_INDEX_TABLE_SQL);
+}
+
 function usesMachineStateIndex(db: DatabaseSync): boolean {
   return readUserVersion(db) >= MACHINE_STATE_MIN_USER_VERSION && tableExists(db, 'config_machine_state');
 }
