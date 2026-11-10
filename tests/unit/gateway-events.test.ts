@@ -124,6 +124,8 @@ describe('gateway store event wiring', () => {
 
     const { useGatewayStore } = await import('@/stores/gateway');
     await useGatewayStore.getState().init();
+    // Startup hydrates through a background chat import; wait for its modules.
+    await vi.dynamicImportSettled();
     await vi.waitFor(() => {
       expect(hostApiMock.gateway.rpc.mock.calls.some(([method]) => method === 'sessions.list')).toBe(true);
     });
