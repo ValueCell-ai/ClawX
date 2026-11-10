@@ -49,7 +49,8 @@ node <app-resources>/cli/restore-openclaw-upgrade.mjs <snapshot-directory> --con
 ```
 
 Use a compatible Node runtime. The helper verifies hashes and original paths,
-checks the configured/default Gateway ports, and journals before publishing
+parses the current configuration as JSON5, checks its port plus the original
+snapshot/default Gateway ports, and journals before publishing
 roots. It retains displaced newer files instead of overlaying old rows on a
 new database. External stores stage on their own volume. A failed restore
 undoes published roots; the next invocation also undoes an unfinished journal
@@ -57,6 +58,23 @@ before retrying. Keep the snapshot and its recovery directories until the
 chosen version has been verified. They contain secrets. Port checks complement
 the explicit stopped-process requirement; they do not prove no offline Doctor
 is running.
+
+The current config is reread before publication. If it is missing, unreadable,
+malformed, or contains an invalid Gateway port, recovery stops instead of using
+only the old port. Keep the helper with its sibling `openclaw` resource directory,
+which supplies the pinned JSON5 parser. A copied helper without that dependency
+also refuses recovery.
+
+If interruption occurred after the current config was moved but before its
+replacement was published, the missing config blocks automatic journal undo.
+Stop every ClawX, Gateway and Doctor process, preserve the journal and displaced
+files, then copy the matching config operation's `previous` file back to its
+`source` path without removing `previous`. Use the displaced current config,
+including its latest port, rather than substituting the snapshot's older config.
+After verifying that the current config is readable and valid, retry; the journal
+can then undo the interrupted publication. For a malformed config, retain a copy
+and repair it with the actual current port before retrying. Never delete or replace
+the current config merely to bypass a failed offline check.
 
 After restoring, reinstall the **matching old application** before launching.
 Running the new app against restored data triggers migration again. Workspace

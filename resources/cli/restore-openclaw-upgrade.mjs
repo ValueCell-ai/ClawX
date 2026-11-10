@@ -1,11 +1,12 @@
 #!/usr/bin/env node
-/** Offline recovery for ClawX upgrade snapshots. Uses only Node builtins. */
+/** Offline recovery for ClawX upgrade snapshots. Uses the bundled JSON5 parser. */
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { chmod, copyFile, lstat, mkdir, readFile, readdir, rename, symlink, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createConnection } from 'node:net';
+import { createRequire } from 'node:module';
 
 const exists = async path => lstat(path).then(() => true, error => {
   if (error.code === 'ENOENT') return false;
@@ -180,20 +181,35 @@ export async function restoreUpgradeSnapshot(snapshotDirectory, { stateDir, asse
 }
 
 async function assertPortStopped({ configPath, gatewayPort }) {
-  // The snapshot records the JSON5-parsed original port. A damaged current
-  // config must not make offline recovery impossible.
+  // The current port can differ from the snapshot. Never discard it on a read
+  // or parse failure: the old/default ports cannot establish offline ownership.
   let config;
-  try { config = JSON.parse(await readFile(configPath, 'utf8')); } catch { /* original port remains available */ }
-  for (const port of new Set([18789, gatewayPort, config?.gateway?.port].filter(Number.isInteger))) {
-  if (port < 1 || port > 65535) throw new Error('Invalid Gateway port in snapshot');
-  const listening = await new Promise(resolveListening => {
-    const socket = createConnection({ host: '127.0.0.1', port });
-    const finish = result => { socket.destroy(); resolveListening(result); };
-    socket.once('connect', () => finish(true));
-    socket.once('error', error => finish(error.code !== 'ECONNREFUSED'));
-    socket.setTimeout(2000, () => finish(true));
-  });
-  if (listening) throw new Error(`Gateway port ${port} is active or cannot be verified offline`);
+  try {
+    // Installed CLI dependencies live beside it in resources/openclaw, outside
+    // app.asar. Node's parent lookup also finds the source tree's pinned JSON5.
+    const JSON5 = createRequire(new URL('../openclaw/package.json', import.meta.url))('json5');
+    config = JSON5.parse(await readFile(configPath, 'utf8'));
+  } catch {
+    throw new Error('Cannot determine current Gateway port: keep the bundled JSON5 dependency available and restore a readable, valid current config before retrying offline recovery');
+  }
+  const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+  if (!isObject(config) || (config.gateway !== undefined && !isObject(config.gateway))) {
+    throw new Error('Cannot determine current Gateway port: config and gateway must be objects');
+  }
+  const currentPort = config.gateway?.port === undefined ? 18789 : config.gateway.port;
+  if (!Number.isInteger(currentPort) || currentPort < 1 || currentPort > 65535) {
+    throw new Error('Cannot determine current Gateway port: gateway.port must be an integer from 1 to 65535');
+  }
+  for (const port of new Set([18789, gatewayPort, currentPort].filter(Number.isInteger))) {
+    if (port < 1 || port > 65535) throw new Error('Invalid Gateway port in snapshot');
+    const listening = await new Promise(resolveListening => {
+      const socket = createConnection({ host: '127.0.0.1', port });
+      const finish = result => { socket.destroy(); resolveListening(result); };
+      socket.once('connect', () => finish(true));
+      socket.once('error', error => finish(error.code !== 'ECONNREFUSED'));
+      socket.setTimeout(2000, () => finish(true));
+    });
+    if (listening) throw new Error(`Gateway port ${port} is active or cannot be verified offline`);
   }
 }
 

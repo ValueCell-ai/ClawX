@@ -18,6 +18,8 @@ ownedPaths:
   - electron/gateway/**
   - electron/preload/**
   - electron/utils/**
+  - resources/cli/restore-openclaw-upgrade.mjs
+  - tests/unit/openclaw-restore-offline.test.ts
   - resources/skills/computer-use/**
   - src/pages/ComputerUse/**
   - src/hooks/useVoiceDictation.ts

@@ -8,6 +8,7 @@ appliesTo:
 
 Rules:
 
+  - Offline restore must parse the current config as JSON5 and check its port as well as the snapshot and default ports, before staging and again before publication. Unreadable, missing, malformed or invalid-port current config must block recovery, not silently fall back to the old port. Verify the parser resolves from packaged resources and document the interrupted-restore case where the current config must first be recovered manually.
   - Snapshot migration inputs before startup mutations; use consistent SQLite backups, preserve legacy transcripts and do not discard backups merely because Gateway is ready.
   - OpenClaw owns schema initialization and migration. Never infer a complete schema from app_version or stamp intermediate/future schemas as current.
   - Extensions must separate persisted session restoration from native runtime projection. Register awaited startup preparation after the snapshot; use read-only schema admission, run offline Doctor when required, and finish projection before spawning a new managed Gateway. A nonzero Doctor exit is not proof that migration failed or succeeded: recheck the actual schema. Never replace admission with a trial write or a best-effort ready listener. Fence asynchronous writes against stop, unregistration and session replacement, and do not run offline preparation while attaching to an existing Gateway.
