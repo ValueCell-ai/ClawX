@@ -18,19 +18,25 @@ async function seedState(contentVersion = 22, headerVersion = 1) {
   await mkdir(join(statePath(), '..'), { recursive: true });
   const db = new DatabaseSync(statePath());
   try {
+    // The full runtime schema has hundreds of DDL statements. Seed atomically
+    // so fixture fsyncs do not consume the admission test's timeout in CI.
+    db.exec('BEGIN');
     db.exec(getBundledStateSchema());
     db.prepare("INSERT INTO schema_meta VALUES ('primary','global',?,NULL,'2026.10.10',1,1)").run(headerVersion);
     db.exec(`PRAGMA user_version = ${headerVersion}`);
     db.prepare("INSERT INTO config_machine_state VALUES ('state.schema.contentVersion',?,1)").run(JSON.stringify(contentVersion));
+    db.exec('COMMIT');
   } finally { db.close(); }
 }
 async function seedAgent(version: number, marker = version, id = 'main') {
   await mkdir(join(agentPath(id), '..'), { recursive: true });
   const db = new DatabaseSync(agentPath(id));
   try {
+    db.exec('BEGIN');
     db.exec(getBundledAgentSchema(version));
     db.prepare("INSERT INTO schema_meta VALUES ('primary','agent',?,?,'2026.10.5',1,1)").run(marker, id);
     db.exec(`PRAGMA user_version = ${marker}`);
+    db.exec('COMMIT');
   } finally { db.close(); }
 }
 function editState(sql: string) {
