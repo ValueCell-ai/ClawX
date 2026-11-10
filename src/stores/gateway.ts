@@ -99,6 +99,26 @@ function handleGatewayNotification(notification: GatewayNotification | undefined
       .catch(() => {});
     return;
   }
+
+  if (payload.method === 'cron') {
+    const event = asRecord(payload.params);
+    if (typeof event.jobId !== 'string' || !event.jobId.trim()) return;
+    if (event.action !== 'started' && event.action !== 'finished') return;
+
+    // cron.run can acknowledge queueing before the run starts. Reconcile on
+    // runtime events too, including runs started by the scheduler itself.
+    import('./cron')
+      .then(({ useCronStore }) => useCronStore.getState().fetchJobs({ force: true }))
+      .catch(() => {});
+
+    if (event.action === 'finished') {
+      // Run-scoped session events are intentionally hidden from the sidebar.
+      // Discover the persisted base conversation after its result is available.
+      import('./chat')
+        .then(({ useChatStore }) => useChatStore.getState().loadSessions({ force: true }))
+        .catch(() => {});
+    }
+  }
 }
 
 function mapChannelStatus(status: string): 'connected' | 'connecting' | 'disconnected' | 'error' {
