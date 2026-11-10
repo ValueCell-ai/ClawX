@@ -6,6 +6,7 @@ import {
   GatewayStartupMigrationRequiredError,
   GatewayStartupPreparationError,
   type GatewayStartupPreparationContext,
+  type CronInferenceContinuityEntry,
 } from '@electron/gateway/startup-preparation';
 
 vi.mock('@electron/utils/logger', () => ({ logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
@@ -17,6 +18,39 @@ function deferred() {
 }
 
 describe('offline Gateway startup preparations', () => {
+  const continuation: CronInferenceContinuityEntry = {
+    jobId: 'legacy', definition: { id: 'legacy' }, agentId: 'main', model: 'enterprise/model',
+    profileId: 'enterprise:default', credentialDigest: 'a'.repeat(64),
+    expectedPreviousBinding: { profileId: 'enterprise:default', authorizationId: 'old' },
+  };
+
+  it('publishes copied continuation evidence only after every preparation succeeds', async () => {
+    const preparations = new GatewayStartupPreparations();
+    let context!: GatewayStartupPreparationContext;
+    const evidence = structuredClone(continuation);
+    preparations.register('auth', {
+      checkReady: () => ({ ready: true }),
+      run: async (current) => { context = current; current.restoreCronInferenceContinuity!([evidence]); },
+    });
+    const result = await preparations.run(() => {});
+    evidence.model = 'different/model';
+    expect(result.cronInferenceContinuity).toEqual([continuation]);
+    expect(() => context.restoreCronInferenceContinuity!([continuation])).toThrow(LifecycleSupersededError);
+  });
+
+  it('discards continuation evidence when another participant fails and starts the retry empty', async () => {
+    const preparations = new GatewayStartupPreparations();
+    const remove = preparations.register('auth', {
+      checkReady: () => ({ ready: true }), run: async context => { context.restoreCronInferenceContinuity!([continuation]); },
+    });
+    const removeFailure = preparations.register('failure', {
+      checkReady: () => ({ ready: true }), run: async () => { throw new Error('projection rejected'); },
+    });
+    await expect(preparations.run(() => {})).rejects.toThrow(GatewayStartupPreparationError);
+    remove(); removeFailure();
+    expect(await preparations.run(() => {})).toEqual({ cronInferenceContinuity: [] });
+  });
+
   it('admits every participant before writing and runs again for the next managed spawn', async () => {
     const preparations = new GatewayStartupPreparations();
     const order: string[] = [];
