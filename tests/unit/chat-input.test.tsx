@@ -436,6 +436,20 @@ describe('ChatInput agent targeting', () => {
     expect(modelApi.setModel).toHaveBeenLastCalledWith(chatState.currentSessionKey, 'custom-aaaaaaaa/gpt-a');
   });
 
+  it('does not stage a model for an existing conversation that Gateway reports as deleted', async () => {
+    configureAgentAndModelPickers();
+    modelApi.getModel.mockResolvedValue({ modelRef: null, exists: false });
+    modelApi.setModel.mockRejectedValue(new Error('Session no longer exists'));
+    renderChatInput();
+    await waitFor(() => expect(modelApi.getModel).toHaveBeenCalledWith(chatState.currentSessionKey));
+    fireEvent.click(screen.getByTestId('chat-model-picker-button'));
+    fireEvent.click(screen.getByRole('button', { name: 'gpt-b Beta' }));
+    await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith('composer.modelSwitchFailed'));
+    expect(modelApi.setModel.mock.calls).toEqual([[chatState.currentSessionKey, 'custom-bbbbbbbb/gpt-b']]);
+    expect(useComposerDraftStore.getState().modelRefs).toEqual({});
+    expect(screen.getByTestId('chat-model-picker-button')).toHaveTextContent('gpt-a');
+  });
+
   it('picks a model for a local draft without creating or updating a Gateway session', async () => {
     configureAgentAndModelPickers();
     chatState.sessions[0].createdLocally = true;

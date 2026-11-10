@@ -79,6 +79,10 @@ the host confirms the selection before the first prompt. The Main-owned API
 retains its null selection semantics for inheritance, although the picker only
 submits concrete models. On a 0.6.1 upgrade the runtime distinguishes old user
 overrides from the model a transcript recorded for a previous reply.
+Automatic ACP preparation also remains a local draft: an ACP handle alone does
+not mean that `sessions.describe` can find a persisted Gateway row. A later
+model selection must retain first-send creation permission without granting it
+to an existing conversation that was deleted elsewhere.
 
 ## Identity And Race Protection
 

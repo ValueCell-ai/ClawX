@@ -38,6 +38,10 @@ explicit session choice even when it matches the inherited default.
 When no configured models are available, retain an existing explicit model's
 label and disable the picker rather than opening an empty menu.
 
+Preparing an ACP session does not establish a persisted Gateway conversation.
+Retain the local-draft marker until the first prompt; do not infer creation
+permission from an absent transcript ID or weaken existing-session write guards.
+
 Resolve an Agent mention to its main session for model reads, writes and prompt
 dispatch. The source conversation continues to own the message draft.
 
