@@ -380,7 +380,12 @@ function writeSharedStateAuthProfiles(store: PersistedAuthProfilesStore): void {
         updated_at_ms = excluded.updated_at_ms
     `);
     const now = Date.now();
-    upsert.run(SHARED_AUTH_STORE_CELL_KEY, JSON.stringify(buildSecretsPayload(store)), now);
+    const existingRaw = readConfigMachineStateCell(db, SHARED_AUTH_STORE_CELL_KEY);
+    const secretsPayload = persistenceRuntime.prepareBundledAuthProfileAuthorizationWrite(
+      existingRaw === undefined ? undefined : JSON.parse(existingRaw),
+      buildSecretsPayload(store),
+    );
+    upsert.run(SHARED_AUTH_STORE_CELL_KEY, JSON.stringify(secretsPayload), now);
     const statePayload = buildStatePayload(store);
     if (statePayload) {
       upsert.run(SHARED_AUTH_STATE_CELL_KEY, JSON.stringify(statePayload), now);
@@ -460,7 +465,12 @@ export function writeAuthProfilesToSqlite(
     db.exec('BEGIN IMMEDIATE');
     assertAuthWriteVersion(db, agentId, sqlitePath);
     const now = Date.now();
-    const secretsPayload = JSON.stringify(buildSecretsPayload(store));
+    const existingRow = db.prepare('SELECT store_json FROM auth_profile_store WHERE store_key = ?')
+      .get(PRIMARY_ROW_KEY) as { store_json: string } | undefined;
+    const secretsPayload = JSON.stringify(persistenceRuntime.prepareBundledAuthProfileAuthorizationWrite(
+      existingRow ? JSON.parse(existingRow.store_json) : undefined,
+      buildSecretsPayload(store),
+    ));
     db.prepare(`
       INSERT INTO auth_profile_store (store_key, store_json, updated_at)
       VALUES (?, ?, ?)

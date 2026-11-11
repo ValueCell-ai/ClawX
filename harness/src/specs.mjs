@@ -17,6 +17,8 @@ function parseScalar(value) {
 }
 
 export function parseFrontmatter(markdown) {
+  // Windows checkouts may retain CRLF in versioned specs.
+  markdown = markdown.replaceAll('\r\n', '\n');
   const match = markdown.match(/^---\n([\s\S]*?)\n---(?:\n|$)/);
   if (!match) {
     throw new Error('Spec must start with Markdown frontmatter');

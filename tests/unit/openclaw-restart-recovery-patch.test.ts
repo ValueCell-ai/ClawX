@@ -1,9 +1,10 @@
 // @vitest-environment node
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { isDeepStrictEqual, promisify } from 'node:util';
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it, vi } from 'vitest';
@@ -430,9 +431,47 @@ describe('OpenClaw restart recovery contract', () => {
     }
   });
 
-  it('keeps every patched runtime chunk syntactically valid', async () => {
+  it.each([true, false])('retains registered runtime additions through native postinstall pruning (registered: %s)', async (registered) => {
     const patch = await readFile(path.join(root, PATCH_PATH), 'utf8');
-    const files = [...patch.matchAll(/^diff --git a\/(dist\/[^ ]+) b\//gm)].map((match) => match[1]);
+    const addedFiles = [...patch.matchAll(/^diff --git a\/(dist\/[^ ]+) b\/[^\r\n]+\r?\nnew file mode /gm)]
+      .map(match => match[1]);
+    expect(addedFiles).toContain('dist/clawx-cron-inference-migration.mjs');
+    const inventory: string[] = JSON.parse(await readFile(path.join(dist, 'postinstall-inventory.json'), 'utf8'));
+    expect(inventory).toEqual(expect.arrayContaining(addedFiles));
+    const fixture = await mkdtemp(path.join(tmpdir(), 'clawx-postinstall-inventory-'));
+    const staleFile = 'dist/stale-clawx-runtime-fixture.mjs';
+    try {
+      await mkdir(path.join(fixture, 'dist'));
+      await writeFile(path.join(fixture, 'dist/postinstall-inventory.json'), JSON.stringify(
+        registered ? inventory : inventory.filter(file => !addedFiles.includes(file)),
+      ));
+      for (const file of [...addedFiles, staleFile]) {
+        await mkdir(path.dirname(path.join(fixture, file)), { recursive: true });
+        await writeFile(path.join(fixture, file), 'export const fixture = true;\n');
+      }
+      // Invoke the installed lifecycle implementation in a subprocess, using
+      // only this synthetic package root; never prune the installed runtime.
+      const lifecycle = pathToFileURL(path.join(root, 'node_modules/openclaw/scripts/postinstall-bundled-plugins.mjs')).href;
+      const { stdout } = await execFileAsync(process.execPath, ['--input-type=module', '-e', `
+        const { pruneInstalledPackageDist } = await import(${JSON.stringify(lifecycle)});
+        const removed = pruneInstalledPackageDist({ packageRoot: ${JSON.stringify(fixture)}, log: { log() {}, warn() {} } });
+        console.log(JSON.stringify(removed));
+      `], { cwd: root });
+      expect(JSON.parse(stdout.trim()).sort()).toEqual((registered ? [staleFile] : [...addedFiles, staleFile]).sort());
+      for (const file of addedFiles) {
+        if (registered) await expect(readFile(path.join(fixture, file), 'utf8')).resolves.toBe('export const fixture = true;\n');
+        else await expect(readFile(path.join(fixture, file))).rejects.toMatchObject({ code: 'ENOENT' });
+      }
+      await expect(readFile(path.join(fixture, staleFile))).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      await rm(fixture, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps every patched runtime JavaScript chunk syntactically valid', async () => {
+    const patch = await readFile(path.join(root, PATCH_PATH), 'utf8');
+    const files = [...patch.matchAll(/^diff --git a\/(dist\/[^ ]+) b\//gm)].map((match) => match[1])
+      .filter(file => /\.(?:mjs|cjs|js)$/.test(file));
     expect(files.length).toBeGreaterThan(0);
     for (const file of files) {
       await expect(execFileAsync(process.execPath, [

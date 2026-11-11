@@ -39,6 +39,27 @@ function sharedCell(key: string) {
     return row?.value_json ? JSON.parse(row.value_json) : undefined;
   } finally { db.close(); }
 }
+type AuthStoreLocation = 'agent' | 'shared';
+const enrolledLifetime = '11111111-1111-4111-8111-111111111111';
+const forgedLifetime = '22222222-2222-4222-8222-222222222222';
+async function seedAuthorizationStore(location: AuthStoreLocation, payload: Record<string, unknown>) {
+  if (location === 'shared') {
+    await seedSharedState({ location: 'state-db' }, { 'authProfiles.store': payload });
+    return;
+  }
+  await seed(27);
+  const db = new DatabaseSync(dbPath());
+  try { db.prepare('UPDATE auth_profile_store SET store_json = ? WHERE store_key = ?').run(JSON.stringify(payload), 'primary'); }
+  finally { db.close(); }
+}
+function authorizationStore(location: AuthStoreLocation): Record<string, unknown> & { authorizationLifetimes?: Record<string, string> } {
+  if (location === 'shared') return sharedCell('authProfiles.store');
+  const db = new DatabaseSync(dbPath(), { readOnly: true });
+  try {
+    const row = db.prepare('SELECT store_json FROM auth_profile_store WHERE store_key = ?').get('primary') as { store_json: string };
+    return JSON.parse(row.store_json);
+  } finally { db.close(); }
+}
 function inspect(file = dbPath()) {
   const db = new DatabaseSync(file, { readOnly: true });
   try { return { version: db.prepare('PRAGMA user_version').get()?.user_version, meta: db.prepare("SELECT * FROM schema_meta WHERE meta_key='primary'").get() }; }
@@ -194,5 +215,52 @@ describe('OpenClaw auth SQLite ownership', () => {
     db.close();
     const { writeAuthProfilesToSqlite } = await import('@electron/utils/openclaw-auth-sqlite');
     expect(() => writeAuthProfilesToSqlite(store, 'main')).toThrow('owner mismatch');
+  });
+  describe.each(['agent', 'shared'] as const)('%s auth authorization continuity', location => {
+    it('preserves native lifetimes through real provider synchronization and ignores forged input', async () => {
+      const enrollment = { 'custom:default': enrolledLifetime };
+      await seedAuthorizationStore(location, { ...store, authorizationLifetimes: enrollment });
+      const { saveProviderKeyToOpenClaw } = await import('@electron/utils/openclaw-auth');
+      const { readAuthProfilesFromSqlite, writeAuthProfilesToSqlite } = await import('@electron/utils/openclaw-auth-sqlite');
+      await saveProviderKeyToOpenClaw('custom', 'synthetic-key', 'main');
+      expect(authorizationStore(location).authorizationLifetimes).toEqual(enrollment);
+      const incoming = { ...readAuthProfilesFromSqlite('main')!, lastGood: { custom: 'custom:default' }, authorizationLifetimes: { 'custom:default': forgedLifetime, 'foreign:default': forgedLifetime } };
+      writeAuthProfilesToSqlite(incoming, 'main');
+      expect(authorizationStore(location).authorizationLifetimes).toEqual(enrollment);
+      expect(readAuthProfilesFromSqlite('main')?.lastGood).toEqual({ custom: 'custom:default' });
+    });
+    it('rotates on replacement, deletion and re-add without reviving old authorization', async () => {
+      await seedAuthorizationStore(location, { ...store, authorizationLifetimes: { 'custom:default': enrolledLifetime } });
+      const { writeAuthProfilesToSqlite } = await import('@electron/utils/openclaw-auth-sqlite');
+      writeAuthProfilesToSqlite({ version: 1, profiles: { 'custom:default': { ...store.profiles['custom:default'], key: 'replacement-key' } } }, 'main');
+      const replaced = authorizationStore(location).authorizationLifetimes!['custom:default'];
+      expect(replaced).toMatch(/^[a-f0-9-]{36}$/);
+      expect(replaced).not.toBe(enrolledLifetime);
+      writeAuthProfilesToSqlite({ version: 1, profiles: {} }, 'main');
+      const removed = authorizationStore(location).authorizationLifetimes!['custom:default'];
+      expect(removed).not.toBe(replaced);
+      expect(authorizationStore(location).profiles).toEqual({});
+      writeAuthProfilesToSqlite({ version: 1, profiles: {} }, 'main');
+      expect(authorizationStore(location).authorizationLifetimes!['custom:default']).toBe(removed);
+      writeAuthProfilesToSqlite(store, 'main');
+      const restored = authorizationStore(location).authorizationLifetimes!['custom:default'];
+      expect([enrolledLifetime, replaced, removed]).not.toContain(restored);
+      writeAuthProfilesToSqlite(store, 'main');
+      expect(authorizationStore(location).authorizationLifetimes!['custom:default']).toBe(restored);
+    });
+    it('leaves fresh enrollment to the runtime', async () => {
+      await seedAuthorizationStore(location, store);
+      const { writeAuthProfilesToSqlite } = await import('@electron/utils/openclaw-auth-sqlite');
+      const incoming = { ...store, authorizationLifetimes: { 'custom:default': forgedLifetime } };
+      writeAuthProfilesToSqlite(incoming, 'main');
+      expect(authorizationStore(location).authorizationLifetimes).toBeUndefined();
+    });
+    it('rolls back corrupt canonical metadata rather than replacing credentials', async () => {
+      const corrupt = { ...store, authorizationLifetimes: { 'custom:default': 'invalid' } };
+      await seedAuthorizationStore(location, corrupt);
+      const { writeAuthProfilesToSqlite } = await import('@electron/utils/openclaw-auth-sqlite');
+      expect(() => writeAuthProfilesToSqlite({ version: 1, profiles: {} }, 'main')).toThrow('Invalid auth profile authorization metadata');
+      expect(authorizationStore(location)).toEqual(corrupt);
+    });
   });
 });

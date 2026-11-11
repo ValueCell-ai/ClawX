@@ -30,6 +30,10 @@ async function readMarkdownTree(directory: string): Promise<Array<{ file: string
 }
 
 describe('harness spec references', () => {
+  it('parses Windows CRLF specs with the same frontmatter and body as LF', () => {
+    const source = '---\nid: windows-spec\nrequiredRules:\n  - docs-sync\n---\nBody\n';
+    expect(parseFrontmatter(source.replaceAll('\n', '\r\n'))).toEqual(parseFrontmatter(source));
+  });
   it('rejects missing primary or supplemental scenarios and required rules', () => {
     const failures = validateSpecReferences(
       {

@@ -2647,3 +2647,345 @@ diff --git a/dist/doctor-agent-deletion-journal-m5o6mZHM.mjs b/dist/doctor-agent
  	].map((version) => [version, 25]),
  	["2026.10.10-beta.1", 27]
  ]);
+diff --git a/dist/clawx-cron-inference-migration.mjs b/dist/clawx-cron-inference-migration.mjs
+new file mode 100644
+--- /dev/null
++++ b/dist/clawx-cron-inference-migration.mjs
+@@ -0,0 +1,167 @@
++import { readFile } from "node:fs/promises";
++import { createHash } from "node:crypto";
++import { isDeepStrictEqual } from "node:util";
++
++function stableJson(value) {
++	if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
++	if (value && typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(",")}}`;
++	return JSON.stringify(value);
++}
++export function stableCredentialDigest(credential) {
++	return createHash("sha256").update(stableJson(credential)).digest("hex");
++}
++function authoredDefinition(job) {
++	const { state: _state, updatedAtMs: _updated, ...definition } = job;
++	return definition;
++}
++export function sameLegacyCronDefinition(current, historical, provenAgentId) {
++	const definition = authoredDefinition(current);
++	const previous = authoredDefinition(historical);
++	if (provenAgentId && !Object.hasOwn(previous, "agentId")) {
++		previous.agentId = provenAgentId;
++		if (!Object.hasOwn(definition, "agentId")) definition.agentId = provenAgentId;
++	}
++	for (const field of ["scheduledToolPolicy", "toolsAllowProvenance"]) {
++		if (!Object.hasOwn(historical, field)) delete definition[field];
++	}
++	return isDeepStrictEqual(definition, previous);
++}
++function validPreviousBinding(entry) {
++	const binding = entry.expectedPreviousBinding;
++	return binding && binding.version === 1 && binding.provider === entry.model.split("/")[0]
++		&& binding.profileId === entry.profileId && /^[a-f0-9]{64}$/.test(binding.authorizationId)
++		&& ["api-key", "subscription"].includes(binding.authRequirement) && ["auto", "user"].includes(binding.source);
++}
++function eligible(job, previousBinding) {
++	return job && job.payload?.kind === "agentTurn" && job.sessionTarget === "isolated"
++		&& (previousBinding ? isDeepStrictEqual(job.inferenceBinding, previousBinding) : !Object.hasOwn(job, "inferenceBinding"))
++		&& !Object.hasOwn(job, "runtimeAuthority")
++		&& !Object.hasOwn(job, "declarationKey") && !job.runtimeAuthorityRecoveryRequired;
++}
++export async function loadClawxCronMigrationAdapters() {
++	const [{ n: capture }, { i: readStore }, { t: resolveSelection }, { y: resolveSubagentSelection }, { W: isPersonalProfile }, { r: resolveAgentId }, { w: resolveAmbientOwner }, { a: readSession }, { c: resolveStorePath }, { t: resolveSessionKey }, { n: getStartupAdmission }] = await Promise.all([
++		import("./inference-binding.runtime-DjkOGhEL.mjs"),
++		import("./store-runtime-BboObakU.mjs"),
++		import("./simple-completion-selection-CVTZ9oOP.mjs"),
++		import("./agent-scope-IZjXbpV0.mjs"),
++		import("./user-model-account-authority-DDshPgqM.mjs"),
++		import("./agent-id-C6uS-TyD.mjs"),
++		import("./agent-scope-config-fjA2T9Gz.mjs"),
++		import("./session-accessor.sqlite-entry-DpCsEkJi.mjs"),
++		import("./paths-Bprr747h.mjs"),
++		import("./session-key-B67S1q_z.mjs"),
++		import("./agent-database-startup-AXJFrv8D.mjs")
++	]);
++	return { capture, readStore, isPersonalProfile,
++		waitForStartup: () => getStartupAdmission()?.pendingPreparation,
++		resolveAgentId: ({ cfg, job }) => resolveAgentId(job, resolveAmbientOwner(cfg)),
++		readSession: ({ cfg, agentId, job }) => readSession({
++			agentId,
++			storePath: resolveStorePath(cfg.session?.store, { agentId }),
++			sessionKey: resolveSessionKey({ cfg, agentId, sessionKey: `cron:${job.id}`, mainKey: cfg.session?.mainKey })
++		}),
++		resolveSelection({ cfg, agentId, job }) {
++		const subagent = resolveSubagentSelection({ cfg, agentId });
++		const raw = subagent?.raw;
++		const subagentModel = typeof raw === "string" ? raw : raw?.primary;
++		return resolveSelection({ cfg, agentId, modelRef: job.payload.model || subagentModel });
++	} };
++}
++function assertMigrationContext(native, cfg, job, entry, agentId) {
++	if (native.resolveAgentId({ cfg, job }) !== agentId) throw new Error("automation owner changed");
++	// Hook and session overrides have higher priority than the defaults proven
++	// by old snapshots. Never substitute a default account for those selections.
++	if (!job.payload.model?.trim() && job.payload.externalContentSource === "gmail" && cfg.hooks?.gmail?.model) throw new Error("hook model selection");
++	const session = native.readSession({ cfg, agentId, job });
++	if (!session) return;
++	if (session.modelOverride || session.providerOverride || session.modelSelectionLocked) throw new Error("session model selection");
++	const profile = session.authProfileOverride?.trim();
++	const source = session.authProfileOverrideSource ?? (typeof session.authProfileOverrideCompactionCount === "number" ? "auto" : "user");
++	if (profile && (profile !== entry.profileId || !entry.expectedPreviousBinding && source !== "auto")) throw new Error("session account selection");
++}
++/** Host snapshot evidence authorizes only the same legacy account, never today's default account. */
++export async function migrateClawxCronInference({ cron, getConfig, env = process.env, log }, adapters) {
++	const manifestPath = env.CLAWX_CRON_MIGRATION_MANIFEST;
++	if (!manifestPath) return { migrated: 0, skipped: 0 };
++	let manifest;
++	try {
++		const raw = await readFile(manifestPath, "utf8");
++		if (raw.length > 8 * 1024 * 1024) throw new Error("manifest exceeds limit");
++		manifest = JSON.parse(raw);
++		if (manifest.version !== 1 || !Array.isArray(manifest.jobs) || manifest.jobs.length > 1000) throw new Error("invalid manifest");
++	} catch {
++		log?.warn({}, "clawx: legacy automation account evidence unavailable; existing authorization checks retained");
++		return { migrated: 0, skipped: 0 };
++	}
++	if (!manifest.jobs.length) return { migrated: 0, skipped: 0 };
++	const native = adapters ?? await loadClawxCronMigrationAdapters();
++	// The native scheduler's maintenance uses this same readiness barrier.
++	// Startup may still replace credential-reader ownership after HTTP readiness.
++	await native.waitForStartup();
++	const counts = { migrated: 0, skipped: 0 };
++	const seen = new Set();
++	const duplicates = new Set();
++	for (const entry of manifest.jobs) {
++		if (seen.has(entry?.jobId)) duplicates.add(entry.jobId);
++		seen.add(entry?.jobId);
++	}
++	for (const entry of manifest.jobs) {
++		let authority;
++		let phase = "evidence";
++		try {
++			if (!entry || typeof entry.jobId !== "string" || duplicates.has(entry.jobId)
++				|| typeof entry.model !== "string" || !entry.model.includes("/") || entry.model.includes("@")
++				|| typeof entry.profileId !== "string" || !entry.profileId || native.isPersonalProfile(entry.profileId)
++				|| !/^[a-f0-9]{64}$/.test(entry.credentialDigest ?? "")
++				|| Object.hasOwn(entry, "expectedPreviousBinding") && !validPreviousBinding(entry)
++				|| !eligible(entry.definition, entry.expectedPreviousBinding)
++				|| entry.definition.id !== entry.jobId) throw new Error("unsupported evidence");
++			phase = "definition";
++			const job = await cron.readJob(entry.jobId);
++			if (!eligible(job, entry.expectedPreviousBinding) || !sameLegacyCronDefinition(job, entry.definition, entry.agentId)) throw new Error("definition changed");
++			const cfg = getConfig();
++			const agentId = job.agentId ?? entry.agentId;
++			if (typeof agentId !== "string" || !agentId || entry.agentId !== void 0 && entry.agentId !== agentId) throw new Error("unproven agent");
++			phase = "execution-context";
++			assertMigrationContext(native, cfg, job, entry, agentId);
++			phase = "model-account";
++			const selection = native.resolveSelection({ cfg, agentId, job });
++			const provider = entry.model.split("/")[0];
++			if (!selection || selection.provider !== provider
++				|| selection.profileId && selection.profileId !== entry.profileId) throw new Error("model changed");
++			phase = "credential";
++			const store = await native.readStore(selection.agentDir, { profileId: entry.profileId, allowKeychainPrompt: false, config: cfg });
++			const credential = store.profiles[entry.profileId];
++			if (!credential || credential.provider !== selection.provider || stableCredentialDigest(credential) !== entry.credentialDigest) throw new Error("account changed");
++			const expected = structuredClone(job);
++			phase = "authorization";
++			const binding = await native.capture({ cfg, agentId, model: `${selection.provider}/${selection.modelId}@${entry.profileId}`, retainAuthorization(value) { authority = value; } });
++			if (!binding || !authority || binding.profileId !== entry.profileId || binding.provider !== selection.provider) throw new Error("account unavailable");
++			// Renew native authorization without turning an automatic account into
++			// a user pin merely because renewal requires explicit model@profile.
++			const inferenceBinding = entry.expectedPreviousBinding ? { ...binding, source: entry.expectedPreviousBinding.source } : binding;
++			const capturedStore = await native.readStore(selection.agentDir, { profileId: entry.profileId, allowKeychainPrompt: false, config: cfg });
++			if (!capturedStore.profiles[entry.profileId] || stableCredentialDigest(capturedStore.profiles[entry.profileId]) !== entry.credentialDigest) throw new Error("account changed during capture");
++			const assertCurrent = () => {
++				authority.assertCurrent();
++				const currentCfg = getConfig();
++				assertMigrationContext(native, currentCfg, expected, entry, agentId);
++				const current = native.resolveSelection({ cfg: currentCfg, agentId, job: expected });
++				if (!current || current.provider !== provider || current.profileId && current.profileId !== entry.profileId) throw new Error("model changed during migration");
++			};
++			phase = "commit";
++			await cron.updateWithPrecondition(entry.jobId, {}, (current) => {
++				assertCurrent();
++				if (!eligible(current, entry.expectedPreviousBinding) || !isDeepStrictEqual(current, expected)) throw new Error("automation changed during migration");
++			}, { inferenceBinding, commitGuard: assertCurrent });
++			counts.migrated++;
++		} catch {
++			counts.skipped++;
++			log?.warn({ jobId: typeof entry?.jobId === "string" ? entry.jobId.slice(0, 128) : "invalid", reason: phase }, "clawx: automation account migration skipped; existing authorization checks retained");
++		} finally {
++			authority?.dispose();
++		}
++	}
++	if (counts.migrated || counts.skipped) log?.info(counts, "clawx: legacy automation account migration");
++	return counts;
++}
+diff --git a/dist/service-pOwE_Xvo.mjs b/dist/service-pOwE_Xvo.mjs
+--- a/dist/service-pOwE_Xvo.mjs
++++ b/dist/service-pOwE_Xvo.mjs
+@@ -4415,7 +4415,10 @@
+ 	async startOnce(generation) {
+ 		this.startInProgress += 1;
+ 		try {
+-			const start$1 = () => start(this.state);
++			const start$1 = async () => {
++				await this.state.deps.beforeStart?.();
++				if (generation === this.state.lifecycleGeneration) await start(this.state);
++			};
+ 			await (this.state.deps.runSchedulerOwned ? this.state.deps.runSchedulerOwned(start$1) : start$1());
+ 			if (generation !== this.state.lifecycleGeneration) {
+ 				stop(this.state);
+diff --git a/dist/server-cron-BOAcxlHX.mjs b/dist/server-cron-BOAcxlHX.mjs
+--- a/dist/server-cron-BOAcxlHX.mjs
++++ b/dist/server-cron-BOAcxlHX.mjs
+@@ -3352,6 +3352,11 @@
+ 		}
+ 	};
+ 	const cron = new CronService({
++		beforeStart: async () => {
++			if (!env.CLAWX_CRON_MIGRATION_MANIFEST) return;
++			const { migrateClawxCronInference } = await import("./clawx-cron-inference-migration.mjs");
++			await migrateClawxCronInference({ cron, getConfig: readRuntimeConfig, env, log: cronLogger });
++		},
+ 		scheduler: params.scheduler,
+ 		storePath,
+ 		cronEnabled,
+diff --git a/dist/model-selection-bKuk9voj.mjs b/dist/model-selection-bKuk9voj.mjs
+--- a/dist/model-selection-bKuk9voj.mjs
++++ b/dist/model-selection-bKuk9voj.mjs
+@@ -6,6 +6,9 @@
+ import { n as DEFAULT_MODEL, r as DEFAULT_PROVIDER } from "./defaults-Jag53zwP.mjs";
+ import { t as splitTrailingAuthProfile } from "./model-ref-profile-BNjB2hED.mjs";
+ import { y as resolveSubagentModelConfigSelectionResult } from "./agent-scope-IZjXbpV0.mjs";
++import { f as resolveEffectiveModelFallbacks } from "./agent-scope-IZjXbpV0.mjs";
++import { r as resolveModelCandidateChain } from "./model-fallback-candidates-xBKeOSRy.mjs";
++import { i as buildModelAliasIndex, y as resolveModelRefFromString } from "./model-selection-shared-BirdqqGs.mjs";
+ import { h as resolveConfiguredModelRef, m as resolveConfiguredModelPolicyAllow, s as getModelRefStatus, v as resolveHooksGmailModel } from "./model-selection-shared-BirdqqGs.mjs";
+ import { n as findModelInCatalog } from "./model-catalog-lookup-CS1kBTTs.mjs";
+ import { l as normalizeThinkLevel } from "./thinking.shared-Be8dhC75.mjs";
+@@ -184,7 +187,27 @@
+ 	};
+ 	const modelOverrideRaw = params.payload.kind === "agentTurn" ? params.payload.model : void 0;
+ 	const payloadSelection = override(typeof modelOverrideRaw === "string" ? modelOverrideRaw.trim() : void 0, "payload");
+-	if (payloadSelection) return payloadSelection;
++	if (payloadSelection) {
++		// ClawX: a removed remote model must reach the same configured fallback
++		// ladder as ordinary chat, without widening its account or model policy.
++		if (!payloadSelection.ok && !params.sessionEntry.modelSelectionLocked
++			&& !(Array.isArray(params.payload.fallbacks) && params.payload.fallbacks.length === 0)) {
++			const requested = splitTrailingAuthProfile(modelOverrideRaw.trim());
++			const original = resolveModelRefFromString({ ...selectionParams, raw: requested.model, aliasIndex: buildModelAliasIndex(selectionParams) });
++			const binding = params.inferenceBinding;
++			if (original && (!binding || original.ref.provider === binding.provider && (!requested.profile || requested.profile === binding.profileId))
++				&& !getModelRefStatus({ ...selectionParams, ref: original.ref }).inCatalog) {
++				const fallbacksOverride = Array.isArray(params.payload.fallbacks) ? params.payload.fallbacks : resolveEffectiveModelFallbacks({ cfg: owner.config, agentId: ownerAgentId, hasSessionModelOverride: false });
++				const candidates = resolveModelCandidateChain({ cfg: cfgWithAgentDefaults, agentId: ownerAgentId, ...original.ref, requestedRouteResolution: "resolved", fallbacksOverride, manifestPlugins: owner.metadataSnapshot });
++				for (const candidate of candidates) {
++					if (candidate.provider !== original.ref.provider || candidate.model === original.ref.model) continue;
++					const status = getModelRefStatus({ ...selectionParams, ref: candidate });
++					if (status.allowed && status.inCatalog) return selection(candidate, "payload", modelOverrideRaw);
++				}
++			}
++		}
++		return payloadSelection;
++	}
+ 	const hooksGmailModelRef = params.isGmailHook ? resolveHooksGmailModel({
+ 		cfg: owner.config,
+ 		defaultProvider: DEFAULT_PROVIDER,
+diff --git a/dist/run-fallback-policy-wMomHJ3c.mjs b/dist/run-fallback-policy-wMomHJ3c.mjs
+--- a/dist/run-fallback-policy-wMomHJ3c.mjs
++++ b/dist/run-fallback-policy-wMomHJ3c.mjs
+@@ -77,6 +77,7 @@
+ }
+ /** Resolves cron model fallbacks, giving explicit payload fallbacks precedence over subagent/default policy. */
+ function resolveCronFallbacksOverride(params) {
++	if (params.modelSelectionLocked === true) return [];
+ 	const payload = params.job.payload.kind === "agentTurn" ? params.job.payload : void 0;
+ 	const payloadFallbacks = Array.isArray(payload?.fallbacks) ? payload.fallbacks : void 0;
+ 	const hasCronPayloadModelOverride = typeof payload?.model === "string" && payload.model.trim().length > 0;
+@@ -92,14 +93,15 @@
+ 	return resolveEffectiveModelFallbacks({
+ 		cfg: params.cfg,
+ 		agentId: params.agentId,
+-		hasSessionModelOverride: hasCronPayloadModelOverride,
+-		modelOverrideSource: hasCronPayloadModelOverride ? "auto" : void 0
++		// A job model is a preferred route; only an explicit payload fallback
++		// list (including []) replaces the configured ladder and final primary.
++		hasSessionModelOverride: false
+ 	});
+ }
+ /** Builds the ordered model candidates used by cron preflight checks. */
+ function resolveCronPreflightCandidates(params) {
+ 	const fallbacksOverride = resolveCronFallbacksOverride(params);
+-	return resolveModelCandidateChain({
++	const candidates = resolveModelCandidateChain({
+ 		cfg: params.cfg,
+ 		agentId: params.agentId,
+ 		provider: params.provider,
+@@ -107,6 +109,7 @@
+ 		requestedRouteResolution: "resolved",
+ 		fallbacksOverride
+ 	});
++	return params.job.inferenceBinding ? candidates.filter((candidate) => candidate.provider === params.job.inferenceBinding.provider) : candidates;
+ }
+ /** Selects the reachable candidate and retains only its remaining fallback chain. */
+ async function resolveCronPreflight(params) {
+@@ -123,7 +126,7 @@
+ 			firstUnavailableReason ??= candidatePreflight.reason;
+ 			continue;
+ 		}
+-		const modelFallbacksOverride = candidate.provider !== params.provider || candidate.model !== params.model ? preflightCandidates.slice(index + 1).map((remaining) => `${remaining.provider}/${remaining.model}`) : void 0;
++		const modelFallbacksOverride = params.job.inferenceBinding || candidate.provider !== params.provider || candidate.model !== params.model ? preflightCandidates.slice(index + 1).map((remaining) => `${remaining.provider}/${remaining.model}`) : void 0;
+ 		if (modelFallbacksOverride && firstUnavailableReason !== void 0) logWarn(`[cron:${params.job.id}] ${firstUnavailableReason}; continuing with fallback ${candidate.provider}/${candidate.model}.`);
+ 		return {
+ 			ok: true,
+diff --git a/dist/isolated-agent-CPxLr234.mjs b/dist/isolated-agent-CPxLr234.mjs
+--- a/dist/isolated-agent-CPxLr234.mjs
++++ b/dist/isolated-agent-CPxLr234.mjs
+@@ -878,6 +878,7 @@
+ 					agentConfigOverride,
+ 					sessionEntry: cronSession.sessionEntry,
+ 					payload: input.job.payload,
++					inferenceBinding: input.job.inferenceBinding,
+ 					isGmailHook,
+ 					agentId,
+ 					agentDir,
+@@ -899,6 +900,7 @@
+ 				const preflight = await resolveCronPreflight({
+ 					cfg: cfgWithAgentDefaults,
+ 					job: input.job,
++					modelSelectionLocked: cronSession.sessionEntry.modelSelectionLocked,
+ 					agentId: modelOwner.agentId,
+ 					provider: resolvedModelSelection.provider,
+ 					model: resolvedModelSelection.model,
+diff --git a/dist/authorization-DKL02XyX.mjs b/dist/authorization-DKL02XyX.mjs
+--- a/dist/authorization-DKL02XyX.mjs
++++ b/dist/authorization-DKL02XyX.mjs
+@@ -15,7 +15,7 @@
+ import { i as runOpenClawStateWorkerOperation } from "./openclaw-state-worker-store-1zOYxW7q.mjs";
+ import { r as assertAuthProfileMigrationCandidates } from "./legacy-source-diagnostic-DwVgCoi-.mjs";
+ import { H as mergeLocalAuthProfileStoreWithInheritedStore } from "./runtime-snapshots-BQ4m7S9U.mjs";
+-import { r as captureOpenClawAgentDatabaseExecution } from "./openclaw-agent-execution-D-FLGJqm.mjs";
++import { i as captureOpenClawAgentDatabasePreparationExecution } from "./openclaw-agent-execution-D-FLGJqm.mjs";
+ import { n as openOpenClawAgentSqliteWorkerStore } from "./openclaw-agent-worker-store-D4DpfXOb.mjs";
+ import { c as getScopedSharedAuthStore, f as resolveRuntimeAuthProfileAgentDir, l as isEnvOnlyAuthProfileRuntime, s as getScopedAuthProfileEnv } from "./store-BuHyZgtK.mjs";
+ import { i as readSharedAuthProfileRows, n as prepareAgentAuthProfileRowsRead, t as loadPersistedAuthProfileStoreFromRows } from "./sqlite-read-C__7itvd.mjs";
+@@ -54,7 +54,7 @@
+ 				path: databasePath,
+ 				env: params.env
+ 			};
+-			const execution = captureOpenClawAgentDatabaseExecution(options);
++			const execution = captureOpenClawAgentDatabasePreparationExecution(options);
+ 			try {
+ 				await execution.prepare({
+ 					assertCurrent,
+diff --git a/dist/postinstall-inventory.json b/dist/postinstall-inventory.json
+--- a/dist/postinstall-inventory.json
++++ b/dist/postinstall-inventory.json
+@@ -1118,6 +1118,7 @@
+   "dist/claws-removal-journal-DnhsGbTc.mjs",
+   "dist/claws-update-cli.runtime-CjtDlU-J.mjs",
+   "dist/claws-update-cli.runtime.js",
++  "dist/clawx-cron-inference-migration.mjs",
+   "dist/cleanup-DW96Zyc2.mjs",
+   "dist/cleanup-DsPdoD3K.mjs",
+   "dist/cleanup-JDubYhxM.mjs",
