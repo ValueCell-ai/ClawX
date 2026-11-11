@@ -113,6 +113,12 @@ Gateway `cron` completion notifications reconcile task state and force a fresh
 session catalog read so new internal results appear in the sidebar. See
 [scheduled-task result discovery](../tasks/fix-cron-result-discovery.md).
 
+Scheduled external delivery discovers recipients from account-scoped persisted
+session metadata, including OpenClaw's canonical nested delivery state after a
+SQLite migration. It must preserve opaque recipient IDs and must not revive
+legacy external routes for internal sessions. See
+[WeChat scheduled delivery targets](../tasks/fix-wechat-cron-delivery-targets.md).
+
 Native Windows upgrade evidence for the independent official 0.6.1 and main
 inputs is recorded in `harness/reference/windows-sqlite-upgrade-validation-20261109.md`,
 including SQLite snapshot cleanup diagnostics and the limits of isolated probes.

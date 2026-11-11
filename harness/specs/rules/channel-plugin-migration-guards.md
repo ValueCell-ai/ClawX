@@ -21,6 +21,15 @@ and retain the concurrent-config check for real changes. See
 
 The ClawX channel configuration catalog is intentionally limited to `telegram`, `discord`, `whatsapp`, `wechat`, `dingtalk`, `feishu`, `wecom`, and `qqbot`. OpenClaw may report other channel ids, but the ClawX Channels page must not expose them as configurable or editable channel groups. Filtering an unsupported runtime channel is presentation-only and must not delete or rewrite that channel's underlying OpenClaw configuration.
 
+Persisted session recipient discovery and cron account inference must read the
+canonical `delivery.kind = external` record's `context` and `origin` in OpenClaw
+2026.10.10. Top-level `deliveryContext`, `last*` and `origin` are legacy fields;
+use them only when no canonical delivery record exists. `none`/`internal` state
+must never revive an old external route. Preserve opaque recipient casing,
+filter by the selected channel/account, and prefer a readable SQLite index over
+stale `sessions.json`, including when the index is empty. Cover this with real
+SQLite fixtures and the scheduled-task picker Electron regression.
+
 Channel credentials and account maps must remain under `channels.<id>`; `plugins.entries.<id>` is activation metadata and must not contain ClawX-generated `accounts` or `defaultAccount` fields. Discord, WhatsApp, and QQBot are external plugins in the pinned OpenClaw runtime and must retain explicit `plugins.allow` and `{ enabled }` entries. Saving changed configuration for a supported external plugin channel while Gateway is running must use the coordinator-owned `config.set` reload without scheduling a second ClawX full restart when OpenClaw peer link repair succeeds. When peer link repair fails after plugin install, Main must schedule the guarded full restart after the config commit instead of relying on the native reload alone. A no-change retry must still start the guarded full restart path after the scoped-binding commit so a newly copied or previously undiscovered plugin is loaded. Successful WeChat QR completion must likewise leave plugin activation on a single lifecycle path. The host save response may return while activation is still pending, provided it explicitly reports that state and failures are caught and surfaced through normal Gateway status/logging. If `config.set` durably commits before its response is lost to a native code-1012 reload, Main may verify that exact persisted config and treat the transaction as committed; it must not perform an out-of-band replay.
 
 For WeCom specifically, ClawX's canonical account-map representation may contain a single `accounts.default` entry even for a single-account setup. A plugin business tool invoked from a desktop Chat session without `agentAccountId` must use that sole configured account; it must fail closed rather than guess only when two or more configured account IDs make the choice ambiguous. An explicit channel account context always wins.

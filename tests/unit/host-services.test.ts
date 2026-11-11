@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { DatabaseSync } from 'node:sqlite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DiagnosticsGatewaySnapshotResult } from '@shared/host-api/contract';
 
@@ -1232,6 +1233,69 @@ describe('host services', () => {
         ],
       });
     await expect(channelsApi.targets({ accountId: 'ding-main' })).rejects.toThrow('channelType is required');
+    const { resolveAccountIdFromSessionHistory } = await import('@electron/utils/session-util');
+    expect(await resolveAccountIdFromSessionHistory('cid-group-1', 'dingtalk')).toBe('ding-main');
+  });
+
+  it('discovers account-scoped WeChat targets from canonical SQLite delivery metadata', async () => {
+    const agentDir = join(testOpenClawConfigDir, 'agents', 'main', 'agent');
+    mkdirSync(agentDir, { recursive: true });
+    const db = new DatabaseSync(join(agentDir, 'openclaw-agent.sqlite'));
+    try {
+      db.exec('CREATE TABLE session_nodes (session_key TEXT PRIMARY KEY, entry_json TEXT NOT NULL)');
+      const insert = db.prepare('INSERT INTO session_nodes VALUES (?, ?)');
+      const external = (accountId: string, to: string) => ({
+        kind: 'external',
+        context: { channel: 'openclaw-weixin', accountId, to },
+        origin: { provider: 'openclaw-weixin', accountId, to, label: 'WeChat recipient', chatType: 'direct' },
+        route: { channel: 'openclaw-weixin', accountId, target: { to, chatType: 'direct' } },
+      });
+      insert.run('agent:main:wechat:direct:peer', JSON.stringify({
+        delivery: external('wx-main', 'MixedCasePeer@im.wechat'), updatedAt: 100,
+        // Compatibility fields must never override a canonical record.
+        deliveryContext: { channel: 'wechat', accountId: 'wx-other', to: 'stale@im.wechat' },
+      }));
+      insert.run('agent:main:main', JSON.stringify({ delivery: external('wx-main', 'MixedCasePeer@im.wechat') }));
+      insert.run('agent:main:wechat:direct:other', JSON.stringify({ delivery: external('wx-other', 'OtherPeer@im.wechat') }));
+      insert.run('agent:main:internal', JSON.stringify({
+        delivery: { kind: 'internal' },
+        deliveryContext: { channel: 'wechat', accountId: 'wx-main', to: 'internal-stale@im.wechat' },
+      }));
+    } finally {
+      db.close();
+    }
+    const sessionsDir = join(testOpenClawConfigDir, 'agents', 'main', 'sessions');
+    mkdirSync(sessionsDir, { recursive: true });
+    writeFileSync(join(sessionsDir, 'sessions.json'), JSON.stringify({ stale: {
+      deliveryContext: { channel: 'wechat', accountId: 'wx-main', to: 'json-stale@im.wechat' },
+    } }));
+    const { createChannelsApi } = await import('@electron/services/channels-api');
+    const channelsApi = createChannelsApi({ gatewayManager: {} as never });
+    const result = await channelsApi.targets({ channelType: 'wechat', accountId: 'wx-main' });
+    expect(result.targets).toEqual([{
+      value: 'MixedCasePeer@im.wechat', label: 'WeChat recipient (MixedCasePeer@im.wechat)', kind: 'user',
+    }]);
+    expect((await channelsApi.targets({ channelType: 'openclaw-weixin', accountId: 'wx-other' })).targets)
+      .toEqual([{ value: 'OtherPeer@im.wechat', label: 'WeChat recipient (OtherPeer@im.wechat)', kind: 'user' }]);
+    expect((await channelsApi.targets({ channelType: 'wechat', accountId: 'missing' })).targets).toEqual([]);
+    expect((await channelsApi.targets({ channelType: 'wechat', accountId: 'wx-main', query: 'mixedcase' })).targets).toEqual(result.targets);
+    expect((await channelsApi.targets({ channelType: 'wechat', accountId: 'wx-main', query: 'unmatched' })).targets).toEqual([]);
+
+    const { resolveAccountIdFromSessionHistory } = await import('@electron/utils/session-util');
+    expect(await resolveAccountIdFromSessionHistory('MixedCasePeer@im.wechat', 'wechat')).toBe('wx-main');
+    expect(await resolveAccountIdFromSessionHistory('MixedCasePeer@im.wechat', 'openclaw-weixin')).toBe('wx-main');
+    expect(await resolveAccountIdFromSessionHistory('internal-stale@im.wechat', 'wechat')).toBeNull();
+    expect(await resolveAccountIdFromSessionHistory('json-stale@im.wechat', 'wechat')).toBeNull();
+    expect(await resolveAccountIdFromSessionHistory('MixedCasePeer@im.wechat', 'dingtalk')).toBeNull();
+
+    const emptyDb = new DatabaseSync(join(agentDir, 'openclaw-agent.sqlite'));
+    try {
+      emptyDb.exec('DELETE FROM session_nodes');
+    } finally {
+      emptyDb.close();
+    }
+    expect((await channelsApi.targets({ channelType: 'wechat', accountId: 'wx-main' })).targets).toEqual([]);
+    expect(await resolveAccountIdFromSessionHistory('json-stale@im.wechat', 'wechat')).toBeNull();
   });
 
   it('saves channel binding for existing agents without scheduling lifecycle work', async () => {
