@@ -539,6 +539,34 @@ describe('OpenClaw utility-process bootstrap', () => {
     );
   });
 
+  it.each([undefined, '/profile/迁移 evidence.json'])(
+    'passes an Electron-compatible environment with manifest %s', async (manifest) => {
+      const { forkOpenClawUtilityProcess } = await import('@electron/utils/openclaw-utility-process');
+      const source = Object.freeze({
+        PATH: '/usr/bin', HTTP_PROXY: '', HTTPS_PROXY: '',
+        CLAWX_CRON_MIGRATION_MANIFEST: manifest,
+        OPTIONAL_RUNTIME_SETTING: undefined,
+      });
+      // Electron rejects undefined entries; Node child_process silently omits them.
+      mockFork.mockImplementation((_entry, _args, options: Electron.ForkOptions) => {
+        if (Object.values(options.env!).some(value => typeof value !== 'string')) {
+          throw new TypeError('Invalid value for env');
+        }
+        return { pid: 42 };
+      });
+
+      expect(forkOpenClawUtilityProcess('/runtime/openclaw.mjs', ['gateway'], { env: source })).toEqual({ pid: 42 });
+      const launched = mockFork.mock.calls[0][2].env;
+      expect(launched).toEqual({
+        PATH: '/usr/bin', HTTP_PROXY: '', HTTPS_PROXY: '',
+        ...(manifest === undefined ? {} : { CLAWX_CRON_MIGRATION_MANIFEST: manifest }),
+        OPENCLAW_DEBUG: '1', CLAWX_OPENCLAW_ENTRY: '/runtime/openclaw.mjs',
+      });
+      expect(source).toHaveProperty('OPTIONAL_RUNTIME_SETTING', undefined);
+      expect(source).toHaveProperty('CLAWX_CRON_MIGRATION_MANIFEST', manifest);
+    },
+  );
+
   it('dispatches the private parent-port request to SIGTERM handlers only once', async () => {
     const {
       OPENCLAW_GATEWAY_CONTROL_SOURCE, OPENCLAW_GATEWAY_CONTROL_ENV,

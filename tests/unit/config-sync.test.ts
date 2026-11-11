@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { stripSystemdSupervisorEnv } from '@electron/gateway/config-sync-env';
+import { stripSystemdSupervisorEnv, withCronMigrationManifestEnv } from '@electron/gateway/config-sync-env';
 
 const { mockEnsureDingTalkDwsInstalled, mockLoggerWarn, mockEnsurePluginInstalled } = vi.hoisted(() => ({
   mockEnsureDingTalkDwsInstalled: vi.fn(),
@@ -93,6 +93,31 @@ describe('DingTalk dws prelaunch provisioning', () => {
 
     expect(provisionConfiguredDingTalkDws(['feishu', 'wecom'])).toBe(true);
     expect(mockEnsureDingTalkDwsInstalled).not.toHaveBeenCalled();
+  });
+});
+
+describe('managed cron migration environment', () => {
+  it.each([undefined, ''])('omits missing manifest %s without retaining inherited evidence', (manifest) => {
+    const source = Object.freeze({
+      PATH: '/usr/bin', HTTP_PROXY: '', CLAWX_CRON_MIGRATION_MANIFEST: '/old/manifest.json',
+    });
+    const env = withCronMigrationManifestEnv(source, manifest);
+
+    expect(Object.hasOwn(env, 'CLAWX_CRON_MIGRATION_MANIFEST')).toBe(false);
+    expect(env).toEqual({ PATH: '/usr/bin', HTTP_PROXY: '' });
+    expect(source.CLAWX_CRON_MIGRATION_MANIFEST).toBe('/old/manifest.json');
+  });
+
+  it('injects only the current manifest path and preserves unrelated settings', () => {
+    const source = Object.freeze({
+      PATH: '/usr/bin', HTTP_PROXY: '', CLAWX_CRON_MIGRATION_MANIFEST: '/old/manifest.json',
+    });
+    const manifest = 'C:\\profile\\迁移 evidence.json';
+
+    expect(withCronMigrationManifestEnv(source, manifest)).toEqual({
+      PATH: '/usr/bin', HTTP_PROXY: '', CLAWX_CRON_MIGRATION_MANIFEST: manifest,
+    });
+    expect(source.CLAWX_CRON_MIGRATION_MANIFEST).toBe('/old/manifest.json');
   });
 });
 

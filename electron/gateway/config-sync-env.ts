@@ -26,6 +26,14 @@ export function stripSystemdSupervisorEnv(env: GatewayEnv): GatewayEnv {
   return next;
 }
 
+/** Only the current managed launch may supply cron migration evidence. */
+export function withCronMigrationManifestEnv(env: GatewayEnv, manifestPath: string | undefined): GatewayEnv {
+  const next = { ...env };
+  delete next.CLAWX_CRON_MIGRATION_MANIFEST;
+  if (manifestPath) next.CLAWX_CRON_MIGRATION_MANIFEST = manifestPath;
+  return next;
+}
+
 export function withCuaConnectionFileEnv(
   env: GatewayEnv,
   platform: NodeJS.Platform,

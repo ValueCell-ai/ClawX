@@ -162,6 +162,8 @@ Extensions restoring runtime credentials follow the same upgrade order: preserve
 
 Legacy scheduled tasks can recover their inference account from the verified pre-migration snapshot before scheduled dispatch, after community or enterprise credentials have been restored. Recovery preserves task IDs, schedules, delivery settings and model inheritance, and requires the original account. Synchronizing unchanged credentials retains existing authorizations. Missing, ambiguous or changed accounts are reported instead of silently selecting another account. When a remote model disappears, tasks can use configured fallback models within the original provider and account; explicit model locks and disabled fallback remain in force. See [scheduled-task migration and validation limits](harness/reference/cron-inference-upgrade.md).
 
+Gateway startup also works when no scheduled-task migration evidence is needed. Optional unset launch values are omitted before creating the process, preventing the upgrade-time `Invalid value for env` failure. See the [diagnosis and validation](harness/reference/gateway-undefined-launch-env-20261111.md).
+
 During app quit, session writes and queued starts are cancelled. ACP and the managed Gateway stop before extensions remove their temporary runtime credentials; encrypted login state remains available for the next launch. All shutdown work shares the existing timeout.
 
 The official Discord, Feishu and WhatsApp dependencies match `2026.10.10`. WeCom moves to `2026.10.30` for the current configuration API; DingTalk stays at `0.8.26` and Weixin at `2.4.10`. Existing Feishu migration behavior remains unchanged.

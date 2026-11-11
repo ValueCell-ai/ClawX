@@ -49,7 +49,7 @@ import {
 } from '../utils/openclaw-upgrade-snapshot';
 import { prepareCronInferenceMigration } from '../utils/openclaw-cron-migration';
 import { writeCronInferenceLaunchManifest, type GatewayStartupPreparationResult } from './cron-inference-continuity';
-import { stripSystemdSupervisorEnv, withCuaConnectionFileEnv } from './config-sync-env';
+import { stripSystemdSupervisorEnv, withCronMigrationManifestEnv, withCuaConnectionFileEnv } from './config-sync-env';
 import { cleanupAgentsSymlinkedSkills, cleanupStalePluginRuntimeDeps } from './skills-symlink-cleanup';
 import {
   buildPrelaunchMaintenanceCacheKey,
@@ -760,9 +760,8 @@ export async function prepareGatewayLaunchContext(
     ? prependPathEntry(baseEnvWithBin, dwsBinDir).env
     : baseEnvWithBin;
   const forkEnv: Record<string, string | undefined> = {
-    ...stripSystemdSupervisorEnv(baseEnvPatched),
     // Runtime applies this managed launch's evidence after credentials are ready, before cron starts.
-    CLAWX_CRON_MIGRATION_MANIFEST: cronMigrationManifest,
+    ...withCronMigrationManifestEnv(stripSystemdSupervisorEnv(baseEnvPatched), cronMigrationManifest),
     ...providerEnv,
     ...uvEnv,
     ...proxyEnv,
