@@ -112,3 +112,34 @@ requests. Runs were forced only after observing completed binding recovery.
 They do not establish full old-installer conversion, real enterprise login or
 a packaged application restart. The Biz suite separately passed 37 files /
 317 tests plus `pnpm typecheck` against the matching community checkout.
+
+## Install-lifecycle correction on 2026-11-11
+
+CI exposed a delivery defect after those runtime probes: the patch added
+`dist/clawx-cron-inference-migration.mjs` without adding it to OpenClaw's
+`dist/postinstall-inventory.json`. The native postinstall cleanup removes files
+outside that inventory. Consequently, both migration test suites could not
+import the helper, and the patched-runtime syntax check reported the same
+missing file. Those failures correctly detected a real installation defect.
+
+The earlier manually prepared runtime and isolated Gateway probes did not
+validate the full dependency installation lifecycle. New runtime files must
+survive the native cleanup as well as work when present. The correction updates
+the inventory and exercises the actual pruning implementation in an isolated
+package, preserving the migration helper while still removing a stale file.
+The syntax check continues to cover every patched JavaScript chunk; JSON
+inventory data is validated as JSON instead of being passed to `node --check`.
+
+Validation of this correction:
+
+- The original patch's isolated package contained the helper before the native
+  postinstall, then lost it after that script exited successfully. The script
+  explicitly reported the helper as a pruned stale file.
+- With the corrected patch, normal preinstall/postinstall hooks completed, all
+  54 patched files matched, and the helper passed `node --check` and loaded all
+  four exports. The top-level Windows pnpm process did not finish its remaining
+  bookkeeping, so this is lifecycle evidence, not a claimed successful full
+  repository install. Fresh CI installation remains the final end-to-end check.
+- The three affected suites passed all 86 tests with file parallelism disabled,
+  including the native registered/unregistered pruning controls. ESLint, task
+  validation/dry run, and communication replay/comparison also passed.

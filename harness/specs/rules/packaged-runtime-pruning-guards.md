@@ -4,12 +4,20 @@ title: Packaged Runtime Pruning Guards
 type: ai-coding-rule
 appliesTo:
   - plugin-lifecycle-management
+  - gateway-backend-communication
 requiredProfiles:
   - fast
 ---
 
 Packaged runtime cleanup must remove only files that are not needed by the
 target artifact.
+
+OpenClaw's install lifecycle prunes `dist` against
+`dist/postinstall-inventory.json`. A dependency patch that adds runtime files
+must also register them in that inventory. Validate the patched package after
+its real postinstall cleanup, including removal of unrelated stale files;
+manually edited `node_modules`, patch parsing, and `--ignore-scripts` installs
+alone do not establish that the runtime files survive a normal installation.
 
 For macOS universal builds, architecture pruning must preserve both x64 and
 arm64 native payloads for the same platform. This includes scoped optional

@@ -2978,3 +2978,14 @@ diff --git a/dist/authorization-DKL02XyX.mjs b/dist/authorization-DKL02XyX.mjs
  			try {
  				await execution.prepare({
  					assertCurrent,
+diff --git a/dist/postinstall-inventory.json b/dist/postinstall-inventory.json
+--- a/dist/postinstall-inventory.json
++++ b/dist/postinstall-inventory.json
+@@ -1118,6 +1118,7 @@
+   "dist/claws-removal-journal-DnhsGbTc.mjs",
+   "dist/claws-update-cli.runtime-CjtDlU-J.mjs",
+   "dist/claws-update-cli.runtime.js",
++  "dist/clawx-cron-inference-migration.mjs",
+   "dist/cleanup-DW96Zyc2.mjs",
+   "dist/cleanup-DsPdoD3K.mjs",
+   "dist/cleanup-JDubYhxM.mjs",

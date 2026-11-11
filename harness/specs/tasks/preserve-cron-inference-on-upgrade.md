@@ -23,11 +23,13 @@ requiredProfiles:
   - comms
 requiredRules:
   - openclaw-upgrade-persistence
+  - packaged-runtime-pruning-guards
   - backend-communication-boundary
   - docs-sync
 requiredTests:
   - tests/unit/openclaw-auth-sqlite.test.ts
   - tests/unit/openclaw-cron-migration.test.ts
+  - tests/unit/openclaw-restart-recovery-patch.test.ts
   - tests/unit/openclaw-cron-migration-manifest.test.ts
   - tests/unit/gateway-startup-preparation.test.ts
   - tests/unit/cron-inference-continuity.test.ts
@@ -43,6 +45,7 @@ acceptance:
   - Remote catalog changes retain model inheritance and never authorize another account. Exhausted candidates produce a truthful failure.
   - Explicitly disabled fallback and locked model selection remain authoritative; model availability cannot override account or model policy.
   - All mutation and execution probes use isolated synthetic state and local inference services.
+  - Fresh package installation preserves every patched runtime addition through the native postinstall inventory cleanup; stale files are still removed and patched JavaScript stays syntactically valid.
 docs:
   required: true
 ---
