@@ -31,6 +31,7 @@ acceptance:
   - SQLite delivery.kind external records use delivery.context and delivery.origin; legacy JSON records remain supported.
   - A present canonical delivery record is authoritative over stale legacy fields, and SQLite remains authoritative over sessions.json.
   - Targets and account inference stay channel/account scoped, deduplicated and preserve recipient casing.
+  - Official 0.6.1 legacy JSON entries retain their recipient and account through the pinned runtime's native delivery migration and subsequent SQLite reads.
   - Electron coverage selects WeChat targets and verifies the submitted account and recipient without sending external messages.
 docs:
   required: true
@@ -58,3 +59,7 @@ Validation on Windows:
   task validation and the task harness dry-run passed.
 - The reporter's actual session database was not included in the bundle; live
   enterprise WeChat delivery and a packaged enterprise rebuild remain untested.
+
+The post-merge 0.6.1 migration audit adds native Doctor evidence and regression
+coverage using the pinned delivery normalizer; see
+[recipient migration validation](../../reference/cron-delivery-upgrade-20261111.md).
