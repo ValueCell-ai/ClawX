@@ -57,10 +57,30 @@ jobs:
       - name: Download agent-browser binaries for Windows
         run: pnpm run agent-browser:download:win
 
-      - name: Build Windows package (no publish)
+      # Sign inside electron-builder, before blockmaps and update manifests.
+      # Every Windows channel (including alpha/beta) uses the same publisher.
+      - name: Setup Java for Windows signing
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install eSigner CodeSignTool
+        shell: pwsh
+        run: ./scripts/setup-windows-signing.ps1
+
+      - name: Build signed Windows
+        shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm run package:win
+          CLAWX_WINDOWS_SIGNING: '1'
+          WINDOWS_PUBLISHER_NAME: ${{ vars.WINDOWS_PUBLISHER_NAME }}
+          ES_USERNAME: ${{ secrets.ES_USERNAME }}
+          ES_PASSWORD: ${{ secrets.ES_PASSWORD }}
+          ES_CREDENTIAL_ID: ${{ secrets.ES_CREDENTIAL_ID }}
+          ES_TOTP_SECRET: ${{ secrets.ES_TOTP_SECRET }}
+        run: |
+          node scripts/windows-signing.cjs --check
+          pnpm run package:win
 
       - name: Upload Windows Installer (x64)
         uses: actions/upload-artifact@v4

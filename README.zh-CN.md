@@ -249,6 +249,10 @@ pnpm package         # 为当前平台打包（可用 :mac / :win / :linux 后�
 
 > 项目结构、技术栈、完整命令列表、E2E 并行策略、性能诊断与通信回归检查等细节，请参阅 [docs/zh-CN/development.md](docs/zh-CN/development.md)。
 
+### Windows 发布签名
+
+ClawX 与 ClawX Biz 在 Windows 打包过程中共用 SSL.com OV + eSigner 签名实现。正式版、预览版和手动分发工作流都需要签名凭据，签名失败会停止发布。本地构建默认不签名，设置 `CLAWX_WINDOWS_SIGNING=1` 后才启用；签名构建会验证自动更新安装包的发布者。证书申请与运维操作指南在私有文档中维护。有效签名不保证新版本立即免除 SmartScreen 提示。
+
 ## 参与贡献
 
 我们欢迎社区的各种贡献！无论是修复 Bug、开发新功能、改进文档还是翻译——每一份贡献都让 ClawX 变得更好。
