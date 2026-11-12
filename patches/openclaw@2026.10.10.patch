@@ -1073,7 +1073,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  	}
  	reconcilePendingSessionKey(pending, sessionKey) {
  		if (pending.sessionKey === sessionKey) return;
-@@ -1395,8 +1532,89 @@
+@@ -1395,8 +1532,96 @@
  };
  //#endregion
  //#region src/acp/translator.replay.ts
@@ -1147,6 +1147,13 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
 +	};
 +}
  function extractReplayChunks(message) {
++	// The model transcript also contains hidden execution/control inputs. Apply
++	// native visibility before every replay path, including missing ledgers.
++	if (message.display === false) return [];
++	if (message.role === "user" && [message.provenance, message.inputProvenance].some((value) => {
++		const kind = asOptionalRecord(value)?.kind;
++		return kind === "internal_system" || kind === "inter_session";
++	})) return [];
 +	const compaction = message.__openclaw;
 +	if (compaction?.kind === "compaction" && typeof compaction.id === "string" && compaction.id.trim()) return [{
 +		sessionUpdate: "session_info_update",
@@ -1163,7 +1170,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  	if (role !== "user" && role !== "assistant") return [];
  	if (typeof message.content === "string") return message.content.length > 0 ? [{
  		sessionUpdate: role === "user" ? "user_message_chunk" : "agent_message_chunk",
-@@ -1418,8 +1636,117 @@
+@@ -1418,8 +1643,116 @@
  			sessionUpdate: "agent_thought_chunk",
  			text: typedBlock.thinking
  		});
@@ -1227,8 +1234,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
 +		if (id && nativeIds.has(id)) return [];
 +		if (id) nativeIds.add(id);
 +		const runId = normalizeOptionalString(meta?.runId);
-+		const provenance = asOptionalRecord(message.provenance ?? message.inputProvenance);
-+		const chunks = message.role === "user" && (provenance?.kind === "internal_system" || provenance?.kind === "inter_session") ? [] : extractReplayChunks(message);
++		const chunks = extractReplayChunks(message);
 +		const offsets = [];
 +		let run = runId && nativeRuns.get(runId);
 +		if (runId && !run) nativeRuns.set(runId, run = { text: "", thought: "" });
@@ -1281,7 +1287,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  }
  //#endregion
  //#region src/acp/translator.session-list.ts
-@@ -1465,10 +1792,497 @@
+@@ -1465,10 +1798,497 @@
  	return Math.min(ACP_LIST_SESSIONS_MAX_PAGE_SIZE, Math.max(1, Math.floor(requested)));
  }
  //#endregion
@@ -1780,7 +1786,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  		this.gateway = gateway;
  		this.opts = opts;
  		this.sessionStore = sessionStore;
-@@ -1477,9 +2291,11 @@
+@@ -1477,9 +2297,11 @@
  		this.sessionCreateRateLimiter = sessionCreateRateLimiter;
  		this.cancelSessionWork = cancelSessionWork;
  		this.log = log;
@@ -1792,7 +1798,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  		this.enforceSessionCreateRateLimit("newSession");
  		const sessionId = randomUUID();
  		const meta = parseSessionMeta(params["_meta"]);
-@@ -1506,6 +2322,7 @@
+@@ -1506,6 +2328,7 @@
  	}
  	async loadSession(params) {
  		this.assertSupportedSessionSetup(params.mcpServers);
@@ -1800,7 +1806,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  		if (!this.sessionStore.hasSession(params.sessionId)) this.enforceSessionCreateRateLimit("loadSession");
  		const meta = parseSessionMeta(params["_meta"]);
  		const hasExplicitRouting = Boolean(meta.sessionKey || meta.sessionLabel || this.opts.defaultSessionKey || this.opts.defaultSessionLabel);
-@@ -1522,7 +2339,7 @@
+@@ -1522,7 +2345,7 @@
  			meta,
  			fallbackKey: routedLedgerReplay.sessionKey ?? params.sessionId
  		});
@@ -1809,7 +1815,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  			sessionId: params.sessionId,
  			sessionKey
  		});
-@@ -1534,29 +2351,35 @@
+@@ -1534,29 +2357,35 @@
  		});
  		await this.sessionUpdates.startLedgerSession(session, { complete: ledgerReplay.complete });
  		this.log(`loadSession: ${session.sessionId} -> ${session.sessionKey}`);
@@ -1866,7 +1872,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  		const requestedCwd = normalizeOptionalString(params.cwd);
  		if (requestedCwd) assertAbsoluteCwd(requestedCwd, "session/list");
  		const fallbackCwd = requestedCwd ?? process.cwd();
-@@ -1590,6 +2413,7 @@
+@@ -1590,6 +2419,7 @@
  	}
  	async resumeSession(params) {
  		this.assertSupportedSessionSetup(params.mcpServers ?? []);
@@ -1874,7 +1880,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  		assertAbsoluteCwd(params.cwd, "session/resume");
  		const existingSession = this.sessionStore.getSession(params.sessionId);
  		if (!existingSession) this.enforceSessionCreateRateLimit("resumeSession");
-@@ -1606,11 +2430,13 @@
+@@ -1606,11 +2436,13 @@
  			cwd: params.cwd
  		});
  		await this.sessionUpdates.startLedgerSession(session, { complete: false });
@@ -1888,7 +1894,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  		await this.cancelSessionWork(session);
  		this.sessionStore.deleteSession(params.sessionId);
  		this.log(`closeSession: ${params.sessionId}`);
-@@ -2121,6 +2947,16 @@
+@@ -2121,6 +2953,16 @@
  			this.options.log(`event ledger session start failed for ${session.sessionId}: ${String(err)}`);
  		}
  	}
@@ -1905,7 +1911,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  	readLedgerReplay(params) {
  		return this.readReplay(() => this.options.eventLedger.readReplay(params), `replay fallback for ${params.sessionId}`);
  	}
-@@ -2238,12 +3074,13 @@
+@@ -2238,12 +3080,13 @@
  			log: this.log
  		});
  		const sessionState = new AcpTranslatorSessionState(gateway, this.sessionUpdates, this.log);
@@ -1921,7 +1927,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  		this.newSession = sessionLifecycle.newSession.bind(sessionLifecycle);
  		this.loadSession = sessionLifecycle.loadSession.bind(sessionLifecycle);
  		this.listSessions = sessionLifecycle.listSessions.bind(sessionLifecycle);
-@@ -2268,7 +3105,7 @@
+@@ -2268,7 +3111,7 @@
  		}
  	}
  	handleGatewayReconnect() {
@@ -1930,7 +1936,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  	}
  	handleGatewayDisconnect(reason) {
  		this.promptStream.handleGatewayDisconnect(reason);
-@@ -2303,6 +3140,67 @@
+@@ -2303,6 +3146,67 @@
  };
  //#endregion
  //#region src/acp/server.ts
@@ -1998,7 +2004,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  const MAX_STARTUP_ACP_BUFFER_BYTES = 1048576;
  function createStartupInputMonitor(input) {
  	const [monitor, readable] = input.tee();
-@@ -2365,6 +3263,7 @@
+@@ -2365,6 +3269,7 @@
  	const startupAbortController = new AbortController();
  	let stopped = false;
  	let gatewayConnected = false;
@@ -2006,7 +2012,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  	const { promise: gatewayReady, resolve: resolveGatewayReady, reject: rejectReady } = createDeferredCore();
  	const rejectGatewayReady = (err) => {
  		rejectReady(err instanceof Error ? err : new Error(String(err)));
-@@ -2408,13 +3307,15 @@
+@@ -2408,13 +3313,15 @@
  		onHelloOk: () => {
  			gatewayConnected = true;
  			resolveGatewayReady();
@@ -2023,7 +2029,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  			rejectGatewayReady(/* @__PURE__ */ new Error(`gateway closed before ready (${code}): ${reason}`));
  			agent?.handleGatewayDisconnect(`${code}: ${reason}`);
  		}
-@@ -2433,6 +3334,7 @@
+@@ -2433,6 +3340,7 @@
  		shuttingDown = (async () => {
  			if (!stopped) {
  				stopped = true;
@@ -2031,7 +2037,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  				startupAbortController.abort();
  				startupInput.dispose();
  				process.stdin.pause();
-@@ -2503,6 +3405,10 @@
+@@ -2503,6 +3411,10 @@
  		connection = new AgentSideConnection((conn) => {
  			agent = new AcpGatewayAgent(conn, gateway, {
  				...opts,

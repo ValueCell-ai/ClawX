@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { RawMessage } from '@shared/chat/types';
 import {
   extractImageGenerationCompletionFromAcpEnvelope,
   extractImageGenerationCompletionFromGatewayChatMessage,
@@ -410,6 +411,75 @@ describe('ACP image-generation compatibility extraction', () => {
         filePath: '/Users/me/.openclaw/media/tool-image-generation/clawx-image-1.png',
         mimeType: 'image/png',
       },
+    ]);
+  });
+
+  it('does not establish image-generation context from hidden tool output', () => {
+    const supplement = extractImageGenerationTranscriptSupplement([
+      {
+        role: 'toolresult',
+        toolName: 'image_generate',
+        toolCallId: 'hidden-image-start',
+        content: `Background task started for image generation (${TASK_ID}).`,
+        details: { taskId: TASK_ID },
+        ...{ display: false },
+      },
+      { role: 'assistant', content: 'MEDIA:/tmp/unrelated.png' },
+    ], SESSION_KEY);
+    expect(supplement).toEqual({ starts: [], completions: [] });
+  });
+
+  it.each([
+    {
+      name: 'assistant image completion',
+      output: {
+        role: 'assistant', id: 'hidden-image', content: 'Internal caption\nMEDIA:/tmp/hidden-image.png',
+      } as RawMessage,
+    },
+    {
+      name: 'internal-UI message-tool completion',
+      output: {
+        role: 'toolresult', id: 'hidden-delivery', toolName: 'message', content: 'Internal delivery',
+        details: {
+          status: 'ok', deliveryStatus: 'sent', sourceReplySink: 'internal-ui',
+          sourceReply: { text: 'Internal caption', mediaUrls: ['/tmp/hidden-image.png'] },
+        },
+      } as RawMessage,
+    },
+  ])('ignores a hidden $name without consuming the visible completion', ({ output }) => {
+    const supplement = extractImageGenerationTranscriptSupplement([
+      {
+        role: 'toolresult', toolName: 'image_generate', toolCallId: 'visible-image-start',
+        content: `Background task started for image generation (${TASK_ID}).`, details: { taskId: TASK_ID },
+      },
+      { ...output, ...{ display: false } },
+      { role: 'assistant', id: 'visible-image', content: 'Visible caption\nMEDIA:/tmp/visible-image.png' },
+    ], SESSION_KEY);
+    expect(supplement.starts).toHaveLength(1);
+    expect(supplement.completions).toEqual([
+      expect.objectContaining({
+        taskId: TASK_ID,
+        caption: 'Visible caption',
+        candidates: [expect.objectContaining({ key: '/tmp/visible-image.png' })],
+      }),
+    ]);
+  });
+
+  it('retains a hidden image-generation user trigger without recovering a hidden failure caption', () => {
+    const supplement = extractImageGenerationTranscriptSupplement([
+      {
+        role: 'toolresult', toolName: 'image_generate', toolCallId: 'visible-image-start',
+        content: `Background task started for image generation (${TASK_ID}).`, details: { taskId: TASK_ID },
+      },
+      {
+        role: 'user', content: 'status: failed', ...{ display: false },
+        ...{ provenance: { kind: 'inter_session', sourceTool: 'image_generate', sourceSessionKey: `image_generate:${TASK_ID}` } },
+      },
+      { role: 'assistant', id: 'hidden-failure', content: 'Internal failure detail', ...{ display: false } },
+      { role: 'assistant', id: 'visible-failure', content: 'Image generation failed. Please try again.' },
+    ], SESSION_KEY);
+    expect(supplement.completions).toEqual([
+      expect.objectContaining({ taskId: TASK_ID, caption: 'Image generation failed. Please try again.', candidates: [] }),
     ]);
   });
 

@@ -84,6 +84,33 @@ not mean that `sessions.describe` can find a persisted Gateway row. A later
 model selection must retain first-send creation permission without granting it
 to an existing conversation that was deleted elsewhere.
 
+## Internal transcript visibility
+
+The native ACP transcript projector applies the same structured visibility
+policy to full replay, complete-ledger tail import and passive-stream replay
+baselines. Records with `display: false` are excluded. User records with
+`internal_system` or `inter_session` provenance, in either `provenance` or legacy
+`inputProvenance`, are execution/control inputs rather than visible user turns.
+This covers compaction/error continuations, asynchronous exec notices, cron
+inputs and Gateway recovery without matching English prompt text. Normal user
+records quoting those instructions remain visible; subsequent assistant replies,
+thoughts, tools and compaction lifecycle updates retain their ordinary projection.
+The media supplement follows the same control-user boundary policy so recovered
+attachments stay with the preceding visible user turn. General media and
+image-generation transcript supplements also exclude hidden assistant and tool
+outputs, preventing omitted cards or captions from bypassing native visibility.
+The approved internal image-generation completion user record may still provide
+task metadata without displaying its control prompt. Main's duration extraction
+uses the same canonical/legacy control-user policy and does not extend visible
+turn duration with hidden assistant or tool outputs.
+
+Missing or incomplete ACP ledgers reconstruct their visible history from native
+transcripts without persisting that fallback. Existing complete ledger events
+remain authoritative; this repair does not guess which unattributed historical
+ACP user chunks to delete. The report export lacks the customer's ACP ledger and
+per-update trace, so its actual first-entry path is not proven. See
+[internal control replay evidence](acp-internal-control-replay.md).
+
 ## Identity And Race Protection
 
 Renderer-visible session identity is the OpenClaw Gateway session key. Main may hold a different ACP session id returned by `newSession`; it rewrites downstream routing to the matching Gateway session key. Loads on the shared ACP connection are serialized. A routing envelope carries the session key and the Main-owned generation token for the matching load or live prompt. Renderer uses a separate local request sequence to reject stale load completions; preparing a local-only session must not advance the ACP generation. Renderer ignores updates, permission requests, and asynchronous hydration results whose session or generation matches neither the selected session nor a retained live prompt. Generation is an in-memory race token rather than a durable sequence; Main may restore the previous value when a load fails, so code must compare it together with session and current-operation state rather than assume global monotonicity.

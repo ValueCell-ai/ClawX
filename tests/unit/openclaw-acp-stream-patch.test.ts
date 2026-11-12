@@ -175,4 +175,41 @@ describe('OpenClaw ACP assistant stream patch', () => {
     await expect(execFileAsync(process.execPath, ['--check', path.join(dist, 'server-D2T0Amp5.mjs')]))
       .resolves.toMatchObject({ stderr: '' });
   });
+
+  it('keeps the passive replay baseline across hidden controls while real user text resets it', () => {
+    const names = ['extractReplayChunks', 'resolveAmbientReplayBaseline', 'toAcpReplayUpdate'];
+    const declarations = names.map((name) => {
+      const matches = [...bundle.matchAll(new RegExp(`^function ${name}\\([^\\n]*\\) \\{[\\s\\S]*?^\\}`, 'gm'))];
+      expect(matches, name).toHaveLength(1);
+      return matches[0][0];
+    });
+    const { resolveAmbientReplayBaseline } = runInNewContext(
+      `${declarations.join('\n')}\n({ resolveAmbientReplayBaseline });`,
+      {
+        asOptionalRecord: (value: unknown) => value && typeof value === 'object' && !Array.isArray(value) ? value : undefined,
+        normalizeOptionalString: (value: unknown) => typeof value === 'string' && value.trim() ? value.trim() : undefined,
+      },
+    ) as {
+      resolveAmbientReplayBaseline: (events: unknown[], transcript: unknown[]) => { sentText?: string; sentThought?: string };
+    };
+    const assistant = {
+      role: 'assistant',
+      content: [{ type: 'text', text: 'Already streamed' }, { type: 'thinking', thinking: 'Already considered' }],
+    };
+    const controlText = 'Continue the current task from the existing transcript.';
+    for (const metadata of [
+      { display: false },
+      { provenance: { kind: 'internal_system' } },
+      { inputProvenance: { kind: 'internal_system' } },
+      { provenance: { kind: 'inter_session' } },
+    ]) {
+      const baseline = resolveAmbientReplayBaseline([], [assistant, { role: 'user', content: controlText, ...metadata }]);
+      expect(baseline).toMatchObject({ sentText: 'Already streamed', sentThought: 'Already considered' });
+    }
+    const visibleBoundary = resolveAmbientReplayBaseline([], [assistant, {
+      role: 'user', content: controlText, provenance: { kind: 'external_user' },
+    }]);
+    expect(visibleBoundary.sentText).toBeUndefined();
+    expect(visibleBoundary.sentThought).toBeUndefined();
+  });
 });

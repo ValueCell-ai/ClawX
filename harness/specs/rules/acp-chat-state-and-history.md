@@ -10,6 +10,23 @@ appliesTo:
 
 The 2026.10.5 [live patch verification](../../reference/openclaw-patch-live-verification.md) distinguishes restart/replay/compaction gaps from producer ordering and settled-load compensation. It is evidence for repair coverage, not a claim that all guarantees below are already satisfied by that runtime.
 
+All native transcript-to-ACP projections must enforce structured visibility
+before creating content: omit `display: false` records and user records with
+`internal_system` or `inter_session` in canonical or legacy input provenance.
+Apply this equally to missing/incomplete-ledger full replay, complete-ledger tail
+import and passive replay baselines. Control inputs cannot reset user-turn
+boundaries in bounded media supplements. Do not match prompt text or delete
+unattributed existing ACP ledger events; real user quotations and subsequent
+assistant/tool content remain authoritative. See
+[internal control replay](../../reference/acp-internal-control-replay.md).
+
+Transcript attachment/image-generation supplements must not resurrect
+`display: false` assistant or tool outputs as cards or completion captions.
+Approved internal image-generation user triggers may still supply task metadata;
+their control prompt never becomes visible content. Main timing extraction must
+use the same canonical/legacy control-user boundaries and ignore hidden non-user
+outputs when computing the preceding visible turn's duration.
+
 Scheduled-task queue acknowledgments are not completion signals. Reconcile job
 state on runtime `cron` started/finished events and force the authoritative
 conversation catalog to refresh after completion, including automatic runs.

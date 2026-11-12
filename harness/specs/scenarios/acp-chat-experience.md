@@ -29,6 +29,8 @@ ownedPaths:
   - tests/unit/attachment-open-with.test.ts
   - tests/unit/attachment-open-with-native.test.ts
   - tests/e2e/chat-acp-inline-timeline.spec.ts
+  - tests/e2e/chat-acp-internal-replay.spec.ts
+  - tests/e2e/fixtures/acp-native-replay.ts
   - tests/e2e/chat-acp-attachments.spec.ts
   - tests/e2e/chat-run-state-events.spec.ts
   - tests/e2e/chat-streamdown-rendering.spec.ts
@@ -69,6 +71,17 @@ requiredRules:
 ---
 
 ACP Chat covers session load, prompt, cancel, permission, replay, timeline reduction, assistant-turn presentation and whole-turn duration, standard ACP attachments, bounded generated-media, confirmed internal-UI message-tool file delivery, OpenClaw MEDIA compatibility, and Chat-specific diagnostics. A live or replayed assistant `MEDIA:` line correlated with fresh image-generation context is hydrated in that assistant message and the raw directive is hidden; unrelated assistant `MEDIA:` prose remains ordinary text. Tool cards give every `write` call a localized Write label and Save icon, and every `sessions_spawn` call a localized Spawn subagent label and Bot icon regardless of runtime arguments. Code-bearing `exec` calls show Run code with a code icon, shell-command `exec` keeps Run command, and `ls` shows List files with a file-list icon; structured input takes precedence over title-only replay hints. The active ACP timeline may also expose finite positive `usage_update` metadata as a compact composer-footer context-usage meter with a ring and visible localized percentage immediately to the left of the gateway connection status, not inside the input box; its progressbar semantics and hover/focus label report the bounded percentage and used/total token counts, while missing or malformed values stay hidden. When the active model changes, the used count remains ACP-owned but the meter immediately adopts the effective context window from the typed agent snapshot so an old usage update cannot leave the previous model's limit visible. The user-visible attachment flow includes attachment-scoped preview, system open, selected-application open, reveal actions, and a first-position built-in Preview action for eligible local HTML, with platform discovery limited to macOS and Windows. Native drag/drop and file-picker attachments reference their canonical source files without creating ClawX staging duplicates; native path-backed images stay ACP resource links instead of being rematerialized by OpenClaw under `media/inbound`, and source edits, moves, and deletion therefore follow live-reference semantics. Clipboard and other pathless bytes still use protected Main-owned staging and inline image blocks. Authorized local DOCX/PPTX attachments within the Office limit use scoped Preview; remote, legacy, and over-limit Office attachments retain scoped system/external-open behavior. User-selected directories remain system-open-only targets: Main may open the directory after session-scoped revalidation, but directory contents are not read, enumerated, previewed, or exposed to Open With.
+
+Native transcript replay must honor `display: false` and user control provenance
+(`internal_system` / `inter_session`, including legacy `inputProvenance`) before
+creating ACP content. The policy applies equally to absent/incomplete-ledger
+fallback, complete-ledger tail imports and replay baselines; internal inputs do
+not create visible user bubbles or media-turn boundaries. Real user messages
+containing the same words and subsequent assistant/tool output remain intact.
+Hidden assistant and tool outputs cannot return through attachment or image
+caption supplements, and they cannot extend visible-turn timing. Internal
+image-generation user triggers retain their bounded metadata-only role.
+See [internal control replay evidence](../../reference/acp-internal-control-replay.md).
 
 After Gateway restart, a new prompt waits for ACP's own authenticated connection
 and subscription recovery, with a default 60-second admission deadline and working
