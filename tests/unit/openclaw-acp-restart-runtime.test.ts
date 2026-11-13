@@ -32,6 +32,7 @@ async function runtime(options: { acknowledge?: boolean; grace?: number; unmater
   let subscribed = false;
   let reconnectSubscriptionFailures = options.reconnectSubscriptionFailures ?? 0;
   let waitResult: Json = { status: 'timeout' };
+  let historyText = 'durable recovered reply';
   let holdWait = false;
   const heldWaits: Array<() => void> = [];
   const heldHellos: Array<() => void> = [];
@@ -73,7 +74,7 @@ async function runtime(options: { acknowledge?: boolean; grace?: number; unmater
         payload = { runId: request.params.runId, ...waitResult };
       } else if (request.method === 'chat.history') payload = {
         sessionId: 'native-session', hasMore: false,
-        messages: [{ role: 'assistant', __openclaw: { runId: waitResult.runId }, content: [{ type: 'text', text: 'durable recovered reply' }] }],
+        messages: [{ role: 'assistant', __openclaw: { runId: waitResult.runId }, content: [{ type: 'text', text: historyText }] }],
       };
       ws.send(JSON.stringify({ type: 'res', id: request.id, ok: true, payload }));
     });
@@ -133,6 +134,7 @@ async function runtime(options: { acknowledge?: boolean; grace?: number; unmater
       get diagnostics() { return diagnostics; },
       releaseHello: () => { options.holdReconnectHello = false; for (const release of heldHellos.splice(0)) release(); },
       setWaitResult: (result: Json) => { waitResult = result; },
+      setHistoryText: (text: string) => { historyText = text; },
       holdWait: () => { holdWait = true; },
       releaseWait: () => { holdWait = false; for (const release of heldWaits.splice(0)) release(); },
       event,
@@ -145,6 +147,64 @@ async function runtime(options: { acknowledge?: boolean; grace?: number; unmater
 }
 
 describe('installed OpenClaw ACP restart continuation', () => {
+  it.each(['snapshot', 'delta-ops', 'identical-messages', 'final-suffix', 'cumulative', 'preamble', 'recovery-aggregate', 'recovery-suffix'] as const)('keeps multi-stage text once when a %s stream ends with the whole-turn aggregate', async (format) => {
+    const r = await runtime();
+    const first = '第一个故事：怀表又响了。重复的钟声，重复的钟声。';
+    const second = format === 'identical-messages' ? first : '第二个故事：雨停了，小猫回家了。';
+    const suffix = format.endsWith('suffix') ? '\n结尾还有一句此前没有流出的文字。' : '';
+    const assistantText = (updates = r.updates) => updates
+      .filter((update) => update.sessionUpdate === 'agent_message_chunk')
+      .map((update) => (update.content as Json).text).join('');
+    let seq = 0;
+    const delta = (text: string) => {
+      const operations = format === 'delta-ops' || format === 'identical-messages';
+      if (operations) {
+        // Actual Gateway v4 sequence: new-message snapshot, append-only
+        // operations, then an empty replacement at the message boundary.
+        r.event('chat', { sessionKey, runId: r.runId, state: 'delta', seq: ++seq,
+          deltaText: text.slice(0, 4), replace: true,
+          message: { role: 'assistant', content: [{ type: 'text', text: text.slice(0, 4) }] } });
+        r.event('chat', { sessionKey, runId: r.runId, state: 'delta', seq: ++seq, deltaText: text.slice(4) });
+        r.event('chat', { sessionKey, runId: r.runId, state: 'delta', seq: ++seq, deltaText: '', replace: true,
+          message: { role: 'assistant', content: [] } });
+      } else r.event('chat', { sessionKey, runId: r.runId, state: 'delta', seq: ++seq,
+        message: { role: 'assistant', content: [{ type: 'text', text }] } });
+    };
+    if (format === 'preamble') r.event('agent', { sessionKey, runId: r.runId, stream: 'item',
+      data: { kind: 'preamble', itemId: 'first-story', progressText: first }, preamble: { retainedText: '' } });
+    else delta(first);
+    await expect.poll(() => assistantText()).toBe(first);
+    r.event('session.tool', { sessionKey, runId: r.runId, stream: 'tool', data: {
+      phase: 'start', toolCallId: 'list-directory', name: 'exec', args: { command: 'ls' },
+    } });
+    r.event('session.tool', { sessionKey, runId: r.runId, stream: 'tool', data: {
+      phase: 'result', toolCallId: 'list-directory', name: 'exec', result: 'report.txt',
+    } });
+    delta(format === 'cumulative' ? `${first}\n\n${second}` : second);
+    const streamed = format === 'cumulative' ? `${first}\n\n${second}` : first + second;
+    await expect.poll(() => assistantText()).toBe(streamed);
+    // Native Gateway finalization joins the ordered visible reply payloads with
+    // blank lines. It is a run summary, not another independent assistant reply.
+    const final = `${first}\n\n${second}${suffix}`;
+    if (format.startsWith('recovery-')) {
+      // No terminal Chat event reaches ACP. Recovery reads the durable whole
+      // reply for the owning run, not merely the last streamed message.
+      r.setHistoryText(final);
+      r.setWaitResult({ runId: r.runId, status: 'ok', terminalReply: { disposition: 'visible' } });
+      r.disconnect();
+      r.reconnect();
+    } else r.chat(r.runId, undefined, 'final', final);
+    await expect(r.outcome).resolves.toEqual({ result: { stopReason: 'end_turn' } });
+    expect(assistantText()).toBe(streamed + suffix);
+    for (let load = 0; load < 2; load += 1) {
+      const offset = r.updates.length;
+      await r.call('session/load', { sessionId: r.sessionId, cwd: r.home, mcpServers: [] });
+      const replay = r.updates.slice(offset);
+      expect(assistantText(replay)).toBe(streamed + suffix);
+      expect(replay.filter((update) => update.sessionUpdate === 'tool_call')).toHaveLength(1);
+    }
+  }, 30_000);
+
   it.each(['retained', 'fresh', 'load'] as const)('waits for ACP authentication before the next %s-session prompt after a completed turn', async (mode) => {
     const r = await runtime({ holdReconnectHello: true });
     r.chat(r.runId, undefined, 'final', 'first completed');
