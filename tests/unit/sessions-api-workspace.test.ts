@@ -238,7 +238,6 @@ describe('sessions API workspace summaries', () => {
         message: {
           role: 'user',
           content: '[Inter-session message] async continuation',
-          provenance: { kind: 'inter_session' },
         },
       },
       {
@@ -281,7 +280,14 @@ describe('sessions API workspace summaries', () => {
     });
   });
 
-  it('keeps restart-recovered assistant output in the original visible turn timing', async () => {
+  it.each([
+    { name: 'canonical internal provenance', metadata: { provenance: { kind: 'internal_system', sourceTool: 'main_session_restart_recovery' } } },
+    { name: 'legacy internal provenance', metadata: { inputProvenance: { kind: 'internal_system' } } },
+    { name: 'canonical inter-session provenance', metadata: { provenance: { kind: 'inter_session' } } },
+    { name: 'legacy inter-session provenance', metadata: { inputProvenance: { kind: 'inter_session' } } },
+    { name: 'native hidden input', metadata: { display: false } },
+    { name: 'control in either provenance field', metadata: { provenance: { kind: 'external_user' }, inputProvenance: { kind: 'internal_system' } } },
+  ])('keeps recovered output in the original visible turn timing for $name', async ({ metadata }) => {
     seedTranscriptRecords('agent:main:session-restart-timing', [
       {
         type: 'message',
@@ -304,11 +310,7 @@ describe('sessions API workspace summaries', () => {
         message: {
           role: 'user',
           content: '[System] Continue the interrupted response after Gateway restart.',
-          provenance: {
-            kind: 'internal_system',
-            sourceSessionKey: 'agent:main:session-restart-timing',
-            sourceTool: 'main_session_restart_recovery',
-          },
+          ...metadata,
         },
       },
       {
@@ -331,6 +333,37 @@ describe('sessions API workspace summaries', () => {
         userOccurrenceFromTail: 1,
         durationMs: 280_564,
       }],
+    });
+  });
+
+  it('keeps the same text from a real user as a distinct turn timing boundary', async () => {
+    const text = '[System] Continue the interrupted response after Gateway restart.';
+    seedTranscriptRecords('agent:main:session-real-user-timing', [
+      { type: 'message', timestamp: '2026-11-12T10:00:00.000Z', message: { role: 'user', content: text } },
+      { type: 'message', timestamp: '2026-11-12T10:00:05.000Z', message: { role: 'assistant', content: 'First answer' } },
+      { type: 'message', timestamp: '2026-11-12T10:00:10.000Z', message: { role: 'user', content: text, provenance: { kind: 'external_user' } } },
+      { type: 'message', timestamp: '2026-11-12T10:00:13.000Z', message: { role: 'assistant', content: 'Second answer' } },
+    ]);
+    const { createSessionsApi } = await import('@electron/services/sessions-api');
+    await expect(createSessionsApi().turnTimings({ sessionKey: 'agent:main:session-real-user-timing' })).resolves.toEqual({
+      success: true,
+      timings: [
+        { normalizedUserText: text, userOccurrenceFromTail: 2, durationMs: 5_000 },
+        { normalizedUserText: text, userOccurrenceFromTail: 1, durationMs: 3_000 },
+      ],
+    });
+  });
+
+  it.each(['assistant', 'toolResult', 'tool_result'])('does not extend visible timing for a hidden non-user %s record', async (role) => {
+    seedTranscriptRecords('agent:main:session-hidden-output-timing', [
+      { type: 'message', timestamp: '2026-11-12T10:00:00.000Z', message: { role: 'user', content: 'Inspect the result' } },
+      { type: 'message', timestamp: '2026-11-12T10:00:05.000Z', message: { role: 'assistant', content: 'Visible answer' } },
+      { type: 'message', timestamp: '2026-11-12T10:00:10.000Z', message: { role, content: 'Hidden output', display: false } },
+    ]);
+    const { createSessionsApi } = await import('@electron/services/sessions-api');
+    await expect(createSessionsApi().turnTimings({ sessionKey: 'agent:main:session-hidden-output-timing' })).resolves.toEqual({
+      success: true,
+      timings: [{ normalizedUserText: 'Inspect the result', userOccurrenceFromTail: 1, durationMs: 5_000 }],
     });
   });
 

@@ -84,6 +84,150 @@ not mean that `sessions.describe` can find a persisted Gateway row. A later
 model selection must retain first-send creation permission without granting it
 to an existing conversation that was deleted elsewhere.
 
+## Internal transcript visibility
+
+The native ACP transcript projector applies the same structured visibility
+policy to full replay, complete-ledger tail import and passive-stream replay
+baselines. Records with `display: false` are excluded. User records with
+`internal_system` or `inter_session` provenance, in either `provenance` or legacy
+`inputProvenance`, are execution/control inputs rather than visible user turns.
+This covers compaction/error continuations, asynchronous exec notices, cron
+inputs and Gateway recovery without matching English prompt text. Normal user
+records quoting those instructions remain visible; subsequent assistant replies,
+thoughts, tools and compaction lifecycle updates retain their ordinary projection.
+The media supplement follows the same control-user boundary policy so recovered
+attachments stay with the preceding visible user turn. General media and
+image-generation transcript supplements also exclude hidden assistant and tool
+outputs, preventing omitted cards or captions from bypassing native visibility.
+The approved internal image-generation completion user record may still provide
+task metadata without displaying its control prompt. Main's duration extraction
+uses the same canonical/legacy control-user policy and does not extend visible
+turn duration with hidden assistant or tool outputs.
+
+Missing or incomplete ACP ledgers reconstruct their visible history from native
+transcripts without persisting that fallback. Existing complete ledger events
+remain authoritative; this repair does not guess which unattributed historical
+ACP user chunks to delete. The report export lacks the customer's ACP ledger and
+per-update trace, so its actual first-entry path is not proven. See
+[internal control replay evidence](acp-internal-control-replay.md).
+
+## Multi-stage terminal replies
+
+The Gateway may stream separate assistant messages before and after a tool, then
+send `chat.state=final` with their whole-run aggregate joined by blank lines.
+Comparing that aggregate only with the last message repeats earlier replies in
+both live Chat and the recorded ACP ledger. The normal-provider Playwright
+comparison reproduced this on both the internal-visibility repair and the
+`origin/main` runtime at `d608f8af`; native transcript text itself was not repeated.
+
+### Protocol types and message identity
+
+The layers expose different operations; Gateway protocol v4 does not imply ACP
+protocol v2. The pinned OpenClaw adapter and ClawX currently negotiate ACP v1.
+
+| Layer | Available identifiers and operations | Boundary relevant to this repair |
+| --- | --- | --- |
+| OpenClaw Gateway | `state: delta/final`, `deltaText`, `replace`, `runId`, `seq` | The captured final aggregate did not identify its constituent messages. Run identity and frame order do not identify which earlier messages a snapshot should replace. |
+| ACP v1 ordinary assistant output | Append-only `agent_message_chunk`; optional `messageId` | One captured reproduction emitted 63 assistant chunks without a `messageId`. The adapter emits no ordinary full-message replacement for them. |
+| ACP v2 draft | Required message IDs; `agent_message_chunk` appends and `agent_message` replaces content under the same ID | These operations describe a possible replacement model, not the protocol currently negotiated by this bridge. |
+
+The [ACP v1 prompt-turn specification](https://agentclientprotocol.com/protocol/v1/prompt-turn)
+documents optional message IDs. The [v2 migration guide](https://agentclientprotocol.com/protocol/v2/migration#whole-message-upserts)
+defines ID-addressed whole-message updates and labels v2 as draft, requiring
+explicit version negotiation and a gated rollout. These sources were checked on
+November 13, 2026. SDK types or Renderer support for a replacement-shaped update
+alone do not establish peer support or permit silently sending v2 updates on v1.
+
+### Current compatibility behavior
+
+The patched pending-prompt projector retains at most 2 Mi characters of actually
+emitted text for the current run, including native preambles. Tool starts and
+explicit v4 empty replacements close the current text segment. The latter also
+resets the per-message snapshot comparison, preserving identical independent
+messages. Gateway callbacks can overlap while delivery is pending, so text is
+tracked synchronously after ACP queues each update, before awaiting delivery. A
+failed delivery invalidates that prefix; a late failure from a predecessor cannot
+invalidate its successor. Only at terminal projection or missed-terminal recovery
+does the adapter compare the final aggregate against those ordered segments. A
+matching prefix emits only its unseen suffix; a mismatch or exceeded bound
+retains the existing snapshot behavior. Trusted successor adoption clears this
+state.
+
+The adapter already uses `state: final` to distinguish terminal events. The
+`startsWith` check does not discover that event type: it checks the overlap
+between a reconstructed run prefix and the terminal aggregate. Both paths still
+produce append-only ACP chunks; neither can retract previously displayed text.
+
+### Reliability preconditions and limitations
+
+Let `P` be the ordered content already queued for this run, represented in the
+final producer's scope and normalization, and `F` its authoritative final text.
+Appending `F.slice(P.length)` is correct when
+`F = P + suffix`. The compatibility check is conditional on that relationship;
+the prefix operation itself does not prove that the reconstructed `P` represents
+the same logical messages or that every source chunk reached it.
+
+The reconstruction closes segments on tool and empty-replacement boundaries,
+trims their edges and joins them with blank lines. Those boundaries, scope and
+normalization must match the producer's aggregation. A terminal that describes
+one message instead of the whole run cannot be safely aligned by textual
+similarity alone. Even when the model never rewrites a sentence, incomplete or
+misordered delivery can break the prefix relationship. For example:
+
+```text
+Source chunks:      A -> B -> C
+Delivered content:  A -> C
+Final text:         ABC
+```
+
+This illustrates a limitation, not a transport-loss incident reproduced in the
+investigation. `AC` is not a prefix of `ABC`, even though finalization did not
+rewrite the generated content. On a failed match, invalidated state or exceeded
+bound, the existing snapshot fallback may append the aggregate and repeat text.
+It does not recover arbitrary interior gaps or overwrite an earlier sentence
+corrected by the final snapshot. Exact prefix matching is therefore not a
+general message deduplication or authoritative correction protocol. Existing
+persisted ledger entries remain unchanged.
+
+### Validation and upgrade provenance
+
+Installed ACP regressions cover v4 append operations and resets, legacy and
+cumulative snapshots, native preambles, legitimate repeats, unseen final tails,
+missed terminals and overlapping or failed deliveries. Electron coverage uses
+updates and replay collected from that subprocess. A real-provider Playwright
+run also verified the reported prompt through settlement, session switching and
+a fresh load after window reload. These checks establish the enumerated cases,
+not correctness for every possible combination of snapshots and chunks.
+
+The older text-delta workaround began with `e04ab51c` on OpenClaw 2026.7.1-2.
+The workaround and its later snapshot helper were ported in the 2026.10.5
+upgrade `44a43113` and retained by the 2026.10.10 upgrade `31b5ebe3`.
+Reconstructing those historical adapters from the original packages and their
+Git patches found byte-identical
+`resolveAcpTextDelta` and `resolveAcpEventTextSnapshot` helpers. Replaying the
+normalized sequence `A -> B -> final(A+B)` through all three historical handlers
+repeated both parts. This is a previously uncovered combination, not evidence of
+a dropped copy of that patch. No real-provider 7.x Gateway comparison was run,
+so this audit does not establish when the producer first emitted that sequence.
+
+### Replacement model and removal condition
+
+A durable correction path needs producer-owned message identities shared by
+chunks and their authoritative snapshots, explicit append/replacement operations,
+and preserved message boundaries around tools and preambles. A whole-run final
+must retain its constituent messages and their IDs; adding a terminal kind to a
+single joined string does not identify replacement targets. The bridge and
+Renderer can then replace content under the matching IDs while keeping timeline
+placement, session/run scope and replay-generation isolation.
+
+That path requires an explicitly negotiated protocol or compatibility extension;
+upgrading an SDK or accepting extra fields in a reducer is insufficient. ACP v2
+draft provides relevant primitives but is not enabled by this repair. Remove the
+terminal prefix workaround only after the producer, adapter and client support
+the replacement contract and tests cover interior corrections, missing chunks,
+normal repeats and reconnect/replay behavior. Until then this repair remains a
+bounded compatibility fix for the verified producer sequences.
+
 ## Identity And Race Protection
 
 Renderer-visible session identity is the OpenClaw Gateway session key. Main may hold a different ACP session id returned by `newSession`; it rewrites downstream routing to the matching Gateway session key. Loads on the shared ACP connection are serialized. A routing envelope carries the session key and the Main-owned generation token for the matching load or live prompt. Renderer uses a separate local request sequence to reject stale load completions; preparing a local-only session must not advance the ACP generation. Renderer ignores updates, permission requests, and asynchronous hydration results whose session or generation matches neither the selected session nor a retained live prompt. Generation is an in-memory race token rather than a durable sequence; Main may restore the previous value when a load fails, so code must compare it together with session and current-operation state rather than assume global monotonicity.
@@ -187,7 +331,7 @@ type CompactionItem = {
 
 The reducer preserves first-seen ACP order and patches existing items in place. It validates compaction metadata version, ID, status, source, and optional field types before creating `compaction:<compactionId>`. A first-seen occurrence closes open message segments and enters the flat timeline; later metadata with the same ID updates that exact item without moving it, including terminal failure details, while another ID remains a separate ordered marker. Replay marks the item historical, and first-seen optional metadata and historical provenance survive later updates. Interleaving any other process block with assistant text also closes the current segment; later text for that message creates another segment. Gateway assistant updates may be complete snapshots or non-prefix chunks. The embedded stream subscriber tracks parser-observed and successfully emitted assistant text separately and reconciles message-end snapshots against emitted state before lifecycle terminal delivery. The OpenClaw ACP bridge emits only the unseen suffix of a strict extension, ignores an identical or stale prefix, and emits a non-prefix update in full so a shorter trailing fragment is not dropped and a new segment is not sliced by stale character count. Replay and live updates use the same reducer path. Optimistic user segments are allowed and are coalesced with the ACP user echo.
 
-This prefix comparison is a compatibility heuristic in the patched `openclaw@2026.7.1-2` ACP adapter, not a formally correct stream algorithm. Gateway protocol v4 already defines `message` as the cumulative assistant snapshot, `deltaText` as the incremental operation, and `replace=true` as a full-content replacement. The pinned ACP adapter does not consume those fields and its append-only update path has no stable live message identity for an in-place replacement. Text alone cannot distinguish a snapshot from an independent chunk that happens to repeat, extend, or shorten earlier text, so the heuristic can misclassify valid output. Treat it only as a loss-avoidance workaround until the adapter consumes `deltaText` and `replace` and exposes explicit replacement semantics.
+The remaining prefix comparison is a bounded legacy compatibility heuristic, not a general stream algorithm. The pinned `openclaw@2026.10.10` pending-prompt adapter consumes Gateway v4 `message`, `deltaText` and `replace` through the native stream-message merger. Empty replacements establish a fresh message comparison, and terminal whole-run aggregates use the separate reconciliation described above. ACP chunks remain append-only: this does not provide in-place replacement of previously displayed text. Without explicit producer boundaries or stable message identity, text alone cannot classify a repeated or rewritten snapshot correctly in every case; do not extend this heuristic into a Renderer text filter.
 
 UI-only state such as card expansion, scroll position, selected artifact, composer draft, copy feedback, and lightbox state stays outside the reducer.
 

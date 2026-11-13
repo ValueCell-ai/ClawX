@@ -82,12 +82,13 @@ function normalizeUserText(text: string): string {
     .trim();
 }
 
-function isInternalInterSessionUser(message: RawMessage): boolean {
+function isInternalTranscriptUser(message: RawMessage): boolean {
   if (typeof message.role !== 'string' || message.role.toLowerCase() !== 'user') return false;
-  const provenance = message as RawMessage & { provenance?: unknown };
-  if (provenance.provenance && typeof provenance.provenance === 'object') {
-    const kind = (provenance.provenance as Record<string, unknown>).kind;
-    if (typeof kind === 'string' && kind.toLowerCase() === 'inter_session') return true;
+  const record = message as RawMessage & { display?: unknown; provenance?: unknown; inputProvenance?: unknown };
+  if (record.display === false) return true;
+  for (const provenance of [record.provenance, record.inputProvenance]) {
+    const kind = optionalString(recordValue(provenance)?.kind)?.toLowerCase();
+    if (kind === 'inter_session' || kind === 'internal_system') return true;
   }
   return /^\[Inter-session message\]\s/.test(textFromContent(message.content));
 }
@@ -255,8 +256,9 @@ export function extractOpenClawMediaTurns(
 
   for (const message of messages) {
     const role = typeof message.role === 'string' ? message.role.toLowerCase() : '';
+    if (role !== 'user' && recordValue(message)?.display === false) continue;
     if (role === 'user') {
-      if (isInternalInterSessionUser(message)) continue;
+      if (isInternalTranscriptUser(message)) continue;
       current = {
         normalizedUserText: normalizeUserText(textFromContent(message.content)),
         candidates: [],
@@ -388,7 +390,7 @@ export function selectOpenClawTranscriptTurn(
   let current: { normalizedUserText: string; messages: RawMessage[] } | null = null;
   for (const message of messages) {
     const role = typeof message.role === 'string' ? message.role.toLowerCase() : '';
-    if (role === 'user' && !isInternalInterSessionUser(message)) {
+    if (role === 'user' && !isInternalTranscriptUser(message)) {
       current = {
         normalizedUserText: normalizeUserText(textFromContent(message.content)),
         messages: [message],
