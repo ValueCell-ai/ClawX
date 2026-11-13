@@ -189,7 +189,7 @@ export function buildProviderListItems(
       .sort((left, right) => {
         if (left.account.id === defaultAccountId) return -1;
         if (right.account.id === defaultAccountId) return 1;
-        return right.account.updatedAt.localeCompare(left.account.updatedAt);
+        return (right.account.updatedAt ?? '').localeCompare(left.account.updatedAt ?? '');
       });
   }
 
