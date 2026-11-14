@@ -54,10 +54,18 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       await expect(page.getByRole('tabpanel').getByRole('heading', { level: 2 })).toHaveCount(0);
       await expect(page.getByTestId('providers-settings-description')).toHaveText(text.settings.aiProviders.description);
       await expect(page.getByTestId('providers-settings-description')).toHaveCSS('font-size', '14px');
+      await expect(page.getByTestId('providers-add-button')).toHaveCSS('font-size', '14px');
       await expect(page.getByTestId('models-default-summary')).toHaveCount(0);
       await expect(page.getByTestId('global-model-picker-button')).toHaveCount(0);
       await expect(page.getByTestId(`provider-set-default-${accountId}`)).toHaveCount(0);
       const card = page.getByTestId(`provider-card-${accountId}`);
+      const providerGroup = card.locator('..');
+      await expect(providerGroup).toHaveCSS('padding-left', '16px');
+      await expect(providerGroup).toHaveCSS('padding-right', '16px');
+      const groupBox = await providerGroup.boundingBox();
+      const rowBox = await card.boundingBox();
+      expect(rowBox!.x - groupBox!.x).toBeCloseTo(17, 0);
+      expect(groupBox!.x + groupBox!.width - rowBox!.x - rowBox!.width).toBeCloseTo(17, 0);
       await expect(card).toContainText('work.example');
       await expect(card).toContainText('model-beta');
       expect((await card.boundingBox())!.height).toBeLessThan(110);

@@ -240,7 +240,7 @@ export function ProvidersSettings() {
     <div data-testid="providers-settings" className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <p data-testid="providers-settings-description" className="min-w-0 text-sm leading-relaxed text-muted-foreground">{t('aiProviders.description')}</p>
-        <Button ref={addTriggerRef} data-testid="providers-add-button" onClick={() => setShowAddDialog(true)} className="h-9 shrink-0 rounded-md px-3 shadow-none font-medium text-meta">
+        <Button ref={addTriggerRef} data-testid="providers-add-button" onClick={() => setShowAddDialog(true)} className="h-9 shrink-0 rounded-md px-3 shadow-none font-medium text-sm">
           <Plus className="h-4 w-4 mr-2" />
           {t('aiProviders.add')}
         </Button>
@@ -257,13 +257,13 @@ export function ProvidersSettings() {
           <p className="text-meta text-center mb-6 max-w-sm">
             {t('aiProviders.empty.desc')}
           </p>
-          <Button onClick={() => setShowAddDialog(true)} className="rounded-full px-6 h-10 bg-brand hover:bg-brand-hover text-white">
+          <Button onClick={() => setShowAddDialog(true)} size="sm">
             <Plus className="h-4 w-4 mr-2" />
             {t('aiProviders.empty.cta')}
           </Button>
         </div>
       ) : (
-        <div className="divide-y divide-border rounded-xl border border-border bg-surface-modal">
+        <div className="divide-y divide-border rounded-xl border border-border bg-surface-modal px-4">
           {displayProviders.map((item) => (
             <ProviderCard
               key={item.account.id}
@@ -491,7 +491,7 @@ function ProviderCard({
   try { host = account.baseUrl ? new URL(account.baseUrl).host : ''; } catch { /* Keep invalid saved URLs editable. */ }
   const modelSummary = models.length ? models.slice(0, 2).join(', ') : t('aiProviders.overview.noModelSelected');
   return (
-    <div data-testid={`provider-card-${account.id}`} className="px-4 py-3">
+    <div data-testid={`provider-card-${account.id}`} className="py-3">
       <div className="flex items-center gap-3">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-black/5 dark:bg-white/5">
           {getProviderIconUrl(account.vendorId)
@@ -503,7 +503,7 @@ function ProviderCard({
             <button type="button" className="truncate rounded text-left text-sm font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={event => { editTriggerRef.current = event.currentTarget; onEdit(); }}>{account.label}</button>
           </div>
           <p data-testid={`provider-model-${account.id}`} className="mt-0.5 truncate text-xs text-muted-foreground" title={models.join(', ')}>{modelSummary}{models.length > 2 && ` +${models.length - 2}`}</p>
-          <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground"><span className="truncate">{host || vendor?.name || account.vendorId}</span><span aria-hidden="true">·</span><span className="shrink-0">{hasConfiguredCredentials(account, status) ? t('aiProviders.card.configured') : t('aiProviders.card.noKey')}</span></p>
+          <p className="mt-0.5 flex items-center gap-1.5 text-meta text-muted-foreground"><span className="truncate">{host || vendor?.name || account.vendorId}</span><span aria-hidden="true">·</span><span className="shrink-0">{hasConfiguredCredentials(account, status) ? t('aiProviders.card.configured') : t('aiProviders.card.noKey')}</span></p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <Tooltip disableHoverableContent>
@@ -1195,7 +1195,7 @@ function AddProviderDialog({
                         data-testid="add-provider-oauth-login-button"
                         onClick={handleStartOAuth}
                         disabled={oauthFlowing}
-                        className="w-full rounded-full h-[42px] font-semibold bg-brand hover:bg-brand-hover text-white shadow-sm"
+                        className="w-full"
                       >
                         {oauthFlowing ? (
                           <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{t('aiProviders.oauth.waiting')}</>
@@ -1217,7 +1217,7 @@ function AddProviderDialog({
                               <XCircle className="h-10 w-10 mx-auto" />
                               <p className="font-semibold text-sm">{t('aiProviders.oauth.authFailed')}</p>
                               <p className="text-meta opacity-80">{oauthError}</p>
-                              <Button variant="outline" size="sm" onClick={handleCancelOAuth} className="mt-2 rounded-full px-6 h-9">
+                              <Button variant="outline" size="sm" onClick={handleCancelOAuth} className="mt-2">
                                 {t('aiProviders.oauth.tryAgain')}
                               </Button>
                             </div>
@@ -1237,7 +1237,7 @@ function AddProviderDialog({
 
                               <Button
                                 variant="secondary"
-                                className="w-full rounded-full h-[42px] font-semibold"
+                                className="w-full"
                                 onClick={() => hostApi.shell.openExternal(oauthData.authorizationUrl)}
                               >
                                 <ExternalLink className="h-4 w-4 mr-2" />
@@ -1252,14 +1252,14 @@ function AddProviderDialog({
                               />
 
                               <Button
-                                className="w-full rounded-full h-[42px] font-semibold bg-brand hover:bg-brand-hover text-white"
+                                className="w-full"
                                 onClick={handleSubmitManualOAuthCode}
                                 disabled={!manualCodeInput.trim()}
                               >
                                 {t('aiProviders.oauth.submitCode')}
                               </Button>
 
-                              <Button variant="ghost" className="w-full rounded-full h-[42px] font-semibold text-muted-foreground" onClick={handleCancelOAuth}>
+                              <Button variant="ghost" className="w-full text-muted-foreground" onClick={handleCancelOAuth}>
                                 {t('aiProviders.oauth.cancel')}
                               </Button>
                             </div>
@@ -1293,7 +1293,7 @@ function AddProviderDialog({
 
                               <Button
                                 variant="secondary"
-                                className="w-full rounded-full h-[42px] font-semibold"
+                                className="w-full"
                                 onClick={() => hostApi.shell.openExternal(oauthData.verificationUri)}
                               >
                                 <ExternalLink className="h-4 w-4 mr-2" />
@@ -1305,7 +1305,7 @@ function AddProviderDialog({
                                 <span>{t('aiProviders.oauth.waitingApproval')}</span>
                               </div>
 
-                              <Button variant="ghost" className="w-full rounded-full h-[42px] font-semibold text-muted-foreground" onClick={handleCancelOAuth}>
+                              <Button variant="ghost" className="w-full text-muted-foreground" onClick={handleCancelOAuth}>
                                 {t('aiProviders.oauth.cancel')}
                               </Button>
                             </div>

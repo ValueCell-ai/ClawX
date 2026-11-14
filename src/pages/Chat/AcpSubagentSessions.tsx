@@ -2,6 +2,7 @@ import { useId, useState } from 'react';
 import { Bot, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 export type AcpSubagentSession = {
   sessionKey: string;
@@ -59,20 +60,19 @@ export function AcpSubagentSessions({
 
   return (
     <div className="relative min-w-0 text-right">
-      <button
+      <Popover open={expanded} onOpenChange={(nextExpanded) => {
+        setExpansion({ sessionKey, expanded: nextExpanded });
+        onExpandedChange?.(nextExpanded);
+      }}>
+      <PopoverTrigger asChild><button
         type="button"
         data-testid="acp-subagent-sessions-toggle"
         aria-expanded={expanded}
         aria-controls={panelId}
         aria-label={t('acp.subagentSessions.toggle', { action: actionLabel, count: countLabel })}
         aria-describedby={aggregateStatusId}
-        onClick={() => {
-          const nextExpanded = !expanded;
-          setExpansion({ sessionKey, expanded: nextExpanded });
-          onExpandedChange?.(nextExpanded);
-        }}
         className={cn(
-          'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
+          'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm font-medium transition-colors',
           'border-black/10 bg-surface-input text-foreground hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
           expanded && 'bg-black/5 dark:bg-white/10',
@@ -82,7 +82,7 @@ export function AcpSubagentSessions({
         <span className="tabular-nums">
           {countLabel}
         </span>
-      </button>
+      </button></PopoverTrigger>
       <span
         id={aggregateStatusId}
         data-testid="acp-subagent-sessions-status"
@@ -94,12 +94,11 @@ export function AcpSubagentSessions({
         {aggregateStatusLabel}
       </span>
 
-      {expanded && (
-        <section
+      <PopoverContent side="top" align="end" sideOffset={8}
           id={panelId}
           data-testid="acp-subagent-sessions-panel"
           aria-label={t('acp.subagentSessions.panel')}
-          className="absolute bottom-full right-0 z-10 mb-2 max-h-48 w-80 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-black/10 bg-surface-modal p-2 text-left shadow-sm dark:border-white/10"
+          className="max-h-48 w-80 overflow-y-auto rounded-xl border border-border bg-surface-modal p-2 text-left shadow-xl"
         >
           <ul className="space-y-1">
             {sessions.map((session, index) => {
@@ -134,8 +133,8 @@ export function AcpSubagentSessions({
               );
             })}
           </ul>
-        </section>
-      )}
+      </PopoverContent>
+      </Popover>
     </div>
   );
 }

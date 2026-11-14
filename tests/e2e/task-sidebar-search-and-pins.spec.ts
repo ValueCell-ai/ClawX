@@ -76,6 +76,7 @@ test('searches beyond pagination and collapsed workspaces, persists pins through
     const ordinaryActions = page.getByTestId(`sidebar-session-menu-${ordinaryKey}`);
     await page.mouse.move(600, 80);
     await expect(ordinaryTime).toBeVisible();
+    await expect(ordinaryTime).toHaveCSS('font-size', '12px');
     await expect(ordinaryActions).toHaveCSS('opacity', '0');
     await expect(ordinaryActions).toHaveCSS('pointer-events', 'none');
     const rowBounds = await ordinaryRow.boundingBox();

@@ -4,6 +4,8 @@
 
 - Before designing, implementing or reviewing any UI change, read and follow [DESIGN.md](DESIGN.md). It is the canonical project-wide visual contract for typography, layout, surfaces and shared interaction patterns.
 - Choose text styles by their documented role and reuse existing tokens and shared components. Do not invent a per-page/component size scale, shrink important text to make a layout compact, or copy an existing inconsistency as a new standard.
+- Select list, card, surface, color, radius, button and badge patterns by their documented purpose in DESIGN.md; reuse shared primitives and their variants. Similar content and actions must have consistent treatment across pages, without forcing different interaction purposes into the same layout.
+- Review affected UI in context against the contract, including interaction states, light/dark themes, narrow windows and longer localized text as relevant. Record purposeful exceptions in the change description; do not treat a matching token or a screenshot alone as proof of compliance.
 - When a design rule changes, update DESIGN.md and the affected shared implementation together, and remove superseded guidance from comments and specs. AGENTS.md and Harness rules link to the contract rather than maintaining competing visual values.
 
 ## Cursor Cloud specific instructions

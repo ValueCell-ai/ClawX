@@ -826,6 +826,18 @@ test.describe('ClawX ACP inline timeline', () => {
       await toggle.click();
       await expect(toggle).toHaveAttribute('aria-expanded', 'true');
       const panel = page.getByTestId('acp-session-plan-panel');
+      await expect(panel).toHaveAttribute('data-state', 'open');
+      await expect(panel).toHaveCSS('animation-name', 'clawx-floating-in');
+      await page.keyboard.press('Escape');
+      await expect(panel).toHaveCount(0);
+      await expect(toggle).toBeFocused();
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await toggle.click();
+      await expect(panel).toHaveCSS('animation-name', 'none');
+      await page.getByTestId('chat-composer-input').click();
+      await expect(panel).toHaveCount(0);
+      await page.emulateMedia({ reducedMotion: 'no-preference' });
+      await toggle.click();
       const steps = panel.getByTestId('acp-session-plan-step');
       await expect(steps).toHaveCount(3);
       await expect(steps.nth(0)).toHaveText('Inspect the current implementation');
@@ -1223,6 +1235,11 @@ test.describe('ClawX ACP inline timeline', () => {
 
       await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
       await expect(page.getByText('Plan the migration')).toBeVisible();
+      const bubble = page.getByTestId('acp-user-message').getByText('Plan the migration').locator('..');
+      await expect(bubble).toHaveCSS('background-color', 'rgb(37, 99, 235)');
+      await page.evaluate(() => document.documentElement.classList.add('dark'));
+      await expect(bubble).toHaveCSS('background-color', 'rgb(37, 99, 235)');
+      await page.evaluate(() => document.documentElement.classList.remove('dark'));
 
       await emitAcpSessionUpdates(app, [
         {

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   Archive,
   Bug,
@@ -14,13 +14,8 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { getSessionDisplayTitle } from '@shared/chat/session-title';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog } from '@/components/ui/dialog';
+import { ConfigDialogContent } from '@/components/ui/config-dialog-content';
 import { hostApi } from '@/lib/host-api';
 import { useChatStore } from '@/stores/chat';
 import { shouldRetainSessionInCatalog } from '@/stores/chat/session-key-utils';
@@ -41,6 +36,7 @@ export function IssueReportExport({
   const currentSessionKey = useChatStore((state) => state.currentSessionKey);
   const loadSessions = useChatStore((state) => state.loadSessions);
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const [selectedSessionKeys, setSelectedSessionKeys] = useState<string[]>([]);
   const [exporting, setExporting] = useState(false);
   const [exportedPath, setExportedPath] = useState('');
@@ -128,6 +124,7 @@ export function IssueReportExport({
         <Button
           type="button"
           variant="ghost"
+          ref={triggerRef}
           onClick={handleOpen}
           data-testid="sidebar-issue-report-open"
           aria-label={t('settings:issueReport.actionTitle')}
@@ -156,9 +153,11 @@ export function IssueReportExport({
           <Button
             type="button"
             variant="outline"
+            size="sm"
+            ref={triggerRef}
             onClick={handleOpen}
             data-testid="settings-issue-report-open"
-            className="shrink-0 rounded-xl border-black/10 bg-transparent dark:border-white/10"
+            className="shrink-0"
           >
             <Archive className="mr-2 h-4 w-4" />
             {t('settings:issueReport.open')}
@@ -167,25 +166,31 @@ export function IssueReportExport({
       )}
 
       <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent
+        <ConfigDialogContent
           data-testid="issue-report-dialog"
-          className="max-w-2xl overflow-hidden rounded-3xl border border-black/10 bg-surface-modal p-0 shadow-2xl dark:border-white/10"
+          onCloseAutoFocus={event => { event.preventDefault(); triggerRef.current?.focus(); }}
+          title={t(exportedPath ? 'settings:issueReport.completeTitle' : 'settings:issueReport.dialogTitle')}
+          description={t(exportedPath ? 'settings:issueReport.completeDescription' : 'settings:issueReport.dialogDescription')}
+          closeLabel={t('common:actions.close')}
+          closeDisabled={exporting}
+          onClose={() => handleOpenChange(false)}
+          footer={exportedPath ? <>
+            <Button type="button" variant="outline" size="sm" onClick={() => handleOpenChange(false)}>{t('common:actions.close')}</Button>
+            <Button type="button" size="sm" onClick={() => void handleReveal()} data-testid="issue-report-reveal">
+              <ExternalLink className="mr-2 h-4 w-4" />{t('settings:issueReport.showInFolder')}
+            </Button>
+          </> : <>
+            <Button type="button" variant="outline" size="sm" disabled={exporting} onClick={() => handleOpenChange(false)}>{t('common:actions.cancel')}</Button>
+            <Button type="button" size="sm" disabled={exporting} onClick={() => void handleExport()} data-testid="issue-report-export">
+              {exporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Archive className="mr-2 h-4 w-4" />}
+              {exporting ? t('settings:issueReport.exporting') : selectedSet.size > 0
+                ? t('settings:issueReport.export', { count: selectedSet.size })
+                : t('settings:issueReport.exportWithoutConversations')}
+            </Button>
+          </>}
         >
-          <div className="space-y-1 border-b border-black/5 px-6 py-5 dark:border-white/5">
-            <DialogTitle className="font-sans text-xl font-medium tracking-normal">
-              {exportedPath
-                ? t('settings:issueReport.completeTitle')
-                : t('settings:issueReport.dialogTitle')}
-            </DialogTitle>
-            <DialogDescription className="text-sm text-muted-foreground">
-              {exportedPath
-                ? t('settings:issueReport.completeDescription')
-                : t('settings:issueReport.dialogDescription')}
-            </DialogDescription>
-          </div>
-
           {exportedPath ? (
-            <div className="space-y-5 px-6 py-5">
+            <div className="space-y-5">
               <div className="flex items-start gap-3 rounded-2xl border border-green-500/20 bg-green-500/10 p-4">
                 <Check className="mt-0.5 h-5 w-5 shrink-0 text-green-700 dark:text-green-400" />
                 <div className="min-w-0 space-y-2">
@@ -209,20 +214,11 @@ export function IssueReportExport({
                   {t('settings:issueReport.skippedSessions', { count: skippedSessionCount })}
                 </p>
               )}
-              <div className="flex justify-end gap-2">
-                <DialogClose asChild>
-                  <Button type="button" variant="ghost">{t('common:actions.close')}</Button>
-                </DialogClose>
-                <Button type="button" onClick={() => void handleReveal()} data-testid="issue-report-reveal">
-                  <ExternalLink className="mr-2 h-4 w-4" />
-                  {t('settings:issueReport.showInFolder')}
-                </Button>
-              </div>
             </div>
           ) : (
-            <div className="max-h-[70vh] space-y-5 overflow-y-auto px-6 py-5">
+            <div className="space-y-5">
               <section aria-labelledby="issue-report-contents-title" className="space-y-3">
-                <h3 id="issue-report-contents-title" className="text-sm font-semibold text-foreground">
+                <h3 id="issue-report-contents-title" className="text-sm font-medium text-foreground">
                   {t('settings:issueReport.contentsTitle')}
                 </h3>
                 <div className="grid gap-2 sm:grid-cols-2" data-testid="issue-report-contents">
@@ -238,7 +234,7 @@ export function IssueReportExport({
                         <p className="text-sm font-medium text-foreground">
                           {t(`settings:issueReport.contents.${key}.title`)}
                         </p>
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-sm text-muted-foreground">
                           {t(`settings:issueReport.contents.${key}.description`)}
                         </p>
                       </div>
@@ -249,7 +245,7 @@ export function IssueReportExport({
 
               <section aria-labelledby="issue-report-sessions-title" className="space-y-3">
                 <div className="flex items-center justify-between gap-3">
-                  <h3 id="issue-report-sessions-title" className="text-sm font-semibold text-foreground">
+                  <h3 id="issue-report-sessions-title" className="text-sm font-medium text-foreground">
                     {t('settings:issueReport.sessionsTitle')}
                   </h3>
                   <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
@@ -296,31 +292,9 @@ export function IssueReportExport({
                 </p>
               )}
 
-              <div className="flex justify-end gap-2">
-                <DialogClose asChild>
-                  <Button type="button" variant="ghost" disabled={exporting}>
-                    {t('common:actions.cancel')}
-                  </Button>
-                </DialogClose>
-                <Button
-                  type="button"
-                  disabled={exporting}
-                  onClick={() => void handleExport()}
-                  data-testid="issue-report-export"
-                >
-                  {exporting
-                    ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    : <Archive className="mr-2 h-4 w-4" />}
-                  {exporting
-                    ? t('settings:issueReport.exporting')
-                    : selectedSet.size > 0
-                      ? t('settings:issueReport.export', { count: selectedSet.size })
-                      : t('settings:issueReport.exportWithoutConversations')}
-                </Button>
-              </div>
             </div>
           )}
-        </DialogContent>
+        </ConfigDialogContent>
       </Dialog>
     </>
   );

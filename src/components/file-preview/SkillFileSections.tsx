@@ -129,7 +129,7 @@ function SkillFileSection({ title, description, files, onOpen }: SkillFileSectio
           {title}
           <span className="ml-2 text-2xs font-medium text-muted-foreground">{files.length}</span>
         </h4>
-        <p className="text-2xs text-muted-foreground/80 truncate">{description}</p>
+        <p className="text-meta text-muted-foreground truncate">{description}</p>
       </div>
       <div className="flex flex-col gap-1.5">
         {files.map((file) => (
@@ -153,7 +153,7 @@ function SkillFileSection({ title, description, files, onOpen }: SkillFileSectio
             <div className="min-w-0 flex-1">
               <p className="truncate text-xs font-mono text-foreground">{file.relativePath || file.fileName}</p>
             </div>
-            <span className="shrink-0 text-2xs text-muted-foreground">
+            <span className="shrink-0 text-xs text-muted-foreground">
               {formatFileSize(file.size) || file.ext.replace('.', '').toUpperCase() || ''}
             </span>
           </button>

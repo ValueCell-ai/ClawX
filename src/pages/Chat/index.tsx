@@ -737,7 +737,7 @@ export function Chat() {
                   <Badge
                     variant="secondary"
                     data-testid="chat-subagent-marker"
-                    className="no-drag shrink-0 gap-1 px-1.5 py-0.5 text-2xs font-medium"
+                    className="no-drag shrink-0 gap-1 px-1.5 py-0.5 text-xs font-medium"
                   >
                     <BotMessageSquare aria-hidden="true" className="h-3 w-3" />
                     {t('acp.subagentSessions.marker')}

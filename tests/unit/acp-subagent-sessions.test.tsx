@@ -98,7 +98,8 @@ describe('AcpSubagentSessions', () => {
     expect(toggle).toHaveAccessibleName('Collapse subagent sessions, Dispatched 2 subagents');
     const panel = screen.getByTestId('acp-subagent-sessions-panel');
     expect(panel).toHaveAttribute('aria-label', 'Subagent sessions');
-    expect(panel).toHaveClass('absolute', 'bottom-full', 'right-0', 'max-h-48', 'overflow-y-auto', 'bg-surface-modal');
+    expect(panel).toHaveAttribute('data-state', 'open');
+    expect(panel).toHaveClass('clawx-floating-surface', 'max-h-48', 'overflow-y-auto', 'bg-surface-modal');
     expect(toggle).toHaveAttribute('aria-controls', panel.id);
   });
 

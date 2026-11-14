@@ -55,6 +55,7 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       const card = page.getByTestId('agent-card-main');
       await expect(card).toContainText('Use primary sources.');
       await expect(card.getByTestId('agent-start-main')).toBeVisible();
+      await expect(card.getByTestId('agent-start-main')).toHaveCSS('font-size', '14px');
       const more = page.getByTestId('agent-menu-research');
       await more.focus();
       await expect(more).toHaveCSS('opacity', '1');
@@ -119,6 +120,7 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       await expect(modelSelect).toBeFocused();
       await expect(dialog.getByTestId('agent-model-legacy-hint')).toHaveCount(0);
       await expect(page.getByRole('dialog')).toHaveCount(1);
+      await expect(dialog.getByRole('button', { name: text.profile.editStyle, exact: true })).toHaveCSS('font-size', '14px');
       await dialog.getByRole('button', { name: text.profile.editStyle, exact: true }).click();
       const editor = dialog.getByTestId('agent-style-editor');
       await expect(editor).toHaveValue(originalStyle);
@@ -152,6 +154,11 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       await expect(card).toContainText('Investigate carefully.');
       await page.getByTestId('agents-add-button').click();
       const create = page.getByTestId('add-agent-dialog');
+      await expect(create).toHaveCSS('max-width', '576px');
+      await expect(create.locator('footer')).toBeVisible();
+      await expect(create.locator('footer button[type=submit]')).toHaveAttribute('form', 'create-agent-form');
+      await create.getByRole('button', { name: text.profile.close, exact: true }).hover();
+      await expect(page.getByRole('tooltip', { name: text.profile.close })).toBeVisible();
       await create.getByLabel(text.createDialog.nameLabel, { exact: true }).fill('Planner');
       await create.getByTestId('agent-create-instructions').fill(plannerStyle);
       const createModel = create.getByTestId('agent-create-model-picker-button');

@@ -643,7 +643,7 @@ export function FilePreviewBody({
           ) : (
             <div className="min-w-0">
               <h2 className="truncate text-sm font-semibold">{file.fileName}</h2>
-              <p className="truncate text-2xs text-muted-foreground" title={previewDisplayPath(file)}>{previewDisplayPath(file)}</p>
+              <p className="truncate text-xs text-muted-foreground" title={previewDisplayPath(file)}>{previewDisplayPath(file)}</p>
             </div>
           )}
         </div>

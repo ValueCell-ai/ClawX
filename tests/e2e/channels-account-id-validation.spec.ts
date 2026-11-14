@@ -78,6 +78,8 @@ test.describe('Channels account ID validation', () => {
     await navigateToSection(page, 'channels');
     await expect(page.getByTestId('channels-page')).toBeVisible();
     await expect(page.getByText('Feishu / Lark')).toBeVisible();
+    await expect(page.getByTestId('channel-account-feishu-default')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+    await expect(page.getByTestId('channel-account-feishu-default').getByRole('combobox')).toHaveCSS('font-size', '14px');
 
     await page.getByRole('button', { name: /Add Account|account\.add/i }).click();
     await expect(page.getByText(/Configure Feishu \/ Lark|dialog\.configureTitle/)).toBeVisible();

@@ -549,7 +549,7 @@ export function Sidebar() {
               <div className="flex min-w-0 items-center gap-1.5">
                 {agentId !== defaultAgentId && (
                   <span data-testid={`sidebar-session-agent-${s.key}`} title={agentName}
-                    className="max-w-16 shrink-0 truncate rounded-md bg-black/[0.04] px-1 text-2xs font-medium text-muted-foreground dark:bg-white/5">
+                    className="max-w-16 shrink-0 truncate rounded-md bg-black/[0.04] px-1 text-xs font-medium text-muted-foreground dark:bg-white/5">
                     {agentName}
                   </span>
                 )}
@@ -557,14 +557,14 @@ export function Sidebar() {
                   <span
                     title={channelName}
                     aria-label={channelName}
-                    className="shrink-0 truncate rounded-full bg-blue-500/10 px-2 py-0.5 text-2xs font-medium text-blue-700 dark:bg-blue-400/10 dark:text-blue-400"
+                    className="shrink-0 truncate rounded-full bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-400/10 dark:text-blue-400"
                   >
                     {channelName}
                   </span>
                 )}
                 <span className="min-w-0 flex-1 truncate">{sessionLabel}</span>
               </div>
-              {pinned && <span className="mt-0.5 block truncate text-2xs text-muted-foreground">{workspaceLabel}</span>}
+              {pinned && <span className="mt-0.5 block truncate text-xs text-muted-foreground">{workspaceLabel}</span>}
             </button>
             {isBusy ? (
               <span
@@ -595,7 +595,7 @@ export function Sidebar() {
               <span
                 data-testid={`sidebar-session-time-${s.key}`}
                 title={new Date(activityMs).toLocaleString()}
-                className="shrink-0 pr-2 text-2xs font-medium text-muted-foreground/55 group-hover:hidden group-focus-within:hidden group-has-[[data-state=open]]:hidden"
+                className="shrink-0 pr-2 text-xs font-medium text-muted-foreground group-hover:hidden group-focus-within:hidden group-has-[[data-state=open]]:hidden"
               >
                 {relativeTime}
               </span>
@@ -756,7 +756,7 @@ export function Sidebar() {
       {!sidebarCollapsed && (
         <div className="mt-5 min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-2">
           <div className="mb-1 flex items-center justify-between gap-2 pl-2.5">
-            <span className="text-tiny font-medium text-muted-foreground">
+            <span className="text-xs font-medium text-muted-foreground">
               {t('chat:sessionList.title')}
             </span>
             <div className="flex items-center gap-0.5">
@@ -801,12 +801,12 @@ export function Sidebar() {
               </button>
             </div>
           )}
-          {searchActive && <p role="status" data-testid="sidebar-search-count" className="mb-2 px-2.5 text-tiny text-muted-foreground">{t('chat:sessionList.results', { count: searchResultCount })}</p>}
+          {searchActive && <p role="status" data-testid="sidebar-search-count" className="mb-2 px-2.5 text-xs text-muted-foreground">{t('chat:sessionList.results', { count: searchResultCount })}</p>}
           {searchActive && searchResultCount === 0 && <p className="px-3 py-6 text-center text-xs text-muted-foreground">{t('chat:sessionList.noResults')}</p>}
           {!searchActive && eligibleEntries.length === 0 && <p className="px-2.5 py-3 text-xs leading-relaxed text-muted-foreground">{t('chat:sessionList.emptyHint')}</p>}
           {pinnedEntries.length > 0 && (
             <section data-testid="sidebar-pinned-tasks" aria-label={t('chat:sessionList.pinned')} className="mb-4 space-y-0.5">
-              <div className="flex items-center gap-1.5 px-2.5 pb-1.5 pt-2 text-tiny font-medium text-muted-foreground">
+              <div className="flex items-center gap-1.5 px-2.5 pb-1.5 pt-2 text-xs font-medium text-muted-foreground">
                 <Pin aria-hidden="true" className="h-3 w-3" />{t('chat:sessionList.pinned')}
               </div>
               {pinnedEntries.map((entry) => renderSessionRow(entry, entry.group.label, true))}
@@ -888,7 +888,7 @@ export function Sidebar() {
                           <Badge
                             variant="warning"
                             data-testid={`workspace-session-group-unavailable-${getWorkspaceTestIdSegment(workspaceGroup.workspacePath)}`}
-                            className="shrink-0 px-1.5 py-0 text-2xs"
+                            className="shrink-0 px-1.5 py-0 text-xs"
                           >
                             {t('chat:sessionList.workspaceUnavailableBadge')}
                           </Badge>
@@ -950,7 +950,7 @@ export function Sidebar() {
                             workspace: workspaceGroup.label,
                           })}
                           onClick={() => loadMoreWorkspaceSessions(workspaceGroup.workspacePath)}
-                          className="ml-2 rounded-md px-2 py-1 text-tiny font-medium text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10"
+                          className="ml-2 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10"
                         >
                           {t('chat:sessionList.loadMore')}
                         </button>

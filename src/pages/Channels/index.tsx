@@ -591,7 +591,7 @@ export function Channels({ embedded = false }: { embedded?: boolean }) {
                     data-testid="channels-restart-gateway"
                     size="sm"
                     variant="outline"
-                    className="h-8 rounded-full text-xs"
+                    className="h-8 text-sm"
                     onClick={() => {
                       void handleRestartGateway();
                     }}
@@ -603,7 +603,7 @@ export function Channels({ embedded = false }: { embedded?: boolean }) {
                     data-testid="channels-copy-diagnostics"
                     size="sm"
                     variant="outline"
-                    className="h-8 rounded-full text-xs"
+                    className="h-8 text-sm"
                     disabled={diagnosticsLoading}
                     onClick={() => {
                       void handleCopyDiagnostics();
@@ -616,7 +616,7 @@ export function Channels({ embedded = false }: { embedded?: boolean }) {
                     data-testid="channels-toggle-diagnostics"
                     size="sm"
                     variant="outline"
-                    className="h-8 rounded-full text-xs"
+                    className="h-8 text-sm"
                     disabled={diagnosticsLoading}
                     onClick={() => {
                       void handleToggleDiagnostics();
@@ -637,7 +637,7 @@ export function Channels({ embedded = false }: { embedded?: boolean }) {
                   <p className="mb-2 text-xs font-medium text-muted-foreground">{t('health.diagnosticsTitle')}</p>
                   <pre
                     data-testid="channels-diagnostics"
-                    className="max-h-[320px] overflow-auto whitespace-pre-wrap break-all text-tiny text-foreground/85"
+                    className="max-h-[320px] overflow-auto whitespace-pre-wrap break-all text-meta text-foreground/85"
                   >
                     {diagnosticsText}
                   </pre>
@@ -661,15 +661,15 @@ export function Channels({ embedded = false }: { embedded?: boolean }) {
                   <div
                     key={group.channelType}
                     data-testid={`channel-group-${group.channelType}`}
-                    className="rounded-xl border border-black/10 dark:border-white/10 p-4 bg-surface-modal"
+                    className="rounded-xl border border-border bg-surface-modal p-4"
                   >
                     <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="h-[40px] w-[40px] shrink-0 flex items-center justify-center text-foreground bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-full shadow-sm">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-black/5 text-foreground dark:bg-white/5">
                           <ChannelLogo type={group.channelType as ChannelType} />
                         </div>
                         <div className="min-w-0">
-                          <h3 className="text-base font-semibold text-foreground truncate">
+                          <h3 className="truncate text-base font-medium text-foreground">
                             {CHANNEL_NAMES[group.channelType as ChannelType] || group.channelType}
                           </h3>
                           <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -702,7 +702,7 @@ export function Channels({ embedded = false }: { embedded?: boolean }) {
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  className="h-7 rounded-full px-3 text-xs"
+                                  className="h-8 px-3 text-sm"
                                   data-testid="dingtalk-workspace-authorize"
                                   onClick={(event) => {
                                     configOpenerRef.current = event.currentTarget;
@@ -729,7 +729,7 @@ export function Channels({ embedded = false }: { embedded?: boolean }) {
                           <Button
                             size="sm"
                             variant="outline"
-                            className="h-8 text-xs rounded-full"
+                            className="h-8 text-sm"
                             data-testid="dingtalk-workspace-reset"
                             onClick={() => setResetDingTalkWorkspaceAccountId(group.defaultAccountId)}
                           >
@@ -739,7 +739,7 @@ export function Channels({ embedded = false }: { embedded?: boolean }) {
                         <Button
                           size="sm"
                           variant="outline"
-                          className="h-8 text-xs rounded-full"
+                          className="h-8 text-sm"
                           onClick={(event) => {
                             configOpenerRef.current = event.currentTarget;
                             const shouldUseGeneratedAccountId = !usesPluginManagedQrAccounts(group.channelType);
@@ -768,7 +768,7 @@ export function Channels({ embedded = false }: { embedded?: boolean }) {
                       </div>
                     </div>
 
-                    <div className="space-y-2">
+                    <div className="divide-y divide-border border-t border-border">
                       {group.accounts.map((account) => {
                         const showAccountId = account.name === account.accountId
                           && account.accountId !== 'default'
@@ -781,7 +781,7 @@ export function Channels({ embedded = false }: { embedded?: boolean }) {
                           <div
                             key={`${group.channelType}-${account.accountId}`}
                             data-testid={`channel-account-${group.channelType}-${account.accountId}`}
-                            className="rounded-xl bg-black/5 dark:bg-white/5 px-3 py-2"
+                            className="py-3 last:pb-0"
                           >
                             <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
                               <div className="min-w-0">
@@ -805,7 +805,7 @@ export function Channels({ embedded = false }: { embedded?: boolean }) {
                                 <span className="text-xs text-muted-foreground">{t('account.bindAgentLabel')}</span>
                                 <Select
                                   aria-label={t('account.bindAgentLabel')}
-                                  className="h-8 w-auto min-w-28 max-w-48 rounded-lg border border-black/10 dark:border-white/10 bg-background px-2 text-xs"
+                                  className="h-8 w-auto min-w-28 max-w-48 rounded-lg border border-input bg-background px-2 text-sm"
                                   value={account.agentId || ''}
                                   onValueChange={(value) => {
                                     void handleBindAgent(group.channelType, account.accountId, value);
@@ -865,7 +865,7 @@ export function Channels({ embedded = false }: { embedded?: boolean }) {
               {t('supportedChannels')}
             </h2>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               {unsupportedGroups.map((type) => {
                 const meta = CHANNEL_META[type];
                 return (
@@ -882,19 +882,19 @@ export function Channels({ embedded = false }: { embedded?: boolean }) {
                       setShowConfigModal(true);
                     }}
                     className={cn(
-                      'group flex items-start gap-4 p-4 rounded-xl transition-all text-left border relative overflow-hidden bg-surface-modal border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5',
+                      'group relative flex items-start gap-3 overflow-hidden rounded-xl border border-border bg-surface-modal p-4 text-left transition-colors hover:border-foreground/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                     )}
                   >
-                    <div className="h-[46px] w-[46px] shrink-0 flex items-center justify-center text-foreground bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-full shadow-sm mb-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-black/5 text-foreground dark:bg-white/5">
                       <ChannelLogo type={type} />
                     </div>
-                    <div className="flex flex-col flex-1 min-w-0 py-0.5 mt-1">
+                    <div className="flex min-w-0 flex-1 flex-col py-0.5">
                       <div className="flex items-center gap-2 mb-1">
-                        <h3 className="text-base font-semibold text-foreground truncate">{meta.name}</h3>
+                        <h3 className="truncate text-base font-medium text-foreground">{meta.name}</h3>
                         {meta.isPlugin && (
                           <Badge
                             variant="secondary"
-                            className="font-mono text-2xs font-medium px-2 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] border-0 shadow-none text-foreground/70"
+                            className="font-mono text-xs font-medium px-2 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] border-0 shadow-none text-foreground/70"
                           >
                             {t('pluginBadge')}
                           </Badge>

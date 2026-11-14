@@ -16,7 +16,7 @@
  *
  *   3. colors — On top of shadcn's semantic tokens (primary / destructive /
  *      ...) we add three ClawX-private groups:
- *        - brand        : Apple-system blue used for primary CTAs
+ *        - brand        : Apple-system blue for rare branded surfaces, not default CTAs
  *        - skill        : highlight blue for inline /skill chips in chat
  *        - surface.{modal,input,sidebar}: a 3-layer neutral background
  *                          system in light mode. In dark mode each layer
@@ -142,8 +142,8 @@ module.exports = {
        *      `dark:bg-card` etc. on every surface element.
        *
        * Examples:
-       *   - bg-brand                → primary CTA
-       *   - hover:bg-brand-hover    → CTA hover
+       *   - bg-primary-action       → primary CTA background
+       *   - bg-brand                → rare branded surfaces
        *   - bg-skill-bg/14          → skill-chip backdrop in chat input
        *   - text-skill-fg           → skill-chip text in light mode
        *   - dark:text-skill-fg-dark → skill-chip text in dark mode
@@ -162,6 +162,11 @@ module.exports = {
         primary: {
           DEFAULT: 'hsl(var(--primary))',
           foreground: 'hsl(var(--primary-foreground))',
+        },
+        'message-user': 'hsl(var(--message-user) / <alpha-value>)',
+        'primary-action': {
+          DEFAULT: 'hsl(var(--primary-action) / <alpha-value>)',
+          hover: 'hsl(var(--primary-action-hover) / <alpha-value>)',
         },
         secondary: {
           DEFAULT: 'hsl(var(--secondary))',
@@ -189,10 +194,7 @@ module.exports = {
         },
 
         // ── B. ClawX brand tokens ────────────────────────────────────
-        // Apple-system blue used for primary CTAs. The same pixel value
-        // works in both themes (sufficient WCAG-AA contrast in light
-        // mode and stays vivid in dark mode), so no CSS variable needed.
-        // Pair with `brand-hover` for the hover state.
+        // Apple-system blue for occasional branded surfaces, not primary CTAs.
         brand: {
           DEFAULT: '#0a84ff',
           hover: '#007aff',

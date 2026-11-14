@@ -17,6 +17,25 @@ test('management pages share compact headings, gutters and contained scrolling',
       await expect(heading).toBeVisible();
       await expect(heading).toHaveCSS('font-size', '24px');
       await expect(heading).toHaveCSS('font-weight', '500');
+      if (name === 'models') {
+        const primary = page.getByTestId('providers-add-button');
+        const contrast = async () => primary.evaluate((element) => {
+          const style = getComputedStyle(element);
+          const luminance = (color: string) => {
+            const channels = color.match(/\d+(?:\.\d+)?/g)!.slice(0, 3).map(value => {
+              const channel = Number(value) / 255;
+              return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+            });
+            return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+          };
+          const a = luminance(style.color);
+          const b = luminance(style.backgroundColor);
+          return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+        });
+        expect(await contrast()).toBeGreaterThanOrEqual(4.5);
+        await primary.hover();
+        expect(await contrast()).toBeGreaterThanOrEqual(4.5);
+      }
       const body = surface.locator(':scope > div').first();
       await expect(body).toHaveCSS('padding-bottom', '32px');
       await expect(body).toHaveCSS('padding-top', '32px');

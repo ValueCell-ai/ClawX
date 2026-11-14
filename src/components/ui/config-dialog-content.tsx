@@ -2,6 +2,7 @@ import type { ComponentPropsWithoutRef, ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 type ConfigDialogContentProps = Omit<ComponentPropsWithoutRef<typeof DialogContent>, 'title' | 'asChild' | 'className'> & {
   title: string;
@@ -25,12 +26,17 @@ export function ConfigDialogContent({
         <DialogTitle className="font-sans text-xl font-medium tracking-normal">{title}</DialogTitle>
         <DialogDescription className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{description}</DialogDescription>
       </div>
-      <Button data-testid={closeTestId} type="button" variant="ghost" size="icon" className="absolute right-3 top-3 h-8 w-8"
-        disabled={closeDisabled} aria-label={closeLabel} onClick={onClose}>
-        <X className="h-4 w-4" />
-      </Button>
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">{children}</div>
       {footer && <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-border px-5 py-3">{footer}</footer>}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button data-testid={closeTestId} type="button" variant="ghost" size="icon" className="absolute right-3 top-3 h-8 w-8"
+            disabled={closeDisabled} aria-label={closeLabel} onClick={onClose}>
+            <X className="h-4 w-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="left">{closeLabel}</TooltipContent>
+      </Tooltip>
     </DialogContent>
   );
 }

@@ -1138,7 +1138,7 @@ function TaskDialog({ open, job, configuredChannels, returnFocusTo, onClose, onS
                           autoFocus
                         />
                       </div>
-                      <div className="px-3 py-1.5 text-tiny font-medium text-muted-foreground/80">
+                      <div className="px-3 py-1.5 text-sm font-normal text-muted-foreground">
                         {t('dialog.skillPickerTitle', { agent: selectedAgent?.name ?? '' })}
                       </div>
                       <div className="clawx-menu-list max-h-64 overflow-y-auto">

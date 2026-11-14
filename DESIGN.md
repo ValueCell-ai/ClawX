@@ -78,6 +78,9 @@ sizes while keeping controls compact.
 ```yaml
 colors:
   primary: "hsl(221.2 83.2% 53.3%)"
+  primary-action: "hsl(221.2 83.2% 53.3%)"
+  primary-action-hover: "hsl(224.3 76.3% 48%)"
+  message-user: "hsl(221.2 83.2% 53.3%)"
   on-primary: "hsl(210 40% 98%)"
   foreground: "hsl(225 23% 15%)"
   muted-foreground: "hsl(220 10% 44%)"
@@ -87,6 +90,7 @@ colors:
   surface-sidebar: "hsl(35 12% 95%)"
   border: "hsl(220 13% 89%)"
   primary-dark: "hsl(217.2 91.2% 59.8%)"
+  primary-action-dark: "hsl(221.2 83.2% 53.3%)"
   on-primary-dark: "hsl(210 40% 98%)"
   foreground-dark: "hsl(210 20% 96%)"
   muted-foreground-dark: "hsl(220 8% 72%)"
@@ -312,13 +316,17 @@ through a small set of consistent control, raised-surface and composer shapes.
 ```yaml
 components:
   button-primary:
-    backgroundColor: "{colors.primary}"
+    backgroundColor: "{colors.primary-action}"
     textColor: "{colors.on-primary}"
     typography: "{typography.control}"
   button-primary-dark:
-    backgroundColor: "{colors.primary-dark}"
+    backgroundColor: "{colors.primary-action-dark}"
     textColor: "{colors.on-primary-dark}"
     typography: "{typography.control}"
+  message-user:
+    backgroundColor: "{colors.message-user}"
+    textColor: "{colors.on-primary}"
+    typography: "{typography.reading}"
   popup-title:
     textColor: "{colors.foreground}"
     typography: "{typography.popup-label}"
@@ -337,6 +345,101 @@ components:
 Component bindings reuse project roles; they do not introduce separate scales.
 Color references above describe the light palette unless explicitly marked dark.
 The runtime uses the existing theme-aware CSS variables for the equivalent role.
+
+### Choosing a list layout
+
+Choose the structure by how people use the items, not by page name or item
+count. Use one pattern for items with the same role on a page; do not change
+layouts when a collection grows from one item to several.
+
+| Pattern | Use when | Construction and example |
+| --- | --- | --- |
+| Grouped rows | People scan or manage a collection of comparable settings or connections. Each item needs a short summary and compact actions. | One `rounded-xl` surface with a subtle border, no shadow, and `divide-y divide-border` between rows. Inset the rows and separators together by 16px from each outer edge; use 12px vertical row padding and let longer content grow. Separators do not touch the outer card border. The conversation model providers use this pattern. |
+| Independent cards | Items represent distinct things a person recognizes, compares or starts working with, and each needs several pieces of information or its own action. | A responsive grid, 12–16px between cards; each card has a `rounded-xl` surface, subtle border, no shadow and 16px padding. Assistants and skills are candidates because they have distinct identities, descriptions and actions. Collapse to one column when there is insufficient space. |
+| Unboxed rows | Content already belongs to a panel or drawer and the surrounding context supplies the boundary. | Use spacing and restrained separators as needed; do not wrap each row in another card. Workspace files and settings within an existing section are examples. |
+
+One large card containing divided rows is a **collection boundary**, not an
+independent card for every item. An independent card should earn its space: do
+not use a grid merely because there are icons, or add a footer and divider when
+an item only needs a name and one action. Conversely, do not compress detailed
+items into rows if it makes descriptions or actions hard to scan. Do not nest a
+collection card inside another decorative card; preserve clear hover, focus and
+selection states regardless of layout. These examples are starting points, not
+exemptions from reviewing a page's actual content.
+
+### Surfaces, color and shape
+
+Use the canvas as the default. A boundary is for a real group, individual item,
+input or floating layer, not for every piece of content. Avoid multiple borders,
+shadows and nested backgrounds expressing the same boundary. For normal cards
+and grouped collections use `bg-surface-modal`, `border-border`, `rounded-xl`
+(12px) and no shadow; a subtle hover boundary is appropriate only if an item
+is actionable. Use the shared button radius `rounded-md` (6px) for buttons, `rounded-lg`
+(8px) for menu rows and compact input surfaces, `rounded-xl` for ordinary cards,
+and the shared dialog/popover treatment for floating surfaces. The composer retains its larger shape. Do not independently
+round individual rows inside an already rounded collection unless necessary
+for an interaction state.
+
+Primary blue is for the main action or meaningful selection; neutral surfaces
+and text carry most structure. Use other colors for an actual state or a
+recognizable content icon, not as decoration on every container. Stable
+identities may have accents, but do not assign semantic meaning to arbitrary
+colors or let status depend on color alone. Both themes use semantic tokens, with
+text and interactive states checked against their rendered surfaces. The filled primary action uses
+`bg-primary-action` and `hover:bg-primary-action-hover` in both themes so its
+light label meets contrast requirements;
+`primary` remains the brighter dark-mode accent for text and selections. User
+message bubbles use `bg-message-user` with `text-primary-foreground` for readable
+conversation text; do not apply the decorative brand blue to long-form text.
+
+For interaction states, apply these roles consistently across light and dark
+modes rather than adding a new color for each page:
+
+| State | Treatment |
+| --- | --- |
+| Resting | Foreground content on the canvas or its purposeful surface; borders use `border-border`. |
+| Hover | An interactive row or control may use the shared neutral hover background; static text and badges have no hover state. |
+| Selected | Navigation and tabs use the neutral selected surface; dropdown options use the shared primary tint and dot. Selection remains distinguishable after hover ends. |
+| Focus | Shared visible keyboard focus; text fields use the quieter neutral focus treatment documented in `globals.css`. |
+| Disabled | Use the shared control's disabled state and semantics. Keep the label legible and do not imply that it can be activated. |
+| Success / warning / error | Use the status treatments in `globals.css` and a readable label or icon; avoid status colors for ordinary category decoration. |
+
+### Buttons and actions
+
+- Use the shared `Button` variants. A page or dialog normally has one primary
+  filled action; use outline for a secondary action, ghost for low-emphasis
+  contextual actions, and destructive styling for a consequential destructive
+  confirmation. Do not make every item in a list a filled primary button.
+- Use the shared compact 36px (`size="sm"`) control for management toolbars and
+  dialog actions; use a 32px icon or contextual action where appropriate. The
+  shared default 40px and larger controls remain available for places that
+  require them. Text follows the control role; do not shrink it to caption size
+  to make a button look compact. Align actions and keep the same roles in empty,
+  loading and populated states.
+- Keep frequently used actions directly visible when space allows. Move actions
+  into an overflow menu only for actual crowding or rare operations. Icon-only
+  actions have an accessible name and a tooltip; a destructive operation must
+  remain identifiable without relying on red alone.
+
+### Badges, status and metadata
+
+- A badge is a short, non-interactive label that helps identify a meaningful
+  category or status (for example skill source or default assistant). Use the
+  shared `Badge` with `variant="secondary"` and compact caption typography for
+  neutral metadata. Keep a badge on the same line as the associated content
+  when there is room; avoid repeating the same label for every item when a
+  group heading can express it once.
+- Use success, warning or destructive color only for corresponding states and
+  pair it with text or an icon. Plain descriptions, dates, paths and model IDs
+  are usually supporting text, not badges. Do not make passive badges look
+  clickable with hover effects or focus rings. Filters and actions are buttons,
+  tabs or other semantic controls rather than clickable badges.
+- The shared badge uses `rounded-full`, 12px medium text and 10px horizontal /
+  2px vertical padding. A compact in-row badge may use 8px horizontal padding;
+  keep this exception consistent within the same list. Do not add a shadow.
+- Prefer a small number of badges per item, concise text and predictable
+  padding. Preserve the full meaning for assistive technology and long locales;
+  truncate visually only where an alternative way to read the text remains.
 
 ### Interaction and reuse
 
@@ -407,8 +510,8 @@ shared wrappers, theme switching, content-specific tokens and incremental rollou
 
 ### Current convergence notes
 
-The captured dark primary/on-primary pair has a 3.52:1 contrast ratio in the
-official checker. This is an existing theme issue to correct through a scoped
-shared-theme change with Electron coverage, not an approved accessibility
-exception. Palette tokens without explicit component bindings also produce
-orphan-token warnings; their runtime mappings remain in `globals.css`.
+The original dark primary accent and light foreground had insufficient contrast
+for filled actions. Filled actions use the separately bound primary-action token;
+the brighter dark accent remains available for text and selection. Palette tokens
+without explicit component bindings produce orphan-token warnings; their runtime
+mappings remain in `globals.css`.

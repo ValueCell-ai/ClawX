@@ -113,7 +113,7 @@
  *   PRIMARY CTA
  *   ─────────────────────────────────────────────────────────────────────
  *     Use the default <Button> styling (variant="default", which renders
- *     `bg-primary`). Do not hand-apply `bg-brand` to action buttons —
+ *     `bg-primary-action`). Do not hand-apply `bg-brand` to action buttons —
  *     `bg-brand` / `bg-brand-hover` are reserved for branded surfaces
  *     where a divergent Apple-blue is explicitly desired (rare).
  *     Reference: pages/Models "+ Add Provider" trigger.
@@ -143,6 +143,9 @@
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
     --primary: 221.2 83.2% 53.3%;
+    --primary-action: 221.2 83.2% 53.3%;
+    --message-user: 221.2 83.2% 53.3%;
+    --primary-action-hover: 224.3 76.3% 48%;
     --primary-foreground: 210 40% 98%;
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
@@ -203,6 +206,9 @@
     --popover: 240 3% 14%;
     --popover-foreground: 210 20% 96%;
     --primary: 217.2 91.2% 59.8%;
+    --primary-action: 221.2 83.2% 53.3%;
+    --message-user: 221.2 83.2% 53.3%;
+    --primary-action-hover: 224.3 76.3% 48%;
     --primary-foreground: 210 40% 98%;
     --secondary: 240 3% 18%;
     --secondary-foreground: 210 20% 96%;

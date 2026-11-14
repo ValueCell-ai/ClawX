@@ -54,7 +54,7 @@ export function AcpPlanItem({ item }: { item: PlanItem }) {
               <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/60" aria-hidden="true" />
               <span className="min-w-0 flex-1 break-words text-sm text-foreground">{entryText(entry, t('acp.plan'))}</span>
               {statusKey && (
-                <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-2xs font-medium uppercase tracking-wide', entryStatusClasses(statusKey))}>
+                <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-xs font-medium uppercase tracking-wide', entryStatusClasses(statusKey))}>
                   {t(statusKey)}
                 </span>
               )}

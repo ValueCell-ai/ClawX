@@ -619,22 +619,19 @@ export function ChannelConfigModal({
                     key={type}
                     onClick={() => setSelectedType(type)}
                     className={cn(
-                      'group flex items-start gap-4 p-4 rounded-2xl transition-all text-left border relative overflow-hidden bg-transparent shadow-sm',
-                      isConfigured
-                        ? 'border-green-500/40 bg-green-500/5 dark:bg-green-500/10'
-                        : 'border-black/5 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5'
+                      'group relative flex items-start gap-3 overflow-hidden rounded-xl border border-border bg-surface-modal p-4 text-left transition-colors hover:border-foreground/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
                     )}
                   >
-                    <div className="h-[46px] w-[46px] shrink-0 flex items-center justify-center text-foreground bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-full shadow-sm">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-black/5 text-foreground dark:bg-white/5">
                       <ChannelLogo type={type} />
                     </div>
-                    <div className="flex flex-col flex-1 min-w-0 py-0.5 mt-1">
+                    <div className="flex min-w-0 flex-1 flex-col py-0.5">
                       <div className="flex items-center gap-2 mb-1">
-                        <p className="text-base font-semibold text-foreground truncate">{channelMeta.name}</p>
+                        <p className="truncate text-base font-medium text-foreground">{channelMeta.name}</p>
                         {channelMeta.isPlugin && (
                           <Badge
                             variant="secondary"
-                            className="font-mono text-2xs font-medium px-2 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] border-0 shadow-none text-foreground/70"
+                            className="font-mono text-xs font-medium px-2 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] border-0 shadow-none text-foreground/70"
                           >
                             {t('pluginBadge')}
                           </Badge>
@@ -648,7 +645,7 @@ export function ChannelConfigModal({
                       </p>
                     </div>
                     {isConfigured && (
-                      <Badge className="absolute top-3 right-3 text-2xs font-medium rounded-full bg-green-600 hover:bg-green-600">
+                      <Badge variant="success" className="absolute top-3 right-3">
                         {t('configuredBadge')}
                       </Badge>
                     )}

@@ -145,14 +145,14 @@ function SkillDetailDialog({ skill, isOpen, onClose, onReturnFocus, onOpenFolder
               {skill.version && (
                 <Badge
                   variant="secondary"
-                  className="shrink-0 whitespace-nowrap font-mono text-tiny font-medium px-3 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] hover:bg-black/[0.08] dark:hover:bg-white/[0.12] border-0 shadow-none text-foreground/70 transition-colors"
+                  className="shrink-0 whitespace-nowrap font-mono text-xs font-medium px-3 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] border-0 shadow-none text-foreground/70"
                 >
                   v{skill.version}
                 </Badge>
               )}
               <Badge
                 variant="secondary"
-                className="shrink-0 whitespace-nowrap font-mono text-tiny font-medium px-3 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] hover:bg-black/[0.08] dark:hover:bg-white/[0.12] border-0 shadow-none text-foreground/70 transition-colors"
+                className="shrink-0 whitespace-nowrap font-mono text-xs font-medium px-3 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] border-0 shadow-none text-foreground/70"
               >
                 {skill.isCore ? t('detail.coreSystem') : resolveSkillSourceLabel(skill, t)}
               </Badge>
@@ -174,7 +174,7 @@ function SkillDetailDialog({ skill, isOpen, onClose, onReturnFocus, onOpenFolder
                 <h3 className="text-meta font-bold text-foreground/80">{t('detail.source')}</h3>
                 <Badge
                   variant="secondary"
-                  className="shrink-0 whitespace-nowrap font-mono text-tiny font-medium px-3 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] border-0 shadow-none text-foreground/70"
+                  className="shrink-0 whitespace-nowrap font-mono text-xs font-medium px-3 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] border-0 shadow-none text-foreground/70"
                 >
                   {resolveSkillSourceLabel(skill, t)}
                 </Badge>
@@ -516,7 +516,7 @@ export function Skills() {
                 placeholder={t('search')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-8 rounded-lg border-transparent bg-surface-input pl-9 pr-8 text-xs shadow-none"
+                className="h-8 rounded-lg border-transparent bg-surface-input pl-9 pr-8 text-sm shadow-none"
               />
               {searchQuery && (
                 <button
@@ -540,7 +540,7 @@ export function Skills() {
                 aria-pressed={statusFilter === filter}
                 onClick={() => setStatusFilter(filter)}
                 className={cn(
-                  'h-8 rounded-lg px-3 text-xs font-medium shadow-none',
+                  'h-8 rounded-lg px-3 text-sm font-medium shadow-none',
                   statusFilter === filter
                     ? 'bg-black/5 dark:bg-white/10 text-foreground'
                     : 'text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5',
@@ -571,7 +571,7 @@ export function Skills() {
               </div>
             ) : (
               filteredSkills.map((skill) => (
-                <article key={skill.id} data-testid="skill-card" className="relative rounded-xl border border-border/70 bg-surface-modal p-4 transition-colors hover:border-foreground/20">
+                <article key={skill.id} data-testid="skill-card" className="relative rounded-xl border border-border bg-surface-modal p-4 transition-colors hover:border-foreground/20">
                   <button type="button" className="block w-full text-left rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={(event) => {
                     detailTriggerRef.current = event.currentTarget;
                     setSelectedSkill(skill);

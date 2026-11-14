@@ -614,7 +614,7 @@ export function SettingsPreferences({ section }: { section: 'general' | 'advance
                               placeholder="http://127.0.0.1:7890"
                               className="h-10 rounded-xl bg-black/5 dark:bg-white/5 border-transparent font-mono text-meta"
                             />
-                            <p className="text-tiny text-muted-foreground">{t('gateway.proxyServerHelp')}</p>
+                            <p className="text-sm text-muted-foreground">{t('gateway.proxyServerHelp')}</p>
                           </div>
 
                           <div className="space-y-2">
@@ -628,7 +628,7 @@ export function SettingsPreferences({ section }: { section: 'general' | 'advance
                               placeholder={proxyServerDraft || 'http://127.0.0.1:7890'}
                               className="h-10 rounded-xl bg-black/5 dark:bg-white/5 border-transparent font-mono text-meta"
                             />
-                            <p className="text-tiny text-muted-foreground">{t('gateway.proxyHttpServerHelp')}</p>
+                            <p className="text-sm text-muted-foreground">{t('gateway.proxyHttpServerHelp')}</p>
                           </div>
 
                           <div className="space-y-2">
@@ -642,7 +642,7 @@ export function SettingsPreferences({ section }: { section: 'general' | 'advance
                               placeholder={proxyServerDraft || 'http://127.0.0.1:7890'}
                               className="h-10 rounded-xl bg-black/5 dark:bg-white/5 border-transparent font-mono text-meta"
                             />
-                            <p className="text-tiny text-muted-foreground">{t('gateway.proxyHttpsServerHelp')}</p>
+                            <p className="text-sm text-muted-foreground">{t('gateway.proxyHttpsServerHelp')}</p>
                           </div>
 
                           <div className="space-y-2">
@@ -656,7 +656,7 @@ export function SettingsPreferences({ section }: { section: 'general' | 'advance
                               placeholder={proxyServerDraft || 'socks5://127.0.0.1:7891'}
                               className="h-10 rounded-xl bg-black/5 dark:bg-white/5 border-transparent font-mono text-meta"
                             />
-                            <p className="text-tiny text-muted-foreground">{t('gateway.proxyAllServerHelp')}</p>
+                            <p className="text-sm text-muted-foreground">{t('gateway.proxyAllServerHelp')}</p>
                           </div>
                         </div>
 
@@ -671,7 +671,7 @@ export function SettingsPreferences({ section }: { section: 'general' | 'advance
                             placeholder="<local>;localhost;127.0.0.1;::1"
                             className="h-10 rounded-xl bg-black/5 dark:bg-white/5 border-transparent font-mono text-meta"
                           />
-                          <p className="text-tiny text-muted-foreground">{t('gateway.proxyBypassHelp')}</p>
+                          <p className="text-sm text-muted-foreground">{t('gateway.proxyBypassHelp')}</p>
                         </div>
                       </div>
                     )}
@@ -698,14 +698,14 @@ export function SettingsPreferences({ section }: { section: 'general' | 'advance
                         readOnly
                         value={controlUiInfo?.token || ''}
                         placeholder={t('developer.tokenUnavailable')}
-                        className="font-mono text-meta h-10 rounded-xl bg-black/5 dark:bg-white/5 border-transparent flex-1 min-w-[200px]"
+                        className="h-9 min-w-[200px] flex-1 border-transparent bg-surface-input font-mono text-meta"
                       />
                       <Button
                         type="button"
                         variant="outline"
                         onClick={refreshControlUiInfo}
                         disabled={!devModeUnlocked}
-                        className="rounded-xl h-10 px-4 bg-transparent border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5"
+                        className="h-9 px-3"
                       >
                         <RefreshCw className="h-4 w-4 mr-2" />
                         {t('common:actions.load')}
@@ -715,7 +715,7 @@ export function SettingsPreferences({ section }: { section: 'general' | 'advance
                         variant="outline"
                         onClick={handleCopyGatewayToken}
                         disabled={!controlUiInfo?.token}
-                        className="rounded-xl h-10 px-4 bg-transparent border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5"
+                        className="h-9 px-3"
                       >
                         <Copy className="h-4 w-4 mr-2" />
                         {t('common:actions.copy')}
@@ -730,7 +730,7 @@ export function SettingsPreferences({ section }: { section: 'general' | 'advance
                       readOnly
                       value={compactionReserve?.reserveTokensFloor?.toLocaleString() || ''}
                       placeholder={t('developer.compactionReserveUnavailable')}
-                      className="font-mono text-meta h-10 rounded-xl bg-surface-input border-transparent"
+                      className="h-9 border-transparent bg-surface-input font-mono text-meta"
                     />
                   </div>
 
@@ -744,14 +744,14 @@ export function SettingsPreferences({ section }: { section: 'general' | 'advance
                           readOnly
                           value={openclawCliCommand}
                           placeholder={openclawCliError || t('developer.cmdUnavailable')}
-                          className="font-mono text-meta h-10 rounded-xl bg-black/5 dark:bg-white/5 border-transparent flex-1 min-w-[200px]"
+                          className="h-9 min-w-[200px] flex-1 border-transparent bg-surface-input font-mono text-meta"
                         />
                         <Button
                           type="button"
                           variant="outline"
                           onClick={handleCopyCliCommand}
                           disabled={!openclawCliCommand}
-                          className="rounded-xl h-10 px-4 bg-transparent border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5"
+                          className="h-9 px-3"
                         >
                           <Copy className="h-4 w-4 mr-2" />
                           {t('common:actions.copy')}
@@ -772,7 +772,7 @@ export function SettingsPreferences({ section }: { section: 'general' | 'advance
                           variant="outline"
                           onClick={() => void handleRunOpenClawDoctor('diagnose')}
                           disabled={doctorRunningMode !== null}
-                          className="rounded-xl h-10 px-4 bg-transparent border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5"
+                          className="h-9 px-3"
                         >
                           <RefreshCw
                             className={`h-4 w-4 mr-2${doctorRunningMode === 'diagnose' ? ' animate-spin' : ''}`}
@@ -784,7 +784,7 @@ export function SettingsPreferences({ section }: { section: 'general' | 'advance
                           variant="outline"
                           onClick={() => void handleRunOpenClawDoctor('fix')}
                           disabled={doctorRunningMode !== null}
-                          className="rounded-xl h-10 px-4 bg-transparent border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5"
+                          className="h-9 px-3"
                         >
                           <RefreshCw className={`h-4 w-4 mr-2${doctorRunningMode === 'fix' ? ' animate-spin' : ''}`} />
                           {doctorRunningMode === 'fix' ? t('common:status.running') : t('developer.runDoctorFix')}
@@ -794,7 +794,7 @@ export function SettingsPreferences({ section }: { section: 'general' | 'advance
                           variant="outline"
                           onClick={handleCopyDoctorOutput}
                           disabled={!doctorResult}
-                          className="rounded-xl h-10 px-4 bg-transparent border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5"
+                          className="h-9 px-3"
                         >
                           <Copy className="h-4 w-4 mr-2" />
                           {t('common:actions.copy')}
@@ -840,13 +840,13 @@ export function SettingsPreferences({ section }: { section: 'general' | 'advance
                         <div className="grid gap-3 md:grid-cols-2">
                           <div className="space-y-2">
                             <p className="text-xs font-semibold text-foreground/80">{t('developer.doctorStdout')}</p>
-                            <pre className="max-h-72 overflow-auto rounded-xl border border-black/10 dark:border-white/10 bg-surface-input p-3 text-tiny font-mono whitespace-pre-wrap break-words">
+                            <pre className="max-h-72 overflow-auto rounded-xl border border-black/10 dark:border-white/10 bg-surface-input p-3 text-meta font-mono whitespace-pre-wrap break-words">
                               {doctorResult.stdout.trim() || t('developer.doctorOutputEmpty')}
                             </pre>
                           </div>
                           <div className="space-y-2">
                             <p className="text-xs font-semibold text-foreground/80">{t('developer.doctorStderr')}</p>
-                            <pre className="max-h-72 overflow-auto rounded-xl border border-black/10 dark:border-white/10 bg-surface-input p-3 text-tiny font-mono whitespace-pre-wrap break-words">
+                            <pre className="max-h-72 overflow-auto rounded-xl border border-black/10 dark:border-white/10 bg-surface-input p-3 text-meta font-mono whitespace-pre-wrap break-words">
                               {doctorResult.stderr.trim() || t('developer.doctorOutputEmpty')}
                             </pre>
                           </div>
@@ -907,7 +907,7 @@ export function SettingsPreferences({ section }: { section: 'general' | 'advance
                               variant="outline"
                               size="sm"
                               onClick={handleCopyTelemetry}
-                              className="rounded-full h-8 px-4 bg-surface-modal border-black/5 dark:border-white/5 hover:bg-black/5 dark:hover:bg-white/10"
+                              className="h-8"
                             >
                               <Copy className="h-3.5 w-3.5 mr-1.5" />
                               {t('common:actions.copy')}
@@ -917,7 +917,7 @@ export function SettingsPreferences({ section }: { section: 'general' | 'advance
                               variant="outline"
                               size="sm"
                               onClick={handleClearTelemetry}
-                              className="rounded-full h-8 px-4 bg-surface-modal border-black/5 dark:border-white/5 hover:bg-black/5 dark:hover:bg-white/10"
+                              className="h-8"
                             >
                               {t('common:actions.clear')}
                             </Button>
@@ -966,9 +966,9 @@ export function SettingsPreferences({ section }: { section: 'general' | 'advance
                                   >
                                     <div className="flex items-center justify-between gap-3 mb-2">
                                       <span className="font-semibold text-foreground">{entry.event}</span>
-                                      <span className="text-muted-foreground text-tiny">{entry.ts}</span>
+                                      <span className="text-muted-foreground text-meta">{entry.ts}</span>
                                     </div>
-                                    <pre className="whitespace-pre-wrap text-tiny text-muted-foreground overflow-x-auto">
+                                    <pre className="whitespace-pre-wrap text-meta text-muted-foreground overflow-x-auto">
                                       {JSON.stringify({ count: entry.count, ...entry.payload }, null, 2)}
                                     </pre>
                                   </div>

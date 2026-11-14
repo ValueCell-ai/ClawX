@@ -154,7 +154,7 @@ export function WorkspaceBrowserBody({ agent, workspacePath, workspaceLabel, run
             </Tooltip>
           </div>
           <div ref={treeRef} data-testid="workspace-tree" className="min-h-0 flex-1">{renderFiles()}</div>
-          {state.status === 'ready' && (state.truncated || !!query.trim()) && <p className="border-t border-border/60 px-2 py-1.5 text-2xs text-muted-foreground">{t(state.status === 'ready' && state.truncated ? 'workspace.searchLimited' : 'workspace.searchScope')}</p>}
+          {state.status === 'ready' && (state.truncated || !!query.trim()) && <p className="border-t border-border/60 px-2 py-1.5 text-meta text-muted-foreground">{t(state.status === 'ready' && state.truncated ? 'workspace.searchLimited' : 'workspace.searchScope')}</p>}
         </aside>
         {showFiles && showPreview && <div role="separator" aria-label={t('workspace.resizeFiles')} aria-orientation="vertical" aria-valuemin={160} aria-valuemax={maxNavigationWidth} aria-valuenow={Math.round(navigationWidth)} tabIndex={0} data-testid="workspace-tree-divider" className="relative w-px shrink-0 cursor-col-resize bg-border/40 after:absolute after:inset-y-0 after:-inset-x-1.5 hover:bg-primary/20 focus-visible:bg-primary/20 focus-visible:outline-none"
           onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); resize(navigationWidth + (event.key === 'ArrowLeft' ? -16 : 16)); } else if (event.key === 'Home') { event.preventDefault(); resize(160); } else if (event.key === 'End') { event.preventDefault(); resize(maxNavigationWidth); } }}

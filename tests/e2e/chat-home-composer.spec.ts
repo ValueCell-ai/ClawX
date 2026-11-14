@@ -83,6 +83,8 @@ for (const locale of locales) {
       await expect(page.getByTestId('acp-chat-empty-state').locator('img, p')).toHaveCount(0);
       expect(await heading.evaluate(element => getComputedStyle(element).fontFamily)).not.toContain('Georgia');
       await expect(input).toBeEnabled();
+      await expect(input).toHaveCSS('font-size', '16px');
+      await expect(input).toHaveCSS('line-height', '26px');
       for (const name of skillNames) {
         await expect(page.getByTestId(`chat-home-skill-${name}`)).toBeVisible();
         await expect(page.getByTestId(`chat-home-skill-${name}`)).toBeDisabled();
@@ -94,14 +96,15 @@ for (const locale of locales) {
       expect(await page.getByTestId('chat-home-skills').boundingBox()).toEqual(loadingBounds);
       await page.getByTestId('chat-composer-skill').click();
       await settleFloatingSurface(page.getByTestId('chat-skill-picker-menu'));
+      await expect(page.getByTestId('chat-skill-picker-menu').locator(':scope > div').nth(1)).toHaveCSS('font-size', '14px');
       const docxOption = page.getByTestId('chat-composer-skill-option-docx');
       const legacyOption = page.getByTestId('chat-composer-skill-option-legacy-report');
       await expect(docxOption.getByText('OpenClaw', { exact: true })).toHaveCount(1);
       await expect(page.getByTestId('chat-composer-skill-option-docx-description')).toHaveText('Original docx description');
       await expect(page.getByTestId('chat-composer-skill-option-legacy-report-source')).toHaveText(locale.legacy);
       await expect(page.getByTestId('chat-composer-skill-option-workspace-note-description')).toHaveCount(0);
-      await expect(docxOption).toHaveCSS('height', '42px');
-      await expect(page.getByTestId('chat-composer-skill-option-workspace-note')).toHaveCSS('height', '28px');
+      await expect(docxOption).toHaveCSS('height', '48px');
+      await expect(page.getByTestId('chat-composer-skill-option-workspace-note')).toHaveCSS('height', '30px');
       const docxBounds = await docxOption.boundingBox();
       const nextOption = docxOption.locator('..').locator('button').nth(1);
       const nextBounds = await nextOption.boundingBox();
@@ -126,6 +129,8 @@ for (const locale of locales) {
         await input.fill('Keep my draft');
         await shortcut.click();
         await expect(input).toHaveValue(`/${name}  Keep my draft`);
+        await expect(page.getByTestId('chat-composer-highlight')).toHaveCSS('font-size', '16px');
+        await expect(page.getByTestId('chat-composer-highlight')).toHaveCSS('line-height', '26px');
         await expect(input).toBeFocused();
         await shortcut.click();
         await expect(input).toHaveValue(`/${name}  Keep my draft`);
@@ -135,6 +140,7 @@ for (const locale of locales) {
       await expectQuietFieldFocus(page.locator('.clawx-composer'));
       const box = await page.getByTestId('chat-composer-box').boundingBox();
       const footer = await page.getByTestId('chat-composer-footer').boundingBox();
+      await expect(page.getByTestId('chat-composer-footer')).toHaveCSS('font-size', '13px');
       const firstShortcut = await page.getByTestId('chat-home-skill-docx').boundingBox();
       const skillRow = await page.getByTestId('chat-home-skills').boundingBox();
       expect(firstShortcut!.height).toBeLessThanOrEqual(32);

@@ -27,18 +27,18 @@ export function QuickSkillOption({ skill, onSelect, testId, selected = false }: 
           )}
         >
           <span className="min-w-0">
-            <span className="block truncate font-mono text-meta font-semibold text-foreground">/{skill.name}</span>
+            <span className="block truncate font-mono text-sm font-medium text-foreground">/{skill.name}</span>
             {hasDescription && (
-              <span data-testid={`${testId}-description`} className="block truncate text-xs text-muted-foreground">{skill.description}</span>
+              <span data-testid={`${testId}-description`} className="block truncate text-sm text-muted-foreground">{skill.description}</span>
             )}
           </span>
           <span data-testid={`${testId}-source`} title={skill.baseDir}
-            className="max-w-[45%] shrink-0 truncate rounded-full border border-black/10 bg-black/[0.03] px-2 py-0.5 text-2xs font-medium text-muted-foreground dark:border-white/10 dark:bg-white/[0.04]">
+            className="max-w-[45%] shrink-0 truncate rounded-full border border-black/10 bg-black/[0.03] px-2 py-0.5 text-xs font-medium text-muted-foreground dark:border-white/10 dark:bg-white/[0.04]">
             {sourceLabel}
           </span>
         </button>
       </TooltipTrigger>
-      {hasDescription && <TooltipContent side="right" className="max-w-xs text-xs leading-relaxed">{skill.description}</TooltipContent>}
+      {hasDescription && <TooltipContent side="right" className="max-w-xs text-sm leading-relaxed">{skill.description}</TooltipContent>}
     </Tooltip>
   );
 }

@@ -57,6 +57,11 @@ test.describe('Skills page gateway readiness', () => {
     await expect(page.getByRole('switch', { name: 'Enable PDF' })).toBeVisible();
     await expect(page.getByTestId('skill-card').first()).not.toContainText('/tmp/');
     await expect(page.getByTestId('skill-card').first().getByTestId('skill-source-badge')).toHaveText('Managed');
+    const sourceBadge = page.getByTestId('skill-card').first().getByTestId('skill-source-badge');
+    const badgeBackground = await sourceBadge.evaluate(element => getComputedStyle(element).backgroundColor);
+    await sourceBadge.hover();
+    await expect(sourceBadge).toHaveCSS('background-color', badgeBackground);
+    await expect(page.getByTestId('skills-filter-all')).toHaveCSS('font-size', '14px');
     await expect(page.getByRole('tab', { name: /My skills/ })).toHaveCount(0);
     const toggle = page.getByRole('switch', { name: 'Enable PDF' });
     const trackBox = await toggle.boundingBox();
@@ -77,6 +82,7 @@ test.describe('Skills page gateway readiness', () => {
     await expect(page.getByText('Files and technical details', { exact: true })).toHaveCount(0);
     await expect(page.getByRole('dialog').getByRole('button', { name: /^(Uninstall|Disable|Enable)$/ })).toHaveCount(0);
     const sourceRow = page.getByTestId('skill-detail-source');
+    await expect(sourceRow.getByText('Managed', { exact: true })).toHaveCSS('font-size', '12px');
     const headingBox = await sourceRow.getByRole('heading').boundingBox();
     const badgeBox = await sourceRow.getByText('Managed', { exact: true }).boundingBox();
     expect(badgeBox!.x).toBeGreaterThan(headingBox!.x + headingBox!.width);

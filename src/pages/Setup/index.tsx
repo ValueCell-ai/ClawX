@@ -164,7 +164,7 @@ export function Setup() {
                   className={cn(
                     'flex h-8 w-8 items-center justify-center rounded-full border-2 transition-colors',
                     i < safeStepIndex
-                      ? 'border-primary bg-primary text-primary-foreground'
+                      ? 'border-primary-action bg-primary-action text-primary-foreground'
                       : i === safeStepIndex
                         ? 'border-primary text-primary'
                         : 'border-muted-foreground/30 text-muted-foreground'
@@ -204,7 +204,7 @@ export function Setup() {
             </div>
 
             {/* Step-specific content */}
-            <div className="rounded-xl bg-card text-card-foreground border shadow-sm p-8 mb-8">
+            <div data-testid="setup-step-surface" className="mb-8 rounded-xl border border-border bg-surface-modal p-8 text-foreground">
               {safeStepIndex === STEP.WELCOME && <WelcomeContent />}
               {safeStepIndex === STEP.RUNTIME && <RuntimeContent onStatusChange={setRuntimeChecksPassed} />}
               {safeStepIndex === STEP.INSTALLING && (
@@ -283,7 +283,7 @@ function WelcomeContent() {
             size="sm"
             onClick={() => setLanguage(lang.code)}
             className={cn(
-              'h-7 text-xs',
+              'h-8 text-sm',
               language === lang.code
                 ? 'bg-black/5 dark:bg-white/10 text-foreground'
                 : 'text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5',
@@ -616,15 +616,15 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
 
       {/* Log viewer panel */}
       {showLogs && (
-        <div className="mt-4 p-4 rounded-lg bg-black/40 border border-border">
+        <div data-testid="setup-runtime-logs" className="mt-4 rounded-lg border border-border bg-surface-input p-4">
           <div className="flex items-center justify-between mb-2">
             <p className="font-medium text-foreground text-sm">{t('runtime.logs.title')}</p>
             <div className="flex gap-2">
-              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={handleOpenLogDir}>
+              <Button variant="ghost" size="sm" className="h-8 text-sm" onClick={handleOpenLogDir}>
                 <ExternalLink className="h-3 w-3 mr-1" />
                 {t('runtime.logs.openFolder')}
               </Button>
-              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setShowLogs(false)}>
+              <Button variant="ghost" size="sm" className="h-8 text-sm" onClick={() => setShowLogs(false)}>
                 {t('runtime.logs.close')}
               </Button>
             </div>
@@ -769,7 +769,7 @@ function InstallingContent({ skills, onComplete, onSkip }: InstallingContentProp
               {getStatusIcon(skill.status)}
               <div>
                 <p className="font-medium">{skill.name}</p>
-                <p className="text-xs text-muted-foreground">{skill.description}</p>
+                <p className="text-sm text-muted-foreground">{skill.description}</p>
               </div>
             </div>
             {getStatusText(skill)}

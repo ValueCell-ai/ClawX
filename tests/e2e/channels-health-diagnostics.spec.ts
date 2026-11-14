@@ -292,6 +292,8 @@ test.describe('Channels health diagnostics', () => {
     await expect(page.getByTestId('channels-recovery-status')).toContainText(/externally managed Gateway is unavailable|外部管理的网关当前不可用|外部管理のゲートウェイを利用できません/i);
     await expect(page.getByTestId('channel-status-feishu')).toBeVisible();
 
+    await expect(page.getByTestId('channels-restart-gateway')).toHaveCSS('font-size', '14px');
+    await expect(page.getByTestId('channels-restart-gateway')).toHaveCSS('border-radius', '6px');
     await page.getByTestId('channels-restart-gateway').click();
     await page.getByTestId('channels-copy-diagnostics').click();
     await page.getByTestId('channels-toggle-diagnostics').click();

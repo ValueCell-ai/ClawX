@@ -304,6 +304,13 @@ test.describe('ClawX embedded subagent sessions', () => {
       await toggle.click();
       let panel = page.getByTestId('acp-subagent-sessions-panel');
       await expect(panel).toBeVisible();
+      await expect(panel).toHaveAttribute('data-state', 'open');
+      await page.keyboard.press('Escape');
+      await expect(panel).toHaveCount(0);
+      await expect(toggle).toBeFocused();
+      await toggle.click();
+      await expect(panel).toBeVisible();
+      await expect(panel.getByTestId('acp-subagent-session-row').first()).toBeFocused();
       const panelBox = await panel.boundingBox();
       const toggleBox = await toggle.boundingBox();
       expect(panelBox).toBeTruthy();

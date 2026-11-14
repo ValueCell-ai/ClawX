@@ -186,7 +186,7 @@ export const AcpRenderPart = memo(function AcpRenderPart({
   if (part.kind === 'markdown') {
     if (tone === 'user') {
       return (
-        <div className="min-w-0 max-w-full rounded-2xl bg-brand px-4 py-3 text-white shadow-sm [overflow-wrap:anywhere]">
+        <div className="min-w-0 max-w-full rounded-2xl bg-message-user px-4 py-3 text-primary-foreground [overflow-wrap:anywhere]">
           <p className="whitespace-pre-wrap">{part.text}</p>
         </div>
       );

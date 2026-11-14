@@ -1246,7 +1246,7 @@ export function ChatInput({
                 <div
                   aria-hidden="true"
                   data-testid="chat-composer-highlight"
-                  className="pointer-events-none absolute inset-0 z-20 overflow-hidden whitespace-pre-wrap break-words text-sm leading-relaxed text-transparent"
+                  className="pointer-events-none absolute inset-0 z-20 overflow-hidden whitespace-pre-wrap break-words text-base leading-relaxed text-transparent"
                 >
                   {renderHighlightedComposerText(input, skillTokenRanges, {
                     onPreviewSkill: (name) => {
@@ -1279,7 +1279,7 @@ export function ChatInput({
                 disabled={inputDisabled || voiceStatus !== 'idle'}
                 data-testid="chat-composer-input"
                 className={cn(
-                  'relative z-10 min-h-[48px] max-h-[240px] resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none bg-transparent p-0 text-sm leading-relaxed placeholder:text-muted-foreground/80',
+                  'relative z-10 min-h-[48px] max-h-[240px] resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none bg-transparent p-0 text-base leading-relaxed md:text-base md:leading-relaxed placeholder:text-muted-foreground/80',
                   welcome && 'min-h-[88px]',
                   skillTokenRanges.length > 0 && 'selection:bg-primary/20',
                 )}
@@ -1323,7 +1323,7 @@ export function ChatInput({
                   </Button>
                   </DropdownMenu.Trigger>
                   <DropdownMenu.Portal><DropdownMenu.Content side="top" align="start" sideOffset={8} onCloseAutoFocus={handlePickerCloseAutoFocus} data-testid="chat-agent-picker-menu" className="w-96 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10">
-                      <div className="px-3 py-1.5 text-tiny font-medium text-muted-foreground/80">
+                      <div className="px-3 py-1.5 text-sm font-normal text-muted-foreground">
                         {t('composer.executionAgentTitle')}
                       </div>
                       <div className="max-h-[min(16rem,calc(var(--radix-dropdown-menu-content-available-height)-3rem))] overflow-y-auto">
@@ -1342,7 +1342,7 @@ export function ChatInput({
                       </DropdownMenu.RadioGroup>
                       {mentionableAgents.length > 0 && (
                         <DropdownMenu.Group className="clawx-menu-list mt-1 border-t border-border pt-1">
-                          <DropdownMenu.Label className="px-3 py-1.5 text-tiny font-medium text-muted-foreground/80">
+                          <DropdownMenu.Label className="px-3 py-1.5 text-sm font-normal text-muted-foreground">
                             {t('composer.agentPickerTitle')}
                           </DropdownMenu.Label>
                           {mentionableAgents.map(agent => (
@@ -1391,7 +1391,7 @@ export function ChatInput({
                         autoFocus
                       />
                     </div>
-                    <div className="px-3 py-1.5 text-tiny font-medium text-muted-foreground/80">
+                    <div className="px-3 py-1.5 text-sm font-normal text-muted-foreground">
                       {t('composer.skillPickerTitle', { agent: currentAgentName })}
                     </div>
                     <div className="clawx-menu-list max-h-72 overflow-y-auto">
@@ -1482,7 +1482,7 @@ export function ChatInput({
                   data-testid="chat-composer-send"
                   className={`shrink-0 h-8 w-8 rounded-full transition-colors motion-reduce:transition-none ${
                     (sending || canSend)
-                      ? 'bg-primary text-primary-foreground shadow-sm hover:bg-primary/90'
+                      ? 'bg-primary-action text-primary-foreground shadow-sm hover:bg-primary-action-hover'
                       : 'text-muted-foreground/50 hover:bg-transparent bg-transparent'
                   }`}
                   variant="ghost"
@@ -1499,7 +1499,7 @@ export function ChatInput({
           </div>
           <div
             data-testid="chat-composer-footer"
-            className="flex min-w-0 items-center justify-between gap-2 rounded-b-3xl border-t border-border/40 bg-surface-input px-3 py-1 text-tiny text-muted-foreground dark:border-white/10"
+            className="flex min-w-0 items-center justify-between gap-2 rounded-b-3xl border-t border-border/40 bg-surface-input px-3 py-1 text-meta text-muted-foreground dark:border-white/10"
           >
             <div className="flex min-w-0 flex-1 items-center gap-1.5">
               {workspaceLabel && workspacePath && (
@@ -1516,7 +1516,7 @@ export function ChatInput({
                     tabIndex={workspaceSelectorDisabled ? -1 : undefined}
                     className={cn(
                       'inline-flex min-w-0 max-w-[260px] items-center gap-1 rounded-lg border border-transparent px-1.5 py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                      'text-tiny font-medium text-foreground/75 transition-colors',
+                      'text-meta font-medium text-foreground/75 transition-colors',
                       workspaceSelectorDisabled
                         ? 'cursor-default border-transparent opacity-80'
                         : 'hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10',
@@ -1624,7 +1624,7 @@ export function ChatInput({
                 <Button
                   variant="link"
                   size="sm"
-                  className="h-auto shrink-0 p-0 text-tiny"
+                  className="h-auto shrink-0 p-0 text-meta"
                   onClick={() => {
                     if (attachmentsLocked) return;
                     setAttachments((prev) => prev.filter((att) => att.status !== 'error'));
@@ -1675,7 +1675,7 @@ function AttachmentPreview({
           <FileIcon mimeType={attachment.mimeType} className="h-5 w-5 shrink-0 text-muted-foreground" />
           <div className="min-w-0 overflow-hidden">
             <p className="text-xs font-medium truncate">{attachment.fileName}</p>
-            <p className="text-2xs text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               {attachment.mimeType === DIRECTORY_MIME_TYPE
                 ? t('composer.folderAttachment')
                 : attachment.fileSize > 0
@@ -1696,7 +1696,7 @@ function AttachmentPreview({
       {/* Error overlay */}
       {attachment.status === 'error' && (
         <div className="absolute inset-0 bg-destructive/20 flex items-center justify-center">
-          <span className="text-2xs text-destructive font-medium px-1">Error</span>
+          <span className="text-xs text-destructive font-medium px-1">Error</span>
         </div>
       )}
 
@@ -1741,7 +1741,7 @@ function AgentPickerItem({
       <span className="min-w-0">
         <span className="block truncate text-sm font-medium text-foreground">{agent.name}</span>
         {agent.modelDisplay && (
-          <span className="block truncate text-tiny text-muted-foreground">{t('composer.agentDefaultModel', { model: agent.modelDisplay })}</span>
+          <span className="block truncate text-meta text-muted-foreground">{t('composer.agentDefaultModel', { model: agent.modelDisplay })}</span>
         )}
       </span>
       <MenuSelectionIndicator selected={selected} />

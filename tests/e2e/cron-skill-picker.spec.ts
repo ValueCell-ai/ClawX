@@ -102,7 +102,7 @@ test.describe('cron skill picker', () => {
     await page.getByTestId('cron-skill-button').click();
     const skillOption = page.getByTestId('cron-skill-option-create-skill');
     await expect(skillOption).toBeVisible();
-    await expect(skillOption).toHaveCSS('height', '42px');
+    await expect(skillOption).toHaveCSS('height', '48px');
     await expect(page.getByTestId('cron-skill-picker-menu')).toHaveCSS('width', '384px');
     await expect(page.getByTestId('cron-skill-option-create-skill-description')).toHaveText('Create and refine reusable skills.');
     await expect(skillOption.getByText('Workspace', { exact: true })).toHaveCount(1);

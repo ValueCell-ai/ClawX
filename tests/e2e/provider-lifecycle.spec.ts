@@ -164,6 +164,7 @@ test.describe('ClawX provider lifecycle', () => {
 
     await page.getByTestId('add-provider-auth-oauth-tab').click();
     await expect(page.getByTestId('add-provider-oauth-login-button')).toBeVisible();
+    await expect(page.getByTestId('add-provider-oauth-login-button')).toHaveCSS('border-radius', '6px');
     await expect(page.getByTestId('add-provider-api-key-input')).toHaveCount(0);
   });
 
