@@ -365,15 +365,15 @@ test.describe('ClawX chat workspace context', () => {
       await expect(composerInput).toBeEnabled();
 
       await composerInput.evaluate((element) => {
-        const input = element as HTMLTextAreaElement;
+        const input = element as HTMLElement;
         const state = { showedGatewayDisconnected: false };
         const observe = () => {
-          if (input.placeholder === 'Gateway not connected...') {
+          if (input.getAttribute('aria-label') === 'Gateway not connected...') {
             state.showedGatewayDisconnected = true;
           }
         };
         const observer = new MutationObserver(observe);
-        observer.observe(input, { attributes: true, attributeFilter: ['placeholder'] });
+        observer.observe(input, { attributes: true, attributeFilter: ['aria-label'] });
         observe();
         (globalThis as unknown as {
           __newChatComposerPlaceholderObservation?: { observer: MutationObserver; state: typeof state };

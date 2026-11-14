@@ -3,6 +3,9 @@ id: chat-workspace-and-navigation
 title: Chat Workspace And Navigation
 type: user-visible-flow
 ownedPaths:
+  - src/components/composer/**
+  - tests/e2e/lexical-composer.spec.ts
+  - tests/unit/composer-editor.test.tsx
   - src/components/layout/task-search.ts
   - tests/e2e/task-sidebar-search-and-pins.spec.ts
   - tests/unit/sidebar-task-search.test.ts
@@ -177,3 +180,5 @@ Dropdown, select and rich picker interactions use shared Radix wrappers with cen
 Workspace and Preview share one current file and one mounted preview surface. Tree selection never changes the top-level tab based on extension; attachment and activity entries select the same shared file. The directory title belongs inside the navigation column, aligned with the single-line preview heading, without decorative pills or a repeated assistant label. File search retains parent context and explicitly covers loaded tree entries; hidden files are opt-in and folders start collapsed. Folder expansion and bounded recent paths are retained in memory per agent/workspace; current-task files use existing session activity and omit latest-deleted paths. Search/empty/truncated states remain localized. Both dividers support keyboard and pointer resizing, file actions use typed scoped reveal routes, and windows below 1024px use a Radix drawer. Narrow file panels switch between navigation and detail with an explicit back action. Validate the localized desktop/drawer flow, clipboard, scope isolation and current task projection in `tests/e2e/workspace-panel.spec.ts` and the workspace/artifact unit specs.
 
 Model scope priority is task selection, then the Agent-specific model, then the global default. Agent details own Agent overrides. New assistants created in the UI explicitly select a model as part of creation. Legacy inherited models are displayed as effective values without resetting, migrating or materializing them. Native defaults and existing fallback blocks stay intact. Opening, cancelling or browsing model controls never writes an Agent model. Assistant and task controls share ModelPicker. The composer never mutates Agent models or clears unavailable Agent configuration while browsing. Blank tasks retain model choices locally until the first prompt; existing tasks use Main-owned Gateway sessions.patch, and reads use an exact session-key match from sessions.list. A failed model selection blocks prompting with stale choices and preserves unsent text. Verify native write boundaries in tests/unit/model-selection-service.test.ts and task persistence, navigation and first-send order in tests/e2e/chat-model-picker.spec.ts.
+
+The task and scheduled-task composers share a Lexical plain-text editing core with atomic skill tokens. Leading slash suggestions use the shared Radix floating layer and retain editor focus. Preserve the plain-text prompt boundary, per-session drafts and selections, undo isolation, IME safety, attachments, dictation and existing SKILL.md preview. See [lexical-composer](../tasks/lexical-composer.md) for migration acceptance.

@@ -400,7 +400,7 @@ test.describe('ClawX chat model picker', () => {
           __chatModelPickerRequests?: Array<{ path: string; body: { createIfMissing?: boolean } | null }>;
         }).__chatModelPickerRequests?.some((r) => r.path === 'sessions:setModel' && r.body?.createIfMissing)
       ))).toBe(false);
-      await page.locator('textarea').fill('Which model handles this first turn?');
+      await page.getByTestId('chat-composer-input').fill('Which model handles this first turn?');
       await page.getByTestId('chat-composer-send').click();
       await expect.poll(() => app.evaluate(() => (
         (globalThis as typeof globalThis & { __chatModelPickerRequests?: Array<{ path: string }> })

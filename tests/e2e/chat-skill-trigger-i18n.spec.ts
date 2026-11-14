@@ -1,3 +1,4 @@
+import { setComposerCaret } from './fixtures/composer-editor';
 import { settleFloatingSurface } from './fixtures/floating-ui';
 import { expectMenuSelection } from './fixtures/menu-selection';
 import type { ElectronApplication } from '@playwright/test';
@@ -131,7 +132,8 @@ test.describe('ClawX chat skill trigger', () => {
           await expect(popup).toBeVisible();
           await settleFloatingSurface(popup);
           if (menu === 'chat-agent-picker-menu') {
-            await expect(popup.locator('[aria-current="true"]')).toHaveCSS('height', '44px');
+            // Description rows grow with the shared supporting-text line height.
+            expect((await popup.locator('[aria-current="true"]').boundingBox())!.height).toBeGreaterThanOrEqual(44);
             await expectMenuSelection(popup.locator('[aria-current="true"]'));
             await expect(popup.locator('button:not([aria-current]) [data-slot="menu-selection-indicator"]')).toHaveCount(0);
           }
@@ -146,19 +148,14 @@ test.describe('ClawX chat skill trigger', () => {
       await page.setViewportSize({ width: 1280, height: 800 });
 
       await page.getByTestId('chat-composer-input').fill('Draft a new helper');
-      await page.getByTestId('chat-composer-input').evaluate((element) => {
-        if (!(element instanceof HTMLTextAreaElement)) return;
-        const cursorPosition = 'Draft '.length;
-        element.focus();
-        element.setSelectionRange(cursorPosition, cursorPosition);
-      });
+      await setComposerCaret(page.getByTestId('chat-composer-input'), 'Draft '.length);
       await page.getByTestId('chat-composer-skill').click();
       await page.getByText('/create-skill', { exact: true }).click();
-      await expect(page.getByTestId('chat-composer-input')).toHaveValue('Draft /create-skill  a new helper');
+      await expect(page.getByTestId('chat-composer-input')).toHaveText('Draft /create-skill  a new helper');
       await expect(page.getByTestId('chat-composer-skill-token')).toHaveText('/create-skill');
       await expect(page.getByTestId('chat-composer-skill-token')).toHaveJSProperty('tagName', 'SPAN');
       await expect(page.getByTestId('chat-composer-input')).not.toHaveClass(/text-transparent/);
-      await expect(page.getByTestId('chat-composer-highlight')).toHaveClass(/text-transparent/);
+      await expect(page.getByTestId('chat-composer-highlight')).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }

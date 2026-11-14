@@ -168,7 +168,7 @@ test.describe('ClawX voice dictation', () => {
         await expect(voice).toHaveAttribute('title', 'Stop recording');
         await expect(voice).toContainText('0:01');
         await voice.click();
-        await expect(composer).toHaveValue(`editable ${TRANSCRIBED_TEXT}`);
+        await expect(composer).toHaveText(`editable ${TRANSCRIBED_TEXT}`);
       } finally { await closeElectronApp(app); }
     });
   }
@@ -208,7 +208,7 @@ test.describe('ClawX voice dictation', () => {
       await expect(voiceButton).toContainText('0:01');
 
       await voiceButton.click();
-      await expect(composer).toHaveValue(`hello ${TRANSCRIBED_TEXT}`);
+      await expect(composer).toHaveText(`hello ${TRANSCRIBED_TEXT}`);
       await expect(voiceButton).toHaveAttribute('title', 'Voice input');
     } finally {
       await closeElectronApp(app);

@@ -294,14 +294,6 @@
     @apply text-sm font-normal leading-4;
   }
 
-  .clawx-skill-token-overlay {
-    background-color: color-mix(in srgb, #2f6bff 14%, hsl(var(--surface-modal)));
-  }
-
-  .dark .clawx-skill-token-overlay {
-    background-color: color-mix(in srgb, #2f6bff 18%, hsl(var(--surface-modal)));
-  }
-
   .clawx-dialog-overlay {
     @apply fixed inset-0 z-50 bg-black/30 dark:bg-black/60;
   }
@@ -773,4 +765,15 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .clawx-composer { transition: none; }
+}
+
+/* Lexical owns the visible text, caret and token geometry; no highlight overlay. */
+.clawx-composer-editor p { margin: 0; }
+.clawx-composer-editor { overflow-wrap: anywhere; }
+.clawx-skill-token {
+  border-radius: 0.375rem;
+  @apply bg-skill-bg/[0.14] text-skill-fg dark:bg-skill-bg/[0.18] dark:text-skill-fg-dark;
+  padding: 1px 2px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
 }

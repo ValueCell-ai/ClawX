@@ -3,7 +3,7 @@ import { useComposerDraftStore } from '@/stores/composer-drafts';
 
 describe('composer draft store', () => {
   beforeEach(() => {
-    useComposerDraftStore.setState({ drafts: {}, attachments: {} });
+    useComposerDraftStore.setState({ drafts: {}, editorDrafts: {}, attachments: {} });
   });
 
   it('keeps unsent text isolated by session', () => {

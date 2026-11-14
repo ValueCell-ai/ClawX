@@ -108,7 +108,7 @@ test.describe('cron skill picker', () => {
     await expect(skillOption.getByText('Workspace', { exact: true })).toHaveCount(1);
     await skillOption.click();
 
-    await expect(message).toHaveValue(/\/create-skill {2}/);
+    await expect(message).toHaveText(/\/create-skill {2}/);
 
     const token = page.getByTestId('cron-skill-token');
     await expect(token).toHaveText('/create-skill');
@@ -143,60 +143,24 @@ test.describe('cron skill picker', () => {
     expect(await message.evaluate((el) => el.scrollHeight)).toBeGreaterThan(await heightOf());
   });
 
-  test('keeps the highlight overlay scroll-synced so the message stays editable after inserting a skill', async ({
-    electronApp,
-    page,
-  }) => {
+  test('keeps long messages editable around atomic skill tokens', async ({ electronApp, page }) => {
     await installCronSkillMocks(electronApp);
     await completeSetup(page);
-
     await page.getByTestId('sidebar-nav-cron').click();
     await page.getByTestId('cron-new-task-button').click();
-    await expect(page.getByTestId('cron-task-dialog')).toBeVisible();
-
     const message = page.locator('#message');
-    await message.click();
     await message.fill(Array.from({ length: 40 }, (_, index) => `line ${index}`).join('\n'));
-
+    await message.press('ControlOrMeta+End');
     await page.getByTestId('cron-skill-button').click();
-    const skillOption = page.getByTestId('cron-skill-option-create-skill');
-    await expect(skillOption).toBeVisible();
-    await skillOption.click();
-
-    const overlay = page.getByTestId('cron-message-highlight');
-    await expect(overlay).toBeAttached();
-    await expect(message).toHaveValue(/\/create-skill {2}$/);
-
-    const scrollOffsets = async () => ({
-      textarea: await message.evaluate((el) => el.scrollTop),
-      overlay: await overlay.evaluate((el) => el.scrollTop),
-    });
-
-    // Inserting at the end scrolls the caret into view; the overlay must follow,
-    // otherwise the only visible copy of the text stays frozen at the top.
-    await expect.poll(async () => (await scrollOffsets()).textarea).toBeGreaterThan(0);
-    await expect
-      .poll(async () => {
-        const { textarea, overlay: overlayTop } = await scrollOffsets();
-        return Math.abs(textarea - overlayTop);
-      })
-      .toBeLessThanOrEqual(1);
-
-    // Typing after the token keeps editing the value and keeps the overlay aligned.
+    await page.getByTestId('cron-skill-option-create-skill').click();
+    await expect(page.getByTestId('cron-skill-token')).toBeVisible();
     await page.keyboard.type('after token');
-    await expect(message).toHaveValue(/\/create-skill {2}after token$/);
-    await expect(overlay).toContainText('after token');
-    await expect
-      .poll(async () => {
-        const { textarea, overlay: overlayTop } = await scrollOffsets();
-        return Math.abs(textarea - overlayTop);
-      })
-      .toBeLessThanOrEqual(1);
-
-    // Scrolling the field back up moves the rendered text with it.
-    await message.evaluate((el) => {
-      el.scrollTop = 0;
-    });
-    await expect.poll(async () => (await scrollOffsets()).overlay).toBe(0);
+    await expect(message).toContainText('/create-skill  after token');
+    expect(await message.evaluate(el => el.scrollHeight)).toBeGreaterThan(await message.evaluate(el => el.clientHeight));
+    await expect(page.getByTestId('cron-message-highlight')).toHaveCount(0);
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('next line');
+    await expect(message).toContainText('next line');
+    await expect(page.getByTestId('cron-task-dialog')).toBeVisible();
   });
 });

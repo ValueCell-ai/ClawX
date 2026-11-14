@@ -87,14 +87,14 @@ for (const language of ['zh', 'en', 'ja', 'ru']) {
         await expect(remove).toHaveAccessibleName(/clawx-agent-draft.txt/);
         await remove.press('Enter');
         await expect(attachmentTray).toHaveCount(0);
-        await expect(input).toHaveValue('Keep this task draft');
+        await expect(input).toHaveText('Keep this task draft');
         await composerBox.getByRole('button').first().click();
         await expect(attachmentTray).toBeVisible();
       }
       await page.getByTestId('sidebar-nav-agents').click();
       await page.getByTestId('agent-start-coder').click();
       await expect(selector).toHaveText('Coder1');
-      await expect(input).toHaveValue('Keep this task draft');
+      await expect(input).toHaveText('Keep this task draft');
       await expect(page.getByTestId('chat-attachment-remove')).toHaveCount(1);
       await expect(page.getByTestId('chat-workspace-selector')).toContainText('clawx-execution-workspace-coder');
       if (language === 'en') {
@@ -137,7 +137,7 @@ for (const language of ['zh', 'en', 'ja', 'ru']) {
         await expect(mainBadge).toHaveCount(0);
       }
       await expect(page.getByTestId('sidebar-session-agent:main:main')).toHaveAttribute('title', /Main Agent/);
-      await expect(input).toHaveValue('');
+      await expect(input).toHaveText('');
       await expect(attachmentTray).toHaveCount(0);
       await expect(selector).toBeEnabled();
       await selector.click();

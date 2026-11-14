@@ -1,3 +1,4 @@
+import { composerCaretOffset } from './fixtures/composer-editor';
 import type { ElectronApplication, Page } from '@playwright/test';
 import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
 
@@ -315,22 +316,22 @@ test.describe('ClawX sidebar session attention', () => {
       const controlCaretPosition = controlDraft.length - 1;
       await composer.fill(controlDraft);
       await composer.press('ArrowLeft');
-      await expect.poll(() => composer.evaluate((element: HTMLTextAreaElement) => element.selectionStart))
+      await expect.poll(() => composerCaretOffset(composer))
         .toBe(controlCaretPosition);
 
       await targetRow.click();
       await expect(targetRow).toHaveAttribute('aria-current', 'page');
-      await expect(composer).toHaveValue('');
+      await expect(composer).toHaveText('');
       await composer.fill('Unsent target draft');
 
       await controlRow.click();
-      await expect(composer).toHaveValue(controlDraft);
+      await expect(composer).toHaveText(controlDraft);
       await expect(composer).toBeFocused();
-      await expect.poll(() => composer.evaluate((element: HTMLTextAreaElement) => element.selectionStart))
+      await expect.poll(() => composerCaretOffset(composer))
         .toBe(controlCaretPosition);
 
       await targetRow.click();
-      await expect(composer).toHaveValue('Unsent target draft');
+      await expect(composer).toHaveText('Unsent target draft');
     } finally {
       await closeElectronApp(app);
     }

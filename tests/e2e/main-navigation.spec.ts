@@ -269,7 +269,7 @@ test.describe('ClawX main navigation without setup flow', () => {
 
       await expect(page.getByTestId('chat-page')).toBeVisible();
       await expect(page).toHaveURL(/#\/$/);
-      await expect(composer).toHaveValue('');
+      await expect(composer).toHaveText('');
       expect(await page.evaluate(() => window.open('about:blank') === null)).toBe(true);
       expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((win) => win.id))).toEqual([mainWindowId]);
 
@@ -280,10 +280,10 @@ test.describe('ClawX main navigation without setup flow', () => {
       });
       await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((win) => win.id))).toEqual([mainWindowId]);
       await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getFocusedWindow()?.id)).toBe(mainWindowId);
-      await expect(composer).toHaveValue('Draft before recovering a blank window');
+      await expect(composer).toHaveText('Draft before recovering a blank window');
       await composer.click();
       await pressNativeNewChatShortcut(app);
-      await expect(composer).toHaveValue('');
+      await expect(composer).toHaveText('');
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();
       expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((win) => win.id))).toEqual([mainWindowId]);
       await page.getByTestId('sidebar-nav-models').click();
@@ -312,7 +312,7 @@ test.describe('ClawX main navigation without setup flow', () => {
 
       await expect(page.getByTestId('chat-page')).toBeVisible();
       await expect(page).toHaveURL(/#\/$/);
-      await expect(composer).toHaveValue('');
+      await expect(composer).toHaveText('');
       expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1);
     } finally {
       await closeElectronApp(app);

@@ -91,6 +91,8 @@ Skill menus keep original names and descriptions, show each source once with a l
 The workspace panel shares the selected file across Workspace and Preview. Its directory title and controls sit inside the file-navigation column, aligned with the single-line file-preview heading; the path heading shows a muted directory prefix and a prominent filename, truncating the directory first. The complete file tree includes file-name search over loaded folders, hidden-file controls with hover tooltips, collapse-all, keyboard-resizable columns, and a common copy-path/reveal toolbar. Task changes show the current conversation’s file activity with a count. Narrow windows use a drawer with a back-to-files action.
 
 
+The chat and scheduled-task composers use Lexical with atomic `/skill` tokens. Type `/` at the beginning to filter available skills, then select with the arrow keys and Enter or a click. Escape keeps the typed query. Skill tokens support undo/redo and copy/paste; messages still reach OpenClaw as plain text.
+
 Unsent attachment previews sit inside the composer above the text area. The composer names the execution agent. Selecting another agent starts a fresh task, keeps unsent text and attachments, and updates the model, skills and workspace before sending. The Agent picker shows each agent’s default model; open existing conversations from the sidebar. Sidebar rows show names only for non-default agents; hover titles retain ownership for every conversation.
 
 - **🎯 Zero Configuration Barrier**: Complete setup through an intuitive graphical interface - no terminal commands, YAML files, or environment-variable hunting.

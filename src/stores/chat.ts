@@ -1251,6 +1251,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   newSession: (options) => {
     const { currentSessionKey, sessions } = get();
     const draft = options?.preserveDraft ? useComposerDraftStore.getState().drafts[currentSessionKey] : undefined;
+    const editorDraft = options?.preserveDraft ? useComposerDraftStore.getState().editorDrafts[currentSessionKey] : undefined;
     const attachments = options?.preserveDraft ? useComposerDraftStore.getState().attachments[currentSessionKey] : undefined;
     const prefix = options?.agentId
       ? `agent:${options.agentId}`
@@ -1274,6 +1275,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       { createdLocally: true },
     ));
     if (draft) useComposerDraftStore.getState().setDraft(sessionKey, draft);
+    if (editorDraft) useComposerDraftStore.getState().setEditorDraft(sessionKey, editorDraft);
     if (attachments?.length) useComposerDraftStore.getState().setAttachments(sessionKey, attachments);
   },
 

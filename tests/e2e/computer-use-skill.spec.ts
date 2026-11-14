@@ -75,7 +75,7 @@ for (const language of ['en', 'zh', 'ja', 'ru']) {
       await expect(page.getByText('/cua-driver', { exact: true })).toHaveCount(0);
       await page.getByText('/computer-use', { exact: true }).click();
       await expect(page.getByTestId('chat-composer-skill-token')).toHaveText('/computer-use');
-      await expect(page.getByTestId('chat-composer-input')).toHaveValue(/\/computer-use/);
+      await expect(page.getByTestId('chat-composer-input')).toHaveText(/\/computer-use/);
       expect(await status()).toMatchObject({ ok: true, data: { enabled: false, running: false } });
       const calls = await app.evaluate(() => (globalThis as unknown as {
         __e2eHostInvocations: Array<{ module: string; action: string }>;

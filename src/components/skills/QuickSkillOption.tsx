@@ -3,13 +3,14 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { getQuickSkillSourceLabel } from '@/lib/skill-source-label';
 import { cn } from '@/lib/utils';
 import type { QuickAccessSkill } from '@/types/skill';
+import type { ComponentPropsWithoutRef } from 'react';
 
-export function QuickSkillOption({ skill, onSelect, testId, selected = false }: {
+export function QuickSkillOption({ skill, onSelect, testId, selected = false, ...props }: {
   skill: QuickAccessSkill;
   onSelect: () => void;
   testId: string;
   selected?: boolean;
-}) {
+} & Omit<ComponentPropsWithoutRef<'button'>, 'onSelect'>) {
   const { t } = useTranslation('skills');
   const sourceLabel = getQuickSkillSourceLabel(skill.source, t);
   const hasDescription = skill.description.trim().length > 0;
@@ -20,6 +21,7 @@ export function QuickSkillOption({ skill, onSelect, testId, selected = false }: 
         <button
           type="button"
           data-testid={testId}
+          {...props}
           onClick={onSelect}
           className={cn(
             'clawx-menu-item flex w-full items-center justify-between gap-3 text-left transition-colors',

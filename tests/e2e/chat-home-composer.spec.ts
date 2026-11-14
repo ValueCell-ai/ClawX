@@ -128,12 +128,12 @@ for (const locale of locales) {
         await input.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
         await input.fill('Keep my draft');
         await shortcut.click();
-        await expect(input).toHaveValue(`/${name}  Keep my draft`);
-        await expect(page.getByTestId('chat-composer-highlight')).toHaveCSS('font-size', '16px');
-        await expect(page.getByTestId('chat-composer-highlight')).toHaveCSS('line-height', '26px');
+        await expect(input).toHaveText(`/${name}  Keep my draft`);
+        await expect(page.getByTestId('chat-composer-highlight')).toHaveCount(0);
+        await expect(input).toHaveCSS('line-height', '26px');
         await expect(input).toBeFocused();
         await shortcut.click();
-        await expect(input).toHaveValue(`/${name}  Keep my draft`);
+        await expect(input).toHaveText(`/${name}  Keep my draft`);
       }
       expect(await app.evaluate(() => (globalThis as unknown as { homeTestPrompts: unknown[] }).homeTestPrompts)).toEqual([]);
       await input.focus();
@@ -235,9 +235,9 @@ for (const locale of locales) {
       await input.fill('A test task');
       await page.getByTestId('chat-composer-send').click();
       await expect(page.getByTestId('acp-chat-empty-state')).toHaveCount(0);
-      await expect(input).toHaveValue('');
+      await expect(input).toHaveText('');
       await input.fill('Next draft');
-      await expect(input).toHaveValue('Next draft');
+      await expect(input).toHaveText('Next draft');
       const bottomFooter = await page.getByTestId('chat-composer-footer').boundingBox();
       expect(bottomFooter!.y).toBeGreaterThan(500);
       const chatBounds = await page.getByTestId('chat-content-layout').boundingBox();

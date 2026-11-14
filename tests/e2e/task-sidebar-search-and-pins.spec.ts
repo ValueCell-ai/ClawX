@@ -118,7 +118,7 @@ test('searches beyond pagination and collapsed workspaces, persists pins through
     await expect(page.getByTestId(`sidebar-session-${needle}`)).toHaveCount(1);
     await expect.poll(() => pinnedKeys(page)).toEqual([needle]);
     await expect(page.getByTestId(`sidebar-session-menu-${needle}`)).toBeFocused();
-    await expect(page.getByTestId('chat-composer-input')).toHaveValue('Keep this unsent draft');
+    await expect(page.getByTestId('chat-composer-input')).toHaveText('Keep this unsent draft');
     await search.fill('');
     await menu(page, needle);
     await page.getByRole('menuitem', { name: 'Rename', exact: true }).click();

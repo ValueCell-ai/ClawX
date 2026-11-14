@@ -1,13 +1,13 @@
 /**
  * Chat Input Component
- * Textarea with send button and universal file upload support.
+ * Lexical composer with send button and universal file upload support.
  * Enter to send, Shift+Enter for new line.
  * Supports: native file picker, clipboard paste, drag & drop.
  * Files are staged through the typed Host API and included as local media
  * references in the ACP session/prompt request.
  */
 import {
-  useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo,
+  useState, useRef, useEffect, useCallback, useMemo,
   type SetStateAction,
 } from 'react';
 import { Presentation, Table2, FileScan, Monitor, WandSparkles, SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, AtSign, Bot, Search, ChevronDown } from 'lucide-react';
@@ -17,7 +17,7 @@ import { hasFloatingSurface } from '@/components/ui/floating-ui';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { MenuSelectionIndicator } from '@/components/ui/menu-selection';
 import { menuOptionStateClass } from '@/components/ui/menu-selection-styles';
-import { Textarea } from '@/components/ui/textarea';
+import { ComposerEditor, type ComposerEditorHandle } from '@/components/composer/ComposerEditor';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { QuickSkillOption } from '@/components/skills/QuickSkillOption';
 import { getQuickSkillSourceLabel } from '@/lib/skill-source-label';
@@ -183,95 +183,6 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
-function getSkillPrefix(skillName: string): string {
-  return `/${skillName}  `;
-}
-
-function needsLeadingSkillSpace(value: string, position: number): boolean {
-  return position > 0 && !/\s/.test(value[position - 1] ?? '');
-}
-
-type SkillTokenRange = { start: number; end: number };
-
-function findSkillTokenRange(value: string, skillName: string): SkillTokenRange | null {
-  const token = getSkillPrefix(skillName);
-  const start = value.indexOf(token);
-  if (start === -1) return null;
-  return { start, end: start + token.length };
-}
-
-function findSkillTokenRanges(value: string): SkillTokenRange[] {
-  const ranges: SkillTokenRange[] = [];
-  const skillTokenPattern = /\/[^\s]+ {2}/g;
-  let match: RegExpExecArray | null;
-  while ((match = skillTokenPattern.exec(value)) !== null) {
-    ranges.push({ start: match.index, end: match.index + match[0].length });
-  }
-  return ranges;
-}
-
-function removeSkillToken(value: string, skillName: string): string {
-  const range = findSkillTokenRange(value, skillName);
-  if (!range) return value;
-  return `${value.slice(0, range.start)}${value.slice(range.end)}`;
-}
-
-const SKILL_TOKEN_CLASS =
-  'clawx-skill-token-overlay pointer-events-auto cursor-pointer rounded-md text-skill-fg underline-offset-2 hover:underline [-webkit-box-decoration-break:clone] [box-decoration-break:clone] [text-shadow:0_0_10px_rgba(47,107,255,0.38)] dark:text-skill-fg-dark dark:[text-shadow:0_0_12px_rgba(37,99,235,0.42)]';
-
-function renderHighlightedComposerText(
-  value: string,
-  tokenRanges: SkillTokenRange[],
-  options: { onPreviewSkill: (skillName: string) => void; previewTooltip: string },
-) {
-  if (tokenRanges.length === 0) {
-    return <>{value}{value.endsWith('\n') ? '\n' : '\u200b'}</>;
-  }
-
-  const chunks: React.ReactNode[] = [];
-  let cursor = 0;
-
-  for (const tokenRange of tokenRanges) {
-    const token = value.slice(tokenRange.start, tokenRange.end);
-    const tokenLabel = token.trimEnd();
-    const tokenTrailingSpace = token.slice(tokenLabel.length);
-    const skillName = tokenLabel.startsWith('/') ? tokenLabel.slice(1) : tokenLabel;
-
-    if (tokenRange.start > cursor) {
-      chunks.push(value.slice(cursor, tokenRange.start));
-    }
-    chunks.push(
-      <span
-        key={`skill-token-${tokenRange.start}`}
-        data-testid="chat-composer-skill-token"
-        data-skill-name={skillName}
-        title={options.previewTooltip}
-        className={SKILL_TOKEN_CLASS}
-        onMouseDown={(event) => {
-          // Keep focus in the textarea while still receiving the click.
-          event.preventDefault();
-        }}
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          options.onPreviewSkill(skillName);
-        }}
-      >
-        {tokenLabel}
-      </span>,
-      tokenTrailingSpace,
-    );
-    cursor = tokenRange.end;
-  }
-
-  if (cursor < value.length) {
-    chunks.push(value.slice(cursor));
-  }
-  chunks.push(value.endsWith('\n') ? '\n' : '\u200b');
-
-  return <>{chunks}</>;
-}
-
 function FileIcon({ mimeType, className }: { mimeType: string; className?: string }) {
   if (mimeType === DIRECTORY_MIME_TYPE) return <FolderOpen className={className} />;
   if (mimeType.startsWith('video/')) return <Film className={className} />;
@@ -359,17 +270,10 @@ export function ChatInput({
   const [loadedSkillsScope, setLoadedSkillsScope] = useState('');
   const skillsRequestRef = useRef(0);
   const [skillsError, setSkillsError] = useState<string | null>(null);
-  const [selectedSkill, setSelectedSkill] = useState<QuickAccessSkill | null>(null);
   const [admitting, setAdmitting] = useState(false);
   const admissionInFlight = useRef(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const draftSelectionsRef = useRef(new Map<string, {
-    start: number;
-    end: number;
-    direction: 'forward' | 'backward' | 'none';
-  }>());
+  const editorRef = useRef<ComposerEditorHandle>(null);
   const contextUsageSourceRef = useRef<{ value: unknown; modelRef: string | null } | undefined>(undefined);
-  const isComposingRef = useRef(false);
   const gatewayStatus = useGatewayStore((s) => s.status);
   const devModeUnlocked = useSettingsStore((s) => s.devModeUnlocked);
   const agents = useAgentsStore((s) => s.agents);
@@ -441,7 +345,6 @@ export function ChatInput({
   const attachmentsLocked = inputDisabled;
   const gatewayUnavailable = !isGatewayUsable;
   const workspaceSelectorDisabled = workspaceReadOnly || inputDisabled || sending || !onSelectWorkspace;
-  const skillTokenRanges = useMemo(() => findSkillTokenRanges(input), [input]);
   const openArtifactPreview = useArtifactPanel((s) => s.openPreview);
   const navigate = useNavigate();
   const [microphoneAccess, setMicrophoneAccess] = useState<AsrMicrophoneAccessResult | null>(null);
@@ -461,20 +364,10 @@ export function ChatInput({
     onError: (code) => {
       toast.error(t(`composer.voiceError.${code}`, { defaultValue: t('composer.voiceError.REQUEST') }));
     },
-    onTranscribed: (text) => {
-      const textarea = textareaRef.current;
-      const start = textarea?.selectionStart ?? input.length;
-      const end = textarea?.selectionEnd ?? start;
-      const nextValue = input.slice(0, start) + text + input.slice(end);
-      setInput(nextValue);
-      requestAnimationFrame(() => {
-        if (!textarea) return;
-        const caret = start + text.length;
-        textarea.focus();
-        textarea.setSelectionRange(caret, caret);
-      });
-    },
+    onTranscribed: (text) => { editorRef.current?.insertText(text); },
   });
+  useEffect(() => () => { cancelVoiceDictation(); }, [draftKey, cancelVoiceDictation]);
+
   const visibleUsage = destinationKey === currentSessionKey ? contextUsage : undefined;
   if (destinationKey === currentSessionKey && contextUsageSourceRef.current?.value !== contextUsage) {
     contextUsageSourceRef.current = { value: contextUsage, modelRef: effectiveModelRef };
@@ -531,39 +424,6 @@ export function ChatInput({
     if (modelOptions.length === 0) setModelPickerOpen(false);
   }, [modelOptions.length]);
 
-  // Auto-resize textarea
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 240)}px`;
-    }
-  }, [input]);
-
-  const rememberDraftSelection = useCallback((textarea = textareaRef.current) => {
-    if (!draftKey || !textarea) return;
-    draftSelectionsRef.current.set(draftKey, {
-      start: textarea.selectionStart ?? 0,
-      end: textarea.selectionEnd ?? 0,
-      direction: textarea.selectionDirection ?? 'none',
-    });
-  }, [draftKey]);
-
-  // Focus the composer when it becomes available. When changing conversations,
-  // restore that conversation's last selection instead of leaving the controlled
-  // textarea at the position produced while React swapped its value.
-  useLayoutEffect(() => {
-    if (inputDisabled || !textareaRef.current) return;
-    const textarea = textareaRef.current;
-    if (!hasFloatingSurface()) textarea.focus();
-    if (!draftKey) return;
-
-    const savedSelection = draftSelectionsRef.current.get(draftKey);
-    const fallbackPosition = textarea.value.length;
-    const start = Math.min(savedSelection?.start ?? fallbackPosition, fallbackPosition);
-    const end = Math.max(start, Math.min(savedSelection?.end ?? start, fallbackPosition));
-    textarea.setSelectionRange(start, end, savedSelection?.direction ?? 'none');
-  }, [draftKey, inputDisabled]);
-
   const handlePickerOpenChange = useCallback((picker: 'agent' | 'skill' | 'model' | 'workspace', open: boolean) => {
     if (picker === 'workspace' && open && workspaceSelectorDisabled) return;
     const setters = { agent: setPickerOpen, skill: setSkillPickerOpen, model: setModelPickerOpen, workspace: setWorkspaceMenuOpen };
@@ -579,59 +439,16 @@ export function ChatInput({
     if (hasFloatingSurface('open')) return;
     const active = document.activeElement;
     if (!active || active === document.body || active.closest('[data-slot="dropdown-menu-content"], [data-slot="popover-content"]')) {
-      textareaRef.current?.focus();
+      editorRef.current?.focus();
     }
   }, []);
 
   useEffect(() => {
-    setSelectedSkill((prev) => {
-      if (prev) {
-        setInput((currentInput) => removeSkillToken(currentInput, prev.name));
-      }
-      return null;
-    });
     setSkillPickerOpen(false);
     setWorkspaceMenuOpen(false);
     setSkillQuery('');
     setSkillsError(null);
-  }, [currentAgentId, setInput]);
-
-  useEffect(() => {
-    if (!selectedSkill) return;
-    const tokenRange = findSkillTokenRange(input, selectedSkill.name);
-    if (!tokenRange) {
-      setSelectedSkill(null);
-    }
-  }, [input, selectedSkill]);
-
-  const handleInputChange = useCallback((value: string) => {
-    setInput(value);
-  }, [setInput]);
-
-  const moveCaretTo = useCallback((position: number) => {
-    const move = () => {
-      textareaRef.current?.focus();
-      textareaRef.current?.setSelectionRange(position, position);
-      rememberDraftSelection();
-    };
-    move();
-    requestAnimationFrame(move);
-  }, [rememberDraftSelection]);
-
-  const handleComposerSelection = useCallback(() => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-    const selectionStart = textarea.selectionStart ?? 0;
-    const selectionEnd = textarea.selectionEnd ?? 0;
-    if (selectionStart === selectionEnd) {
-      const tokenRange = skillTokenRanges.find((range) => selectionStart > range.start && selectionStart < range.end);
-      if (tokenRange) {
-        moveCaretTo(tokenRange.end);
-        return;
-      }
-    }
-    rememberDraftSelection(textarea);
-  }, [moveCaretTo, rememberDraftSelection, skillTokenRanges]);
+  }, [currentAgentId]);
 
   const quickSkillsScope = JSON.stringify([currentAgent?.id, currentAgent?.workspace, currentAgent?.agentDir]);
   const loadQuickSkills = useCallback(async (preferCache = false): Promise<QuickAccessSkill[]> => {
@@ -698,16 +515,8 @@ export function ChatInput({
     if (welcome) void loadQuickSkills(true);
   }, [welcome, loadQuickSkills, draftKey]);
 
-  const selectWelcomeSkill = (name: string) => {
-    const token = getSkillPrefix(name);
-    // Keep the draft intact and make repeat clicks idempotent.
-    const nextValue = findSkillTokenRange(input, name) ? input : `${token}${input}`;
-    setInput(nextValue);
-    requestAnimationFrame(() => {
-      textareaRef.current?.focus();
-      textareaRef.current?.setSelectionRange(nextValue.length, nextValue.length);
-    });
-  };
+  const requestEditorSkills = useCallback(() => { void loadQuickSkills(true); }, [loadQuickSkills]);
+  const selectWelcomeSkill = (name: string) => { editorRef.current?.insertSkill({ name }, true); };
 
   const handleSelectModel = async (modelRef: string) => {
     if (!destinationKey || !destinationAgent || sessionModel.writing || admissionInFlight.current) return;
@@ -718,7 +527,7 @@ export function ChatInput({
     } catch (error) {
       if (destinationKeyRef.current === destinationKey) toast.error(t('composer.modelSwitchFailed', { error: String(error) }));
     } finally {
-      if (destinationKeyRef.current === destinationKey) textareaRef.current?.focus();
+      if (destinationKeyRef.current === destinationKey) editorRef.current?.focus();
     }
   };
 
@@ -747,7 +556,7 @@ export function ChatInput({
     } catch {
       toast.error(t('composer.workspacePickerFailed'));
     } finally {
-      textareaRef.current?.focus();
+      editorRef.current?.focus();
     }
   }, [onSelectWorkspace, t, workspacePath, workspaceSelectorDisabled]);
 
@@ -911,9 +720,7 @@ export function ChatInput({
       setAttachments((current) => current === attachments ? [] : current);
       setTarget((current) => current?.source === currentSessionKey && current.agentId === targetAgentId ? null : current);
       if (composerSessionRef.current !== currentSessionKey) return;
-      setSelectedSkill(null);
       setSkillQuery('');
-      if (textareaRef.current) textareaRef.current.style.height = 'auto';
       setPickerOpen(false);
       setSkillPickerOpen(false);
       setWorkspaceMenuOpen(false);
@@ -927,100 +734,6 @@ export function ChatInput({
     if (!canStop) return;
     onStop?.();
   }, [canStop, onStop]);
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === 'Backspace') {
-        const textarea = textareaRef.current;
-        const selectionStart = textarea?.selectionStart ?? 0;
-        const selectionEnd = textarea?.selectionEnd ?? 0;
-        const tokenRange = skillTokenRanges.find((range) =>
-          selectionStart === selectionEnd
-          && selectionStart > range.start
-          && selectionStart <= range.end,
-        );
-
-        if (
-          tokenRange
-        ) {
-          e.preventDefault();
-          const valueWithoutToken = `${input.slice(0, tokenRange.start)}${input.slice(tokenRange.end)}`;
-          setInput(valueWithoutToken);
-          setSelectedSkill(null);
-          moveCaretTo(tokenRange.start);
-          return;
-        }
-
-        if (!input) {
-          if (selectedSkill) {
-            setSelectedSkill(null);
-            return;
-          }
-          return;
-        }
-      }
-      if (e.key === 'ArrowLeft' && skillTokenRanges.length > 0) {
-        const textarea = textareaRef.current;
-        const selectionStart = textarea?.selectionStart ?? 0;
-        const selectionEnd = textarea?.selectionEnd ?? 0;
-        const tokenRange = skillTokenRanges.find((range) => selectionStart === selectionEnd && selectionStart === range.end);
-        if (tokenRange) {
-          e.preventDefault();
-          moveCaretTo(tokenRange.start);
-          return;
-        }
-      }
-      if (e.key === 'ArrowRight' && skillTokenRanges.length > 0) {
-        const textarea = textareaRef.current;
-        const selectionStart = textarea?.selectionStart ?? 0;
-        const selectionEnd = textarea?.selectionEnd ?? 0;
-        const tokenRange = skillTokenRanges.find((range) => selectionStart === selectionEnd && selectionStart === range.start);
-        if (tokenRange) {
-          e.preventDefault();
-          moveCaretTo(tokenRange.end);
-          return;
-        }
-      }
-      if (e.key === 'Escape') {
-        setPickerOpen(false);
-        setSkillPickerOpen(false);
-        setModelPickerOpen(false);
-        setWorkspaceMenuOpen(false);
-        return;
-      }
-      if (e.key === 'Enter' && !e.shiftKey) {
-        const nativeEvent = e.nativeEvent as KeyboardEvent;
-        if (isComposingRef.current || nativeEvent.isComposing || nativeEvent.keyCode === 229) {
-          return;
-        }
-        e.preventDefault();
-        handleSend();
-      }
-    },
-    [handleSend, input, moveCaretTo, selectedSkill, setInput, skillTokenRanges],
-  );
-
-  // Handle paste (Ctrl/Cmd+V with files)
-  const handlePaste = useCallback(
-    (e: React.ClipboardEvent) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
-
-      const pastedFiles: globalThis.File[] = [];
-      for (const item of Array.from(items)) {
-        if (item.kind === 'file') {
-          const file = item.getAsFile();
-          if (file) pastedFiles.push(file);
-        }
-      }
-      if (pastedFiles.length > 0) {
-        if (attachmentsLocked) return;
-        e.preventDefault();
-        stageBufferFiles(pastedFiles);
-      }
-    },
-    [attachmentsLocked, stageBufferFiles],
-  );
 
   // Handle drag & drop
   const [dragOver, setDragOver] = useState(false);
@@ -1240,52 +953,17 @@ export function ChatInput({
               </button>
             )}
 
-            {/* Text Row — flush-left */}
-            <div className="relative min-h-[48px]">
-              {skillTokenRanges.length > 0 && (
-                <div
-                  aria-hidden="true"
-                  data-testid="chat-composer-highlight"
-                  className="pointer-events-none absolute inset-0 z-20 overflow-hidden whitespace-pre-wrap break-words text-base leading-relaxed text-transparent"
-                >
-                  {renderHighlightedComposerText(input, skillTokenRanges, {
-                    onPreviewSkill: (name) => {
-                      void handleSkillTokenPreview(name);
-                    },
-                    previewTooltip: t('composer.skillPreviewTooltip', 'Preview SKILL.md'),
-                  })}
-                </div>
-              )}
-              <Textarea
-                ref={textareaRef}
-                value={input}
-                onChange={(e) => {
-                  handleInputChange(e.target.value);
-                  rememberDraftSelection(e.currentTarget);
-                }}
-                onKeyDown={handleKeyDown}
-                onSelect={handleComposerSelection}
-                onClick={handleComposerSelection}
-                onBlur={(e) => rememberDraftSelection(e.currentTarget)}
-                onCompositionStart={() => {
-                  isComposingRef.current = true;
-                }}
-                onCompositionEnd={() => {
-                  isComposingRef.current = false;
-                }}
-                onPaste={handlePaste}
-                placeholder={inputDisabled && gatewayUnavailable ? t('composer.gatewayDisconnectedPlaceholder') : t('composer.placeholder')}
-                aria-label={t('composer.placeholder')}
-                disabled={inputDisabled || voiceStatus !== 'idle'}
-                data-testid="chat-composer-input"
-                className={cn(
-                  'relative z-10 min-h-[48px] max-h-[240px] resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none bg-transparent p-0 text-base leading-relaxed md:text-base md:leading-relaxed placeholder:text-muted-foreground/80',
-                  welcome && 'min-h-[88px]',
-                  skillTokenRanges.length > 0 && 'selection:bg-primary/20',
-                )}
-                rows={1}
-              />
-            </div>
+            <ComposerEditor
+              ref={editorRef} value={input} onChange={setInput} draftKey={draftKey}
+              skills={quickSkills} skillsLoading={skillsLoading} skillsError={skillsError}
+              onRequestSkills={requestEditorSkills} onPreviewSkill={handleSkillTokenPreview}
+              onSend={handleSend} onPasteFiles={stageBufferFiles}
+              disabled={inputDisabled} readOnly={voiceStatus !== 'idle'} autoFocus
+              suspendSuggestions={pickerOpen || skillPickerOpen || modelPickerOpen || workspaceMenuOpen}
+              placeholder={inputDisabled && gatewayUnavailable ? t('composer.gatewayDisconnectedPlaceholder') : t('composer.placeholder')}
+              testId="chat-composer-input" tokenTestId="chat-composer-skill-token"
+              className={cn('min-h-[48px] max-h-[240px]', welcome && 'min-h-[88px]')}
+            />
 
             {/* Action Row — icons on their own line */}
             <div className="relative mt-1.5 flex flex-wrap items-center gap-1">
@@ -1371,7 +1049,7 @@ export function ChatInput({
                   data-testid="chat-composer-skill"
                   className={cn(
                     'inline-flex h-8 items-center gap-1 rounded-lg px-1.5 text-meta font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50',
-                    (skillPickerOpen || selectedSkill) && 'text-foreground',
+                    skillPickerOpen && 'text-foreground',
                   )}
                   disabled={inputDisabled || sending}
                   title={t('composer.pickSkill')}
@@ -1415,25 +1093,9 @@ export function ChatInput({
                             skill={skill}
                             selected={false}
                             onSelect={() => {
-                              const textarea = textareaRef.current;
-                              const nextToken = getSkillPrefix(skill.name);
-                              const selectionStart = textarea?.selectionStart ?? input.length;
-                              const selectionEnd = textarea?.selectionEnd ?? input.length;
-                              let nextValue = input;
-                              let adjustedStart = selectionStart;
-                              let adjustedEnd = selectionEnd;
-
-                              const leadingSpace = needsLeadingSkillSpace(nextValue, adjustedStart) ? ' ' : '';
-                              nextValue = `${nextValue.slice(0, adjustedStart)}${leadingSpace}${nextToken}${nextValue.slice(adjustedEnd)}`;
-                              setSelectedSkill(null);
-                              setInput(nextValue);
+                              editorRef.current?.insertSkill(skill);
                               setSkillPickerOpen(false);
                               setSkillQuery('');
-                              requestAnimationFrame(() => {
-                                if (!hasFloatingSurface()) textareaRef.current?.focus();
-                                const cursorPosition = adjustedStart + leadingSpace.length + nextToken.length;
-                                textareaRef.current?.setSelectionRange(cursorPosition, cursorPosition);
-                              });
                             }}
                           />
                         ))

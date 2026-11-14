@@ -4,7 +4,6 @@
  */
 import {
   useEffect,
-  useLayoutEffect,
   useState,
   useCallback,
   useMemo,
@@ -38,7 +37,7 @@ import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectItem, type SelectProps } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
+import { ComposerEditor, type ComposerEditorHandle } from '@/components/composer/ComposerEditor';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Dialog } from '@/components/ui/dialog';
 import { ConfigDialogContent } from '@/components/ui/config-dialog-content';
@@ -76,83 +75,6 @@ const schedulePresets: { key: string; value: string; type: ScheduleType }[] = [
   { key: 'weeklyMon', value: '0 9 * * 1', type: 'weekly' },
   { key: 'monthly1st', value: '0 9 1 * *', type: 'monthly' },
 ];
-
-// ── Inline skill token helpers ───────────────────────────────────
-// Mirrors the chat composer skill-token logic in src/pages/Chat/ChatInput.tsx:
-// skills are inserted as `/skillName  ` tokens (trailing double space) and the
-// textarea renders a transparent caret on top of a highlighted overlay. Unlike
-// the chat composer, the cron dialog intentionally does NOT expose a preview
-// affordance — the tokens are rendered as non-interactive spans.
-
-type SkillTokenRange = { start: number; end: number };
-
-// The message textarea grows with its content up to this height, after which it
-// scrolls internally and the highlight overlay is scroll-synced to match it.
-const CRON_MESSAGE_MAX_HEIGHT = 200;
-const cronMessageTextClass = 'font-sans text-sm/[18px] md:text-sm/[18px]';
-
-function getSkillPrefix(skillName: string): string {
-  return `/${skillName}  `;
-}
-
-function needsLeadingSkillSpace(value: string, position: number): boolean {
-  return position > 0 && !/\s/.test(value[position - 1] ?? '');
-}
-
-function findSkillTokenRanges(value: string): SkillTokenRange[] {
-  const ranges: SkillTokenRange[] = [];
-  const skillTokenPattern = /\/[^\s]+ {2}/g;
-  let match: RegExpExecArray | null;
-  while ((match = skillTokenPattern.exec(value)) !== null) {
-    ranges.push({ start: match.index, end: match.index + match[0].length });
-  }
-  return ranges;
-}
-
-const SKILL_TOKEN_HIGHLIGHT_CLASS =
-  'rounded-md bg-skill-bg/14 text-skill-fg [-webkit-box-decoration-break:clone] [box-decoration-break:clone] [text-shadow:0_0_10px_rgba(47,107,255,0.38)] dark:bg-skill-bg/18 dark:text-skill-fg-dark dark:[text-shadow:0_0_12px_rgba(37,99,235,0.42)]';
-
-function renderHighlightedCronMessage(value: string, tokenRanges: SkillTokenRange[]) {
-  if (tokenRanges.length === 0) {
-    return (
-      <>
-        {value}
-        {value.endsWith('\n') ? '\n' : '\u200b'}
-      </>
-    );
-  }
-
-  const chunks: ReactNode[] = [];
-  let cursor = 0;
-
-  for (const tokenRange of tokenRanges) {
-    const token = value.slice(tokenRange.start, tokenRange.end);
-    const tokenLabel = token.trimEnd();
-    const tokenTrailingSpace = token.slice(tokenLabel.length);
-
-    if (tokenRange.start > cursor) {
-      chunks.push(value.slice(cursor, tokenRange.start));
-    }
-    chunks.push(
-      <span
-        key={`skill-token-${tokenRange.start}`}
-        data-testid="cron-skill-token"
-        className={cn('align-baseline', SKILL_TOKEN_HIGHLIGHT_CLASS)}
-      >
-        {tokenLabel}
-      </span>,
-      tokenTrailingSpace,
-    );
-    cursor = tokenRange.end;
-  }
-
-  if (cursor < value.length) {
-    chunks.push(value.slice(cursor));
-  }
-  chunks.push(value.endsWith('\n') ? '\n' : '\u200b');
-
-  return <>{chunks}</>;
-}
 
 // Parse cron schedule to human-readable format
 // Handles both plain cron strings and Gateway CronSchedule objects:
@@ -605,9 +527,8 @@ function TaskDialog({ open, job, configuredChannels, returnFocusTo, onClose, onS
   const [quickSkills, setQuickSkills] = useState<QuickAccessSkill[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(false);
   const [skillsError, setSkillsError] = useState<string | null>(null);
-  const messageRef = useRef<HTMLTextAreaElement>(null);
+  const messageRef = useRef<ComposerEditorHandle>(null);
   const nameRef = useRef<HTMLInputElement>(null);
-  const messageOverlayRef = useRef<HTMLDivElement>(null);
   const [prevOpen, setPrevOpen] = useState(open);
 
   if (prevOpen !== open) {
@@ -637,7 +558,6 @@ function TaskDialog({ open, job, configuredChannels, returnFocusTo, onClose, onS
     () => agents.find((agent) => agent.id === selectedAgentId) ?? null,
     [agents, selectedAgentId],
   );
-  const skillTokenRanges = useMemo(() => findSkillTokenRanges(message), [message]);
   const filteredQuickSkills = useMemo(() => {
     const query = skillQuery.trim().toLowerCase();
     if (!query) return quickSkills;
@@ -689,134 +609,11 @@ function TaskDialog({ open, job, configuredChannels, returnFocusTo, onClose, onS
     void loadQuickSkills();
   }, [skillPickerOpen, loadQuickSkills]);
 
-  // The highlight overlay is absolutely positioned on top of the textarea and is
-  // the only visible copy of the text once a skill token exists, so it has to
-  // follow the textarea's scroll offset or edits below the fold become invisible.
-  const syncMessageOverlayScroll = useCallback(() => {
-    const textarea = messageRef.current;
-    const overlay = messageOverlayRef.current;
-    if (!textarea || !overlay) return;
-    overlay.scrollTop = textarea.scrollTop;
-    overlay.scrollLeft = textarea.scrollLeft;
+  const handleInsertSkill = useCallback((skill: QuickAccessSkill) => {
+    messageRef.current?.insertSkill(skill);
+    setSkillPickerOpen(false);
+    setSkillQuery('');
   }, []);
-
-  useLayoutEffect(() => {
-    const textarea = messageRef.current;
-    if (!textarea) return;
-    const previousScrollTop = textarea.scrollTop;
-    textarea.style.height = 'auto';
-    textarea.style.height = `${Math.min(textarea.scrollHeight, CRON_MESSAGE_MAX_HEIGHT)}px`;
-    textarea.scrollTop = previousScrollTop;
-    // On platforms with classic scrollbars the textarea's scrollbar gutter eats
-    // into its content width; the overlay has to lose the same width or the two
-    // copies of the text wrap at different columns.
-    const overlay = messageOverlayRef.current;
-    if (overlay) {
-      overlay.style.paddingRight = `${Math.max(0, textarea.offsetWidth - textarea.clientWidth)}px`;
-    }
-    syncMessageOverlayScroll();
-  }, [message, open, syncMessageOverlayScroll]);
-
-  const moveMessageCaretTo = useCallback(
-    (position: number) => {
-      const textarea = messageRef.current;
-      if (!textarea) return;
-      textarea.focus();
-      textarea.setSelectionRange(position, position);
-      syncMessageOverlayScroll();
-      requestAnimationFrame(() => {
-        messageRef.current?.focus();
-        messageRef.current?.setSelectionRange(position, position);
-        syncMessageOverlayScroll();
-      });
-    },
-    [syncMessageOverlayScroll],
-  );
-
-  const normalizeMessageSelection = useCallback(() => {
-    if (skillTokenRanges.length === 0) return;
-    const textarea = messageRef.current;
-    if (!textarea) return;
-    const selectionStart = textarea.selectionStart ?? 0;
-    const selectionEnd = textarea.selectionEnd ?? 0;
-    if (selectionStart !== selectionEnd) return;
-    const tokenRange = skillTokenRanges.find((range) => selectionStart > range.start && selectionStart < range.end);
-    if (tokenRange) {
-      moveMessageCaretTo(tokenRange.end);
-    }
-  }, [moveMessageCaretTo, skillTokenRanges]);
-
-  const handleMessageKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === 'Backspace') {
-        const textarea = messageRef.current;
-        const selectionStart = textarea?.selectionStart ?? 0;
-        const selectionEnd = textarea?.selectionEnd ?? 0;
-        const tokenRange = skillTokenRanges.find(
-          (range) => selectionStart === selectionEnd && selectionStart > range.start && selectionStart <= range.end,
-        );
-        if (tokenRange) {
-          e.preventDefault();
-          const nextValue = `${message.slice(0, tokenRange.start)}${message.slice(tokenRange.end)}`;
-          setMessage(nextValue);
-          moveMessageCaretTo(tokenRange.start);
-          return;
-        }
-      }
-      if (e.key === 'ArrowLeft' && skillTokenRanges.length > 0) {
-        const textarea = messageRef.current;
-        const selectionStart = textarea?.selectionStart ?? 0;
-        const selectionEnd = textarea?.selectionEnd ?? 0;
-        const tokenRange = skillTokenRanges.find(
-          (range) => selectionStart === selectionEnd && selectionStart === range.end,
-        );
-        if (tokenRange) {
-          e.preventDefault();
-          moveMessageCaretTo(tokenRange.start);
-          return;
-        }
-      }
-      if (e.key === 'ArrowRight' && skillTokenRanges.length > 0) {
-        const textarea = messageRef.current;
-        const selectionStart = textarea?.selectionStart ?? 0;
-        const selectionEnd = textarea?.selectionEnd ?? 0;
-        const tokenRange = skillTokenRanges.find(
-          (range) => selectionStart === selectionEnd && selectionStart === range.start,
-        );
-        if (tokenRange) {
-          e.preventDefault();
-          moveMessageCaretTo(tokenRange.end);
-          return;
-        }
-      }
-      if (e.key === 'Escape' && skillPickerOpen) {
-        e.preventDefault();
-        setSkillPickerOpen(false);
-      }
-    },
-    [message, moveMessageCaretTo, skillPickerOpen, skillTokenRanges],
-  );
-
-  const handleInsertSkill = useCallback(
-    (skill: QuickAccessSkill) => {
-      const textarea = messageRef.current;
-      const nextToken = getSkillPrefix(skill.name);
-      const selectionStart = textarea?.selectionStart ?? message.length;
-      const selectionEnd = textarea?.selectionEnd ?? message.length;
-      const leadingSpace = needsLeadingSkillSpace(message, selectionStart) ? ' ' : '';
-      const nextValue = `${message.slice(0, selectionStart)}${leadingSpace}${nextToken}${message.slice(selectionEnd)}`;
-      setMessage(nextValue);
-      setSkillPickerOpen(false);
-      setSkillQuery('');
-      requestAnimationFrame(() => {
-        messageRef.current?.focus();
-        const cursorPosition = selectionStart + leadingSpace.length + nextToken.length;
-        messageRef.current?.setSelectionRange(cursorPosition, cursorPosition);
-        syncMessageOverlayScroll();
-      });
-    },
-    [message, syncMessageOverlayScroll],
-  );
   const updateSchedule = useCallback(
     (patch: Partial<ScheduleFormState>) => setScheduleForm((prev) => ({ ...prev, ...patch })),
     [],
@@ -1071,39 +868,13 @@ function TaskDialog({ open, job, configuredChannels, returnFocusTo, onClose, onS
               {t('dialog.message')}
             </Label>
             <div className="relative rounded-lg border border-input bg-surface-modal px-3 pt-2 pb-1 transition-all focus-within:ring-1 focus-within:ring-foreground/10 focus-within:border-foreground/30">
-              {/* Text Row */}
-              <div className="relative">
-                {skillTokenRanges.length > 0 && (
-                  <div
-                    aria-hidden="true"
-                    ref={messageOverlayRef}
-                    data-testid="cron-message-highlight"
-                    className={cn('pointer-events-none absolute inset-0 z-20 overflow-hidden whitespace-pre-wrap break-words text-foreground', cronMessageTextClass)}
-                  >
-                    {renderHighlightedCronMessage(message, skillTokenRanges)}
-                  </div>
-                )}
-                <Textarea
-                  id="message"
-                  ref={messageRef}
-                  placeholder={t('dialog.messagePlaceholder')}
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  onKeyDown={handleMessageKeyDown}
-                  onSelect={normalizeMessageSelection}
-                  onClick={normalizeMessageSelection}
-                  onScroll={syncMessageOverlayScroll}
-                  rows={3}
-                  style={{ maxHeight: CRON_MESSAGE_MAX_HEIGHT }}
-                  className={cn(
-                    'relative min-h-[60px] w-full resize-none border-0 bg-transparent p-0 text-foreground placeholder:text-foreground/40 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 [scrollbar-gutter:stable]',
-                    cronMessageTextClass,
-                    skillTokenRanges.length > 0
-                      ? 'z-0 text-transparent caret-foreground selection:bg-primary/20'
-                      : 'z-10',
-                  )}
-                />
-              </div>
+              <ComposerEditor
+                ref={messageRef} id="message" value={message} onChange={setMessage}
+                skills={quickSkills} skillsLoading={skillsLoading} skillsError={skillsError}
+                onRequestSkills={loadQuickSkills} disabled={saving} suspendSuggestions={skillPickerOpen}
+                placeholder={t('dialog.messagePlaceholder')} tokenTestId="cron-skill-token"
+                testId="cron-message-input" className="min-h-[60px] max-h-[200px] text-sm leading-5"
+              />
 
               {/* Action Row */}
               <div className="mt-1.5 flex items-center gap-1">

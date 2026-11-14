@@ -457,6 +457,11 @@ modes rather than adding a new color for each page:
   Preserve keyboard operation, Escape/outside dismissal and focus return.
 - Text inputs use a quiet neutral focus border/ring. Keyboard focus must remain
   visible on all interactive controls. Reuse the shared field treatment.
+- Task and scheduled-task composition share the Lexical plain-text editor and
+  atomic skill nodes. Slash suggestions use the shared non-modal Radix Popover,
+  retain editor focus and expose listbox options through `aria-activedescendant`.
+  Do not recreate token visuals with a second text overlay or rebuild the editor
+  from a string on every keystroke. Keep the existing plain-text send boundary.
 - Reuse shared motion, including reduced-motion support. Do not add page-specific
   timers or independent animation values to recreate a shared interaction.
 

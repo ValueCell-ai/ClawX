@@ -1,3 +1,5 @@
+import { getNearestEditorFromDOMNode, KEY_BACKSPACE_COMMAND } from 'lexical';
+import { fillComposer, composerText, selectComposer } from './composer-test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ChatInput } from '@/pages/Chat/ChatInput';
@@ -277,7 +279,7 @@ describe('ChatInput execution agent and composer', () => {
     agentsState.updateAgentModel.mockReset();
     modelApi.getModel.mockReset().mockResolvedValue({ modelRef: null });
     modelApi.setModel.mockReset().mockImplementation(async (_key, modelRef) => ({ modelRef }));
-    useComposerDraftStore.setState({ drafts: {}, attachments: {}, modelRefs: {} });
+    useComposerDraftStore.setState({ drafts: {}, editorDrafts: {}, attachments: {}, modelRefs: {} });
     chatState.currentAgentId = 'main';
     chatState.currentSessionKey = 'agent:main:session-1';
     chatState.sessions = [{ key: 'agent:main:session-1' }];
@@ -430,10 +432,10 @@ describe('ChatInput execution agent and composer', () => {
     fireEvent.click(screen.getByRole('menuitemradio', { name: 'gpt-a', exact: true }));
     await waitFor(() => expect(toastErrorMock).toHaveBeenCalled());
     expect(picker).toHaveTextContent('gpt-b');
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Keep this draft' } });
+    fillComposer(screen.getByRole('textbox'), 'Keep this draft');
     fireEvent.click(screen.getByTitle('Send'));
     expect(send).not.toHaveBeenCalled();
-    expect(screen.getByRole('textbox')).toHaveValue('Keep this draft');
+    expect(composerText(screen.getByRole('textbox'))).toBe('Keep this draft');
     fireEvent.keyDown(picker, { key: 'ArrowDown' });
     expect(screen.getByRole('menuitemradio', { name: 'gpt-b', exact: true })).toHaveAttribute('aria-checked', 'true');
     fireEvent.click(screen.getByRole('menuitemradio', { name: 'gpt-a', exact: true }));
@@ -498,7 +500,7 @@ describe('ChatInput execution agent and composer', () => {
       expect(modelApi.setModel.mock.calls).toEqual([[target, pickedModel]]);
       expect(useComposerDraftStore.getState().modelRefs).toEqual({});
 
-      fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Check this' } });
+      fillComposer(screen.getByRole('textbox'), 'Check this');
       fireEvent.click(screen.getByTitle('Send'));
       await waitFor(() => expect(send).toHaveBeenCalledWith('Check this', undefined, 'research'));
       expect(guard).toHaveBeenCalledWith(expect.objectContaining({ sessionKey: target, sessionModelRef: pickedModel }));
@@ -558,14 +560,14 @@ describe('ChatInput execution agent and composer', () => {
       renderChatInput(send);
       fireEvent.keyDown(screen.getByTestId('chat-composer-agent'), { key: 'ArrowDown' });
       fireEvent.click(screen.getByTestId('chat-agent-target-research'));
-      fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Check this' } });
+      fillComposer(screen.getByRole('textbox'), 'Check this');
       fireEvent.click(screen.getByTitle('Send'));
       await waitFor(() => expect(guard).toHaveBeenCalledWith(expect.objectContaining({
         sessionKey: target, targetAgentId: 'research', sessionModelRef: pin, sessionEffectiveModelRef: pin,
       })));
       expect(modelApi.getModel).toHaveBeenCalledWith(target);
       expect(send).not.toHaveBeenCalled();
-      expect(screen.getByRole('textbox')).toHaveValue('Check this');
+      expect(composerText(screen.getByRole('textbox'))).toBe('Check this');
     } finally {
       hasGuard.mockRestore();
       guard.mockRestore();
@@ -745,7 +747,7 @@ describe('ChatInput execution agent and composer', () => {
     expect(screen.queryByTestId('chat-composer-working-indicator')).not.toBeInTheDocument();
     const input = screen.getByTestId('chat-composer-input');
     expect(input).not.toBeDisabled();
-    fireEvent.change(input, { target: { value: 'Queue this after the image' } });
+    fillComposer(input, 'Queue this after the image');
     expect(screen.getByTestId('chat-composer-send')).toBeDisabled();
     const voice = screen.getByTestId('chat-composer-voice');
     const send = screen.getByTestId('chat-composer-send');
@@ -768,8 +770,8 @@ describe('ChatInput execution agent and composer', () => {
     expect(screen.queryByTestId('microphone-permission-dialog')).not.toBeInTheDocument();
     const input = screen.getByTestId('chat-composer-input');
     expect(input).not.toBeDisabled();
-    fireEvent.change(input, { target: { value: 'still editable' } });
-    expect(input).toHaveValue('still editable');
+    fillComposer(input, 'still editable');
+    expect(composerText(input)).toBe('still editable');
   });
 
   it('keeps the existing thinking indicator while sending even when image generation has started', () => {
@@ -1372,7 +1374,18 @@ describe('ChatInput execution agent and composer', () => {
     expect(screen.getByTestId('chat-composer-agent')).toHaveTextContent('Main');
   });
 
-  it('uses native textarea rendering when no skill token is present', () => {
+  it('retains the draft when send admission is rejected', async () => {
+    const onSend = vi.fn().mockResolvedValue(false);
+    renderChatInput(onSend);
+    const input = screen.getByTestId('chat-composer-input');
+    fillComposer(input, 'Keep this rejected draft');
+    fireEvent.click(screen.getByTitle('Send'));
+    await waitFor(() => expect(onSend).toHaveBeenCalledWith('Keep this rejected draft', undefined));
+    await waitFor(() => expect(input).toHaveAttribute('contenteditable', 'true'));
+    expect(composerText(input)).toBe('Keep this rejected draft');
+  });
+
+  it('uses a single Lexical contenteditable for ordinary text', () => {
     agentsState.agents = [
       {
         id: 'main',
@@ -1389,10 +1402,10 @@ describe('ChatInput execution agent and composer', () => {
 
     renderChatInput();
 
-    const textbox = screen.getByRole('textbox') as HTMLTextAreaElement;
-    fireEvent.change(textbox, { target: { value: '我没有填写Skill' } });
+    const textbox = screen.getByRole('textbox') as HTMLDivElement;
+    fillComposer(textbox, '我没有填写Skill');
 
-    expect(textbox).toHaveValue('我没有填写Skill');
+    expect(composerText(textbox)).toBe('我没有填写Skill');
     expect(screen.queryByTestId('chat-composer-skill-token')).not.toBeInTheDocument();
     expect(textbox.className).not.toContain('text-transparent');
   });
@@ -1434,7 +1447,7 @@ describe('ChatInput execution agent and composer', () => {
     expect(onSend).not.toHaveBeenCalled();
     expect(screen.queryByText('@Research')).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Hello direct agent' } });
+    fillComposer(screen.getByRole('textbox'), 'Hello direct agent');
     fireEvent.click(screen.getByTitle('Send'));
 
     expect(onSend).toHaveBeenCalledWith('Hello direct agent', undefined);
@@ -1497,7 +1510,7 @@ describe('ChatInput execution agent and composer', () => {
     expect(screen.getByTestId('chat-composer-skill')).not.toBeDisabled();
     expect(screen.getByTestId('chat-model-picker-button')).not.toBeDisabled();
 
-    fireEvent.change(input, { target: { value: 'Send through ACP' } });
+    fillComposer(input, 'Send through ACP');
     fireEvent.click(screen.getByTitle('Send'));
 
     expect(onSend).toHaveBeenCalledWith('Send through ACP', undefined);
@@ -1590,20 +1603,20 @@ describe('ChatInput execution agent and composer', () => {
 
     renderChatInput(onSend);
 
-    const textbox = screen.getByRole('textbox') as HTMLTextAreaElement;
-    fireEvent.change(textbox, { target: { value: 'Draft a new helper' } });
+    const textbox = screen.getByRole('textbox') as HTMLDivElement;
+    fillComposer(textbox, 'Draft a new helper');
     textbox.focus();
-    textbox.setSelectionRange('Draft '.length, 'Draft '.length);
+    selectComposer(textbox, 'Draft '.length, 'Draft '.length);
 
     fireEvent.click(screen.getByTitle('Choose skill'));
     expect(await screen.findByText('/create-skill')).toBeInTheDocument();
 
     fireEvent.click(screen.getByText('/create-skill'));
     expect(screen.getByTestId('chat-composer-skill')).toHaveTextContent('Skill');
-    expect(textbox).toHaveValue('Draft /create-skill  a new helper');
+    expect(composerText(textbox)).toBe('Draft /create-skill  a new helper');
     expect(screen.getByTestId('chat-composer-skill-token')).toHaveTextContent('/create-skill');
     expect(textbox.className).not.toContain('text-transparent');
-    expect(screen.getByTestId('chat-composer-highlight').className).toContain('text-transparent');
+    expect(screen.queryByTestId('chat-composer-highlight')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTitle('Send'));
 
@@ -1647,67 +1660,20 @@ describe('ChatInput execution agent and composer', () => {
 
     renderChatInput();
 
-    const textbox = screen.getByRole('textbox') as HTMLTextAreaElement;
-    fireEvent.change(textbox, { target: { value: 'Draft a new helper' } });
+    const textbox = screen.getByRole('textbox') as HTMLDivElement;
+    fillComposer(textbox, 'Draft a new helper');
     textbox.focus();
-    textbox.setSelectionRange('Draft '.length, 'Draft '.length);
+    selectComposer(textbox, 'Draft '.length, 'Draft '.length);
 
     fireEvent.click(screen.getByTitle('Choose skill'));
     fireEvent.click(await screen.findByText('/create-skill'));
 
-    expect(textbox).toHaveValue('Draft /create-skill  a new helper');
-    textbox.setSelectionRange('Draft /create-skill  '.length, 'Draft /create-skill  '.length);
-    fireEvent.keyDown(textbox, { key: 'Backspace' });
-
-    expect(textbox).toHaveValue('Draft a new helper');
-  });
-
-  it('skips across the inline skill block with arrow keys', async () => {
-    agentsState.agents = [
-      {
-        id: 'main',
-        name: 'Main',
-        isDefault: true,
-        modelDisplay: 'MiniMax',
-        inheritedModel: true,
-        workspace: '~/.openclaw/workspace',
-        agentDir: '~/.openclaw/agents/main/agent',
-        mainSessionKey: 'agent:main:main',
-        channelTypes: [],
-      },
-    ];
-    vi.mocked(hostApiFetchMock).mockResolvedValue({
-      success: true,
-      skills: [
-        {
-          name: 'create-skill',
-          description: 'Create and refine reusable skills.',
-          source: 'workspace',
-          sourceLabel: 'Workspace',
-          manifestPath: '/tmp/workspace/skill/create-skill/SKILL.md',
-          baseDir: '/tmp/workspace/skill/create-skill',
-        },
-      ],
+    expect(composerText(textbox)).toBe('Draft /create-skill  a new helper');
+    selectComposer(textbox, 'Draft /create-skill  '.length, 'Draft /create-skill  '.length, () => {
+      getNearestEditorFromDOMNode(textbox).dispatchCommand(KEY_BACKSPACE_COMMAND, new KeyboardEvent('keydown', { key: 'Backspace' }));
     });
 
-    renderChatInput();
-
-    const textbox = screen.getByRole('textbox') as HTMLTextAreaElement;
-    fireEvent.change(textbox, { target: { value: 'Draft a new helper' } });
-    textbox.focus();
-    textbox.setSelectionRange('Draft '.length, 'Draft '.length);
-
-    fireEvent.click(screen.getByTitle('Choose skill'));
-    fireEvent.click(await screen.findByText('/create-skill'));
-
-    textbox.setSelectionRange('Draft '.length, 'Draft '.length);
-    fireEvent.keyDown(textbox, { key: 'ArrowRight' });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(textbox.selectionStart).toBe('Draft /create-skill  '.length);
-
-    fireEvent.keyDown(textbox, { key: 'ArrowLeft' });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(textbox.selectionStart).toBe('Draft '.length);
+    await waitFor(() => expect(composerText(textbox)).toBe('Draft a new helper'));
   });
 
   it('adds left spacing when inserting a skill after adjacent text', async () => {
@@ -1740,15 +1706,15 @@ describe('ChatInput execution agent and composer', () => {
 
     renderChatInput();
 
-    const textbox = screen.getByRole('textbox') as HTMLTextAreaElement;
-    fireEvent.change(textbox, { target: { value: '哈哈哈哈你好' } });
+    const textbox = screen.getByRole('textbox') as HTMLDivElement;
+    fillComposer(textbox, '哈哈哈哈你好');
     textbox.focus();
-    textbox.setSelectionRange('哈哈哈哈'.length, '哈哈哈哈'.length);
+    selectComposer(textbox, '哈哈哈哈'.length, '哈哈哈哈'.length);
 
     fireEvent.click(screen.getByTitle('Choose skill'));
     fireEvent.click(await screen.findByText('/docx'));
 
-    expect(textbox).toHaveValue('哈哈哈哈 /docx  你好');
+    expect(composerText(textbox)).toBe('哈哈哈哈 /docx  你好');
   });
 
   it('allows inserting the same skill multiple times as separate blocks', async () => {
@@ -1781,16 +1747,16 @@ describe('ChatInput execution agent and composer', () => {
 
     renderChatInput();
 
-    const textbox = screen.getByRole('textbox') as HTMLTextAreaElement;
+    const textbox = screen.getByRole('textbox') as HTMLDivElement;
     fireEvent.click(screen.getByTitle('Choose skill'));
     fireEvent.click(await screen.findByTestId('chat-composer-skill-option-create-rule'));
 
     await waitFor(() => expect(screen.queryByTestId('chat-skill-picker-menu')).not.toBeInTheDocument());
-    textbox.setSelectionRange(textbox.value.length, textbox.value.length);
+    selectComposer(textbox, composerText(textbox).length, composerText(textbox).length);
     fireEvent.click(screen.getByTitle('Choose skill'));
     fireEvent.click(await screen.findByTestId('chat-composer-skill-option-create-rule'));
 
-    expect(textbox).toHaveValue('/create-rule  /create-rule  ');
+    expect(composerText(textbox)).toBe('/create-rule  /create-rule  ');
     expect(screen.getAllByTestId('chat-composer-skill-token')).toHaveLength(2);
   });
 
@@ -1824,10 +1790,10 @@ describe('ChatInput execution agent and composer', () => {
 
     renderChatInput();
 
-    const textbox = screen.getByRole('textbox') as HTMLTextAreaElement;
-    fireEvent.change(textbox, { target: { value: 'Draft a new helper' } });
+    const textbox = screen.getByRole('textbox') as HTMLDivElement;
+    fillComposer(textbox, 'Draft a new helper');
     textbox.focus();
-    textbox.setSelectionRange('Draft '.length, 'Draft '.length);
+    selectComposer(textbox, 'Draft '.length, 'Draft '.length);
 
     fireEvent.click(screen.getByTitle('Choose skill'));
     fireEvent.click(await screen.findByText('/create-skill'));
