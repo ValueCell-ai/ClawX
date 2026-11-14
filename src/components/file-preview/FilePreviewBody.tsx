@@ -14,7 +14,7 @@
  * here so callers only pass a `FilePreviewTarget` and a `readOnly` flag.
  */
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
-import { FolderOpen, Save, ShieldAlert, Undo2 } from 'lucide-react';
+import { FileQuestion, FolderOpen, Save, ShieldAlert, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
@@ -361,6 +361,7 @@ export function FilePreviewBody({
     const directOpen = allowSystemActions && shouldOfferDirectOpenFallback(file.ext, size);
     return (
     <div className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center">
+      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-black/5 text-muted-foreground dark:bg-white/10"><FileQuestion className="h-6 w-6" /></div>
       <div className="space-y-1.5">
         <p className="text-sm font-medium text-foreground">
           {directOpen
@@ -375,7 +376,7 @@ export function FilePreviewBody({
             })
             : t(
               'filePreview.errors.unsupportedFormatHint',
-              'Only directly readable files such as text and Markdown support inline preview. Please open this file in your file manager.',
+              'Open this file in your file manager.',
             )}
         </p>}
       </div>

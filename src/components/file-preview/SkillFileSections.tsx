@@ -5,6 +5,7 @@
  * Docs / Scripts / Hooks / Assets cards (Other is hidden by default).
  */
 import { useEffect, useState } from 'react';
+import { ChevronRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { cn } from '@/lib/utils';
@@ -83,80 +84,45 @@ export function SkillFileSections({ baseDir, onOpen, className }: SkillFileSecti
     );
   }
 
+  const skillFile = groups.docs.find((file) => file.relativePath.replace(/\\/g, '/').toLowerCase() === 'skill.md');
+  const documents = groups.docs.filter((file) => file !== skillFile);
+  const sections = [
+    { title: t('detail.sections.docs'), files: documents },
+    { title: t('detail.sections.scripts'), files: groups.scripts },
+    { title: t('detail.sections.hooks'), files: groups.hooks },
+    { title: t('detail.sections.assets'), files: groups.assets },
+    { title: t('detail.sections.other'), files: groups.others },
+  ];
   return (
-    <div className={cn('space-y-5', className)}>
-      <SkillFileSection
-        title={t('detail.sections.docs', { defaultValue: 'Docs' })}
-        description={t('detail.sections.docsDesc', { defaultValue: 'SKILL.md and documentation' })}
-        files={groups.docs}
-        onOpen={onOpen}
-      />
-      <SkillFileSection
-        title={t('detail.sections.scripts', { defaultValue: 'Scripts' })}
-        description={t('detail.sections.scriptsDesc', { defaultValue: 'Executable scripts and commands' })}
-        files={groups.scripts}
-        onOpen={onOpen}
-      />
-      <SkillFileSection
-        title={t('detail.sections.hooks', { defaultValue: 'Hooks' })}
-        description={t('detail.sections.hooksDesc', { defaultValue: 'Hooks injected into the OpenClaw lifecycle' })}
-        files={groups.hooks}
-        onOpen={onOpen}
-      />
-      <SkillFileSection
-        title={t('detail.sections.assets', { defaultValue: 'Assets' })}
-        description={t('detail.sections.assetsDesc', { defaultValue: 'Templates, references, and static assets' })}
-        files={groups.assets}
-        onOpen={onOpen}
-      />
-    </div>
-  );
-}
-
-interface SkillFileSectionProps {
-  title: string;
-  description: string;
-  files: SkillFile[];
-  onOpen: (file: SkillFile, trigger: HTMLButtonElement) => void;
-}
-
-function SkillFileSection({ title, description, files, onOpen }: SkillFileSectionProps) {
-  if (!files.length) return null;
-  return (
-    <div className="space-y-2">
-      <div className="flex items-baseline justify-between gap-3">
-        <h4 className="text-meta font-bold text-foreground/80">
-          {title}
-          <span className="ml-2 text-2xs font-medium text-muted-foreground">{files.length}</span>
-        </h4>
-        <p className="text-meta text-muted-foreground truncate">{description}</p>
-      </div>
-      <div className="flex flex-col gap-1.5">
-        {files.map((file) => (
-          <button
-            key={file.filePath}
-            type="button"
-            onClick={(event) => onOpen(file, event.currentTarget)}
-            className={cn(
-              'flex items-center gap-2 rounded-xl border border-black/5 bg-transparent px-3 py-2 text-left transition-colors',
-              'hover:border-primary/40 hover:bg-primary/5',
-              'dark:border-white/5 dark:hover:bg-white/10',
-            )}
-            title={file.filePath}
-          >
-            <FilePreviewIcon
-              contentType={file.contentType}
-              mimeType={file.mimeType}
-              ext={file.ext}
-              className="h-4 w-4 shrink-0 text-muted-foreground"
-            />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-mono text-foreground">{file.relativePath || file.fileName}</p>
+    <div className={className}>
+      {skillFile && (
+        <button type="button" onClick={(event) => onOpen(skillFile, event.currentTarget)}
+          className="flex w-full items-center gap-3 rounded-xl border border-border bg-surface-modal p-3 text-left hover:bg-black/5 dark:hover:bg-white/5" title={skillFile.filePath}>
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <FilePreviewIcon contentType={skillFile.contentType} mimeType={skillFile.mimeType} ext={skillFile.ext} className="h-5 w-5" />
+          </span>
+          <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{skillFile.fileName}</span><span className="text-xs text-muted-foreground">{formatFileSize(skillFile.size)}</span></span>
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+        </button>
+      )}
+      <div className="mt-4">
+        {sections.filter((section) => section.files.length > 0).map((section) => (
+          <details key={section.title} className="group border-b border-border">
+            <summary className="flex cursor-pointer list-none items-center gap-2 py-3 text-sm font-medium [&::-webkit-details-marker]:hidden">
+              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
+              {section.title}<span className="text-xs font-normal text-muted-foreground">{section.files.length}</span>
+            </summary>
+            <div className="space-y-1 pb-2">
+              {section.files.map((file) => (
+                <button key={file.filePath} type="button" onClick={(event) => onOpen(file, event.currentTarget)} title={file.filePath}
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left hover:bg-black/5 dark:hover:bg-white/10">
+                  <FilePreviewIcon contentType={file.contentType} mimeType={file.mimeType} ext={file.ext} className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1 truncate text-xs">{file.relativePath || file.fileName}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">{formatFileSize(file.size)}</span>
+                </button>
+              ))}
             </div>
-            <span className="shrink-0 text-xs text-muted-foreground">
-              {formatFileSize(file.size) || file.ext.replace('.', '').toUpperCase() || ''}
-            </span>
-          </button>
+          </details>
         ))}
       </div>
     </div>

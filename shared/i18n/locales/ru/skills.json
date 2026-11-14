@@ -30,7 +30,13 @@
     "noSkills": "Навыки не найдены",
     "noSkillsSearch": "Попробуйте другой поисковый запрос",
     "noSkillsAvailable": "Навыки недоступны",
+    "noEnabledSkills": "Нет включённых навыков",
+    "noDisabledSkills": "Нет отключённых навыков",
     "detail": {
+        "title": "Сведения о навыке",
+        "skillSource": "Источник навыка",
+        "sourceDirectory": "Каталог источника",
+        "files": "Файлы навыка",
         "info": "Информация",
         "config": "Конфигурация",
         "description": "Описание",
@@ -63,6 +69,8 @@
         "enable": "Включить",
         "disable": "Выключить",
         "sections": {
+            "otherDocs": "Другие документы",
+            "other": "Другое",
             "title": "Содержимое",
             "docs": "Документация",
             "docsDesc": "SKILL.md и сопутствующие документы",

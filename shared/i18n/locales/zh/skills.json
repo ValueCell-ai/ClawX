@@ -1,6 +1,6 @@
 {
     "title": "技能",
-    "subtitle": "浏览和管理 AI 能力",
+    "subtitle": "浏览和管理 AI 的能力",
     "refresh": "刷新",
     "openFolder": "打开技能文件夹",
     "gatewayWarning": "网关未运行。你仍可查看本地技能，但运行时状态暂不可用。",
@@ -30,7 +30,13 @@
     "noSkills": "未找到技能",
     "noSkillsSearch": "尝试不同的搜索词",
     "noSkillsAvailable": "暂无可用技能",
+    "noEnabledSkills": "暂无已开启技能",
+    "noDisabledSkills": "暂无已禁用技能",
     "detail": {
+        "title": "技能详情",
+        "skillSource": "技能来源",
+        "sourceDirectory": "来源目录",
+        "files": "技能文件",
         "info": "信息",
         "config": "配置",
         "description": "描述",
@@ -63,6 +69,8 @@
         "enable": "启用",
         "disable": "禁用",
         "sections": {
+            "otherDocs": "其他文档",
+            "other": "其他",
             "title": "内容",
             "docs": "文档",
             "docsDesc": "SKILL.md 与说明文档",

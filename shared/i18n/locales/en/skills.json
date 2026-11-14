@@ -30,7 +30,13 @@
     "noSkills": "No skills found",
     "noSkillsSearch": "Try a different search term",
     "noSkillsAvailable": "No skills available",
+    "noEnabledSkills": "No enabled skills",
+    "noDisabledSkills": "No disabled skills",
     "detail": {
+        "title": "Skill details",
+        "skillSource": "Skill source",
+        "sourceDirectory": "Source directory",
+        "files": "Skill files",
         "info": "Information",
         "config": "Configuration",
         "description": "Description",
@@ -63,6 +69,8 @@
         "enable": "Enable",
         "disable": "Disable",
         "sections": {
+            "otherDocs": "Other documents",
+            "other": "Other",
             "title": "Contents",
             "docs": "Docs",
             "docsDesc": "SKILL.md and supporting docs",

@@ -4,7 +4,7 @@
  * so importing the helper doesn't bring in the Sheet/Monaco component
  * graph (and so React Fast Refresh stays happy).
  */
-import { classifyFileExt, extnameOf, getMimeTypeForExt } from '@/lib/generated-files';
+import { classifyFileExt, extnameOf, getMimeTypeForFile } from '@/lib/generated-files';
 import type { AttachmentRenderPart } from '@/lib/acp/timeline-types';
 import { richFilePreviewKind } from '@/lib/file-preview-capabilities';
 import type { WorkspaceFileRef } from '@/lib/file-preview-client';
@@ -46,7 +46,7 @@ export function buildPreviewTarget(filePath: string, fileName?: string, size?: n
     filePath,
     fileName: name,
     ext,
-    mimeType: getMimeTypeForExt(ext),
+    mimeType: getMimeTypeForFile(name, ext),
     contentType: classifyFileExt(ext),
     size,
   };
@@ -64,7 +64,7 @@ export function buildWorkspacePreviewTarget(
     filePath,
     fileName: filePath.split('/').pop() ?? filePath,
     ext,
-    mimeType: getMimeTypeForExt(ext),
+    mimeType: getMimeTypeForFile(filePath.split('/').pop() ?? filePath, ext),
     contentType: classifyFileExt(ext),
   };
 }
@@ -75,7 +75,7 @@ export function buildAttachmentPreviewTarget(attachment: Pick<AttachmentRenderPa
   }
   const fileName = attachment.reference.name;
   const ext = extnameOf(fileName);
-  const mimeType = attachment.access.mimeType || getMimeTypeForExt(ext);
+  const mimeType = attachment.access.mimeType || getMimeTypeForFile(fileName, ext);
   const richPreview = richFilePreviewKind({ ext, mimeType });
   return {
     attachmentFileRef: attachment.access.target.ref,

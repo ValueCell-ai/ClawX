@@ -30,7 +30,13 @@
     "noSkills": "スキルが見つかりません",
     "noSkillsSearch": "別の検索語をお試しください",
     "noSkillsAvailable": "利用可能なスキルがありません",
+    "noEnabledSkills": "有効なスキルがありません",
+    "noDisabledSkills": "無効なスキルがありません",
     "detail": {
+        "title": "スキル詳細",
+        "skillSource": "スキルのソース",
+        "sourceDirectory": "ソースディレクトリ",
+        "files": "スキルファイル",
         "info": "情報",
         "config": "設定",
         "description": "説明",
@@ -63,6 +69,8 @@
         "enable": "有効化",
         "disable": "無効化",
         "sections": {
+            "otherDocs": "その他の文書",
+            "other": "その他",
             "title": "コンテンツ",
             "docs": "ドキュメント",
             "docsDesc": "SKILL.md と関連ドキュメント",
