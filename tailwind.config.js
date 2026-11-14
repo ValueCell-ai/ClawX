@@ -8,14 +8,11 @@
  *
  *   1. fontFamily — Both stacks (sans / mono) are pinned
  *      explicitly so we never silently inherit Tailwind's evolving defaults.
- *      This locks the rendering on macOS, Windows, and Linux to the same
- *      glyph sources we ship to designers.
+ *      Each platform resolves the stack through its installed system fonts.
  *
- *   2. fontSize — We only *add* missing rungs to Tailwind's default scale.
- *      All new tokens come from the orphan pixel values (10/11/13/17/40px)
- *      that occurred most often in the codebase. Naming is semantic
- *      (`meta`, `tiny`, `subtitle`, `2xs`, `stat`) so a future density
- *      change only touches this file.
+ *   2. fontSize — Implements extra tokens alongside Tailwind's default
+ *      scale. DESIGN.md owns text roles and their permitted usage; token
+ *      availability does not make every size appropriate for ordinary UI.
  *
  *   3. colors — On top of shadcn's semantic tokens (primary / destructive /
  *      ...) we add three ClawX-private groups:
@@ -33,6 +30,7 @@
  *      from shadcn semantic tokens.
  *
  * Usage references:
+ *     - Design roles : DESIGN.md (canonical project-wide contract)
  *     - Sizes        : see fontSize block below
  *     - Colors       : see colors block below
  *     - CSS variables: src/styles/globals.css
@@ -109,41 +107,20 @@ module.exports = {
        * fontSize
        * ──────────────────────────────────────────────────────────────
        *
-       * Naming is by visual *role*, not pixel count, so a future density
-       * change only edits the values here. ClawX's full size ladder
-       * (combining Tailwind defaults + ClawX additions, smallest first):
+       * Use DESIGN.md's Typography table to select the role before the
+       * token. Keep the underlying Tailwind scale and legacy additions
+       * available for incremental convergence and content renderers.
+       * Do not add a second role/size table here.
        *
-       *   ┌──────────────┬──────────┬─────────────┬──────────────────────────────┐
-       *   │ Token        │ FontSize │ LineHeight  │ Primary use                  │
-       *   ├──────────────┼──────────┼─────────────┼──────────────────────────────┤
-       *   │ 2xs   (new)  │ 10px     │ 14px        │ micro labels, chip suffixes  │
-       *   │ tiny  (new)  │ 11px     │ 16px        │ ultra-small captions, tips   │
-       *   │ xs    (TW)   │ 12px     │ 16px        │ secondary helpers, badges    │
-       *   │ meta  (new)  │ 13px     │ 18px        │ form/button/modal description│
-       *   │ sm    (TW)   │ 14px     │ 20px        │ body (Label / CardDescription│
-       *   │ base  (TW)   │ 16px     │ 24px        │ rare; Textarea fallback only │
-       *   │ subtitle(new)│ 17px     │ 24px        │ subtitle right under page H1 │
-       *   │ lg    (TW)   │ 18px     │ 28px        │ Sheet / Confirm titles       │
-       *   │ xl    (TW)   │ 20px     │ 28px        │ Setup steps, large emoji     │
-       *   │ 2xl   (TW)   │ 24px     │ 32px        │ CardTitle                    │
-       *   │ 3xl   (TW)   │ 30px     │ 36px        │ large display text           │
-       *   │ 4xl   (TW)   │ 36px     │ 40px        │ Chat empty-state H1          │
-       *   │ stat  (new)  │ 40px     │ 1           │ dashboard hero numbers       │
-       *   │ 5xl   (TW)   │ 48px     │ 1           │ page H1 (narrow viewport)    │
-       *   │ 6xl   (TW)   │ 60px     │ 1           │ page H1 (md and up)          │
-       *   └──────────────┴──────────┴─────────────┴──────────────────────────────┘
-       *
-       * Tailwind defaults marked (TW) are intentionally untouched so
-       * shadcn components keep their original rendering.
+       * Keep custom names in sync with src/lib/utils.ts so cn() can
+       * distinguish font-size utilities from text-color utilities.
        * ────────────────────────────────────────────────────────────── */
       fontSize: {
         '2xs':      ['10px', { lineHeight: '14px' }],
         tiny:       ['11px', { lineHeight: '16px' }],
         meta:       ['13px', { lineHeight: '18px' }],
         subtitle:   ['17px', { lineHeight: '24px' }],
-        // Display-size token used only by the Cron dashboard hero counters.
-        // line-height: 1 (unitless) keeps the number tightly aligned with
-        // the icon next to it, which is why we don't reuse 4xl/5xl here.
+        // Legacy display token; new application text follows DESIGN.md.
         stat:       ['40px', { lineHeight: '1' }],
       },
 

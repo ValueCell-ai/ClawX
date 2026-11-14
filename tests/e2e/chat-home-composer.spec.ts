@@ -152,6 +152,7 @@ for (const locale of locales) {
       const model = page.getByTestId('chat-model-picker-button');
       const voice = page.getByTestId('chat-composer-voice');
       await expect(model).toBeVisible();
+      await expect(model).toHaveCSS('font-size', '14px');
       await expect(voice).toBeVisible();
       expect((await model.boundingBox())!.x).toBeLessThan((await voice.boundingBox())!.x);
       await page.getByTestId('chat-workspace-selector').click();
@@ -163,13 +164,47 @@ for (const locale of locales) {
       await model.click();
       await expect(page.getByTestId('chat-model-picker-menu')).toBeVisible();
       const modelMenu = page.getByTestId('chat-model-picker-menu');
+      await settleFloatingSurface(modelMenu);
+      const modelTitle = modelMenu.getByTestId('chat-model-picker-title');
+      await expect(modelTitle).toHaveCSS('font-size', '14px');
+      await expect(modelTitle).toHaveCSS('line-height', '20px');
+      await expect(modelTitle).toHaveCSS('font-weight', '400');
+      const headingTextLeft = await modelTitle.evaluate(element => {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        return range.getBoundingClientRect().x;
+      });
+      for (const group of await modelMenu.locator('[role="group"][aria-label]').all()) {
+        const providerLabel = group.locator(':scope > div').first();
+        await expect(providerLabel).toHaveCSS('font-size', '14px');
+        await expect(providerLabel).toHaveCSS('line-height', '20px');
+        await expect(providerLabel).toHaveCSS('font-weight', '400');
+        expect(await providerLabel.evaluate(element => getComputedStyle(element).color))
+          .toBe(await modelTitle.evaluate(element => getComputedStyle(element).color));
+        const providerTextLeft = await providerLabel.evaluate(element => {
+          const range = document.createRange();
+          range.selectNodeContents(element);
+          return range.getBoundingClientRect().x;
+        });
+        expect(providerTextLeft).toBeCloseTo(headingTextLeft, 0);
+      }
       expect(await expectMenuSelection(modelMenu.locator('[aria-current="true"]'))).toBe(selectedWorkspaceBackground);
       await expect(modelMenu.locator('button:not([aria-current]) [data-slot="menu-selection-indicator"]')).toHaveCount(0);
       const modelChoices = modelMenu.locator('button');
+      for (const option of await modelChoices.all()) {
+        await expect(option).toHaveCSS('font-size', '14px');
+        await expect(option).toHaveCSS('line-height', '20px');
+        await expect(option).toHaveCSS('font-weight', '500');
+        await expect(option).toHaveCSS('height', '28px');
+      }
+      expect(await modelTitle.evaluate(element => getComputedStyle(element).color))
+        .not.toBe(await modelChoices.first().evaluate(element => getComputedStyle(element).color));
       const firstModel = await modelChoices.nth(0).boundingBox();
       const secondModel = await modelChoices.nth(1).boundingBox();
       expect(secondModel!.y - firstModel!.y - firstModel!.height).toBeCloseTo(4, 0);
+      await page.screenshot({ path: testInfo.outputPath('model-picker.png') });
       await page.keyboard.press('Escape');
+      await expect(modelMenu).toHaveCount(0);
       await page.screenshot({ path: testInfo.outputPath('home.png') });
       // Narrow windows must retain the skill controls, model, dictation and footer.
       for (const width of [900, 700]) {
@@ -179,6 +214,16 @@ for (const locale of locales) {
         }
         await expect(page.getByTestId('chat-composer-send')).toBeInViewport();
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+        await model.click();
+        await settleFloatingSurface(modelMenu);
+        await expect(modelMenu).toBeInViewport();
+        await expect(modelTitle).toHaveCSS('font-size', '14px');
+        const menuBounds = await modelMenu.boundingBox();
+        expect(menuBounds!.x).toBeGreaterThanOrEqual(12);
+        expect(menuBounds!.x + menuBounds!.width).toBeLessThanOrEqual(width - 12);
+        await page.screenshot({ path: testInfo.outputPath(`model-picker-narrow-${width}.png`) });
+        await page.keyboard.press('Escape');
+        await expect(modelMenu).toHaveCount(0);
         await page.screenshot({ path: testInfo.outputPath(`home-narrow-${width}.png`) });
       }
       await input.fill('A test task');

@@ -288,6 +288,7 @@ We welcome contributions from the community! Whether it's bug fixes, new feature
 
 ### Guidelines
 
+- Read [DESIGN.md](DESIGN.md) before UI work; use its project-wide typography, layout and shared-component rules.
 - Follow the existing code style (ESLint + Prettier)
 - Write tests for new functionality
 - Update documentation as needed

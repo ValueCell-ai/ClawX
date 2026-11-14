@@ -1,5 +1,11 @@
 # AGENTS.md
 
+## UI design contract (required)
+
+- Before designing, implementing or reviewing any UI change, read and follow [DESIGN.md](DESIGN.md). It is the canonical project-wide visual contract for typography, layout, surfaces and shared interaction patterns.
+- Choose text styles by their documented role and reuse existing tokens and shared components. Do not invent a per-page/component size scale, shrink important text to make a layout compact, or copy an existing inconsistency as a new standard.
+- When a design rule changes, update DESIGN.md and the affected shared implementation together, and remove superseded guidance from comments and specs. AGENTS.md and Harness rules link to the contract rather than maintaining competing visual values.
+
 ## Cursor Cloud specific instructions
 
 ### Overview
@@ -42,7 +48,7 @@ Standard dev commands are in `package.json` scripts and `README.md`. Key ones:
 - **Models page aggregation**: The 7-day/30-day filters are relative rolling windows, not calendar-month buckets. When grouped by time, the chart should keep all day buckets in the selected window; only model grouping is intentionally capped to the top entries.
 - **OpenClaw Doctor in UI**: In Settings > Advanced > Developer, the app exposes both `Run Doctor` (`openclaw doctor --json`) and `Run Doctor Fix` (`openclaw doctor --fix --yes --non-interactive`) through the host-api. Renderer code should call the host route, not spawn CLI processes directly.
 - **UI change validation**: Any user-visible UI change should include or update an Electron E2E spec in the same PR so the interaction is covered by Playwright.
-- **i18n & styling conventions**: New user-facing features must (1) route all text through `react-i18next` with full locale coverage (`en` / `zh` / `ja` / `ru` under `shared/i18n/locales/<lang>/<ns>.json`) — never hardcode display strings, and (2) use the design tokens and substitution rules documented in `src/styles/globals.css` (surfaces `bg-surface-modal` / `bg-surface-input`, selected state `bg-black/5 dark:bg-white/10`, status colours `text-X-700 dark:text-X-400`, page H1/H2 `font-sans font-medium tracking-normal`, etc.) — see the *Component conventions* block in `globals.css` for the full substitution table.
+- **i18n & styling conventions**: New user-facing features must route all text through `react-i18next` with full locale coverage (`en` / `zh` / `ja` / `ru` under `shared/i18n/locales/<lang>/<ns>.json`) — never hardcode display strings. Follow DESIGN.md for visual roles and rules, `tailwind.config.js` for token definitions, and the *Component conventions* block in `src/styles/globals.css` for implementation substitutions.
 - **Renderer/Main API boundary (important)**:
   - Renderer must use `src/lib/host-api.ts` and `src/lib/api-client.ts` as the single entry for backend calls.
   - Do not add new direct `window.electron.ipcRenderer.invoke(...)` calls in pages/components; expose them through host-api/api-client instead.

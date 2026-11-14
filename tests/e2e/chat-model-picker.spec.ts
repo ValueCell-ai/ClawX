@@ -316,7 +316,7 @@ test.describe('ClawX chat model picker', () => {
       expect(secondBeta!.y - firstBeta!.y - firstBeta!.height).toBeCloseTo(4, 0);
       const alphaBounds = await alphaGroup.boundingBox();
       const betaBounds = await betaGroup.boundingBox();
-      expect(betaBounds!.y - alphaBounds!.y - alphaBounds!.height).toBeCloseTo(4, 0);
+      expect(betaBounds!.y - alphaBounds!.y - alphaBounds!.height).toBeCloseTo(8, 0);
       await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('provider/model-beta (Beta)');
       await expect(page.getByTestId('chat-model-picker-menu')).toContainText('gpt-5.6');
       await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('gpt-5.5');

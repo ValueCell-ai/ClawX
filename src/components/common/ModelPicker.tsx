@@ -52,7 +52,7 @@ export const ModelPicker = forwardRef<HTMLButtonElement, ModelPickerProps>(funct
           ref={ref} aria-labelledby={labelledBy} type="button" data-testid={`${testIdPrefix}-button`}
           disabled={disabled || busy || !options.length} title={title}
           className={cn(
-            'inline-flex h-8 min-w-0 max-w-[140px] items-center gap-1 rounded-lg px-1.5 text-meta font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 sm:max-w-[220px]',
+            'inline-flex h-8 min-w-0 max-w-[140px] items-center gap-1 rounded-lg px-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 sm:max-w-[220px]',
             (isOpen || busy) && 'text-foreground', className,
           )}
         >
@@ -63,13 +63,13 @@ export const ModelPicker = forwardRef<HTMLButtonElement, ModelPickerProps>(funct
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content side={side} align={align} sideOffset={8} onCloseAutoFocus={onCloseAutoFocus}
-          className="w-72 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10"
+          className="w-72 overflow-hidden rounded-xl border border-border bg-surface-modal p-1.5 shadow-lg"
           data-testid={`${testIdPrefix}-menu`}>
-          <div className="px-3 py-1.5 text-tiny font-medium text-muted-foreground/80">{title}</div>
+          <div data-testid={`${testIdPrefix}-title`} className="px-3 py-1.5 text-sm font-normal text-muted-foreground">{title}</div>
           <DropdownMenu.RadioGroup value={value ?? ''} onValueChange={onValueChange}
-            className="max-h-[min(16rem,calc(var(--radix-dropdown-menu-content-available-height)-3rem))] space-y-1 overflow-y-auto">
+            className="max-h-[min(16rem,calc(var(--radix-dropdown-menu-content-available-height)-3rem))] space-y-2 overflow-y-auto">
             {groups.map(([key, group]) => <div key={key} role="group" aria-label={group.name} data-testid={`${testIdPrefix}-provider-group-${key}`}>
-              <div title={group.name} className="truncate px-3 pb-0.5 pt-1 text-tiny font-medium text-muted-foreground">{group.name}</div>
+              <div title={group.name} className="truncate px-3 py-1 text-sm font-normal text-muted-foreground">{group.name}</div>
               <div className="clawx-menu-list">
                 {group.options.map(option => <DropdownMenu.RadioItem key={option.modelRef} value={option.modelRef} asChild>
                   <button type="button" data-testid={`${testIdPrefix}-option-${option.label}`} title={option.label}

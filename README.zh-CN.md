@@ -287,6 +287,7 @@ pnpm package         # 为当前平台打包（可用 :mac / :win / :linux 后�
 
 ### 贡献规范
 
+- 修改 UI 前阅读 [DESIGN.md](DESIGN.md)，遵守项目统一的排版、布局与共享组件规范。
 - 遵循现有代码风格（ESLint + Prettier）
 - 为新功能编写测试
 - 按需更新文档
