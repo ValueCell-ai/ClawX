@@ -1441,8 +1441,9 @@ export class GatewayManager extends EventEmitter {
     assertLifecycle();
     const launchContext = await prepareGatewayLaunchContext(this.status.port, async () => {
       assertLifecycle();
-      await this.startupPreparations.run(assertLifecycle);
+      const preparation = await this.startupPreparations.run(assertLifecycle);
       assertLifecycle();
+      return preparation;
     });
     assertLifecycle();
     await unloadLaunchctlGatewayService();

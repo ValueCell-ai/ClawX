@@ -113,6 +113,12 @@ Gateway `cron` completion notifications reconcile task state and force a fresh
 session catalog read so new internal results appear in the sidebar. See
 [scheduled-task result discovery](../tasks/fix-cron-result-discovery.md).
 
+Scheduled external delivery discovers recipients from account-scoped persisted
+session metadata, including OpenClaw's canonical nested delivery state after a
+SQLite migration. It must preserve opaque recipient IDs and must not revive
+legacy external routes for internal sessions. See
+[WeChat scheduled delivery targets](../tasks/fix-wechat-cron-delivery-targets.md).
+
 Native Windows upgrade evidence for the independent official 0.6.1 and main
 inputs is recorded in `harness/reference/windows-sqlite-upgrade-validation-20261109.md`,
 including SQLite snapshot cleanup diagnostics and the limits of isolated probes.
@@ -168,6 +174,8 @@ ClawX's prelaunch config sanitizer also owns desktop tool policy. It must keep `
 ClawX disables memory-core dreaming during prelaunch config synchronization while preserving memory search and existing memory data. Main excludes system-owned heartbeat and managed dreaming jobs from the user scheduled-task list before repairs and projection; same-name user jobs remain visible. Heartbeat execution is not disabled. See `harness/specs/rules/clawx-system-automations.md`.
 
 Scheduled-task history is Main-owned backend data. Current OpenClaw versions must be queried through the Gateway `cron.runs` RPC; direct run-log file reads are allowed only as a compatibility fallback for older file-backed runtimes. When a run's bounded summary ends with OpenClaw's truncation ellipsis, Main may recover the complete final assistant reply from the run transcript identified by that `cron.runs` entry, but only when the transcript reply is longer and shares the entire summary prefix. When a cron base session has no ACP replay, Renderer may project that typed host result into a generation-scoped, in-memory historical ACP timeline, but must not replace or duplicate non-empty ACP replay.
+
+Scheduled-task upgrade continuity is a backend contract. Main prepares verified snapshot evidence; the managed Gateway restores eligible legacy inference bindings through native authorization and conditional updates after credential projection and before scheduled dispatch. Trusted extension evidence can continue an expected previous binding after temporary credential cleanup only for the same encrypted login session and credential. Auth synchronization preserves authorization lifetimes for unchanged credentials and retains revocation semantics. See `harness/specs/tasks/preserve-cron-inference-on-upgrade.md` and `harness/reference/cron-inference-upgrade.md` for boundaries and validation evidence.
 
 The local HTML Preview privileged bridge is also Main-owned: Renderer may load a validated local HTML file or open that current file externally through the typed Host API. The guest is an implementation detail of the existing `preview` tab; there is no `web-browser` artifact tab or general address navigation. The durable guest contract is `harness/reference/web-browser.md`.
 

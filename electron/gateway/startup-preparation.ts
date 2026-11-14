@@ -1,4 +1,6 @@
 import { LifecycleSupersededError } from './lifecycle-controller';
+import type { CronInferenceContinuityEntry, GatewayStartupPreparationResult } from './cron-inference-continuity';
+export type { CronInferenceContinuityEntry } from './cron-inference-continuity';
 
 export type GatewayStartupReadiness = { ready: true } | { ready: false; reason: string };
 
@@ -6,6 +8,8 @@ export interface GatewayStartupPreparationContext {
   /** Recheck after asynchronous work and immediately before each persistent write. */
   assertActive(): void;
   signal: AbortSignal;
+  /** Trusted Main extensions only; restore credentials for the same encrypted session first. */
+  restoreCronInferenceContinuity?(entries: readonly CronInferenceContinuityEntry[]): void;
 }
 
 export interface GatewayStartupPreparation {
@@ -58,7 +62,8 @@ export class GatewayStartupPreparations {
     for (const controller of this.active.keys()) controller.abort();
   }
 
-  async run(assertLifecycle: () => void): Promise<void> {
+  async run(assertLifecycle: () => void): Promise<GatewayStartupPreparationResult> {
+    const cronInferenceContinuity: CronInferenceContinuityEntry[] = [];
     const entries = [...this.registrations.values()].map((registration) => {
       const controller = new AbortController();
       this.active.set(controller, registration);
@@ -69,6 +74,11 @@ export class GatewayStartupPreparations {
           if (controller.signal.aborted || this.registrations.get(registration.id) !== registration) {
             throw new LifecycleSupersededError(`Gateway startup preparation superseded: ${registration.id}`);
           }
+        },
+        restoreCronInferenceContinuity: (entries) => {
+          context.assertActive();
+          if (entries.length + cronInferenceContinuity.length > 1000) throw new Error('Too many scheduled-task continuations');
+          cronInferenceContinuity.push(...structuredClone(entries));
         },
       };
       return { registration, controller, context };
@@ -93,6 +103,7 @@ export class GatewayStartupPreparations {
         context.assertActive();
       }
       assertLifecycle();
+      return { cronInferenceContinuity };
     } catch (error) {
       // A rejected asynchronous callback may race stop/unregister. Cancellation
       // wins before the startup orchestrator classifies a normal failure.

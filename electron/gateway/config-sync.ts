@@ -47,7 +47,9 @@ import {
   ensureOpenClawUpgradeSnapshot,
   quarantineLegacyUpdateCheckState,
 } from '../utils/openclaw-upgrade-snapshot';
-import { stripSystemdSupervisorEnv, withCuaConnectionFileEnv } from './config-sync-env';
+import { prepareCronInferenceMigration } from '../utils/openclaw-cron-migration';
+import { writeCronInferenceLaunchManifest, type GatewayStartupPreparationResult } from './cron-inference-continuity';
+import { stripSystemdSupervisorEnv, withCronMigrationManifestEnv, withCuaConnectionFileEnv } from './config-sync-env';
 import { cleanupAgentsSymlinkedSkills, cleanupStalePluginRuntimeDeps } from './skills-symlink-cleanup';
 import {
   buildPrelaunchMaintenanceCacheKey,
@@ -662,12 +664,13 @@ async function resolveChannelStartupPolicy(): Promise<{
 
 export async function prepareGatewayLaunchContext(
   port: number,
-  prepareRuntime?: () => Promise<void>,
+  prepareRuntime?: () => Promise<GatewayStartupPreparationResult | void>,
 ): Promise<GatewayLaunchContext> {
   const timingsMs: Record<string, number> = {};
   const totalStartedAt = Date.now();
   const openclawDir = getOpenClawDir();
   const entryScript = getOpenClawEntryPath();
+  let cronMigrationManifest: string | undefined;
 
   if (!isOpenClawPresent()) {
     throw new Error(`OpenClaw package not found at: ${openclawDir}`);
@@ -677,6 +680,15 @@ export async function prepareGatewayLaunchContext(
     const snapshot = await ensureOpenClawUpgradeSnapshot();
     if (snapshot.status === 'created') {
       logger.info(`[upgrade] Created OpenClaw pre-migration snapshot (${snapshot.files.length} files): ${snapshot.snapshotDir}`);
+    }
+    try {
+      const migration = await prepareCronInferenceMigration(snapshot.snapshotDir);
+      cronMigrationManifest = migration.manifestPath;
+      if (migration.eligible || migration.skipped) logger.info('[upgrade] Prepared scheduled-task account migration', {
+        eligible: migration.eligible, unresolved: migration.skipped,
+      });
+    } catch (error) {
+      logger.warn('[upgrade] Scheduled-task account migration needs inspection:', error);
     }
   });
 
@@ -701,7 +713,10 @@ export async function prepareGatewayLaunchContext(
   // Extensions may need to project runtime credentials after offline migration.
   // The upgrade snapshot and config/plugin preparation must precede their writes;
   // environment and channel decisions below must see their completed projection.
-  if (prepareRuntime) await measureAsync(timingsMs, 'runtimePreparationMs', prepareRuntime);
+  const prepared = prepareRuntime ? await measureAsync(timingsMs, 'runtimePreparationMs', prepareRuntime) : undefined;
+  cronMigrationManifest = await writeCronInferenceLaunchManifest(
+    join(getOpenClawConfigDir(), 'clawx'), cronMigrationManifest, prepared?.cronInferenceContinuity ?? [],
+  );
 
   if (!existsSync(entryScript)) {
     throw new Error(`OpenClaw entry script not found at: ${entryScript}`);
@@ -745,7 +760,8 @@ export async function prepareGatewayLaunchContext(
     ? prependPathEntry(baseEnvWithBin, dwsBinDir).env
     : baseEnvWithBin;
   const forkEnv: Record<string, string | undefined> = {
-    ...stripSystemdSupervisorEnv(baseEnvPatched),
+    // Runtime applies this managed launch's evidence after credentials are ready, before cron starts.
+    ...withCronMigrationManifestEnv(stripSystemdSupervisorEnv(baseEnvPatched), cronMigrationManifest),
     ...providerEnv,
     ...uvEnv,
     ...proxyEnv,

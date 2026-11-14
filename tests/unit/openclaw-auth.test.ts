@@ -54,13 +54,20 @@ vi.mock('@electron/utils/paths', async () => {
 // Persistence still uses the real pinned SDK; its full contract has dedicated tests.
 vi.mock('@electron/utils/openclaw-persistence-runtime', async () => {
   const { createRequire } = await import('node:module');
+  const { readdirSync } = await import('node:fs');
   const { resolve } = await import('node:path');
-  const sdk = createRequire(import.meta.url)('openclaw/plugin-sdk/sqlite-runtime');
+  const requireRuntime = createRequire(import.meta.url);
+  const sdk = requireRuntime('openclaw/plugin-sdk/sqlite-runtime');
+  const dist = resolve('node_modules/openclaw/dist');
+  const authorizationModule = requireRuntime(join(dist, readdirSync(dist).find(name => /^authorization-lifetime-.*\.mjs$/.test(name))!));
   return {
     initializeBundledAgentDatabase: (db: unknown, pathname: string, agentId: string) => {
       sdk.ensureOpenClawAgentDatabaseSchema(db, { agentId, path: pathname, register: false, env: { OPENCLAW_STATE_DIR: resolve(pathname, '../../../..') } });
     },
     assertBundledAgentStructure: () => {},
+    prepareBundledAuthProfileAuthorizationWrite: Object.values(authorizationModule).find(
+      value => typeof value === 'function' && value.name === 'prepareAuthProfileAuthorizationWrite',
+    ),
   };
 });
 

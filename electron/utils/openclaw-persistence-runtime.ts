@@ -62,3 +62,13 @@ export function getBundledStateSchema(): string {
     'getOpenClawStateRuntimeSchema', /^openclaw-state-db-fast-path-.*\.mjs$/,
   )({ includeVersionLazyAdditiveTables: true, includeAgentDeletionJournal: true });
 }
+
+/** Reconcile native credential lifetimes against raw storage inside the writer transaction. */
+export function prepareBundledAuthProfileAuthorizationWrite(
+  existing: unknown,
+  incoming: Record<string, unknown>,
+): Record<string, unknown> {
+  return loadSchemaHelper<(existing: unknown, incoming: Record<string, unknown>) => Record<string, unknown>>(
+    'prepareAuthProfileAuthorizationWrite', /^authorization-lifetime-.*\.mjs$/,
+  )(existing, incoming);
+}

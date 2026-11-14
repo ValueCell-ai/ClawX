@@ -23,6 +23,13 @@ Rules:
 Validation:
   - Focused isolated SQLite and migration regression tests.
   - Communication replay and compare for changed Main/Gateway paths.
+  - Scheduled-task upgrade coverage must distinguish shared and per-agent stores, community and synthetic enterprise credentials, repeated startup, model catalog changes and credential replacement. Real local-model execution and enterprise quit/restore require separate evidence from unit tests and chat-only upgrade probes. See `harness/reference/cron-inference-upgrade.md`.
+
+Scheduled-task inference continuity:
+
+  - Credential writes reconcile authorization lifetimes against the raw canonical stored credentials in the same transaction, using the bundled runtime writer. Identical credentials retain authorization; replacement, deletion and re-addition retain native revocation semantics. Caller-supplied authorization metadata is not proof of continuity.
+  - Recover missing legacy inference bindings only from verified pre-migration task, model and account evidence, after credential projection and before scheduled dispatch. Use native authorization and conditional task updates; preserve task identity, history, enabled state, schedule, delivery, payload and model inheritance. Skip system jobs, existing bindings and runtime authorities. Never silently reassign an ambiguous or changed account. Gateway readiness and manually forced runs do not establish that asynchronous scheduler initialization has completed.
+  - A trusted extension may continue a temporarily removed credential projection only with encrypted evidence tied to the same login session, API key and endpoints, proof that the previous binding was valid before removal, and an exact expected-binding check at native commit. Logout, expiry, fresh login and account replacement invalidate that evidence. Existing external Gateway attachment never runs this offline preparation.
 
 Upgrade regression coverage must include intermediate/future schemas, new agents,
 compressed messages, absent or stale JSONL, deletion/rename persistence, usage,

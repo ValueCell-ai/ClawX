@@ -331,6 +331,12 @@ export function forkOpenClawUtilityProcess(
   // not acquire a control listener from an inherited environment variable.
   delete env[OPENCLAW_GATEWAY_CONTROL_ENV];
   if (control.gatewayShutdownControl) env[OPENCLAW_GATEWAY_CONTROL_ENV] = '1';
+  // Unlike Node's child_process APIs, Electron's native env conversion rejects
+  // undefined values (e.g. an absent cron migration manifest) before spawning.
+  // Keep empty strings: they intentionally clear inherited proxy settings.
+  for (const key of Object.keys(env)) {
+    if (env[key] === undefined) delete env[key];
+  }
   return utilityProcess.fork(ensureOpenClawUtilityBootstrap(), args, {
     ...options,
     env,
