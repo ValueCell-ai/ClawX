@@ -1029,11 +1029,11 @@ export function Sidebar() {
           aria-valuenow={sidebarWidth}
           title="Drag to resize sidebar"
           onPointerDown={handleResizePointerDown}
-          className="no-drag group absolute inset-y-0 right-0 z-20 w-2 translate-x-1/2 cursor-col-resize select-none"
+          className="no-drag group absolute inset-y-0 right-0 z-20 w-2 cursor-col-resize select-none"
         >
           <span
             aria-hidden
-            className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors group-hover:bg-primary/40"
+            className="pointer-events-none absolute inset-y-0 right-0 w-px bg-transparent transition-colors group-hover:bg-primary/40"
           />
         </div>
       )}

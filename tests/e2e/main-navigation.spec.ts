@@ -103,6 +103,16 @@ test.describe('ClawX main navigation without setup flow', () => {
         expect(searchBounds!.width).toBeLessThanOrEqual(sidebarBounds!.width - 32);
         await search.press('Escape');
 
+        // Hidden overflow must not let the resize handle shift the rail content.
+        await sidebar.evaluate(element => { element.scrollLeft = 100; });
+        await expect.poll(() => sidebar.evaluate(element => element.scrollLeft)).toBe(0);
+        for (const item of [newTask, page.getByTestId('sidebar-nav-skills'), page.getByTestId('sidebar-nav-settings')]) {
+          await item.hover();
+          const rail = await sidebar.boundingBox();
+          const bounds = await item.boundingBox();
+          expect(bounds!.x - rail!.x).toBeCloseTo(rail!.x + rail!.width - bounds!.x - bounds!.width, 0);
+        }
+
         await expect(brand).toHaveAccessibleName('ClawX');
         await expect(wordmark).toBeVisible();
         // A visible mask container can still be blank if its shipped asset fails
@@ -143,6 +153,15 @@ test.describe('ClawX main navigation without setup flow', () => {
         await expect(page).toHaveURL(/#\/$/);
       }
       expect(brandColors[0]).not.toBe(brandColors[1]);
+      await expect.poll(async () => (await sidebar.boundingBox())!.width).toBeGreaterThanOrEqual(220);
+      const railBefore = await sidebar.boundingBox();
+      const handle = await page.getByTestId('sidebar-resize-handle').boundingBox();
+      await page.mouse.move(handle!.x + handle!.width / 2, handle!.y + 100);
+      await page.mouse.down();
+      await page.mouse.move(railBefore!.x + railBefore!.width + 40, handle!.y + 100);
+      await page.mouse.up();
+      await expect.poll(async () => (await sidebar.boundingBox())!.width).toBeCloseTo(railBefore!.width + 40, 0);
+      await expect.poll(() => sidebar.evaluate(element => element.scrollLeft)).toBe(0);
     } finally {
       await closeElectronApp(app);
     }
