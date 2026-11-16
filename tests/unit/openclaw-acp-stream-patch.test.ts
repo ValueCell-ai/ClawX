@@ -30,12 +30,18 @@ describe('OpenClaw ACP assistant stream patch', () => {
     runInNewContext(
       `${bundle.slice(start, end)}
       globalThis.resolveAcpEventTextSnapshot = resolveAcpEventTextSnapshot;
-      globalThis.resolveAcpTextDelta = resolveAcpTextDelta;`,
+      globalThis.resolveAcpTextDelta = resolveAcpTextDelta;
+      globalThis.trackAcpTextEmission = trackAcpTextEmission;
+      globalThis.closeAcpTextSegment = closeAcpTextSegment;
+      globalThis.resolveAcpFinalTextDelta = resolveAcpFinalTextDelta;`,
       context,
     );
     return context as {
       resolveAcpEventTextSnapshot: (previous: string, data: { text?: string; delta?: string }) => string;
       resolveAcpTextDelta: (previous: string, next: string) => string;
+      trackAcpTextEmission: (state: { emittedText?: unknown }, text: string, emission: Promise<void>) => Promise<void>;
+      closeAcpTextSegment: (state: { emittedText?: unknown }) => void;
+      resolveAcpFinalTextDelta: (state: { emittedText?: unknown }, finalText: string) => string | undefined;
     };
   }
 
@@ -61,8 +67,38 @@ describe('OpenClaw ACP assistant stream patch', () => {
     expect(resolveAcpEventTextSnapshot('Hello', { text: 'Hello' })).toBe('Hello');
   });
 
+  it('retains producer order across tool boundaries while earlier delivery is pending', async () => {
+    const { trackAcpTextEmission, closeAcpTextSegment, resolveAcpFinalTextDelta } = loadSnapshotHelpers();
+    const state = {};
+    let deliver!: () => void;
+    const first = trackAcpTextEmission(state, 'First story', new Promise<void>((resolve) => { deliver = resolve; }));
+    closeAcpTextSegment(state);
+    const second = trackAcpTextEmission(state, 'Second story', Promise.resolve());
+    expect(resolveAcpFinalTextDelta(state, 'First story\n\nSecond story')).toBe('');
+    expect(resolveAcpFinalTextDelta(state, 'First story\n\nSecond story\nUnseen tail')).toBe('\nUnseen tail');
+    expect(resolveAcpFinalTextDelta(state, 'A different final reply')).toBeUndefined();
+    deliver();
+    await Promise.all([first, second]);
+  });
+
+  it('invalidates a failed emission without poisoning a successor run', async () => {
+    const { trackAcpTextEmission, resolveAcpFinalTextDelta } = loadSnapshotHelpers();
+    const state: { emittedText?: unknown } = {};
+    await expect(trackAcpTextEmission(state, 'Failed story', Promise.reject(new Error('delivery failed')))).rejects.toThrow('delivery failed');
+    expect(resolveAcpFinalTextDelta(state, 'Failed story')).toBeUndefined();
+    state.emittedText = undefined;
+    let reject!: (error: Error) => void;
+    const old = trackAcpTextEmission(state, 'Interrupted run', new Promise<void>((_resolve, failure) => { reject = failure; }));
+    const failed = expect(old).rejects.toThrow('late failure');
+    state.emittedText = undefined; // Trusted successor adoption resets run state.
+    await trackAcpTextEmission(state, 'Successor story', Promise.resolve());
+    reject(new Error('late failure'));
+    await failed;
+    expect(resolveAcpFinalTextDelta(state, 'Successor story')).toBe('');
+  });
+
   it('uses the snapshot-aware delta in the prompt text and thought streams', () => {
-    const start = bundle.indexOf('async handleDeltaEvent(pending, messageData)');
+    const start = bundle.indexOf('async handleDeltaEvent(pending, messageData,');
     const end = bundle.indexOf('async finishPrompt(', start);
     expect(start).toBeGreaterThanOrEqual(0);
     const source = bundle.slice(start, end);
@@ -174,5 +210,42 @@ describe('OpenClaw ACP assistant stream patch', () => {
   it('keeps the patched ACP chunk syntactically valid', async () => {
     await expect(execFileAsync(process.execPath, ['--check', path.join(dist, 'server-D2T0Amp5.mjs')]))
       .resolves.toMatchObject({ stderr: '' });
+  });
+
+  it('keeps the passive replay baseline across hidden controls while real user text resets it', () => {
+    const names = ['extractReplayChunks', 'resolveAmbientReplayBaseline', 'toAcpReplayUpdate'];
+    const declarations = names.map((name) => {
+      const matches = [...bundle.matchAll(new RegExp(`^function ${name}\\([^\\n]*\\) \\{[\\s\\S]*?^\\}`, 'gm'))];
+      expect(matches, name).toHaveLength(1);
+      return matches[0][0];
+    });
+    const { resolveAmbientReplayBaseline } = runInNewContext(
+      `${declarations.join('\n')}\n({ resolveAmbientReplayBaseline });`,
+      {
+        asOptionalRecord: (value: unknown) => value && typeof value === 'object' && !Array.isArray(value) ? value : undefined,
+        normalizeOptionalString: (value: unknown) => typeof value === 'string' && value.trim() ? value.trim() : undefined,
+      },
+    ) as {
+      resolveAmbientReplayBaseline: (events: unknown[], transcript: unknown[]) => { sentText?: string; sentThought?: string };
+    };
+    const assistant = {
+      role: 'assistant',
+      content: [{ type: 'text', text: 'Already streamed' }, { type: 'thinking', thinking: 'Already considered' }],
+    };
+    const controlText = 'Continue the current task from the existing transcript.';
+    for (const metadata of [
+      { display: false },
+      { provenance: { kind: 'internal_system' } },
+      { inputProvenance: { kind: 'internal_system' } },
+      { provenance: { kind: 'inter_session' } },
+    ]) {
+      const baseline = resolveAmbientReplayBaseline([], [assistant, { role: 'user', content: controlText, ...metadata }]);
+      expect(baseline).toMatchObject({ sentText: 'Already streamed', sentThought: 'Already considered' });
+    }
+    const visibleBoundary = resolveAmbientReplayBaseline([], [assistant, {
+      role: 'user', content: controlText, provenance: { kind: 'external_user' },
+    }]);
+    expect(visibleBoundary.sentText).toBeUndefined();
+    expect(visibleBoundary.sentThought).toBeUndefined();
   });
 });

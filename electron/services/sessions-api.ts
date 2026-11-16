@@ -130,9 +130,10 @@ function normalizeTurnUserText(message: TranscriptMessage): string {
 }
 
 function isInternalTranscriptUser(message: TranscriptMessage): boolean {
-  const provenance = (message as TranscriptMessage & { provenance?: unknown }).provenance;
-  if (provenance && typeof provenance === 'object' && !Array.isArray(provenance)) {
-    const kind = (provenance as Record<string, unknown>).kind;
+  const record = message as TranscriptMessage & { display?: unknown; provenance?: unknown; inputProvenance?: unknown };
+  if (record.display === false) return true;
+  for (const provenance of [record.provenance, record.inputProvenance]) {
+    const kind = isRecord(provenance) ? provenance.kind : undefined;
     if (
       typeof kind === 'string'
       && (kind.toLowerCase() === 'inter_session' || kind.toLowerCase() === 'internal_system')
@@ -168,6 +169,7 @@ function extractTranscriptTurnTimings(records: TranscriptMessageRecord[]): Sessi
     }
 
     if (!current || (role !== 'assistant' && role !== 'toolresult' && role !== 'tool_result')) continue;
+    if ((record.message as TranscriptMessage & { display?: unknown }).display === false) continue;
     const timestamp = transcriptRecordTimestamp(record);
     if (timestamp != null && (current.completedAt == null || timestamp > current.completedAt)) {
       current.completedAt = timestamp;

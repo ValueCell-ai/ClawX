@@ -8,6 +8,7 @@ import {
   test,
 } from './fixtures/electron';
 import { expandAcpToolCallsGroup } from './fixtures/acp-timeline';
+import { collectNativeMultiStageTurn, NATIVE_MULTI_STAGE } from './fixtures/acp-native-replay';
 
 const MAIN_SESSION_KEY = 'agent:main:main';
 const MAIN_WORKSPACE = '/workspace';
@@ -613,6 +614,59 @@ async function openChat(app: ElectronApplication) {
 }
 
 test.describe('ClawX ACP inline timeline', () => {
+  test('shows each native multi-stage story once through settlement, session switches and reload', async ({ launchElectronApp, homeDir }) => {
+    const turn = await collectNativeMultiStageTurn(homeDir);
+    const text = (updates: typeof turn.live) => updates
+      .filter(({ notification }) => notification.update.sessionUpdate === 'agent_message_chunk')
+      .map(({ notification }) => (notification.update as { content: { text: string } }).content.text).join('');
+    // These updates come from the installed ACP subprocess and its real ledger,
+    // including the terminal whole-run snapshot that originally repeated both.
+    expect(text(turn.live)).toBe(NATIVE_MULTI_STAGE.first + NATIVE_MULTI_STAGE.second);
+    expect(text(turn.replay)).toBe(text(turn.live));
+    const app = await launchElectronApp({ skipSetup: true });
+    const awayKey = 'agent:main:session-multi-stage-away';
+    try {
+      await installAcpChatMocks(app, { success: true, generation: 1 }, [
+        { key: MAIN_SESSION_KEY, displayName: 'main', workspacePath: MAIN_WORKSPACE },
+        { key: awayKey, displayName: 'Other conversation', workspacePath: MAIN_WORKSPACE },
+      ]);
+      await installAcpPromptDeferredMock(app);
+      await installAcpLoadReplayBySessionMock(app, { [MAIN_SESSION_KEY]: [[]], [awayKey]: [[]] });
+      const page = await openChat(app);
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();
+      await page.getByTestId('chat-composer-input').fill(NATIVE_MULTI_STAGE.request);
+      await page.getByTestId('chat-composer-send').click();
+      await expect.poll(() => app.evaluate(() => (
+        typeof (globalThis as unknown as { __resolveAcpPrompt?: unknown }).__resolveAcpPrompt
+      ))).toBe('function');
+      await emitAcpSessionUpdates(app, turn.live.map(({ notification }) => notification.update as AcpSessionUpdate));
+      const assertStories = async () => {
+        const timeline = page.getByTestId('acp-chat-timeline');
+        await expect(timeline.getByText(NATIVE_MULTI_STAGE.first, { exact: true })).toHaveCount(1);
+        await expect(timeline.getByText(NATIVE_MULTI_STAGE.second, { exact: true })).toHaveCount(1);
+        await expect(timeline.getByTestId('acp-user-message')).toHaveCount(1);
+        if (await page.getByTestId('acp-tool-calls-group').isVisible()) await expandAcpToolCallsGroup(page);
+        const tool = timeline.getByTestId('acp-tool-call-card');
+        await expect(tool).toHaveCount(1);
+        await expect(tool).toContainText('ls');
+      };
+      await assertStories();
+      const replay = turn.replay.map(({ notification }) => notification.update as AcpSessionUpdate);
+      await installAcpLoadReplayBySessionMock(app, {
+        [MAIN_SESSION_KEY]: [replay, replay, replay, replay], [awayKey]: [[], []],
+      });
+      await resolveDeferredAcpPrompt(app);
+      await expect.poll(() => getRecordedAcpLoadSessionKeys(app)).toContain(MAIN_SESSION_KEY);
+      await assertStories();
+      await page.getByTestId(`sidebar-session-${awayKey}`).click();
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();
+      await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
+      await assertStories();
+      await page.reload();
+      await assertStories();
+    } finally { await closeElectronApp(app); }
+  });
+
   test('restores an offline completion from ACP replay after switching conversations and reloading', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
     const awayKey = 'agent:main:session-offline-away';
