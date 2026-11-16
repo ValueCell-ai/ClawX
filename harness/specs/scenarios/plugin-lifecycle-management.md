@@ -60,5 +60,6 @@ Lifecycle stages:
 - Activate: only resolved and validated capabilities enter final OpenClaw runtime config.
 - Recover: failed upgrades, stale registrations, conflicts, and removed channels converge to a single diagnosable state with rollback or cleanup paths.
 - Package: cleanup and pruning keep packaged artifacts small without deleting target runtime assets; macOS universal packages keep both x64 and arm64 native payloads. Bundled channel plugin mirrors are compacted so OpenClaw's per-start source capture stays small.
+- Builtin imports: compaction preserves supported Node builtins, including prefix-only SQLite imports, without treating them as npm dependencies or allowing arbitrary URL imports. See `harness/specs/tasks/fix-plugin-compaction-node-builtins.md` for the release regression coverage.
 
 First-stage priority is integration safety: single-owner capability resolution, active config guards, direct regression tests for migration cases, and explicit task specs for resolution, validation, and recovery work. Bundled WeCom patches must preserve account isolation: account-less desktop sessions may resolve a sole configured account, while genuinely ambiguous multi-account sessions remain blocked.
