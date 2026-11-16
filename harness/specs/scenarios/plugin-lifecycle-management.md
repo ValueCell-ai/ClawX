@@ -27,6 +27,9 @@ ownedPaths:
   - pnpm-lock.yaml
   - scripts/openclaw-plugin-compact.mjs
   - tests/unit/openclaw-plugin-compact.test.ts
+  - patches/@electron__osx-sign@1.3.3.patch
+  - tests/unit/macos-signing-walk.test.ts
+  - harness/reference/macos-signing-emfile.md
 requiredProfiles:
   - fast
 conditionalProfiles:
@@ -43,6 +46,7 @@ requiredRules:
   - active-config-guards
   - packaged-runtime-pruning-guards
   - plugin-mirror-compaction-guards
+  - macos-signing-resource-bounds
 ---
 
 Plugin lifecycle management covers bundled and external plugins as one system with different source types. The core model has two layers:
@@ -61,5 +65,6 @@ Lifecycle stages:
 - Recover: failed upgrades, stale registrations, conflicts, and removed channels converge to a single diagnosable state with rollback or cleanup paths.
 - Package: cleanup and pruning keep packaged artifacts small without deleting target runtime assets; macOS universal packages keep both x64 and arm64 native payloads. Bundled channel plugin mirrors are compacted so OpenClaw's per-start source capture stays small.
 - Builtin imports: compaction preserves supported Node builtins, including prefix-only SQLite imports, without treating them as npm dependencies or allowing arbitrary URL imports. See `harness/specs/tasks/fix-plugin-compaction-node-builtins.md` for the release regression coverage.
+- macOS signing: binary discovery bounds resource use across the full package tree while preserving native payloads and nested bundle signing. See `harness/specs/rules/macos-signing-resource-bounds.md`.
 
 First-stage priority is integration safety: single-owner capability resolution, active config guards, direct regression tests for migration cases, and explicit task specs for resolution, validation, and recovery work. Bundled WeCom patches must preserve account isolation: account-less desktop sessions may resolve a sole configured account, while genuinely ambiguous multi-account sessions remain blocked.
