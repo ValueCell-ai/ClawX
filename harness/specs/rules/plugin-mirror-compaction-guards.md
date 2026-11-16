@@ -31,6 +31,11 @@ When adding or bumping a bundled plugin:
 - Do not weaken the build-time guards (writing outside the package, moved
   relative imports, moved `new URL(..., import.meta.url)` targets, ESM chunks in
   a CommonJS package). Fix the policy instead.
+- Identify Node builtin imports with `isBuiltin` from `node:module`, not an
+  allowlist synthesized from `builtinModules`: older build hosts omit
+  prefix-only modules such as `node:sqlite` from that list. Unknown `node:`
+  specifiers and other non-package URL imports must still fail validation.
+  Cover static, dynamic, and CommonJS SQLite imports with executable fixtures.
 - Any new policy or guard needs a fixture in
   `tests/unit/openclaw-plugin-compact.test.ts` that runs the compacted output
   in a child Node process.

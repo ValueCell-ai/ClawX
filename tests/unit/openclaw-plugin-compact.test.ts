@@ -4,8 +4,15 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpath
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { compactPluginMirror, PLUGIN_COMPACT_POLICIES } from '../../scripts/openclaw-plugin-compact.mjs';
+
+// Older build hosts omit prefix-only modules from this list even though Node
+// supports them. Reproduce that enumeration here on newer test runners too.
+vi.mock('node:module', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:module')>();
+  return { ...actual, builtinModules: actual.builtinModules.filter((name) => !name.startsWith('node:')) };
+});
 
 type Files = Record<string, string>;
 
@@ -85,6 +92,51 @@ afterEach(() => {
 });
 
 describe('compactPluginMirror', () => {
+  it.each([
+    { kind: 'static ESM', type: 'module', source: "import { DatabaseSync } from 'node:sqlite'; export const database = () => DatabaseSync;" },
+    { kind: 'dynamic ESM', type: 'module', source: "export const database = async () => (await import('node:sqlite')).DatabaseSync;" },
+    { kind: 'CommonJS', type: 'commonjs', source: "exports.database = () => require('node:sqlite').DatabaseSync;" },
+  ])('preserves working $kind SQLite imports when compacting dependencies', async ({ type, source }) => {
+    const plugin = makeRoot();
+    writeFiles(plugin, {
+      'package.json': pkg({ name: 'sqlite-plugin', type: 'module', main: './dist/index.mjs', dependencies: { 'sqlite-dep': '1.0.0' } }),
+      'dist/index.mjs': "export { database } from 'sqlite-dep';\n",
+      'dist/other.js': "export { database } from 'sqlite-dep';\n",
+      'node_modules/sqlite-dep/package.json': pkg({ name: 'sqlite-dep', type, main: 'index.js' }),
+      'node_modules/sqlite-dep/index.js': source,
+    });
+
+    const result = await compactPluginMirror(plugin, { bundle: true });
+
+    expect(result.bundledPackages.has('sqlite-dep')).toBe(true);
+    expect([...result.unresolved]).toEqual([]);
+    expect(existsSync(join(plugin, 'node_modules/sqlite-dep'))).toBe(false);
+    const loaded = runModule(plugin, [
+      `const index = await import(${importUrl(join(plugin, 'dist/index.mjs'))});`,
+      `const other = await import(${importUrl(join(plugin, 'dist/other.js'))});`,
+      'const DatabaseSync = await index.database();',
+      "const db = new DatabaseSync(':memory:');",
+      'try {',
+      "  console.log(JSON.stringify({ value: db.prepare('SELECT 7 AS value').get().value, same: DatabaseSync === await other.database() }));",
+      '} finally { db.close(); }',
+    ].join('\n'));
+    expect(loaded).toEqual({ value: 7, same: true });
+  });
+
+  it.each(['node:clawx-missing', 'node:node:sqlite', 'file:///clawx-outside.mjs', 'https://example.invalid/plugin.mjs'])(
+    'rejects non-builtin external import %s before changing the mirror', async (specifier) => {
+      const plugin = makeRoot();
+      const source = `export const load = () => import(${JSON.stringify(specifier)}).catch(() => null);\n`;
+      writeFiles(plugin, {
+        'package.json': pkg({ name: 'invalid-import-plugin', type: 'module', main: './dist/index.mjs' }),
+        'dist/index.mjs': source,
+      });
+
+      await expect(compactPluginMirror(plugin, { bundle: true })).rejects.toThrow(`keeps a non-package import ${specifier}`);
+      expect(readFileSync(join(plugin, 'dist/index.mjs'), 'utf8')).toBe(source);
+    },
+  );
+
   it('bundles own modules in place and drops inlined dependencies', async () => {
     const plugin = makeRoot();
     writeFiles(plugin, BASE_PLUGIN);
