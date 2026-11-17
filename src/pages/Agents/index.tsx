@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { AlertCircle, ArrowUpRight, Bot, Check, FolderOpen, MessageCircle, MoreHorizontal, Plus, RefreshCw, Settings2, Trash2 } from 'lucide-react';
+import { AlertCircle, ArrowUpRight, Check, MoreHorizontal, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import * as Menu from '@/components/ui/dropdown-menu';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
+import { ModelIcon } from '@/components/common/ModelIcon';
+import { ChannelLogo } from '@/components/channels/ChannelLogo';
 import { useAgentsStore } from '@/stores/agents';
 import { useGatewayStore } from '@/stores/gateway';
 import { useProviderStore } from '@/stores/providers';
@@ -15,7 +17,7 @@ import { useChatStore } from '@/stores/chat';
 import { useSettingsStore } from '@/stores/settings';
 import { hostApi, type ChannelGroupItem } from '@/lib/host-api';
 import { hostEvents } from '@/lib/host-events';
-import { agentInstructionsSummary, type AgentWorkspaceSnapshot } from '@/lib/agent-workspace';
+import type { AgentWorkspaceSnapshot } from '@/lib/agent-workspace';
 import { CHANNEL_NAMES, type ChannelType } from '@/types/channel';
 import type { AgentSummary } from '@/types/agent';
 import type { ChatSession } from '@shared/chat/types';
@@ -85,14 +87,13 @@ export function Agents() {
         {error && <div role="alert" className="mb-4 flex items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive"><AlertCircle className="h-4 w-4 shrink-0" />{error}</div>}
         {loading && !hasCompletedInitialLoad ? <div className="flex h-full items-center justify-center"><LoadingSpinner size="lg" /></div> : <>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2" data-testid="agents-roster">
-            {agents.map((agent, index) => <AgentCard key={agent.id} agent={agent} index={index} workspace={workspaceFor(agent)} sessions={sessions} channelGroups={channelGroups} onManage={trigger => openDetails(agent, trigger)} onStart={() => startTask(agent)} onDelete={() => setAgentToDelete(agent)} />)}
+            {agents.map(agent => <AgentCard key={agent.id} agent={agent} sessions={sessions} channelGroups={channelGroups} onManage={trigger => openDetails(agent, trigger)} onStart={() => startTask(agent)} onDelete={() => setAgentToDelete(agent)} />)}
           </div>
-          {agents.length > 0 && <p className="mt-5 text-xs leading-relaxed text-muted-foreground">{t('card.continuityHint')}</p>}
         </>}
       </div>
     </div>
     <CreateAgentDialog open={showAddDialog} onClose={() => setShowAddDialog(false)} onCreate={async (name, options) => { await createAgent(name, options); setShowAddDialog(false); toast.success(t('toast.agentCreated')); }} />
-    {detailAgent && <AgentDetails key={detailVisit} open={!!activeAgent} agent={detailAgent} workspace={workspaceFor(detailAgent)} channelGroups={channelGroups} onClose={() => setActiveAgentId(null)} onReturnFocus={() => returnFocusRef.current?.focus()} onWorkspaceSaved={refreshWorkspaces} />}
+    {detailAgent && <AgentDetails key={detailVisit} open={!!activeAgent} agent={detailAgent} workspace={workspaceFor(detailAgent)} channelGroups={channelGroups} onClose={() => setActiveAgentId(null)} onReturnFocus={() => returnFocusRef.current?.focus()} onWorkspaceSaved={refreshWorkspaces} onStart={() => startTask(detailAgent)} />}
     <ConfirmDialog open={!!agentToDelete} title={t('deleteDialog.title')} message={agentToDelete ? t('deleteDialog.message', { name: agentToDelete.name }) : ''} confirmLabel={t('deleteDialog.confirm')} cancelLabel={t('common:actions.cancel')} variant="destructive" onCancel={() => setAgentToDelete(null)} onConfirm={async () => {
       if (!agentToDelete) return;
       try { await deleteAgent(agentToDelete.id); setAgentToDelete(null); if (activeAgentId === agentToDelete.id) setActiveAgentId(null); toast.success(t('toast.agentDeleted')); }
@@ -101,8 +102,8 @@ export function Agents() {
   </div>;
 }
 
-function AgentCard({ agent, index, workspace, sessions, channelGroups, onManage, onStart, onDelete }: {
-  agent: AgentSummary; index: number; workspace?: AgentWorkspaceSnapshot; sessions: ChatSession[]; channelGroups: ChannelGroupItem[];
+function AgentCard({ agent, sessions, channelGroups, onManage, onStart, onDelete }: {
+  agent: AgentSummary; sessions: ChatSession[]; channelGroups: ChannelGroupItem[];
   onManage: (trigger: HTMLElement) => void; onStart: () => void; onDelete: () => void;
 }) {
   const { t, i18n } = useTranslation('agents');
@@ -110,19 +111,19 @@ function AgentCard({ agent, index, workspace, sessions, channelGroups, onManage,
   const ownedSessions = sessions.filter(session => session.key.split(':')[1] === agent.id && !session.createdLocally);
   const lastActive = Math.max(0, ...ownedSessions.map(session => Number.isFinite(session.updatedAt) ? session.updatedAt! : 0));
   const busy = ownedSessions.some(session => session.hasActiveRun);
-  const bound = channelGroups.flatMap(group => group.accounts.filter(account => account.agentId === agent.id).map(account => `${CHANNEL_NAMES[group.channelType as ChannelType] || group.channelType} · ${account.name || account.accountId}`));
+  const bound = channelGroups.flatMap(group => group.accounts.filter(account => account.agentId === agent.id).map(account => ({ type: group.channelType, id: account.accountId, label: `${CHANNEL_NAMES[group.channelType as ChannelType] || group.channelType} · ${account.name || account.accountId}` })));
   const directory = agent.workspace.replace(/\\/g, '/').replace(/\/+$/, '').split('/').pop() || agent.workspace;
-  const summary = workspace?.instructions ? agentInstructionsSummary(workspace.instructions) : '';
-  const colors = ['bg-blue-500/10 text-blue-700 dark:text-blue-400', 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400', 'bg-violet-500/10 text-violet-700 dark:text-violet-400'];
   return <article data-testid={`agent-card-${agent.id}`} className="flex flex-col rounded-xl border border-border bg-surface-modal p-4 transition-colors hover:border-foreground/20">
-    <div className="flex items-start gap-3">
-      <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl', colors[index % colors.length])}><Bot className="h-5 w-5" /></div>
-      <div className="min-w-0 flex-1 pt-0.5"><h2 className="flex h-6 items-center gap-2 text-base font-medium"><button type="button" data-testid={`agent-manage-${agent.id}`} className="min-w-0 truncate rounded text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={event => onManage(event.currentTarget)} aria-label={t('card.openDetails', { name: agent.name })}>{agent.name}</button>{agent.isDefault && <Badge variant="secondary" className="shrink-0 gap-1 bg-black/5 px-2 font-normal text-muted-foreground dark:bg-white/10"><Check className="h-2.5 w-2.5" />{t('defaultBadge')}</Badge>}</h2><p className="mt-0.5 truncate text-xs text-muted-foreground">{agent.modelDisplay}</p></div>
-      <Menu.Root><Menu.Trigger asChild><Button ref={menuRef} variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground" data-testid={`agent-menu-${agent.id}`} aria-label={t('card.actions', { name: agent.name })} title={t('card.actions', { name: agent.name })}><MoreHorizontal className="h-4 w-4" /></Button></Menu.Trigger><Menu.Portal><Menu.Content align="end" sideOffset={6} className="clawx-menu-list min-w-40 rounded-xl border border-border bg-surface-modal p-1.5 shadow-xl"><Menu.Item className="clawx-menu-item flex items-center gap-2 text-sm" onSelect={() => { if (menuRef.current) onManage(menuRef.current); }}><Settings2 className="h-3.5 w-3.5" />{t('settings')}</Menu.Item>{!agent.isDefault && <Menu.Item data-testid={`agent-delete-${agent.id}`} className="clawx-menu-item flex items-center gap-2 text-sm text-destructive" onSelect={onDelete}><Trash2 className="h-3.5 w-3.5" />{t('deleteAgent')}</Menu.Item>}</Menu.Content></Menu.Portal></Menu.Root>
+    <div className="flex min-w-0 items-center gap-2">
+      <h2 className="flex min-w-0 flex-1 items-center gap-2 text-base font-medium"><button type="button" data-testid={`agent-manage-${agent.id}`} className="min-w-0 truncate rounded text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={event => onManage(event.currentTarget)} aria-label={t('card.openDetails', { name: agent.name })}>{agent.name}</button>{agent.isDefault && <Badge variant="secondary" className="shrink-0 gap-1 bg-black/5 px-2 font-normal text-muted-foreground dark:bg-white/10"><Check className="h-3 w-3" />{t('defaultBadge')}</Badge>}</h2>
+      {!agent.isDefault && <Menu.Root><Menu.Trigger asChild><Button ref={menuRef} variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground" data-testid={`agent-menu-${agent.id}`} aria-label={t('card.actions', { name: agent.name })} title={t('card.actions', { name: agent.name })}><MoreHorizontal className="h-4 w-4" /></Button></Menu.Trigger><Menu.Portal><Menu.Content align="end" sideOffset={6} className="clawx-menu-list min-w-40 rounded-xl border border-border bg-surface-modal p-1.5 shadow-xl"><Menu.Item data-testid={`agent-delete-${agent.id}`} className="clawx-menu-item flex items-center gap-2 text-sm text-destructive" onSelect={onDelete}><Trash2 className="h-3.5 w-3.5" />{t('deleteAgent')}</Menu.Item></Menu.Content></Menu.Portal></Menu.Root>}
     </div>
-    <p className="mt-3 min-h-10 text-sm leading-5 text-muted-foreground line-clamp-2" title={summary || undefined}>{summary || t(!workspace ? 'profile.loadingFiles' : workspace.error ? 'card.workspaceUnavailable' : 'card.emptyWorkStyle')}</p>
-    <div className="mt-3 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground" title={agent.workspace}><FolderOpen className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{directory}</span>{bound.length > 0 && <span className="ml-auto inline-flex min-w-0 items-center gap-1.5 truncate" title={bound.join(', ')}><MessageCircle className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{bound.join(', ')}</span></span>}</div>
-    <div className="mt-3 flex items-center justify-between gap-3 border-t border-border/60 pt-3"><span className="min-w-0 truncate text-xs text-muted-foreground">{busy ? t('card.working') : lastActive > 0 ? t('card.recentActivity', { date: new Intl.DateTimeFormat(i18n?.language || 'en', { month: 'short', day: 'numeric' }).format(lastActive) }) : t('card.readyHint')}</span><Button variant="ghost" className="h-8 shrink-0 gap-1 rounded-lg px-2.5 text-sm font-medium text-primary hover:bg-primary/5 hover:text-primary" data-testid={`agent-start-${agent.id}`} onClick={onStart}>{t('card.startTask')}<ArrowUpRight className="h-3.5 w-3.5" /></Button></div>
+    <dl className="mt-4 grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-3 text-sm">
+      <dt className="text-muted-foreground">{t('settingsDialog.modelLabel')}</dt><dd className="m-0 flex min-w-0 items-center gap-2"><ModelIcon modelName={agent.modelDisplay} testId={`agent-model-icon-${agent.id}`} /><span className="truncate" title={agent.modelDisplay}>{agent.modelDisplay}</span></dd>
+      <dt className="text-muted-foreground">{t('detailTabs.directory')}</dt><dd className="m-0 min-w-0 truncate" title={agent.workspace}>{directory}</dd>
+      <dt className="self-start pt-0.5 text-muted-foreground">{t('profile.channelsTitle')}</dt><dd className="m-0 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2" title={bound.map(item => item.label).join('\n') || undefined}>{bound.length ? <>{bound.slice(0, 2).map(item => <span key={`${item.type}-${item.id}`} className="inline-flex min-w-0 max-w-full items-center gap-1.5"><ChannelLogo type={item.type} className="h-4 w-4" /><span className="truncate">{item.label}</span></span>)}{bound.length > 2 && <span className="shrink-0 text-muted-foreground">{t('card.moreAccounts', { count: bound.length - 2 })}</span>}</> : <span className="truncate text-muted-foreground">{t('detailTabs.noBindings')}</span>}</dd>
+    </dl>
+    <div className="mt-5 flex flex-wrap items-center justify-between gap-3"><span className="min-w-0 text-meta text-muted-foreground">{busy ? t('card.working') : lastActive > 0 ? t('card.recentActivity', { date: new Intl.DateTimeFormat(i18n?.language || 'en', { month: 'short', day: 'numeric' }).format(lastActive) }) : t('card.readyHint')}</span><div className="flex shrink-0 items-center gap-2"><Button variant="outline" size="sm" data-testid={`agent-details-button-${agent.id}`} onClick={event => onManage(event.currentTarget)}>{t('detailTabs.manage')}</Button><Button variant="secondary" size="sm" className="gap-1.5" data-testid={`agent-start-${agent.id}`} onClick={onStart}>{t('card.startTask')}<ArrowUpRight className="h-4 w-4" /></Button></div></div>
   </article>;
 }
 

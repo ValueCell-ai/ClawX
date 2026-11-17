@@ -70,6 +70,7 @@ export function CreateAgentDialog({ open, onClose, onCreate }: {
           </div>
           <div className="space-y-2"><Label htmlFor="agent-instructions" className="text-sm font-medium">{t('profile.workStyle')} <span className="font-normal text-muted-foreground">{t('createDialog.optional')}</span></Label><Textarea id="agent-instructions" data-testid="agent-create-instructions" value={instructions} onChange={event => setInstructions(event.target.value)} placeholder={t('createDialog.instructionsPlaceholder')} rows={4} maxLength={4000} className="resize-y text-sm leading-relaxed" disabled={saving} /><p className="text-sm leading-relaxed text-muted-foreground">{t('createDialog.instructionsHint')}</p></div>
           <div className="flex items-start justify-between gap-4"><div className="space-y-1"><Label htmlFor="inherit-workspace" className="text-sm font-medium">{t('createDialog.inheritWorkspaceLabel')}</Label><p className="text-sm leading-relaxed text-muted-foreground">{t('createDialog.inheritWorkspaceDescription')}</p></div><Switch id="inherit-workspace" checked={inheritWorkspace} onCheckedChange={setInheritWorkspace} disabled={saving} className="mt-0.5 shrink-0" /></div>
+          <p className="rounded-lg bg-surface-input p-3 text-sm leading-relaxed text-muted-foreground">{t('createDialog.boundaryHint')}</p>
         </div>
       </form>
     </ConfigDialogContent>

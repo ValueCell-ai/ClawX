@@ -1,6 +1,6 @@
 {
     "title": "アシスタント",
-    "subtitle": "それぞれの作業方針と記憶を持つアシスタントに、仕事を任せましょう。",
+    "subtitle": "タスクに合わせた働き方を用意します。",
     "refresh": "更新",
     "addAgent": "アシスタント を追加",
     "gatewayWarning": "ローカルサービスを利用できません。アシスタントやメッセージアプリの変更の反映に時間がかかる場合があります。",
@@ -14,15 +14,16 @@
     "creating": "作成中...",
     "createDialog": {
         "title": "アシスタントを作成",
-        "description": "名前、モデル、作業方針を設定します。ルールと記憶は個別に保存されます。",
+        "description": "名前、モデル、働き方を設定します。",
         "nameLabel": "アシスタント 名",
         "namePlaceholder": "例：リサーチパートナー",
         "inheritWorkspaceLabel": "メインアシスタントの初期設定をコピー",
         "inheritWorkspaceDescription": "ルールと好みを一度だけコピーします。上記の作業方針が優先されます。",
         "optional": "（任意）",
         "instructionsPlaceholder": "例：一次資料を優先し、事実と推測を区別して、簡潔に結論をまとめてください。",
-        "instructionsHint": "SOUL.md に保存し、以後のタスクで使います。",
-        "submit": "作成"
+        "instructionsHint": "新しいアシスタントの SOUL.md に保存します。",
+        "submit": "作成",
+        "boundaryHint": "専用の資料ディレクトリとセッションデータを作成します。ツールの権限とメッセージの振り分けは実行設定で決まります。"
     },
     "deleteDialog": {
         "title": "アシスタント を完全に削除しますか？",
@@ -80,6 +81,7 @@
         "channelRemoveFailed": "Channel の削除に失敗しました: {{error}}"
     },
     "card": {
+        "moreAccounts": "他 {{count}} 件",
         "openDetails": "{{name}} の詳細を表示",
         "actions": "{{name}} の操作",
         "defaultModel": "既定 · {{model}}",
@@ -104,7 +106,7 @@
         "viewFile": "{{file}} を表示",
         "filesTitle": "ルールと記憶",
         "refreshFiles": "資料を更新",
-        "memoryHint": "記憶ファイルはまだありません。保存された記憶がここに表示されます。",
+        "memoryHint": "メモリーファイルはまだありません。",
         "fileChanged": "SOUL.md は別の場所で変更されました。下書きを保持しました。再読込してから保存してください。",
         "styleSaved": "作業方針を保存しました",
         "styleSaveFailed": "作業方針を保存できませんでした：{{error}}",
@@ -112,8 +114,6 @@
         "modelHint": "このアシスタントのタスクで使用します。会話内のモデル変更は、そのタスクだけに適用されます。",
         "legacyModelHint": "既存のモデル設定を維持します。モデルを選ぶと、このアシスタント専用の設定として保存されます。",
         "manageModels": "AI モデルを管理",
-        "customModel": "カスタムモデル",
-        "modelRefLabel": "プロバイダー / モデル ID",
         "channelsTitle": "メッセージの入口",
         "manageChannels": "管理",
         "noChannels": "アカウントを接続すると、IM アプリからもタスクを依頼できます。",
@@ -129,5 +129,26 @@
             "note": "記憶ログ"
         },
         "reloadStyle": "最新ファイルで下書きを置き換える"
+    },
+    "detailTabs": {
+        "overview": "概要",
+        "profile": "資料とメモリー",
+        "capabilities": "スキルと権限",
+        "manage": "管理",
+        "defaultAssistant": "既定のアシスタント",
+        "viewAndEdit": "表示・編集",
+        "styleSource": "SOUL.md からの抜粋",
+        "directory": "作業ディレクトリ",
+        "capabilitiesHint": "ワークスペースのスキルと実行権限の管理方法を確認します。",
+        "viewCapabilities": "詳細を表示",
+        "noBindings": "メッセージ入口なし",
+        "filesScope": "標準の資料ファイルと最新のメモリーログを表示します。使用方法は実行設定によって異なります。",
+        "workspaceSkills": "ワークスペースのスキル",
+        "manageSkills": "スキルを管理",
+        "skillsScope": "このワークスペースで選択できる有効なスキルです。ツールの権限や実行ポリシー全体を示すものではありません。",
+        "skillsFailed": "スキルを読み込めませんでした。更新して再試行してください。",
+        "skillsEmpty": "選択できるスキルはありません。",
+        "toolsAndSandbox": "ツールとサンドボックス",
+        "permissionsScope": "アクセスは OpenClaw のグローバル・アシスタント・セッション設定で決まります。この画面には実効権限を表示しません。OpenClaw で確認・設定してください。"
     }
 }

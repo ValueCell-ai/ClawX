@@ -228,12 +228,28 @@ describe('Agents page status refresh', () => {
     agentsState.agents = [{ ...mainAgent, modelRef: 'external/exact-model', modelDisplay: 'exact-model' }];
     render(<AgentsWithRouter />);
     fireEvent.click(screen.getByTestId('agent-manage-main'));
-    expect(screen.getByTestId('agent-model-picker-button')).toHaveTextContent('exact-model');
+    expect(screen.getByTestId('agent-model-picker-button')).toHaveTextContent('external/exact-model');
+    expect(screen.getByTestId('agent-model-picker-button')).toHaveAttribute('title', 'external/exact-model');
     expect(screen.getByTestId('agent-model-picker-button')).toBeDisabled();
     expect(screen.getByTestId('agent-model-legacy-hint')).toBeInTheDocument();
+    expect(screen.queryByLabelText('profile.modelRefLabel')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'profile.close' }));
     expect(updateAgentModelMock).not.toHaveBeenCalled();
     expect(createAgentMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps an external model until a configured model is explicitly chosen', async () => {
+    agentsState.agents = [{ ...mainAgent, modelRef: 'external/exact-model', modelDisplay: 'exact-model' }];
+    providersState.accounts = [{ id: 'custom-12345678', label: 'Lab', vendorId: 'custom', authMode: 'local', enabled: true, model: 'model-a', updatedAt: '2026-10-31' }];
+    render(<AgentsWithRouter />);
+    fireEvent.click(screen.getByTestId('agent-manage-main'));
+    const picker = screen.getByTestId('agent-model-picker-button');
+    expect(picker).toHaveTextContent('external/exact-model');
+    fireEvent.keyDown(picker, { key: 'ArrowDown' });
+    const configuredModel = await screen.findByRole('menuitemradio', { name: 'model-a' });
+    expect(updateAgentModelMock).not.toHaveBeenCalled();
+    fireEvent.keyDown(configuredModel, { key: 'Enter' });
+    await waitFor(() => expect(updateAgentModelMock).toHaveBeenCalledWith('main', 'custom-12345678/model-a'));
   });
 
   it('requires a configured model to create an assistant and never writes when cancelled', async () => {
@@ -265,6 +281,7 @@ describe('Agents page status refresh', () => {
     render(<AgentsWithRouter />);
     fireEvent.click(screen.getByTestId('agent-manage-main'));
     expect(screen.getByLabelText('settingsDialog.nameLabel')).not.toHaveAttribute('readonly');
+    fireEvent.click(screen.getByTestId('agent-tab-profile'));
     fireEvent.click(await screen.findByRole('button', { name: 'profile.editStyle' }));
     const editor = screen.getByTestId('agent-style-editor');
     expect(editor).toHaveValue('Use primary sources.\n\nPreserve all existing rules.');
@@ -277,6 +294,7 @@ describe('Agents page status refresh', () => {
     agentsState.agents = [mainAgent];
     render(<AgentsWithRouter />);
     fireEvent.click(screen.getByTestId('agent-manage-main'));
+    fireEvent.click(screen.getByTestId('agent-tab-profile'));
     fireEvent.click(await screen.findByRole('button', { name: 'profile.editStyle' }));
     fireEvent.change(screen.getByTestId('agent-style-editor'), { target: { value: 'My draft' } });
     readTextMock.mockResolvedValue({ ok: true, content: 'External update', readOnly: false });
@@ -293,6 +311,7 @@ describe('Agents page status refresh', () => {
     loadWorkspaceMock.mockResolvedValue({ workspace: '/workspace', instructions: 'Read-only style', readOnly: true, files: [{ fileName: 'SOUL.md', filePath: '/workspace/SOUL.md' }], error: null });
     render(<AgentsWithRouter />);
     fireEvent.click(screen.getByTestId('agent-manage-main'));
+    fireEvent.click(screen.getByTestId('agent-tab-profile'));
     await screen.findByText('profile.readOnlyStyle');
     expect(screen.queryByRole('button', { name: 'profile.editStyle' })).not.toBeInTheDocument();
   });

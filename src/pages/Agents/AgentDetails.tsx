@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { ArrowUpRight, Bot, FileText, FolderOpen, Loader2, Pencil, X } from 'lucide-react';
+import { ArrowUpRight, FileText, FolderOpen, Loader2, Pencil, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,12 +9,16 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
+import { AgentCapabilities } from './AgentCapabilities';
 import { ModelPicker } from '@/components/common/ModelPicker';
 import type { FilePreviewTarget } from '@/components/file-preview/types';
 import { hostApi, type ChannelGroupItem } from '@/lib/host-api';
 import { readTextFile, writeTextFile } from '@/lib/file-preview-client';
-import { agentInstructionsSummary, type AgentWorkspaceSnapshot } from '@/lib/agent-workspace';
-import { formatModelRefLabel, splitModelRef } from '@/lib/model-options';
+import type { AgentWorkspaceSnapshot } from '@/lib/agent-workspace';
+import { ChannelLogo } from '@/components/channels/ChannelLogo';
+import { splitModelRef } from '@/lib/model-options';
 import { useAgentsStore } from '@/stores/agents';
 import { useAgentModels } from './use-agent-models';
 import { CHANNEL_NAMES, type ChannelType } from '@/types/channel';
@@ -23,7 +27,7 @@ import type { AgentSummary } from '@/types/agent';
 const FileReader = lazy(() => import('@/components/file-preview/FilePreviewOverlay'));
 const fileLabels: Record<string, string> = { 'AGENTS.md': 'rules', 'USER.md': 'user', 'IDENTITY.md': 'identity', 'MEMORY.md': 'memory' };
 
-export function AgentDetails({ open, agent, workspace, channelGroups, onClose, onReturnFocus, onWorkspaceSaved }: {
+export function AgentDetails({ open, agent, workspace, channelGroups, onClose, onReturnFocus, onWorkspaceSaved, onStart }: {
   open: boolean;
   agent: AgentSummary;
   workspace?: AgentWorkspaceSnapshot;
@@ -31,12 +35,13 @@ export function AgentDetails({ open, agent, workspace, channelGroups, onClose, o
   onClose: () => void;
   onReturnFocus: () => void;
   onWorkspaceSaved: () => void;
+  onStart: () => void;
 }) {
   const { t } = useTranslation('agents');
   const navigate = useNavigate();
   const { updateAgent, updateAgentModel } = useAgentsStore();
   const modelOptions = useAgentModels();
-  const effectiveModelRef = agent.modelRef || '';
+  const [tab, setTab] = useState('overview');
   const [name, setName] = useState(agent.name);
   const [savingName, setSavingName] = useState(false);
   const [editingStyle, setEditingStyle] = useState(false);
@@ -46,15 +51,12 @@ export function AgentDetails({ open, agent, workspace, channelGroups, onClose, o
   const [styleConflict, setStyleConflict] = useState(false);
   const [savingStyle, setSavingStyle] = useState(false);
   const [savingModel, setSavingModel] = useState(false);
-  const [customModel, setCustomModel] = useState(effectiveModelRef);
   const [confirmClose, setConfirmClose] = useState(false);
   const pendingNavigation = useRef<(() => void) | undefined>(undefined);
   const [file, setFile] = useState<FilePreviewTarget | null>(null);
   const [readerOpen, setReaderOpen] = useState(false);
   const fileTriggerRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => { setName(agent.name); }, [agent.name]);
-  useEffect(() => { setCustomModel(effectiveModelRef); }, [effectiveModelRef]);
-  const customChanged = customModel.trim() !== effectiveModelRef;
   const nameChanged = name.trim() !== agent.name;
   const styleChanged = editingStyle && styleDraft !== styleBaseRef.current;
   const busy = savingName || savingStyle || savingModel;
@@ -62,14 +64,14 @@ export function AgentDetails({ open, agent, workspace, channelGroups, onClose, o
   const requestClose = (action?: () => void) => {
     if (busy) return;
     pendingNavigation.current = action;
-    if (nameChanged || styleChanged || customChanged) setConfirmClose(true);
+    if (nameChanged || styleChanged) setConfirmClose(true);
     else finishClose(action);
   };
   const openFile = (target: FilePreviewTarget, trigger: HTMLButtonElement) => { fileTriggerRef.current = trigger; setFile(target); setReaderOpen(true); };
   const soulFile = workspace?.files.find(file => file.fileName === 'SOUL.md');
   const remainingFiles = workspace?.files.filter(file => file.fileName !== 'SOUL.md') ?? [];
   const hasMemory = remainingFiles.some(file => file.fileName === 'MEMORY.md' || /\d{4}-\d{2}-\d{2}/.test(file.fileName));
-  const boundAccounts = channelGroups.flatMap(group => group.accounts.filter(account => account.agentId === agent.id).map(account => ({ ...account, channelName: CHANNEL_NAMES[group.channelType as ChannelType] || group.channelType })));
+  const boundAccounts = channelGroups.flatMap(group => group.accounts.filter(account => account.agentId === agent.id).map(account => ({ ...account, channelType: group.channelType, channelName: CHANNEL_NAMES[group.channelType as ChannelType] || group.channelType })));
   const saveName = async () => {
     if (!name.trim() || !nameChanged || busy) return;
     setSavingName(true);
@@ -96,7 +98,7 @@ export function AgentDetails({ open, agent, workspace, channelGroups, onClose, o
     if (busy || modelRef === agent.overrideModelRef) return;
     if (!splitModelRef(modelRef)) { toast.error(t('toast.agentModelInvalid')); return; }
     setSavingModel(true);
-    try { await updateAgentModel(agent.id, modelRef); setCustomModel(modelRef); toast.success(t('toast.agentModelUpdated')); }
+    try { await updateAgentModel(agent.id, modelRef); toast.success(t('toast.agentModelUpdated')); }
     catch (error) { toast.error(t('toast.agentModelUpdateFailed', { error: String(error) })); }
     finally { setSavingModel(false); }
   };
@@ -110,38 +112,59 @@ export function AgentDetails({ open, agent, workspace, channelGroups, onClose, o
   };
   return <Dialog open={open} onOpenChange={next => { if (!next) requestClose(); }}>
     <DialogContent data-testid="agent-detail-dialog" className="flex max-h-[85vh] w-[calc(100vw-2rem)] max-w-2xl flex-col gap-0 overflow-hidden rounded-xl bg-surface-modal p-0" onCloseAutoFocus={event => { event.preventDefault(); onReturnFocus(); }}>
-      <div className="flex shrink-0 items-center gap-3 px-6 pb-4 pt-6 pr-14"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><Bot className="h-5 w-5" /></span><div className="min-w-0"><DialogTitle className="truncate font-sans text-xl font-medium tracking-normal">{t('settingsDialog.title', { name: agent.name })}</DialogTitle><DialogDescription className="mt-1 text-sm leading-relaxed text-muted-foreground">{t('settingsDialog.description')}</DialogDescription></div></div>
-      <Button variant="ghost" size="icon" className="absolute right-3 top-3 h-8 w-8" disabled={busy} aria-label={t('profile.close')} title={t('profile.close')} onClick={() => requestClose()}><X className="h-4 w-4" /></Button>
+      <div className="flex shrink-0 items-center gap-3 border-b border-border px-6 py-5 pr-14">
+        <div className="min-w-0"><DialogTitle className="truncate font-sans text-xl font-medium tracking-normal">{agent.name}</DialogTitle><DialogDescription className="mt-1 text-sm text-muted-foreground">{agent.isDefault ? t('detailTabs.defaultAssistant') : t('settingsDialog.agentIdLabel') + ': ' + agent.id}</DialogDescription></div>
+      </div>
+      <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="absolute right-3 top-3 h-8 w-8" disabled={busy} aria-label={t('profile.close')} onClick={() => requestClose()}><X className="h-4 w-4" /></Button></TooltipTrigger><TooltipContent side="left">{t('profile.close')}</TooltipContent></Tooltip>
       <Suspense fallback={null}><FileReader file={file} open={open && readerOpen} onClose={() => setReaderOpen(false)} onReturnFocus={() => fileTriggerRef.current?.focus()} testId="agent-file-reader" /></Suspense>
-      <div data-testid="agent-detail-content" className="min-h-0 overflow-y-auto px-6 pb-6">
-        <div className="space-y-6">
-          <div className="space-y-2"><Label htmlFor="agent-settings-name" className="text-sm font-medium">{t('settingsDialog.nameLabel')}</Label><div className="flex gap-2"><Input id="agent-settings-name" value={name} onChange={event => setName(event.target.value)} className="h-9 font-sans" maxLength={120} disabled={savingName} /><Button variant="outline" className="h-9 shrink-0" disabled={busy || !name.trim() || !nameChanged} onClick={() => void saveName()}>{savingName ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : t('common:actions.save')}</Button></div></div>
-          <section className="space-y-2.5" aria-labelledby="agent-work-style-title">
-            <div className="flex items-center justify-between gap-3"><h3 id="agent-work-style-title" className="text-sm font-medium">{t('profile.workStyle')}</h3><div className="flex items-center gap-1">{soulFile && !editingStyle && <Button variant="ghost" className="h-8 gap-1 px-2 text-sm text-muted-foreground" aria-label={t('profile.viewFile', { file: 'SOUL.md' })} onClick={event => openFile(soulFile, event.currentTarget)}><FileText className="h-3.5 w-3.5" />SOUL.md</Button>}{soulFile && !workspace?.readOnly && !editingStyle && <Button variant="ghost" className="h-8 gap-1 px-2 text-sm" onClick={() => { styleBaseRef.current = workspace?.instructions ?? ''; setStyleDraft(styleBaseRef.current); setStyleConflict(false); setEditingStyle(true); }}><Pencil className="h-3 w-3" />{t('profile.editStyle')}</Button>}</div></div>
-            {editingStyle ? <div className="space-y-2"><Textarea aria-label={t('profile.workStyle')} data-testid="agent-style-editor" value={styleDraft} onChange={event => setStyleDraft(event.target.value)} rows={7} className="text-sm leading-relaxed" disabled={savingStyle} /><p className="text-sm text-muted-foreground">{t('profile.nativeStyleHint')}</p>{styleConflict && <div role="alert" className="space-y-1 text-sm text-amber-700 dark:text-amber-400"><p>{t('profile.fileChanged')}</p><Button variant="outline" className="h-8 text-sm" onClick={() => { styleBaseRef.current = latestStyleRef.current; setStyleDraft(latestStyleRef.current); setStyleConflict(false); }}>{t('profile.reloadStyle')}</Button></div>}<div className="flex justify-end gap-2"><Button variant="ghost" className="h-8 text-sm" onClick={() => setEditingStyle(false)} disabled={savingStyle}>{t('common:actions.cancel')}</Button><Button className="h-8 text-sm" onClick={() => void saveStyle()} disabled={busy || !styleChanged}>{savingStyle && <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />}{t('profile.saveStyle')}</Button></div></div> : <><p className="text-sm leading-relaxed text-muted-foreground">{workspace === undefined ? t('profile.loadingFiles') : workspace.error ? t('profile.filesUnavailable') : agentInstructionsSummary(workspace.instructions ?? '') || t('profile.noStyle')}</p>{workspace?.readOnly && soulFile && <p className="text-sm text-muted-foreground">{t('profile.readOnlyStyle')}</p>}</>}
-          </section>
-          <section className="space-y-2.5" aria-labelledby="agent-files-title"><div className="flex items-center justify-between gap-3"><h3 id="agent-files-title" className="text-sm font-medium">{t('profile.filesTitle')}</h3><Button variant="ghost" className="h-8 gap-1 px-2 text-sm text-muted-foreground" onClick={onWorkspaceSaved} aria-label={t('profile.refreshFiles')} title={t('profile.refreshFiles')}>{t('refresh')}</Button></div><div className="grid grid-cols-1 gap-1 sm:grid-cols-2">{remainingFiles.map(target => <button key={target.filePath} type="button" className="flex items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-white/5" aria-label={t('profile.viewFile', { file: target.fileName })} onClick={event => openFile(target, event.currentTarget)}><FileText className="h-4 w-4 shrink-0 text-muted-foreground" /><span className="min-w-0"><span className="block text-sm font-medium">{t(`profile.files.${fileLabels[target.fileName] || 'note'}`)}</span><span className="block truncate font-mono text-meta text-muted-foreground">{target.fileName}</span></span><ArrowUpRight className="ml-auto h-3 w-3 shrink-0 text-muted-foreground" /></button>)}</div>{!hasMemory && workspace && !workspace.error && <p className="text-sm leading-relaxed text-muted-foreground">{t('profile.memoryHint')}</p>}{workspace?.error && <p className="text-sm text-muted-foreground">{t('profile.filesUnavailable')}</p>}</section>
-          <section className="space-y-2.5 border-t border-border/70 pt-5" aria-labelledby="agent-model-title">
-            <span id="agent-model-title" className="text-sm font-medium">{t('settingsDialog.modelLabel')}</span>
+      <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col">
+        <TabsList variant="page" className="mx-6 mb-1 mt-3 shrink-0" aria-label={t('settingsDialog.title', { name: agent.name })}>
+          {(['overview', 'profile', 'capabilities'] as const).map(value => <TabsTrigger key={value} variant="page" value={value} data-testid={`agent-tab-${value}`}>{t(`detailTabs.${value}`)}</TabsTrigger>)}
+        </TabsList>
+        <div data-testid="agent-detail-content" className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-4">
+          <TabsContent value="overview" className="m-0">
+            <div className="space-y-6">
+          <div className="space-y-2"><Label htmlFor="agent-settings-name" className="text-sm font-medium text-foreground">{t('settingsDialog.nameLabel')}</Label><div className="flex gap-2"><Input id="agent-settings-name" value={name} onChange={event => setName(event.target.value)} className="h-9 bg-surface-modal font-sans text-foreground" maxLength={120} disabled={savingName} /><Button variant="outline" className="h-9 shrink-0" disabled={busy || !name.trim() || !nameChanged} onClick={() => void saveName()}>{savingName ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : t('common:actions.save')}</Button></div></div>
+          <section className="space-y-2.5" aria-labelledby="agent-model-title">
+            <span id="agent-model-title" className="text-sm font-medium text-foreground">{t('settingsDialog.modelLabel')}</span>
             <div data-testid="agent-model-select">
-              <ModelPicker options={modelOptions} value={agent.modelRef ?? null} label={modelOptions.find(option => option.modelRef === agent.modelRef)?.modelId || (agent.modelRef ? formatModelRefLabel(agent.modelRef) : t('profile.notConfigured'))}
-                title={t('settingsDialog.modelLabel')} labelledBy="agent-model-title" testIdPrefix="agent-model-picker"
+              <ModelPicker options={modelOptions} value={agent.modelRef ?? null} label={modelOptions.find(option => option.modelRef === agent.modelRef)?.modelId || agent.modelRef || t('profile.notConfigured')}
+                title={t('settingsDialog.modelLabel')} valueTitle={agent.modelRef || undefined} labelledBy="agent-model-title" testIdPrefix="agent-model-picker"
                 onValueChange={value => void setModel(value)} disabled={busy} busy={savingModel} side="bottom" align="start"
                 className="h-9 w-full max-w-none border border-input bg-surface-modal px-3 text-sm font-normal text-foreground sm:max-w-none" />
             </div>
-            <p className="text-sm leading-relaxed text-muted-foreground">{t('profile.modelHint')}</p>
             {agent.inheritedModel && <p data-testid="agent-model-legacy-hint" className="text-sm leading-relaxed text-muted-foreground">{t('profile.legacyModelHint')}</p>}
             {!modelOptions.length && <p className="text-sm text-muted-foreground">{t('settingsDialog.modelProviderEmpty')}</p>}
-            <details className="group">
-              <summary className="cursor-pointer text-sm text-muted-foreground">{t('profile.customModel')}</summary>
-              <div className="mt-2 space-y-2"><Label htmlFor="agent-model-ref" className="text-sm text-muted-foreground">{t('profile.modelRefLabel')}</Label><div className="flex gap-2"><Input id="agent-model-ref" value={customModel} onChange={event => setCustomModel(event.target.value)} placeholder={t('settingsDialog.modelOverridePlaceholder')} className="h-9 font-mono text-sm" disabled={busy} /><Button variant="outline" className="h-9 shrink-0 text-sm" disabled={busy || !customChanged || !splitModelRef(customModel.trim())} onClick={() => void setModel(customModel.trim())}>{t('common:actions.save')}</Button></div></div>
-            </details>
           </section>
-          <section className="space-y-2.5"><div className="flex items-center justify-between gap-3"><h3 className="text-sm font-medium">{t('profile.channelsTitle')}</h3><Button variant="ghost" className="h-8 gap-1 px-2 text-sm text-primary" onClick={() => requestClose(() => navigate('/channels'))}>{t('profile.manageChannels')}<ArrowUpRight className="h-3 w-3" /></Button></div>{boundAccounts.length ? <div className="flex flex-wrap gap-2">{boundAccounts.map(account => <span key={`${account.channelName}-${account.accountId}`} className="rounded-md bg-black/5 px-2 py-1 text-xs text-muted-foreground dark:bg-white/10">{account.channelName} · {account.name || account.accountId}</span>)}</div> : <p className="text-sm leading-relaxed text-muted-foreground">{t('profile.noChannels')}</p>}</section>
-          <div className="border-t border-border/70 pt-4"><div className="flex min-w-0 items-center gap-2"><FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" /><div className="min-w-0 flex-1"><p className="text-sm font-medium">{t('profile.workspaceTitle')}</p><p className="mt-0.5 truncate font-mono text-meta text-muted-foreground" title={agent.workspace}>{agent.workspace}</p></div><Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" aria-label={t('profile.openFolder')} title={t('profile.openFolder')} onClick={() => void openWorkspace()}><FolderOpen className="h-4 w-4" /></Button></div><p className="mt-2 text-sm leading-relaxed text-muted-foreground">{t('profile.workspaceHint')}</p><p className="mt-2 text-meta text-muted-foreground">{t('settingsDialog.agentIdLabel')}: <span className="font-mono">{agent.id}</span></p></div>
+                <section className="space-y-2">
+                  <h3 className="text-sm font-medium text-foreground">{t('detailTabs.directory')}</h3>
+                  <div className="flex min-w-0 items-center gap-3"><span className="min-w-0 flex-1 truncate text-sm text-muted-foreground" title={agent.workspace}>{agent.workspace}</span><Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" aria-label={t('profile.openFolder')} onClick={() => void openWorkspace()}><FolderOpen className="h-4 w-4" /></Button></TooltipTrigger><TooltipContent>{t('profile.openFolder')}</TooltipContent></Tooltip></div>
+                </section>
+              <section className="space-y-2">
+                <div className="flex items-center justify-between gap-3"><h3 className="text-sm font-medium text-foreground">{t('profile.channelsTitle')}</h3><Button variant="ghost" size="sm" className="h-8 gap-1 px-2 text-primary" onClick={() => requestClose(() => navigate('/channels'))}>{t('profile.manageChannels')}<ArrowUpRight className="h-3.5 w-3.5" /></Button></div>
+                {boundAccounts.length ? <div className="space-y-2">{boundAccounts.map(account => <div key={`${account.channelType}-${account.accountId}`} className="flex min-w-0 items-center gap-2 text-sm"><ChannelLogo type={account.channelType} className="h-4 w-4" /><span className="min-w-0 truncate" title={`${account.channelName} · ${account.name || account.accountId}`}>{account.channelName} · {account.name || account.accountId}</span></div>)}</div> : <p className="text-sm text-muted-foreground">{t('detailTabs.noBindings')}</p>}
+              </section>
+            </div>
+          </TabsContent>
+          <TabsContent value="profile" forceMount className="m-0 data-[state=inactive]:hidden">
+            <div className="space-y-6">
+          <section className="space-y-2.5" aria-labelledby="agent-work-style-title">
+            <div className="flex items-center justify-between gap-3"><h3 id="agent-work-style-title" className="text-base font-medium">{t('profile.workStyle')}</h3><div className="flex items-center gap-1">{soulFile && !editingStyle && <Button variant="ghost" className="h-8 gap-1 px-2 text-sm text-muted-foreground" aria-label={t('profile.viewFile', { file: 'SOUL.md' })} onClick={event => openFile(soulFile, event.currentTarget)}><FileText className="h-3.5 w-3.5" />SOUL.md</Button>}{soulFile && !workspace?.readOnly && !editingStyle && <Button variant="ghost" className="h-8 gap-1 px-2 text-sm" onClick={() => { styleBaseRef.current = workspace?.instructions ?? ''; setStyleDraft(styleBaseRef.current); setStyleConflict(false); setEditingStyle(true); }}><Pencil className="h-3 w-3" />{t('profile.editStyle')}</Button>}</div></div>
+            {editingStyle ? <div className="space-y-2"><Textarea aria-label={t('profile.workStyle')} data-testid="agent-style-editor" value={styleDraft} onChange={event => setStyleDraft(event.target.value)} rows={7} className="text-sm leading-relaxed" disabled={savingStyle} /><p className="text-sm text-muted-foreground">{t('profile.nativeStyleHint')}</p>{styleConflict && <div role="alert" className="space-y-1 text-sm text-amber-700 dark:text-amber-400"><p>{t('profile.fileChanged')}</p><Button variant="outline" className="h-8 text-sm" onClick={() => { styleBaseRef.current = latestStyleRef.current; setStyleDraft(latestStyleRef.current); setStyleConflict(false); }}>{t('profile.reloadStyle')}</Button></div>}<div className="flex justify-end gap-2"><Button variant="ghost" className="h-8 text-sm" onClick={() => setEditingStyle(false)} disabled={savingStyle}>{t('common:actions.cancel')}</Button><Button className="h-8 text-sm" onClick={() => void saveStyle()} disabled={busy || !styleChanged}>{savingStyle && <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />}{t('profile.saveStyle')}</Button></div></div> : <><p className="max-h-48 overflow-y-auto whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{workspace === undefined ? t('profile.loadingFiles') : workspace.error ? t('profile.filesUnavailable') : workspace.instructions || t('profile.noStyle')}</p>{workspace?.readOnly && soulFile && <p className="text-sm text-muted-foreground">{t('profile.readOnlyStyle')}</p>}</>}
+          </section>
+          <section className="space-y-2.5" aria-labelledby="agent-files-title"><div className="flex items-center justify-between gap-3"><h3 id="agent-files-title" className="text-base font-medium">{t('profile.filesTitle')}</h3><Button variant="ghost" className="h-8 gap-1 px-2 text-sm text-muted-foreground" onClick={onWorkspaceSaved} aria-label={t('profile.refreshFiles')} title={t('profile.refreshFiles')}>{t('refresh')}</Button></div><div className="grid grid-cols-1 gap-1 sm:grid-cols-2">{remainingFiles.map(target => <button key={target.filePath} type="button" className="flex items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-white/5" aria-label={t('profile.viewFile', { file: target.fileName })} onClick={event => openFile(target, event.currentTarget)}><FileText className="h-4 w-4 shrink-0 text-muted-foreground" /><span className="min-w-0"><span className="block text-sm font-medium">{t(`profile.files.${fileLabels[target.fileName] || 'note'}`)}</span><span className="block truncate font-mono text-meta text-muted-foreground">{target.fileName}</span></span><ArrowUpRight className="ml-auto h-3 w-3 shrink-0 text-muted-foreground" /></button>)}</div>{!hasMemory && workspace && !workspace.error && <p className="text-sm leading-relaxed text-muted-foreground">{t('profile.memoryHint')}</p>}{workspace?.error && <p className="text-sm text-muted-foreground">{t('profile.filesUnavailable')}</p>}<p className="text-sm leading-relaxed text-muted-foreground">{t('detailTabs.filesScope')}</p></section>
+            </div>
+          </TabsContent>
+          <TabsContent value="capabilities" className="m-0">
+            <AgentCapabilities workspace={agent.workspace} onManageSkills={() => requestClose(() => navigate('/skills'))} onOpenFile={openFile} />
+          </TabsContent>
         </div>
-      </div>
+      </Tabs>
+      <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-border px-6 py-3">
+        <Button variant="outline" size="sm" disabled={busy} onClick={() => requestClose()}>{t('common:actions.close')}</Button>
+        <Button size="sm" disabled={busy} className="gap-1.5" data-testid="agent-detail-start" onClick={() => requestClose(onStart)}>{t('card.startTask')}<ArrowUpRight className="h-3.5 w-3.5" /></Button>
+      </footer>
     </DialogContent>
-    <ConfirmDialog open={confirmClose} title={t('settingsDialog.unsavedChangesTitle')} message={t('settingsDialog.unsavedChangesMessage')} confirmLabel={t('settingsDialog.closeWithoutSaving')} cancelLabel={t('common:actions.cancel')} onCancel={() => { setConfirmClose(false); pendingNavigation.current = undefined; }} onConfirm={() => { setConfirmClose(false); setName(agent.name); setEditingStyle(false); setCustomModel(effectiveModelRef); finishClose(pendingNavigation.current); }} />
+    <ConfirmDialog open={confirmClose} title={t('settingsDialog.unsavedChangesTitle')} message={t('settingsDialog.unsavedChangesMessage')} confirmLabel={t('settingsDialog.closeWithoutSaving')} cancelLabel={t('common:actions.cancel')} onCancel={() => { setConfirmClose(false); pendingNavigation.current = undefined; }} onConfirm={() => { setConfirmClose(false); setName(agent.name); setEditingStyle(false); finishClose(pendingNavigation.current); }} />
   </Dialog>;
 }

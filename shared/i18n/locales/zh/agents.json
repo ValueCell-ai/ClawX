@@ -1,6 +1,6 @@
 {
     "title": "助手",
-    "subtitle": "保留各自的工作方式与记忆，在需要时交给它处理。",
+    "subtitle": "为不同任务准备不同的工作方式。",
     "refresh": "刷新",
     "addAgent": "添加助手",
     "gatewayWarning": "本地服务暂不可用，助手或消息应用的配置变更可能需要稍等生效。",
@@ -14,15 +14,16 @@
     "creating": "创建中...",
     "createDialog": {
         "title": "创建助手",
-        "description": "为它取名、选择模型并设定工作方式，规则与记忆独立保存。",
+        "description": "设置名称、模型和工作方式。",
         "nameLabel": "助手名称",
         "namePlaceholder": "例如：研究搭档",
         "inheritWorkspaceLabel": "复制主助手的初始设定",
         "inheritWorkspaceDescription": "一次性复制工作规则和偏好；上方填写的工作方式优先。",
         "optional": "（可选）",
         "instructionsPlaceholder": "例如：帮我研究问题，优先查找一手资料，区分事实与推测，结论保持简洁。",
-        "instructionsHint": "保存到 SOUL.md，助手在之后的任务中会使用这份工作方式说明。",
-        "submit": "创建助手"
+        "instructionsHint": "保存到新助手的 SOUL.md。",
+        "submit": "创建助手",
+        "boundaryHint": "创建时会为助手准备独立的资料目录和会话数据。实际工具权限和消息路由由运行配置决定。"
     },
     "deleteDialog": {
         "title": "永久删除助手？",
@@ -80,6 +81,7 @@
         "channelRemoveFailed": "移除消息应用失败：{{error}}"
     },
     "card": {
+        "moreAccounts": "+{{count}} 个",
         "openDetails": "查看 {{name}} 的详情",
         "actions": "{{name}} 的操作",
         "defaultModel": "默认 · {{model}}",
@@ -104,7 +106,7 @@
         "viewFile": "查看 {{file}}",
         "filesTitle": "规则与记忆",
         "refreshFiles": "刷新助手资料",
-        "memoryHint": "暂时没有记忆文件，助手在使用中保存的记忆会出现在这里。",
+        "memoryHint": "暂时没有记忆文件。",
         "fileChanged": "SOUL.md 已被其他程序修改，草稿已保留，请重新载入后再保存。",
         "styleSaved": "工作方式已保存",
         "styleSaveFailed": "保存工作方式失败：{{error}}",
@@ -112,8 +114,6 @@
         "modelHint": "用于这个助手的任务；在对话中临时切换模型，只影响当前任务。",
         "legacyModelHint": "沿用原有模型设置，重新选择后仅为这个助手单独保存。",
         "manageModels": "管理 AI 模型",
-        "customModel": "自定义模型",
-        "modelRefLabel": "提供商 / 模型 ID",
         "channelsTitle": "消息入口",
         "manageChannels": "管理",
         "noChannels": "连接消息应用账号后，也可以从 IM 中给这位助手安排任务。",
@@ -129,5 +129,26 @@
             "note": "记忆日志"
         },
         "reloadStyle": "用最新文件替换草稿"
+    },
+    "detailTabs": {
+        "overview": "概览",
+        "profile": "资料与记忆",
+        "capabilities": "技能与权限",
+        "manage": "管理",
+        "defaultAssistant": "默认助手",
+        "viewAndEdit": "查看与编辑",
+        "styleSource": "摘自 SOUL.md",
+        "directory": "工作目录",
+        "capabilitiesHint": "查看工作空间中的技能及运行权限说明。",
+        "viewCapabilities": "查看详情",
+        "noBindings": "暂无消息入口",
+        "filesScope": "展示常用资料文件和最近一条记忆日志；是否被使用取决于运行配置。",
+        "workspaceSkills": "工作空间技能",
+        "manageSkills": "管理技能",
+        "skillsScope": "此工作空间中可选择的已开启技能。技能列表不代表工具权限或完整的运行策略。",
+        "skillsFailed": "未能读取技能，请刷新重试。",
+        "skillsEmpty": "此工作空间暂无可选择的技能。",
+        "toolsAndSandbox": "工具权限与沙箱",
+        "permissionsScope": "由 OpenClaw 的全局、助手和会话配置共同决定。当前页面不展示生效权限，请在 OpenClaw 中查看和配置。"
     }
 }

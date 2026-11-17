@@ -1,6 +1,6 @@
 {
     "title": "Assistants",
-    "subtitle": "Assistants with their own working styles and memories, ready for your next task.",
+    "subtitle": "Different ways of working for different tasks.",
     "refresh": "Refresh",
     "addAgent": "Add Assistant",
     "gatewayWarning": "The local service is unavailable. Assistant or messaging app changes may take a moment to apply.",
@@ -14,15 +14,16 @@
     "creating": "Creating...",
     "createDialog": {
         "title": "Create assistant",
-        "description": "Give it a name, a model and a working style. Its rules and memories are saved separately.",
+        "description": "Choose a name, model and working style.",
         "nameLabel": "Assistant Name",
         "namePlaceholder": "For example: Research partner",
         "inheritWorkspaceLabel": "Copy the main assistant’s initial settings",
         "inheritWorkspaceDescription": "Copy working rules and preferences once. The working style above takes priority.",
         "optional": "(optional)",
         "instructionsPlaceholder": "For example: Research with primary sources, distinguish facts from assumptions, and keep reports concise.",
-        "instructionsHint": "Saved to SOUL.md for future tasks.",
-        "submit": "Create assistant"
+        "instructionsHint": "Saved to the new assistant’s SOUL.md.",
+        "submit": "Create assistant",
+        "boundaryHint": "Creation prepares a separate profile directory and session data. Runtime configuration determines tool permissions and message routing."
     },
     "deleteDialog": {
         "title": "Permanently delete Assistant?",
@@ -80,6 +81,7 @@
         "channelRemoveFailed": "Failed to remove channel: {{error}}"
     },
     "card": {
+        "moreAccounts": "+{{count}} more",
         "openDetails": "View {{name}} details",
         "actions": "Actions for {{name}}",
         "defaultModel": "Default · {{model}}",
@@ -104,7 +106,7 @@
         "viewFile": "View {{file}}",
         "filesTitle": "Instructions & memory",
         "refreshFiles": "Refresh assistant files",
-        "memoryHint": "No memory files yet. Saved memories appear here as the assistant works.",
+        "memoryHint": "No memory files found.",
         "fileChanged": "SOUL.md changed elsewhere. Your draft is retained; refresh before saving again.",
         "styleSaved": "Working style saved",
         "styleSaveFailed": "Could not save working style: {{error}}",
@@ -112,8 +114,6 @@
         "modelHint": "Used for this assistant’s tasks unless a task chooses another model.",
         "legacyModelHint": "Your existing model setting remains in effect. Selecting a model saves it for this assistant only.",
         "manageModels": "Manage AI models",
-        "customModel": "Custom model",
-        "modelRefLabel": "Provider / model ID",
         "channelsTitle": "Messaging entry points",
         "manageChannels": "Manage",
         "noChannels": "Connect a messaging account to give this assistant tasks from an IM app.",
@@ -129,5 +129,26 @@
             "note": "Memory note"
         },
         "reloadStyle": "Replace draft with latest file"
+    },
+    "detailTabs": {
+        "overview": "Overview",
+        "profile": "Files & memory",
+        "capabilities": "Skills & permissions",
+        "manage": "Manage",
+        "defaultAssistant": "Default assistant",
+        "viewAndEdit": "View & edit",
+        "styleSource": "Excerpt from SOUL.md",
+        "directory": "Working directory",
+        "capabilitiesHint": "View workspace skills and how runtime permissions are managed.",
+        "viewCapabilities": "View details",
+        "noBindings": "No messaging entry points",
+        "filesScope": "Shows standard profile files and the latest memory log; runtime configuration determines how they are used.",
+        "workspaceSkills": "Workspace skills",
+        "manageSkills": "Manage skills",
+        "skillsScope": "Enabled skills available for selection in this workspace. This list does not describe tool permissions or the complete runtime policy.",
+        "skillsFailed": "Could not load skills. Refresh to try again.",
+        "skillsEmpty": "No selectable skills in this workspace.",
+        "toolsAndSandbox": "Tools & sandbox",
+        "permissionsScope": "Global, assistant and session settings in OpenClaw determine access. This page does not report effective permissions; view and configure them in OpenClaw."
     }
 }

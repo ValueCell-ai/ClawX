@@ -41,7 +41,8 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
           [key('agents', 'list')]: snapshot,
           [key('agents', 'updateModel', { id: 'main', modelRef: modelB })]: modelSnapshot,
           [key('agents', 'create', { name: 'Planner', inheritWorkspace: true, instructions: plannerStyle, modelRef: modelB })]: { ...modelSnapshot, agents: [...modelSnapshot.agents, planner] },
-          [key('channels', 'accounts')]: { success: true, channels: [] },
+          [key('channels', 'accounts')]: { success: true, channels: [{ channelType: 'telegram', defaultAccountId: 'one', status: 'connected', accounts: [{ accountId: 'one', name: 'First', agentId: 'main' }, { accountId: 'two', name: 'Second', agentId: 'main' }, { accountId: 'three', name: 'Third', agentId: 'main' }] }] },
+          [key('skills', 'quickAccess', { workspace: main.workspace })]: { success: true, skills: [{ name: 'research', description: 'Use primary sources.', source: 'workspace', sourceLabel: 'Workspace', manifestPath: join(main.workspace, 'SKILL.md'), baseDir: main.workspace }] },
           [key('providers', 'accounts')]: [{ id: 'custom-12345678', vendorId: 'custom', label: 'Research Lab', authMode: 'local', enabled: true, model: 'model-alpha', metadata: { customModels: ['model-alpha', 'model-beta', 'gpt-5.5'] }, updatedAt: '2026-10-31' }],
           [key('providers', 'vendors')]: [{ id: 'custom', name: 'Custom' }],
           [key('providers', 'accountKeyInfo')]: [],
@@ -53,7 +54,16 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       await page.reload();
       await navigateToSection(page, 'agents');
       const card = page.getByTestId('agent-card-main');
-      await expect(card).toContainText('Use primary sources.');
+      await expect(card).not.toContainText('Use primary sources.');
+      await expect(card.getByTestId('agent-model-icon-main')).toBeVisible();
+      await expect(card).toContainText(text.settingsDialog.modelLabel);
+      await expect(card).toContainText(text.detailTabs.directory);
+      await expect(card).toContainText(text.profile.channelsTitle);
+      await expect(card).toContainText('First');
+      await expect(card).toContainText(text.card.moreAccounts.replace('{{count}}', '1'));
+      await expect(card.locator('dd[title]')).toHaveCount(2);
+      await expect(card.locator('dd[title]').last()).toHaveAttribute('title', /Third/);
+      await expect(card.getByTestId('agent-details-button-main')).toBeVisible();
       await expect(card.getByTestId('agent-start-main')).toBeVisible();
       await expect(card.getByTestId('agent-start-main')).toHaveCSS('font-size', '14px');
       const more = page.getByTestId('agent-menu-research');
@@ -69,9 +79,29 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       const detailContent = page.getByTestId('agent-detail-content');
       await expect(dialog).toBeVisible();
       await expect(dialog.getByLabel(text.settingsDialog.nameLabel)).not.toHaveAttribute('readonly');
+      await expect(dialog.getByLabel(text.settingsDialog.nameLabel)).toBeEnabled();
       await expect(dialog.getByTestId('agent-model-picker-button')).toContainText('model-alpha');
+      await expect(dialog.locator('#agent-model-ref')).toHaveCount(0);
+      const nameBackground = await dialog.getByLabel(text.settingsDialog.nameLabel).evaluate(el => getComputedStyle(el).backgroundColor);
+      await expect(dialog.getByTestId('agent-model-picker-button')).toHaveCSS('background-color', nameBackground);
+      const nameLabelStyle = await dialog.locator('label[for="agent-settings-name"]').evaluate(el => {
+        const style = getComputedStyle(el);
+        return { color: style.color, fontSize: style.fontSize, fontWeight: style.fontWeight };
+      });
+      for (const label of [dialog.locator('#agent-model-title'), dialog.getByRole('heading', { name: text.detailTabs.directory })]) {
+        await expect(label).toHaveCSS('color', nameLabelStyle.color);
+        await expect(label).toHaveCSS('font-size', nameLabelStyle.fontSize);
+        await expect(label).toHaveCSS('font-weight', nameLabelStyle.fontWeight);
+      }
       await expect(dialog.getByTestId('agent-model-legacy-hint')).toBeVisible();
+      await expect(dialog.getByTestId('agent-tab-overview')).toHaveAttribute('data-state', 'active');
+      await expect(dialog.getByTestId('agent-tab-profile')).toBeVisible();
+      await expect(dialog.getByText('Use primary sources.', { exact: true })).not.toBeVisible();
+      await expect(dialog.getByRole('heading', { name: text.profile.channelsTitle })).toBeVisible();
+      await expect(dialog.getByText('Telegram · First')).toBeVisible();
+      await expect(dialog.getByText('Telegram · Second')).toBeVisible();
       expect((await getRecordedHostInvocations(app)).filter(call => call.module === 'agents' && ['create', 'updateModel'].includes(call.action))).toHaveLength(0);
+      await dialog.getByTestId('agent-tab-profile').click();
       await expect(dialog.getByRole('heading', { name: text.profile.filesTitle, exact: true })).toBeVisible();
       const memory = dialog.getByRole('button', { name: text.profile.viewFile.replace('{{file}}', 'MEMORY.md'), exact: true });
       await memory.scrollIntoViewIfNeeded();
@@ -92,6 +122,7 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       await expect(reader).toHaveCount(0);
       await expect(memory).toBeFocused();
       expect(await detailContent.evaluate(element => element.scrollTop)).toBe(previousScroll);
+      await dialog.getByTestId('agent-tab-overview').click();
       const modelSelect = dialog.getByTestId('agent-model-picker-button');
       await modelSelect.click();
       const modelMenu = page.getByTestId('agent-model-picker-menu');
@@ -120,12 +151,20 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       await expect(modelSelect).toBeFocused();
       await expect(dialog.getByTestId('agent-model-legacy-hint')).toHaveCount(0);
       await expect(page.getByRole('dialog')).toHaveCount(1);
+      await dialog.getByTestId('agent-tab-capabilities').click();
+      await expect(dialog.getByTestId('agent-workspace-skills')).toContainText('research');
+      await expect(dialog).toContainText(text.detailTabs.permissionsScope);
+      await dialog.getByTestId('agent-tab-profile').click();
       await expect(dialog.getByRole('button', { name: text.profile.editStyle, exact: true })).toHaveCSS('font-size', '14px');
       await dialog.getByRole('button', { name: text.profile.editStyle, exact: true }).click();
       const editor = dialog.getByTestId('agent-style-editor');
       await expect(editor).toHaveValue(originalStyle);
       const updatedStyle = '# Working style\n\nInvestigate carefully.\n\nPreserve all existing rules.';
       await editor.fill(updatedStyle);
+      await dialog.getByTestId('agent-tab-overview').click();
+      await expect(editor).toBeHidden();
+      await dialog.getByTestId('agent-tab-profile').click();
+      await expect(editor).toHaveValue(updatedStyle);
       if (language === 'en') {
         await writeFile(join(main.workspace, 'SOUL.md'), 'Changed by another editor');
         await dialog.getByRole('button', { name: text.profile.saveStyle, exact: true }).click();
@@ -151,7 +190,7 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       await dialog.getByRole('button', { name: text.profile.close, exact: true }).click();
       await expect(dialog).toHaveCount(0);
       await expect(trigger).toBeFocused();
-      await expect(card).toContainText('Investigate carefully.');
+      await expect(card).not.toContainText('Investigate carefully.');
       await page.getByTestId('agents-add-button').click();
       const create = page.getByTestId('add-agent-dialog');
       await expect(create).toHaveCSS('max-width', '576px');
@@ -178,7 +217,7 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       await page.screenshot({ path: testInfo.outputPath(`assistant-create-${language}.png`), animations: 'disabled' });
       await create.getByRole('button', { name: text.createDialog.submit, exact: true }).click();
       await expect(create).toHaveCount(0);
-      await expect(page.getByTestId('agent-card-planner')).toContainText(plannerStyle);
+      await expect(page.getByTestId('agent-card-planner')).toContainText('model-beta');
       const calls = await getRecordedHostInvocations(app);
       expect(calls.some(call => call.module === 'agents' && call.action === 'create' && call.payload?.instructions === plannerStyle && call.payload?.inheritWorkspace === true && call.payload?.modelRef === modelB)).toBe(true);
       expect(calls.some(call => call.action === 'sendAcpPrompt')).toBe(false);

@@ -12,6 +12,7 @@ interface ModelPickerProps {
   value: string | null;
   label: string;
   title: string;
+  valueTitle?: string;
   onValueChange: (value: string) => void;
   disabled?: boolean;
   busy?: boolean;
@@ -27,7 +28,7 @@ interface ModelPickerProps {
 
 /** Shared model UI; callers retain ownership of assistant or task-specific changes. */
 export const ModelPicker = forwardRef<HTMLButtonElement, ModelPickerProps>(function ModelPicker({
-  options, value, label, title, onValueChange, disabled, busy = false,
+  options, value, label, title, valueTitle, onValueChange, disabled, busy = false,
   open, onOpenChange, onCloseAutoFocus, side = 'top', align = 'end',
   className, labelledBy, testIdPrefix,
 }, ref) {
@@ -50,7 +51,7 @@ export const ModelPicker = forwardRef<HTMLButtonElement, ModelPickerProps>(funct
       <DropdownMenu.Trigger asChild>
         <button
           ref={ref} aria-labelledby={labelledBy} type="button" data-testid={`${testIdPrefix}-button`}
-          disabled={disabled || busy || !options.length} title={title}
+          disabled={disabled || busy || !options.length} title={valueTitle || title}
           className={cn(
             'inline-flex h-8 min-w-0 max-w-[140px] items-center gap-1 rounded-lg px-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 sm:max-w-[220px]',
             (isOpen || busy) && 'text-foreground', className,
