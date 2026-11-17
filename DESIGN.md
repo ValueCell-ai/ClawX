@@ -73,6 +73,23 @@ sizes while keeping controls compact.
 - Preserve raw skill names/descriptions, provider labels, model IDs and protocol
   names. Localize surrounding interface text and keep instructions concise.
 
+### Product scope before visual design
+
+- Start with the user's task and the existing behavior. Check the relevant code,
+  data source and current screen before deciding what a control represents. When
+  benchmarking another product, adapt useful interactions to ClawX's real
+  capabilities rather than copying its feature set or visual structure wholesale.
+- A UI refinement does not authorize new features, configuration, permissions,
+  data migrations or invented summaries. Preserve existing behavior and data;
+  propose a capability change separately when it is necessary to solve the task.
+- Give each piece of information or action one clear home. A second view should
+  exist only when it answers a distinct user question and its source supports that
+  meaning. Do not present a scanned or approximate list as effective permissions,
+  and do not duplicate a full raw file preview beside its shared reader.
+- Remove an unavailable entry when it cannot be used and the user cannot remedy
+  that state there; show an actionable error, loading state or empty state when
+  it helps the user recover or understand a meaningful absence.
+
 ## Colors
 
 ```yaml
@@ -420,6 +437,36 @@ modes rather than adding a new color for each page:
   into an overflow menu only for actual crowding or rare operations. Icon-only
   actions have an accessible name and a tooltip; a destructive operation must
   remain identifiable without relying on red alone.
+- A dialog's primary action must match its purpose. An editing dialog uses Save
+  as the primary action; a task-launch action belongs where tasks are started.
+  Do not mix immediate writes, per-field saves and a form-level Save without an
+  explicit, understandable reason. Preserve drafts across tabs; closing or
+  cancelling must not silently discard unsaved changes. Surface save failures and
+  partial success accurately instead of implying that all changes succeeded.
+
+### Forms, information and copy
+
+- Group related fields without adding decorative layers. For compact desktop
+  forms, labels and controls may share a row with a consistent, reasonably narrow
+  label column; stack them when space or localization requires it. Align labels,
+  controls and read-only values, and use consistent typography and foreground
+  color for values of the same importance. An editable input must not look
+  disabled; reserve muted styling for secondary information and actual states.
+- Show enough context to identify a choice without opening it. Where model IDs
+  can repeat across providers, assistant model controls show the provider and
+  model together, with the provider visually secondary. Keep actual names and
+  IDs intact and make full truncated values available. Use realistic long names
+  and multiple entries when evaluating layouts; do not assume sample values are
+  short, unique or always present.
+- Remove instructional copy that merely restates an adjacent label or button,
+  describes implementation details, or explains an obvious interaction. Keep
+  concise text when it changes a decision, communicates a limitation, explains
+  an empty state or helps recover from an error. Do not repeat a tab label as a
+  second heading; a useful subtitle may remain.
+- In Chinese copy, separate Chinese text and Latin words or numerals with spaces
+  where appropriate. Preserve the original names and descriptions supplied by
+  skills and providers; do not introduce display aliases that require special
+  mappings. All surrounding UI text follows the existing localization workflow.
 
 ### Badges, status and metadata
 
@@ -448,6 +495,10 @@ modes rather than adding a new color for each page:
 - Reuse existing feature capabilities before adding another implementation.
   Assistant and task model choices share ModelPicker; file readers share the
   Workspace preview capability; configuration forms reuse ConfigDialogContent.
+- Treat consistency as consistent behavior as well as matching colors. Equivalent
+  actions and fields across pages share the same components, interaction states,
+  density and visual roles. Reuse a shared primitive or capability rather than
+  building a separate page-specific selector, preview or modal.
 - Configuration dialogs use the shared bounded header/body/footer layout, with
   the standard `max-w-xl` width. Content-heavy readers may need more room;
   choose a purposeful shared variant rather than per-provider layouts.
