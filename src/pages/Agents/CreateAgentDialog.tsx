@@ -62,7 +62,7 @@ export function CreateAgentDialog({ open, onClose, onCreate }: {
           <div className="space-y-2">
             <span id="agent-create-model-label" className="text-sm font-medium">{t('settingsDialog.modelLabel')}</span>
             <ModelPicker options={modelOptions} value={modelRef} label={selectedModel?.modelId || (modelRef ? formatModelRefLabel(modelRef) : t('profile.notConfigured'))}
-              title={t('settingsDialog.modelLabel')} labelledBy="agent-create-model-label" testIdPrefix="agent-create-model-picker"
+              title={t('settingsDialog.modelLabel')} providerLabel={t('settingsDialog.modelProviderLabel')} labelledBy="agent-create-model-label" testIdPrefix="agent-create-model-picker"
               onValueChange={setModelChoice} disabled={saving} side="bottom" align="start"
               className="h-9 w-full max-w-none border border-input bg-surface-modal px-3 text-sm font-normal text-foreground sm:max-w-none" />
             <p className="text-sm leading-relaxed text-muted-foreground">{t('profile.modelHint')}</p>

@@ -27,9 +27,12 @@ Keep one centered settings dialog with model controls in the same layer; expose
 important actions to keyboard users, retain destructive confirmation and use all locales.
 
 Assistant details use overview, files/memory and skills/permissions tabs. Tab changes
-preserve unsaved instruction drafts, and starting a task uses the same unsaved-change
-protection as closing. The workspace quick-access skill list is not an effective
+preserve unsaved drafts; overview name and model changes are saved through the footer,
+while native instruction files retain their own save and conflict handling. Closing
+requires confirmation if either kind of draft is unsaved. The workspace quick-access skill list is not an effective
 agent tool-policy or sandbox report; show its actual scope and never guess permissions.
+Assistant model selectors display the selected provider alongside the model name,
+including when different providers offer identically named models.
 Keep the overview focused on editable identity and model, workspace and messaging;
 show native working-style content in the files/memory tab instead of duplicating an excerpt.
 Select assistant models from configured provider options. Preserve and display an existing

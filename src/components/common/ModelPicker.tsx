@@ -13,6 +13,7 @@ interface ModelPickerProps {
   label: string;
   title: string;
   valueTitle?: string;
+  providerLabel?: string;
   onValueChange: (value: string) => void;
   disabled?: boolean;
   busy?: boolean;
@@ -28,12 +29,14 @@ interface ModelPickerProps {
 
 /** Shared model UI; callers retain ownership of assistant or task-specific changes. */
 export const ModelPicker = forwardRef<HTMLButtonElement, ModelPickerProps>(function ModelPicker({
-  options, value, label, title, valueTitle, onValueChange, disabled, busy = false,
+  options, value, label, title, valueTitle, providerLabel, onValueChange, disabled, busy = false,
   open, onOpenChange, onCloseAutoFocus, side = 'top', align = 'end',
   className, labelledBy, testIdPrefix,
 }, ref) {
   const [localOpen, setLocalOpen] = useState(false);
   const isOpen = open ?? localOpen;
+  const selectedOption = providerLabel ? options.find(option => option.modelRef === value) : undefined;
+  const selectedDescriptionId = `${testIdPrefix}-selected-value`;
   const groups = useMemo(() => {
     const groups = new Map<string, { name: string; options: ConfiguredModelOption[] }>();
     for (const option of options) {
@@ -50,15 +53,21 @@ export const ModelPicker = forwardRef<HTMLButtonElement, ModelPickerProps>(funct
     }} modal={false}>
       <DropdownMenu.Trigger asChild>
         <button
-          ref={ref} aria-labelledby={labelledBy} type="button" data-testid={`${testIdPrefix}-button`}
-          disabled={disabled || busy || !options.length} title={valueTitle || title}
+          ref={ref} aria-labelledby={labelledBy} aria-describedby={labelledBy && selectedOption ? selectedDescriptionId : undefined} type="button" data-testid={`${testIdPrefix}-button`}
+          disabled={disabled || busy || !options.length} title={selectedOption ? `${selectedOption.providerName} / ${label}` : valueTitle || title}
           className={cn(
             'inline-flex h-8 min-w-0 max-w-[140px] items-center gap-1 rounded-lg px-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 sm:max-w-[220px]',
             (isOpen || busy) && 'text-foreground', className,
           )}
         >
           {busy ? <Loader2 aria-hidden="true" className="h-3.5 w-3.5 shrink-0 animate-spin" /> : <ModelIcon modelName={label} testId={`${testIdPrefix}-current-icon`} />}
-          <span className="min-w-0 truncate">{label}</span>
+          <span id={selectedDescriptionId} className="flex min-w-0 items-center gap-1">
+            {selectedOption && <>
+              <span className="min-w-0 max-w-[50%] truncate font-normal text-muted-foreground">{selectedOption.providerName}</span>
+              <span className="shrink-0 font-normal text-muted-foreground"> / </span>
+            </>}
+            <span className="min-w-0 truncate">{label}</span>
+          </span>
           <ChevronDown aria-hidden="true" className={cn('ml-auto h-3.5 w-3.5 shrink-0 transition-transform', isOpen && 'rotate-180')} />
         </button>
       </DropdownMenu.Trigger>

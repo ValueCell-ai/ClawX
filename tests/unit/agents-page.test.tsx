@@ -1,7 +1,7 @@
 import { MemoryRouter } from 'react-router-dom';
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { Agents } from '../../src/pages/Agents/index';
 
 const channelsAccountsMock = vi.fn();
@@ -211,7 +211,7 @@ describe('Agents page status refresh', () => {
     mainSessionKey: 'agent:main:main', channelTypes: [],
   };
 
-  it('selects a configured model in the same dialog without another modal', async () => {
+  it('stages a configured model until the overview is saved', async () => {
     agentsState.agents = [mainAgent];
     agentsState.defaultModelRef = 'custom-12345678/model-a';
     providersState.accounts = [{ id: 'custom-12345678', label: 'Research Lab', vendorId: 'custom', authMode: 'local', enabled: true, model: 'model-a', metadata: { customModels: ['model-a', 'model-b'] }, updatedAt: '2026-10-31' }];
@@ -220,8 +220,32 @@ describe('Agents page status refresh', () => {
     const trigger = screen.getByTestId('agent-model-picker-button');
     fireEvent.keyDown(trigger, { key: 'ArrowDown' });
     fireEvent.keyDown(await screen.findByRole('menuitemradio', { name: 'model-b' }), { key: 'Enter' });
-    await waitFor(() => expect(updateAgentModelMock).toHaveBeenCalledWith('main', 'custom-12345678/model-b'));
+    expect(updateAgentModelMock).not.toHaveBeenCalled();
+    expect(trigger).toHaveTextContent('model-b');
     expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    fireEvent.click(screen.getByTestId('agent-overview-save'));
+    await waitFor(() => expect(updateAgentModelMock).toHaveBeenCalledWith('main', 'custom-12345678/model-b'));
+  });
+
+  it('shows the selected provider when two providers offer the same model', async () => {
+    agentsState.agents = [mainAgent];
+    providersState.accounts = [
+      { id: 'custom-12345678', label: 'Research Lab', vendorId: 'custom', authMode: 'local', enabled: true, model: 'model-a', updatedAt: '2026-10-31' },
+      { id: 'custom-87654321', label: 'Studio', vendorId: 'custom', authMode: 'local', enabled: true, model: 'model-a', updatedAt: '2026-10-30' },
+    ];
+    render(<AgentsWithRouter />);
+    fireEvent.click(screen.getByTestId('agent-manage-main'));
+    const picker = screen.getByTestId('agent-model-picker-button');
+    expect(picker).toHaveTextContent('model-a');
+    expect(picker).toHaveTextContent('Research Lab');
+    fireEvent.keyDown(picker, { key: 'ArrowDown' });
+    const studio = await screen.findByRole('group', { name: 'Studio' });
+    fireEvent.keyDown(within(studio).getByRole('menuitemradio', { name: 'model-a' }), { key: 'Enter' });
+    expect(picker).toHaveTextContent('Studio');
+    expect(picker).not.toHaveTextContent('Research Lab');
+    expect(updateAgentModelMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('agent-overview-save'));
+    await waitFor(() => expect(updateAgentModelMock).toHaveBeenCalledWith('main', 'custom-87654321/model-a'));
   });
 
   it('keeps an unknown inherited model visible and does not write it while browsing or cancelling', async () => {
@@ -238,7 +262,7 @@ describe('Agents page status refresh', () => {
     expect(createAgentMock).not.toHaveBeenCalled();
   });
 
-  it('keeps an external model until a configured model is explicitly chosen', async () => {
+  it('keeps an external model until a configured model is explicitly saved', async () => {
     agentsState.agents = [{ ...mainAgent, modelRef: 'external/exact-model', modelDisplay: 'exact-model' }];
     providersState.accounts = [{ id: 'custom-12345678', label: 'Lab', vendorId: 'custom', authMode: 'local', enabled: true, model: 'model-a', updatedAt: '2026-10-31' }];
     render(<AgentsWithRouter />);
@@ -249,7 +273,85 @@ describe('Agents page status refresh', () => {
     const configuredModel = await screen.findByRole('menuitemradio', { name: 'model-a' });
     expect(updateAgentModelMock).not.toHaveBeenCalled();
     fireEvent.keyDown(configuredModel, { key: 'Enter' });
+    expect(updateAgentModelMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('agent-overview-save'));
     await waitFor(() => expect(updateAgentModelMock).toHaveBeenCalledWith('main', 'custom-12345678/model-a'));
+  });
+
+  it('saves the name and model together only from the overview footer', async () => {
+    agentsState.agents = [mainAgent];
+    providersState.accounts = [{ id: 'custom-12345678', label: 'Lab', vendorId: 'custom', authMode: 'local', enabled: true, model: 'model-a', metadata: { customModels: ['model-a', 'model-b'] }, updatedAt: '2026-10-31' }];
+    render(<AgentsWithRouter />);
+    fireEvent.click(screen.getByTestId('agent-manage-main'));
+    fireEvent.change(screen.getByLabelText('settingsDialog.nameLabel'), { target: { value: 'New name' } });
+    fireEvent.keyDown(screen.getByTestId('agent-model-picker-button'), { key: 'ArrowDown' });
+    fireEvent.keyDown(await screen.findByRole('menuitemradio', { name: 'model-b' }), { key: 'Enter' });
+    expect(updateAgentMock).not.toHaveBeenCalled();
+    expect(updateAgentModelMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('agent-overview-save'));
+    await waitFor(() => expect(updateAgentModelMock).toHaveBeenCalledWith('main', 'custom-12345678/model-b'));
+    expect(updateAgentMock).toHaveBeenCalledWith('main', 'New name');
+  });
+
+  it('keeps the model draft in the dialog if its save fails after saving the name', async () => {
+    agentsState.agents = [mainAgent];
+    providersState.accounts = [{ id: 'custom-12345678', label: 'Lab', vendorId: 'custom', authMode: 'local', enabled: true, model: 'model-a', metadata: { customModels: ['model-a', 'model-b'] }, updatedAt: '2026-10-31' }];
+    updateAgentModelMock.mockRejectedValueOnce(new Error('save failed'));
+    render(<AgentsWithRouter />);
+    fireEvent.click(screen.getByTestId('agent-manage-main'));
+    fireEvent.change(screen.getByLabelText('settingsDialog.nameLabel'), { target: { value: 'New name' } });
+    fireEvent.keyDown(screen.getByTestId('agent-model-picker-button'), { key: 'ArrowDown' });
+    fireEvent.keyDown(await screen.findByRole('menuitemradio', { name: 'model-b' }), { key: 'Enter' });
+    fireEvent.click(screen.getByTestId('agent-overview-save'));
+    await waitFor(() => expect(updateAgentModelMock).toHaveBeenCalled());
+    expect(updateAgentMock).toHaveBeenCalledWith('main', 'New name');
+    expect(screen.getByTestId('agent-detail-dialog')).toBeVisible();
+    expect(screen.getByTestId('agent-model-picker-button')).toHaveTextContent('model-b');
+  });
+
+  it('confirms before discarding an unsaved model choice', async () => {
+    agentsState.agents = [mainAgent];
+    providersState.accounts = [{ id: 'custom-12345678', label: 'Lab', vendorId: 'custom', authMode: 'local', enabled: true, model: 'model-a', metadata: { customModels: ['model-a', 'model-b'] }, updatedAt: '2026-10-31' }];
+    render(<AgentsWithRouter />);
+    fireEvent.click(screen.getByTestId('agent-manage-main'));
+    fireEvent.keyDown(screen.getByTestId('agent-model-picker-button'), { key: 'ArrowDown' });
+    fireEvent.keyDown(await screen.findByRole('menuitemradio', { name: 'model-b' }), { key: 'Enter' });
+    fireEvent.click(screen.getByRole('button', { name: 'common:actions.cancel' }));
+    expect(screen.getByText('settingsDialog.unsavedChangesTitle')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'settingsDialog.closeWithoutSaving' }));
+    expect(updateAgentModelMock).not.toHaveBeenCalled();
+  });
+
+  it('treats returning to the inherited model as no change', async () => {
+    agentsState.agents = [mainAgent];
+    providersState.accounts = [{ id: 'custom-12345678', label: 'Lab', vendorId: 'custom', authMode: 'local', enabled: true, model: 'model-a', metadata: { customModels: ['model-a', 'model-b'] }, updatedAt: '2026-10-31' }];
+    render(<AgentsWithRouter />);
+    fireEvent.click(screen.getByTestId('agent-manage-main'));
+    const picker = screen.getByTestId('agent-model-picker-button');
+    fireEvent.keyDown(picker, { key: 'ArrowDown' });
+    fireEvent.keyDown(await screen.findByRole('menuitemradio', { name: 'model-b' }), { key: 'Enter' });
+    expect(screen.getByTestId('agent-overview-save')).toBeEnabled();
+    fireEvent.keyDown(picker, { key: 'ArrowDown' });
+    fireEvent.keyDown(await screen.findByRole('menuitemradio', { name: 'model-a' }), { key: 'Enter' });
+    expect(screen.getByTestId('agent-overview-save')).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'common:actions.cancel' }));
+    expect(updateAgentModelMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps a separate SOUL.md draft open after saving overview settings', async () => {
+    agentsState.agents = [mainAgent];
+    render(<AgentsWithRouter />);
+    fireEvent.click(screen.getByTestId('agent-manage-main'));
+    fireEvent.change(screen.getByLabelText('settingsDialog.nameLabel'), { target: { value: 'New name' } });
+    fireEvent.click(screen.getByTestId('agent-tab-profile'));
+    fireEvent.click(await screen.findByRole('button', { name: 'profile.editStyle' }));
+    fireEvent.change(screen.getByTestId('agent-style-editor'), { target: { value: 'Unfinished work style' } });
+    fireEvent.click(screen.getByTestId('agent-tab-overview'));
+    fireEvent.click(screen.getByTestId('agent-overview-save'));
+    await waitFor(() => expect(screen.getByTestId('agent-tab-profile')).toHaveAttribute('data-state', 'active'));
+    expect(updateAgentMock).toHaveBeenCalledWith('main', 'New name');
+    expect(screen.getByTestId('agent-style-editor')).toHaveValue('Unfinished work style');
+    expect(writeTextMock).not.toHaveBeenCalled();
   });
 
   it('requires a configured model to create an assistant and never writes when cancelled', async () => {

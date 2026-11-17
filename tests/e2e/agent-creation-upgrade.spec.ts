@@ -105,7 +105,7 @@ test('new Agent saves its model and instructions with a current SQLite auth stor
     await dialog.locator('#agent-name').fill('Upgrade Agent');
     const instructions = 'Check the upgraded agent workspace.';
     await dialog.getByTestId('agent-create-instructions').fill(instructions);
-    await expect(dialog.getByTestId('agent-create-model-picker-button')).toHaveText('kimi-k2.6');
+    await expect(dialog.getByTestId('agent-create-model-picker-button')).toContainText('kimi-k2.6');
     await dialog.getByRole('button', { name: 'Create assistant', exact: true }).click();
     await expect(page.getByTestId('agent-card-upgrade-agent')).toBeVisible();
     const config = JSON.parse(await readFile(join(homeDir, '.openclaw/openclaw.json'), 'utf8'));

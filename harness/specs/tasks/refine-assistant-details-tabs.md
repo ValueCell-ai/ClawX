@@ -21,9 +21,9 @@ touchedAreas:
 expectedUserBehavior:
   - Assistant cards expose management and start-task actions without invented descriptions or activity.
   - A bounded details dialog separates overview, profile files and skills with shared Radix tabs.
-  - Name, model and full SOUL.md editing keep existing save, conflict and unsaved-change protection.
+  - Name and model are staged in the overview and saved through the footer; full SOUL.md editing remains separately saved with conflict and unsaved-change protection.
   - Assistant models are selected from configured options; an existing external model remains visible and unchanged until an explicit selection.
-  - Starting a task from details preserves drafts and uses the selected assistant and workspace without sending.
+  - Starting a task from the assistant list preserves drafts and uses the selected assistant and workspace without sending.
   - Skills are loaded on demand through the existing workspace quick-access API, not presented as an authoritative tool-permission report.
   - File previews reuse the shared Workspace reader drawer and return focus to the opener.
 requiredProfiles:
@@ -41,11 +41,10 @@ requiredTests:
 acceptance:
   - No new transport, runtime configuration or migration is introduced.
   - Missing skills and read failures have localized states; tools and sandbox are never guessed from the skill list.
-  - Tabs preserve unsaved drafts; leaving the dialog or starting a task retains existing discard confirmation.
+  - Tabs preserve unsaved drafts; leaving the dialog retains existing discard confirmation.
   - All labels support en, zh, ja and ru and the dialog remains bounded in narrow windows.
 docs:
   required: true
 ---
 
-Uses DESIGN.md's content-reader width exception for a two-column assistant detail surface.
-Validation execution is deferred for the user's rapid UI iteration request; dev startup and MCP connection are required for visual review.
+The overview uses compact labeled rows; profile and skills remain separate tabs.

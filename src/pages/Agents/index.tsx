@@ -92,7 +92,7 @@ export function Agents() {
       </div>
     </div>
     <CreateAgentDialog open={showAddDialog} onClose={() => setShowAddDialog(false)} onCreate={async (name, options) => { await createAgent(name, options); setShowAddDialog(false); toast.success(t('toast.agentCreated')); }} />
-    {detailAgent && <AgentDetails key={detailVisit} open={!!activeAgent} agent={detailAgent} workspace={workspaceFor(detailAgent)} channelGroups={channelGroups} onClose={() => setActiveAgentId(null)} onReturnFocus={() => returnFocusRef.current?.focus()} onWorkspaceSaved={refreshWorkspaces} onStart={() => startTask(detailAgent)} />}
+    {detailAgent && <AgentDetails key={detailVisit} open={!!activeAgent} agent={detailAgent} workspace={workspaceFor(detailAgent)} channelGroups={channelGroups} onClose={() => setActiveAgentId(null)} onReturnFocus={() => returnFocusRef.current?.focus()} onWorkspaceSaved={refreshWorkspaces} />}
     <ConfirmDialog open={!!agentToDelete} title={t('deleteDialog.title')} message={agentToDelete ? t('deleteDialog.message', { name: agentToDelete.name }) : ''} confirmLabel={t('deleteDialog.confirm')} cancelLabel={t('common:actions.cancel')} variant="destructive" onCancel={() => setAgentToDelete(null)} onConfirm={async () => {
       if (!agentToDelete) return;
       try { await deleteAgent(agentToDelete.id); setAgentToDelete(null); if (activeAgentId === agentToDelete.id) setActiveAgentId(null); toast.success(t('toast.agentDeleted')); }

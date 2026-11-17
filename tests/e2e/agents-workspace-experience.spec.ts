@@ -81,9 +81,13 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       await expect(dialog.getByLabel(text.settingsDialog.nameLabel)).not.toHaveAttribute('readonly');
       await expect(dialog.getByLabel(text.settingsDialog.nameLabel)).toBeEnabled();
       await expect(dialog.getByTestId('agent-model-picker-button')).toContainText('model-alpha');
+      await expect(dialog.getByTestId('agent-model-picker-button')).toContainText('Research Lab');
+      await expect(dialog.getByTestId('agent-model-picker-button')).toContainText(/Research Lab\s*\/\s*model-alpha/);
       await expect(dialog.locator('#agent-model-ref')).toHaveCount(0);
       const nameBackground = await dialog.getByLabel(text.settingsDialog.nameLabel).evaluate(el => getComputedStyle(el).backgroundColor);
       await expect(dialog.getByTestId('agent-model-picker-button')).toHaveCSS('background-color', nameBackground);
+      const nameColor = await dialog.getByLabel(text.settingsDialog.nameLabel).evaluate(el => getComputedStyle(el).color);
+      await expect(dialog.getByText(main.workspace, { exact: true })).toHaveCSS('color', nameColor);
       const nameLabelStyle = await dialog.locator('label[for="agent-settings-name"]').evaluate(el => {
         const style = getComputedStyle(el);
         return { color: style.color, fontSize: style.fontSize, fontWeight: style.fontWeight };
@@ -93,6 +97,13 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
         await expect(label).toHaveCSS('font-size', nameLabelStyle.fontSize);
         await expect(label).toHaveCSS('font-weight', nameLabelStyle.fontWeight);
       }
+      const nameLabelBox = await dialog.locator('label[for="agent-settings-name"]').boundingBox();
+      const nameInputBox = await dialog.getByLabel(text.settingsDialog.nameLabel).boundingBox();
+      const modelLabelBox = await dialog.locator('#agent-model-title').boundingBox();
+      const modelInputBox = await dialog.getByTestId('agent-model-picker-button').boundingBox();
+      expect(nameInputBox!.x).toBeGreaterThan(nameLabelBox!.x);
+      expect(modelInputBox!.x).toBeCloseTo(nameInputBox!.x, 0);
+      expect(modelLabelBox!.x).toBeCloseTo(nameLabelBox!.x, 0);
       await expect(dialog.getByTestId('agent-model-legacy-hint')).toBeVisible();
       await expect(dialog.getByTestId('agent-tab-overview')).toHaveAttribute('data-state', 'active');
       await expect(dialog.getByTestId('agent-tab-profile')).toBeVisible();
@@ -103,11 +114,22 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       expect((await getRecordedHostInvocations(app)).filter(call => call.module === 'agents' && ['create', 'updateModel'].includes(call.action))).toHaveLength(0);
       await dialog.getByTestId('agent-tab-profile').click();
       await expect(dialog.getByRole('heading', { name: text.profile.filesTitle, exact: true })).toBeVisible();
+      await expect(dialog).not.toContainText('Preserve all existing rules.');
+      const files = dialog.getByRole('region', { name: text.profile.filesTitle });
+      const soul = files.getByRole('button', { name: text.profile.viewFile.replace('{{file}}', 'SOUL.md'), exact: true });
+      await expect(files.getByRole('button', { name: text.profile.editStyle })).toBeVisible();
+      await expect(dialog.getByRole('heading', { name: text.profile.workStyle })).toHaveCount(0);
+      await soul.click();
+      const reader = page.getByTestId('agent-file-reader');
+      await expect(reader.getByTestId('file-preview-filename')).toHaveText('SOUL.md');
+      await expect(reader).toContainText('Preserve all existing rules.');
+      await page.keyboard.press('Escape');
+      await expect(reader).toHaveCount(0);
+      await expect(soul).toBeFocused();
       const memory = dialog.getByRole('button', { name: text.profile.viewFile.replace('{{file}}', 'MEMORY.md'), exact: true });
       await memory.scrollIntoViewIfNeeded();
       const previousScroll = await detailContent.evaluate(element => element.scrollTop);
       await memory.click();
-      const reader = page.getByTestId('agent-file-reader');
       await expect(reader.getByTestId('file-preview-filename')).toHaveText('MEMORY.md');
       await expect(reader).toContainText('Fixture memory belongs to this assistant.');
       await expect(dialog).toHaveAttribute('aria-hidden', 'true');
@@ -150,6 +172,8 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       await expect(modelSelect).toContainText('model-beta');
       await expect(modelSelect).toBeFocused();
       await expect(dialog.getByTestId('agent-model-legacy-hint')).toHaveCount(0);
+      expect((await getRecordedHostInvocations(app)).filter(call => call.module === 'agents' && call.action === 'updateModel')).toHaveLength(0);
+      await expect(dialog.getByTestId('agent-overview-save')).toBeEnabled();
       await expect(page.getByRole('dialog')).toHaveCount(1);
       await dialog.getByTestId('agent-tab-capabilities').click();
       await expect(dialog.getByTestId('agent-workspace-skills')).toContainText('research');
@@ -187,9 +211,12 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
         expect(bounds!.height).toBeLessThanOrEqual(650 * 0.85 + 1);
       }
       await page.screenshot({ path: testInfo.outputPath(`assistant-details-${language}.png`), animations: 'disabled' });
-      await dialog.getByRole('button', { name: text.profile.close, exact: true }).click();
+      await dialog.getByTestId('agent-tab-overview').click();
+      await expect(modelSelect).toContainText('model-beta');
+      await dialog.getByTestId('agent-overview-save').click();
       await expect(dialog).toHaveCount(0);
       await expect(trigger).toBeFocused();
+      expect((await getRecordedHostInvocations(app)).some(call => call.module === 'agents' && call.action === 'updateModel' && call.payload?.modelRef === modelB)).toBe(true);
       await expect(card).not.toContainText('Investigate carefully.');
       await page.getByTestId('agents-add-button').click();
       const create = page.getByTestId('add-agent-dialog');
@@ -202,6 +229,8 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       await create.getByTestId('agent-create-instructions').fill(plannerStyle);
       const createModel = create.getByTestId('agent-create-model-picker-button');
       await expect(createModel).toContainText('model-beta');
+      await expect(createModel).toContainText('Research Lab');
+      await expect(createModel).toContainText(/Research Lab\s*\/\s*model-beta/);
       await createModel.click();
       const createMenu = page.getByTestId('agent-create-model-picker-menu');
       await expect(createMenu.getByRole('group', { name: 'Research Lab', exact: true })).toBeVisible();
