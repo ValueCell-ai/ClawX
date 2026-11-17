@@ -145,6 +145,8 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       await expect(page.getByRole('tabpanel').getByRole('heading', { level: 2 })).toHaveCount(0);
       await expect(page.getByTestId('image-generation-settings-description')).toHaveText(text.settings.modelManagement.imageDescription);
       await expect(page.getByTestId('image-generation-summary')).toContainText('gpt-image-2');
+      await expect(page.getByTestId('image-generation-model-icon')).toBeVisible();
+      await expect(page.getByTestId('image-generation-summary')).not.toContainText(text.settings.modelManagement.configured);
       await page.screenshot({ path: testInfo.outputPath(`model-image-summary-${language}.png`), animations: 'disabled' });
       await page.getByTestId('image-generation-summary').getByTestId('image-generation-configure').click();
       const imageDialog = page.getByTestId('image-generation-config-dialog');

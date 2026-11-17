@@ -502,8 +502,8 @@ function ProviderCard({
           <div className="flex min-w-0 items-center gap-2">
             <button type="button" className="truncate rounded text-left text-sm font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={event => { editTriggerRef.current = event.currentTarget; onEdit(); }}>{account.label}</button>
           </div>
-          <p data-testid={`provider-model-${account.id}`} className="mt-0.5 truncate text-xs text-muted-foreground" title={models.join(', ')}>{modelSummary}{models.length > 2 && ` +${models.length - 2}`}</p>
-          <p className="mt-0.5 flex items-center gap-1.5 text-meta text-muted-foreground"><span className="truncate">{host || vendor?.name || account.vendorId}</span><span aria-hidden="true">·</span><span className="shrink-0">{hasConfiguredCredentials(account, status) ? t('aiProviders.card.configured') : t('aiProviders.card.noKey')}</span></p>
+          <p data-testid={`provider-model-${account.id}`} className="mt-0.5 truncate text-meta text-muted-foreground" title={models.join(', ')}>{modelSummary}{models.length > 2 && ` +${models.length - 2}`}</p>
+          <p className="mt-0.5 flex items-center gap-1.5 text-meta text-muted-foreground"><span className="truncate">{host || vendor?.name || account.vendorId}</span>{!hasConfiguredCredentials(account, status) && <><span aria-hidden="true">·</span><span className="shrink-0">{t('aiProviders.card.noKey')}</span></>}</p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <Tooltip disableHoverableContent>
