@@ -52,6 +52,7 @@ import { useGatewayStore } from '@/stores/gateway';
 import { useAgentsStore } from '@/stores/agents';
 import { useChatStore } from '@/stores/chat';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
+import { FeedbackState } from '@/components/common/FeedbackState';
 import { formatRelativeTime, cn } from '@/lib/utils';
 import { fetchQuickAccessSkills } from '@/lib/quick-access-skills';
 import { getQuickSkillSourceLabel } from '@/lib/skill-source-label';
@@ -1543,10 +1544,7 @@ export function Cron() {
 
           {/* Jobs List */}
           {safeJobs.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-muted-foreground bg-black/5 dark:bg-white/5 rounded-xl border border-black/10 dark:border-white/10 border-dashed">
-              <Clock className="h-10 w-10 mb-4 opacity-50" />
-              <h3 className="text-lg font-medium mb-2 text-foreground">{t('empty.title')}</h3>
-              <p className="text-sm text-center mb-6 max-w-md">{t('empty.description')}</p>
+            <FeedbackState state="empty" title={t('empty.title')} description={t('empty.description')} action={
               <Button
                 onClick={(event) => {
                   dialogOpenerRef.current = event.currentTarget;
@@ -1559,7 +1557,7 @@ export function Cron() {
                 <Plus className="h-4 w-4 mr-2" />
                 {t('empty.create')}
               </Button>
-            </div>
+            } />
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {safeJobs.map((job) => {

@@ -64,6 +64,8 @@ test.describe('cron schedule builder', () => {
     await completeSetup(page);
 
     await page.getByTestId('sidebar-nav-cron').click();
+    await expect(page.getByText('No scheduled tasks', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Create Your First Task' })).toBeVisible();
     const opener = page.getByTestId('cron-new-task-button');
     await opener.click();
     const dialog = page.getByTestId('cron-task-dialog');
