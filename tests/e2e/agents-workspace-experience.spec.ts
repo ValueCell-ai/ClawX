@@ -218,6 +218,8 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       await page.getByTestId('agents-add-button').click();
       const create = page.getByTestId('add-agent-dialog');
       await expect(create).toHaveCSS('max-width', '576px');
+      await expect(create.getByText(text.createDialog.instructionsHint)).toHaveCount(0);
+      await expect(create.getByText(text.createDialog.boundaryHint)).toHaveCount(0);
       await expect(create.locator('footer')).toBeVisible();
       await expect(create.locator('footer button[type=submit]')).toHaveAttribute('form', 'create-agent-form');
       await create.getByRole('button', { name: text.profile.close, exact: true }).hover();
