@@ -249,7 +249,7 @@
             ]
         },
         "dingtalk": {
-            "description": "Подключите DingTalk через официальный коннектор OpenClaw (чат Stream). Календарь, документы и другие офисные навыки используют встроенный dws CLI.",
+            "description": "Подключите бота DingTalk для общения и рабочих задач.",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/Y5eNwiSiZidkLskrwtJc1rUln0b#doxcnDgA78n43DbkiQjI1OqUA7b",
             "fields": {
                 "clientId": {
@@ -269,7 +269,7 @@
             ]
         },
         "feishu": {
-            "description": "Подключите бота Feishu/Lark через WebSocket",
+            "description": "Подключите бота Feishu или Lark.",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/GKn8wOvHnibpPNkNkPzcAvGlnzK#GdHUdp9t9oqyegxwV8ScLvVGn1c",
             "fields": {
                 "appId": {
@@ -289,7 +289,7 @@
             ]
         },
         "wecom": {
-            "description": "Подключите бота WeCom через плагин",
+            "description": "Подключите бота WeCom.",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/JTGnwoV0RixKPtkr4w7c7gpAnDc",
             "fields": {
                 "botId": {

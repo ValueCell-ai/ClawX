@@ -92,6 +92,7 @@ test.describe('ClawX supported channel catalog', () => {
     await expect(channelsPage).toBeVisible();
     await expect(channelsPage.getByText('Feishu / Lark')).toBeVisible();
     await expect(channelsPage.getByText('Telegram', { exact: true })).toBeVisible();
+    await expect(channelsPage.getByRole('button', { name: /Feishu \/ Lark/ }).getByText('Plugin', { exact: true })).toHaveCount(0);
 
     for (const channelType of unsupportedChannelTypes) {
       await expect(channelsPage.getByText(channelType, { exact: true })).toHaveCount(0);

@@ -249,7 +249,7 @@
             ]
         },
         "dingtalk": {
-            "description": "Connect DingTalk with the official OpenClaw connector (Stream chat). Calendar, docs, and other office skills use the bundled dws CLI.",
+            "description": "Connect a DingTalk bot for chat and office tasks.",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/Y5eNwiSiZidkLskrwtJc1rUln0b#doxcnDgA78n43DbkiQjI1OqUA7b",
             "fields": {
                 "clientId": {
@@ -269,7 +269,7 @@
             ]
         },
         "feishu": {
-            "description": "Connect Feishu/Lark bot via WebSocket",
+            "description": "Connect a Feishu or Lark bot.",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/GKn8wOvHnibpPNkNkPzcAvGlnzK#GdHUdp9t9oqyegxwV8ScLvVGn1c",
             "fields": {
                 "appId": {
@@ -289,7 +289,7 @@
             ]
         },
         "wecom": {
-            "description": "Connect WeCom Bot via plugin",
+            "description": "Connect a WeCom bot.",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/JTGnwoV0RixKPtkr4w7c7gpAnDc",
             "fields": {
                 "botId": {

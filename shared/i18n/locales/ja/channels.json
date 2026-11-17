@@ -249,7 +249,7 @@
             ]
         },
         "dingtalk": {
-            "description": "公式 OpenClaw コネクタで DingTalk に接続します（Stream チャット）。カレンダーやドキュメントなどのオフィススキルは同梱の dws CLI を使います。",
+            "description": "DingTalk ボットを接続して、チャットや業務を進めます。",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/Y5eNwiSiZidkLskrwtJc1rUln0b#doxcnDgA78n43DbkiQjI1OqUA7b",
             "fields": {
                 "clientId": {
@@ -269,7 +269,7 @@
             ]
         },
         "feishu": {
-            "description": "WebSocket 経由で Feishu/Lark ボットに接続します",
+            "description": "Feishu または Lark のボットに接続します。",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/GKn8wOvHnibpPNkNkPzcAvGlnzK#GdHUdp9t9oqyegxwV8ScLvVGn1c",
             "fields": {
                 "appId": {
@@ -289,7 +289,7 @@
             ]
         },
         "wecom": {
-            "description": "プラグイン経由で WeCom Bot (企業微信) に接続します",
+            "description": "WeCom のボットに接続します。",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/JTGnwoV0RixKPtkr4w7c7gpAnDc",
             "fields": {
                 "botId": {

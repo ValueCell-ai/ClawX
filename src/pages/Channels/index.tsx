@@ -2,7 +2,6 @@ import { Select, SelectItem } from '@/components/ui/select';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { RefreshCw, Trash2, AlertCircle, Plus, Copy, RotateCcw, ChevronDown, ChevronUp, MoreHorizontal, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import * as Menu from '@/components/ui/dropdown-menu';
 import { useGatewayStore } from '@/stores/gateway';
@@ -883,14 +882,6 @@ export function Channels({ embedded = false }: { embedded?: boolean }) {
                     <div className="flex min-w-0 flex-1 flex-col py-0.5">
                       <div className="flex items-center gap-2 mb-1">
                         <h3 className="truncate text-base font-medium text-foreground">{meta.name}</h3>
-                        {meta.isPlugin && (
-                          <Badge
-                            variant="secondary"
-                            className="font-mono text-xs font-medium px-2 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] border-0 shadow-none text-foreground/70"
-                          >
-                            {t('pluginBadge')}
-                          </Badge>
-                        )}
                       </div>
                       <p className="text-sm text-muted-foreground line-clamp-2 leading-[1.5]">
                         {t(meta.description.replace('channels:', ''))}

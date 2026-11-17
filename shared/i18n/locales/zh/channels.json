@@ -249,7 +249,7 @@
             ]
         },
         "dingtalk": {
-            "description": "通过官方 OpenClaw 连接器接入钉钉（Stream 聊天）。日历、文档等办公技能使用随包提供的 dws CLI。",
+            "description": "连接钉钉机器人，聊天并处理办公任务。",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/Y5eNwiSiZidkLskrwtJc1rUln0b#doxcnr8KfaA2mNPeQUeHO83eDPh",
             "fields": {
                 "clientId": {
@@ -269,7 +269,7 @@
             ]
         },
         "feishu": {
-            "description": "通过飞书官方推出的 OpenClaw 插件连接飞书/Lark 机器人",
+            "description": "连接飞书或 Lark 机器人。",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/GKn8wOvHnibpPNkNkPzcAvGlnzK#Py88dTltfoJc1jxAhIBcW3Pkn7b",
             "fields": {
                 "appId": {
@@ -290,7 +290,7 @@
             ]
         },
         "wecom": {
-            "description": "通过插件连接企业微信机器人",
+            "description": "连接企业微信机器人。",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/JTGnwoV0RixKPtkr4w7c7gpAnDc",
             "fields": {
                 "botId": {
