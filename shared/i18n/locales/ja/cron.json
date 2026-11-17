@@ -56,6 +56,7 @@
         "dateLabel": "日付",
         "weekdayLabel": "曜日",
         "minuteLabel": "毎時の分",
+        "cronExpressionLabel": "Cron 式",
         "cronPlaceholder": "Cron式（例：0 9 * * *）",
         "usePresets": "プリセットを使用",
         "useCustomCron": "カスタムCronを使用",

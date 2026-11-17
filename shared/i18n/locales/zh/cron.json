@@ -56,6 +56,7 @@
         "dateLabel": "日期",
         "weekdayLabel": "星期",
         "minuteLabel": "每小时的第几分钟",
+        "cronExpressionLabel": "Cron 表达式",
         "cronPlaceholder": "Cron 表达式 (例如：0 9 * * *)",
         "usePresets": "使用预设",
         "useCustomCron": "使用自定义 Cron",

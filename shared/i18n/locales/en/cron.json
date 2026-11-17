@@ -56,6 +56,7 @@
         "dateLabel": "Date",
         "weekdayLabel": "Day of week",
         "minuteLabel": "Minute of each hour",
+        "cronExpressionLabel": "Cron expression",
         "cronPlaceholder": "Cron expression (e.g., 0 9 * * *)",
         "usePresets": "Use presets",
         "useCustomCron": "Use custom cron",

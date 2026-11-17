@@ -88,6 +88,7 @@ test.describe('cron schedule builder', () => {
     // Custom recurrence reveals the cron expression field.
     await selectValue(recurrenceSelect, 'custom');
     await expect(page.getByTestId('cron-custom-input')).toBeVisible();
+    await expect(page.getByTestId('cron-custom-input')).toHaveAccessibleName('Cron expression');
 
     // Switching to the Once tab reveals date + time inputs.
     await page.getByTestId('cron-schedule-tab-once').click();

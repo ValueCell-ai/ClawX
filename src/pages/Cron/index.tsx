@@ -1044,13 +1044,17 @@ function TaskDialog({ open, job, configuredChannels, returnFocusTo, onClose, onS
                 )}
 
                 {scheduleForm.recurrence === 'custom' && (
-                  <Input
-                    data-testid="cron-custom-input"
-                    placeholder={t('dialog.cronPlaceholder')}
-                    value={scheduleForm.customCron}
-                    onChange={(e) => updateSchedule({ customCron: e.target.value })}
-                    className={cronFieldClass}
-                  />
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cron-custom-expression" className="text-meta text-foreground/70 font-medium">{t('dialog.cronExpressionLabel')}</Label>
+                    <Input
+                      id="cron-custom-expression"
+                      data-testid="cron-custom-input"
+                      placeholder={t('dialog.cronPlaceholder')}
+                      value={scheduleForm.customCron}
+                      onChange={(e) => updateSchedule({ customCron: e.target.value })}
+                      className={cronFieldClass}
+                    />
+                  </div>
                 )}
               </div>
             ) : (
