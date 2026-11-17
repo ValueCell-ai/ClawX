@@ -100,6 +100,10 @@ test.describe('cron skill picker', () => {
     await expectQuietFieldFocus(message.locator('..').locator('..'));
 
     await page.getByTestId('cron-skill-button').click();
+    const search = page.getByPlaceholder('Search skills');
+    await search.fill('no-matching-skill');
+    await expect(page.getByText('No matching skills found')).toHaveCSS('font-size', '14px');
+    await search.clear();
     const skillOption = page.getByTestId('cron-skill-option-create-skill');
     await expect(skillOption).toBeVisible();
     await expect(skillOption).toHaveCSS('height', '48px');

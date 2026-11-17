@@ -887,7 +887,7 @@ function TaskDialog({ open, job, configuredChannels, returnFocusTo, onClose, onS
                     data-testid="cron-skill-button"
                     title={t('dialog.pickSkill')}
                     className={cn(
-                      'inline-flex h-8 items-center gap-1 rounded-lg px-1.5 text-meta font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-0',
+                      'inline-flex h-8 items-center gap-1 rounded-lg px-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-0',
                       skillPickerOpen && 'text-foreground',
                     )}
                   >
@@ -906,7 +906,7 @@ function TaskDialog({ open, job, configuredChannels, returnFocusTo, onClose, onS
                           value={skillQuery}
                           onChange={(event) => setSkillQuery(event.target.value)}
                           placeholder={t('dialog.skillSearchPlaceholder')}
-                          className="w-full bg-transparent text-meta outline-none placeholder:text-muted-foreground/70"
+                          className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground/70"
                           autoFocus
                         />
                       </div>
@@ -915,11 +915,11 @@ function TaskDialog({ open, job, configuredChannels, returnFocusTo, onClose, onS
                       </div>
                       <div className="clawx-menu-list max-h-64 overflow-y-auto">
                         {skillsLoading ? (
-                          <div className="px-3 py-4 text-xs text-muted-foreground">{t('dialog.skillLoading')}</div>
+                          <div className="px-3 py-4 text-sm text-muted-foreground">{t('dialog.skillLoading')}</div>
                         ) : skillsError ? (
-                          <div className="px-3 py-4 text-xs text-destructive">{skillsError}</div>
+                          <div className="px-3 py-4 text-sm text-destructive">{skillsError}</div>
                         ) : filteredQuickSkills.length === 0 ? (
-                          <div className="px-3 py-4 text-xs text-muted-foreground">{t('dialog.skillEmpty')}</div>
+                          <div className="px-3 py-4 text-sm text-muted-foreground">{t('dialog.skillEmpty')}</div>
                         ) : (
                           filteredQuickSkills.map((skill) => (
                             <QuickSkillOption
