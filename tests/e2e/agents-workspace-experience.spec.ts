@@ -180,6 +180,7 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       await expect(dialog.getByRole('button', { name: text.profile.editStyle, exact: true })).toHaveCSS('font-size', '14px');
       await dialog.getByRole('button', { name: text.profile.editStyle, exact: true }).click();
       const editor = dialog.getByTestId('agent-style-editor');
+      await expect(editor).toHaveAccessibleName(`${text.profile.workStyle} · SOUL.md`);
       await expect(editor).toHaveValue(originalStyle);
       const updatedStyle = '# Working style\n\nInvestigate carefully.\n\nPreserve all existing rules.';
       await editor.fill(updatedStyle);
