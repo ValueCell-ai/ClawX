@@ -9,6 +9,33 @@ function stableKey(value: unknown): string {
   return `{${Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([name, item]) => `${JSON.stringify(name)}:${stableKey(item)}`).join(',')}}`;
 }
 
+test('keeps usage filters available when the selected time window is empty', async ({ launchElectronApp }) => {
+  const app = await launchElectronApp({ skipSetup: true });
+  const key = (module: string, action: string, payload: unknown = null) => stableKey([module, action, payload]);
+  try {
+    await installIpcMocks(app, {
+      gatewayStatus: { state: 'running', gatewayReady: true, port: 18789 },
+      hostApi: {
+        [key('settings', 'getAll')]: { language: 'en', setupComplete: true, theme: 'light' },
+        [key('usage', 'recentTokenHistory', { limit: undefined })]: [{
+          sessionId: 'old-usage', timestamp: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(), model: 'older-model', provider: 'Test', agentId: 'main',
+          inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 15,
+        }],
+      },
+    });
+    const page = await getStableWindow(app);
+    await page.reload();
+    await navigateToSection(page, 'models');
+    await page.getByTestId('models-tab-usage').click();
+    const labels = I18N_RESOURCES.en.dashboard.recentTokenHistory;
+    await expect(page.getByText(labels.emptyForWindow)).toBeVisible();
+    await page.getByRole('button', { name: labels.last30Days, exact: true }).click();
+    await expect(page.getByTestId('token-usage-table')).toContainText('older-model');
+  } finally {
+    await closeElectronApp(app);
+  }
+});
+
 for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
   test(`models show a provider catalog without defaults, preserving configuration and usage browsing in ${language}`, async ({ launchElectronApp }, testInfo) => {
     const app = await launchElectronApp({ skipSetup: true });

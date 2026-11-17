@@ -372,10 +372,6 @@ export function Models({ embedded = false }: { embedded?: boolean }) {
                 <div className="flex items-center justify-center py-12 text-muted-foreground bg-black/5 dark:bg-white/5 rounded-xl border border-black/10 dark:border-white/10 border-dashed">
                   <FeedbackState state="empty" title={t('dashboard:recentTokenHistory.empty')} />
                 </div>
-              ) : filteredUsageHistory.length === 0 ? (
-                <div className="flex items-center justify-center py-12 text-muted-foreground bg-black/5 dark:bg-white/5 rounded-xl border border-black/10 dark:border-white/10 border-dashed">
-                  <FeedbackState state="empty" title={t('dashboard:recentTokenHistory.emptyForWindow')} />
-                </div>
               ) : (
                 <div className="space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -465,6 +461,7 @@ export function Models({ embedded = false }: { embedded?: boolean }) {
                     </p>
                   </div>
 
+                  {filteredUsageHistory.length === 0 ? <FeedbackState state="empty" title={t('dashboard:recentTokenHistory.emptyForWindow')} /> : <>
                   <div data-testid="usage-summary" className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
                     {([['totalTokens', usageTotals.total], ['inputShort', usageTotals.input], ['outputShort', usageTotals.output], ['cacheShort', usageTotals.cache]] as const).map(([label, value]) => <div key={label} className="flex items-baseline gap-2"><span className="text-xs text-muted-foreground">{t(`dashboard:recentTokenHistory.${label}`)}</span><span className="font-medium tabular-nums">{formatTokenCount(value)}</span></div>)}
                   </div>
@@ -553,6 +550,7 @@ export function Models({ embedded = false }: { embedded?: boolean }) {
                       </Button>
                     </div>
                   </div>
+                  </>}
                 </div>
               )}
             </div>
