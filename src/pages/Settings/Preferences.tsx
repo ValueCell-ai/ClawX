@@ -584,7 +584,7 @@ export function SettingsPreferences({ section }: { section: 'general' | 'advance
                   <ExternalLink className="mr-2 h-4 w-4" />{t('developer.console')}
                 </Button>
                 <div className="py-4" data-testid="settings-developer-advanced">
-                <div className="space-y-8">
+                <div className="space-y-6">
                   {/* Network proxy */}
                   <div className="space-y-4" data-testid="settings-proxy-section">
                     <div className="flex items-center justify-between">
@@ -604,7 +604,7 @@ export function SettingsPreferences({ section }: { section: 'general' | 'advance
                       <div className="space-y-4 pt-2">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <div className="space-y-2">
-                            <Label htmlFor="proxy-server" className="text-meta text-foreground/80">
+                            <Label htmlFor="proxy-server" className="text-sm font-medium">
                               {t('gateway.proxyServer')}
                             </Label>
                             <Input
@@ -612,13 +612,13 @@ export function SettingsPreferences({ section }: { section: 'general' | 'advance
                               value={proxyServerDraft}
                               onChange={(event) => setProxyServerDraft(event.target.value)}
                               placeholder="http://127.0.0.1:7890"
-                              className="h-10 rounded-xl bg-black/5 dark:bg-white/5 border-transparent font-mono text-meta"
+                              className="h-9 bg-surface-modal text-sm"
                             />
                             <p className="text-sm text-muted-foreground">{t('gateway.proxyServerHelp')}</p>
                           </div>
 
                           <div className="space-y-2">
-                            <Label htmlFor="proxy-http-server" className="text-meta text-foreground/80">
+                            <Label htmlFor="proxy-http-server" className="text-sm font-medium">
                               {t('gateway.proxyHttpServer')}
                             </Label>
                             <Input
@@ -626,13 +626,13 @@ export function SettingsPreferences({ section }: { section: 'general' | 'advance
                               value={proxyHttpServerDraft}
                               onChange={(event) => setProxyHttpServerDraft(event.target.value)}
                               placeholder={proxyServerDraft || 'http://127.0.0.1:7890'}
-                              className="h-10 rounded-xl bg-black/5 dark:bg-white/5 border-transparent font-mono text-meta"
+                              className="h-9 bg-surface-modal text-sm"
                             />
                             <p className="text-sm text-muted-foreground">{t('gateway.proxyHttpServerHelp')}</p>
                           </div>
 
                           <div className="space-y-2">
-                            <Label htmlFor="proxy-https-server" className="text-meta text-foreground/80">
+                            <Label htmlFor="proxy-https-server" className="text-sm font-medium">
                               {t('gateway.proxyHttpsServer')}
                             </Label>
                             <Input
@@ -640,13 +640,13 @@ export function SettingsPreferences({ section }: { section: 'general' | 'advance
                               value={proxyHttpsServerDraft}
                               onChange={(event) => setProxyHttpsServerDraft(event.target.value)}
                               placeholder={proxyServerDraft || 'http://127.0.0.1:7890'}
-                              className="h-10 rounded-xl bg-black/5 dark:bg-white/5 border-transparent font-mono text-meta"
+                              className="h-9 bg-surface-modal text-sm"
                             />
                             <p className="text-sm text-muted-foreground">{t('gateway.proxyHttpsServerHelp')}</p>
                           </div>
 
                           <div className="space-y-2">
-                            <Label htmlFor="proxy-all-server" className="text-meta text-foreground/80">
+                            <Label htmlFor="proxy-all-server" className="text-sm font-medium">
                               {t('gateway.proxyAllServer')}
                             </Label>
                             <Input
@@ -654,14 +654,14 @@ export function SettingsPreferences({ section }: { section: 'general' | 'advance
                               value={proxyAllServerDraft}
                               onChange={(event) => setProxyAllServerDraft(event.target.value)}
                               placeholder={proxyServerDraft || 'socks5://127.0.0.1:7891'}
-                              className="h-10 rounded-xl bg-black/5 dark:bg-white/5 border-transparent font-mono text-meta"
+                              className="h-9 bg-surface-modal text-sm"
                             />
                             <p className="text-sm text-muted-foreground">{t('gateway.proxyAllServerHelp')}</p>
                           </div>
                         </div>
 
                         <div className="space-y-2">
-                          <Label htmlFor="proxy-bypass" className="text-meta text-foreground/80">
+                          <Label htmlFor="proxy-bypass" className="text-sm font-medium">
                             {t('gateway.proxyBypass')}
                           </Label>
                           <Input
@@ -669,7 +669,7 @@ export function SettingsPreferences({ section }: { section: 'general' | 'advance
                             value={proxyBypassRulesDraft}
                             onChange={(event) => setProxyBypassRulesDraft(event.target.value)}
                             placeholder="<local>;localhost;127.0.0.1;::1"
-                            className="h-10 rounded-xl bg-black/5 dark:bg-white/5 border-transparent font-mono text-meta"
+                            className="h-9 bg-surface-modal text-sm"
                           />
                           <p className="text-sm text-muted-foreground">{t('gateway.proxyBypassHelp')}</p>
                         </div>
@@ -686,11 +686,11 @@ export function SettingsPreferences({ section }: { section: 'general' | 'advance
                         <RefreshCw className={`h-4 w-4 mr-2${savingProxy ? ' animate-spin' : ''}`} />
                         {savingProxy ? t('common:status.saving') : t('common:actions.save')}
                       </Button>
-                      <p className="text-xs text-muted-foreground">{t('gateway.proxyRestartNote')}</p>
+                      <p className="text-sm text-muted-foreground">{t('gateway.proxyRestartNote')}</p>
                     </div>
                   </div>
-                  <div className="space-y-4 pt-4">
-                    <Label className="text-sm font-medium text-foreground/80">{t('developer.gatewayToken')}</Label>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-foreground">{t('developer.gatewayToken')}</Label>
                     <p className="text-meta text-muted-foreground">{t('developer.gatewayTokenDesc')}</p>
                     <div className="flex flex-wrap gap-2">
                       <Input
