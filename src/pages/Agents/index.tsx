@@ -24,6 +24,8 @@ import { cn } from '@/lib/utils';
 import { CreateAgentDialog } from './CreateAgentDialog';
 import { AgentDetails } from './AgentDetails';
 import { useAgentWorkspaces } from './useAgentWorkspaces';
+import { useAgentModels } from './use-agent-models';
+import { splitModelRef } from '@/lib/model-options';
 
 export function Agents() {
   const { t } = useTranslation('agents');
@@ -42,6 +44,7 @@ export function Agents() {
   const [agentToDelete, setAgentToDelete] = useState<AgentSummary | null>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const { snapshots, refresh: refreshWorkspaces } = useAgentWorkspaces(agents);
+  const modelOptions = useAgentModels();
   const fetchChannelAccounts = useCallback(async () => {
     try { setChannelGroups((await hostApi.channels.accounts()).channels || []); }
     catch { /* Retain the last usable snapshot during refresh failures. */ }
@@ -86,7 +89,7 @@ export function Agents() {
         {error && <div role="alert" className="mb-4 flex items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive"><AlertCircle className="h-4 w-4 shrink-0" />{error}</div>}
         {loading && !hasCompletedInitialLoad ? <div className="flex h-full items-center justify-center"><LoadingSpinner size="lg" /></div> : <>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2" data-testid="agents-roster">
-            {agents.map(agent => <AgentCard key={agent.id} agent={agent} sessions={sessions} channelGroups={channelGroups} onManage={trigger => openDetails(agent, trigger)} onStart={() => startTask(agent)} onDelete={() => setAgentToDelete(agent)} />)}
+            {agents.map(agent => <AgentCard key={agent.id} agent={agent} providerName={modelOptions.find(option => option.modelRef === agent.modelRef)?.providerName || splitModelRef(agent.modelRef)?.providerKey} sessions={sessions} channelGroups={channelGroups} onManage={trigger => openDetails(agent, trigger)} onStart={() => startTask(agent)} onDelete={() => setAgentToDelete(agent)} />)}
           </div>
         </>}
       </div>
@@ -101,8 +104,8 @@ export function Agents() {
   </div>;
 }
 
-function AgentCard({ agent, sessions, channelGroups, onManage, onStart, onDelete }: {
-  agent: AgentSummary; sessions: ChatSession[]; channelGroups: ChannelGroupItem[];
+function AgentCard({ agent, providerName, sessions, channelGroups, onManage, onStart, onDelete }: {
+  agent: AgentSummary; providerName?: string; sessions: ChatSession[]; channelGroups: ChannelGroupItem[];
   onManage: (trigger: HTMLElement) => void; onStart: () => void; onDelete: () => void;
 }) {
   const { t, i18n } = useTranslation('agents');
@@ -112,13 +115,14 @@ function AgentCard({ agent, sessions, channelGroups, onManage, onStart, onDelete
   const busy = ownedSessions.some(session => session.hasActiveRun);
   const bound = channelGroups.flatMap(group => group.accounts.filter(account => account.agentId === agent.id).map(account => ({ type: group.channelType, id: account.accountId, label: `${CHANNEL_NAMES[group.channelType as ChannelType] || group.channelType} · ${account.name || account.accountId}` })));
   const directory = agent.workspace.replace(/\\/g, '/').replace(/\/+$/, '').split('/').pop() || agent.workspace;
+  const modelName = splitModelRef(agent.modelRef)?.modelId || agent.modelDisplay;
   return <article data-testid={`agent-card-${agent.id}`} className="flex flex-col rounded-xl border border-border bg-surface-modal p-4 transition-colors hover:border-foreground/20">
     <div className="flex min-w-0 items-center gap-2">
       <h2 className="flex min-w-0 flex-1 items-center gap-2 text-base font-medium"><button type="button" data-testid={`agent-manage-${agent.id}`} className="min-w-0 truncate rounded text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={event => onManage(event.currentTarget)} aria-label={t('card.openDetails', { name: agent.name })}>{agent.name}</button>{agent.isDefault && <Badge variant="secondary" className="shrink-0 gap-1 bg-black/5 px-2 font-normal text-muted-foreground dark:bg-white/10"><Check className="h-3 w-3" />{t('defaultBadge')}</Badge>}</h2>
       {!agent.isDefault && <Menu.Root><Menu.Trigger asChild><Button ref={menuRef} variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground" data-testid={`agent-menu-${agent.id}`} aria-label={t('card.actions', { name: agent.name })} title={t('card.actions', { name: agent.name })}><MoreHorizontal className="h-4 w-4" /></Button></Menu.Trigger><Menu.Portal><Menu.Content align="end" sideOffset={6} className="clawx-menu-list min-w-40 rounded-xl border border-border bg-surface-modal p-1.5 shadow-xl"><Menu.Item data-testid={`agent-delete-${agent.id}`} className="clawx-menu-item flex items-center gap-2 text-sm text-destructive" onSelect={onDelete}><Trash2 className="h-3.5 w-3.5" />{t('deleteAgent')}</Menu.Item></Menu.Content></Menu.Portal></Menu.Root>}
     </div>
     <dl className="mt-4 grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-3 text-sm">
-      <dt className="text-muted-foreground">{t('settingsDialog.modelLabel')}</dt><dd className="m-0 flex min-w-0 items-center gap-2"><ModelIcon modelName={agent.modelDisplay} testId={`agent-model-icon-${agent.id}`} /><span className="truncate" title={agent.modelDisplay}>{agent.modelDisplay}</span></dd>
+      <dt className="text-muted-foreground">{t('settingsDialog.modelLabel')}</dt><dd className="m-0 flex min-w-0 items-center gap-2"><ModelIcon modelName={modelName} testId={`agent-model-icon-${agent.id}`} /><span className="flex min-w-0 items-center gap-1" title={providerName ? `${providerName} / ${modelName}` : modelName}>{providerName && <><span className="min-w-0 max-w-[50%] truncate text-muted-foreground">{providerName}</span><span className="shrink-0 text-muted-foreground"> / </span></>}<span className="min-w-0 truncate">{modelName}</span></span></dd>
       <dt className="text-muted-foreground">{t('detailTabs.directory')}</dt><dd className="m-0 min-w-0 truncate" title={agent.workspace}>{directory}</dd>
       <dt className="self-start pt-0.5 text-muted-foreground">{t('profile.channelsTitle')}</dt><dd className="m-0 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2" title={bound.map(item => item.label).join('\n') || undefined}>{bound.length ? <>{bound.slice(0, 2).map(item => <span key={`${item.type}-${item.id}`} className="inline-flex min-w-0 max-w-full items-center gap-1.5"><ChannelLogo type={item.type} className="h-4 w-4" /><span className="truncate">{item.label}</span></span>)}{bound.length > 2 && <span className="shrink-0 text-muted-foreground">{t('card.moreAccounts', { count: bound.length - 2 })}</span>}</> : <span className="truncate text-muted-foreground">{t('detailTabs.noBindings')}</span>}</dd>
     </dl>

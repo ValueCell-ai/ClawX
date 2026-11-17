@@ -55,6 +55,7 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       const card = page.getByTestId('agent-card-main');
       await expect(card).not.toContainText('Use primary sources.');
       await expect(card.getByTestId('agent-model-icon-main')).toBeVisible();
+      await expect(card).toContainText(/Research Lab\s*\/\s*model-alpha/);
       await expect(card).toContainText(text.settingsDialog.modelLabel);
       await expect(card).toContainText(text.detailTabs.directory);
       await expect(card).toContainText(text.profile.channelsTitle);
