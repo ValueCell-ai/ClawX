@@ -26,11 +26,11 @@ Use the shared Workspace reader in a thin right drawer for all file previews.
 Keep one centered settings dialog with model controls in the same layer; expose
 important actions to keyboard users, retain destructive confirmation and use all locales.
 
-Assistant details use overview, files/memory and skills/permissions tabs. Tab changes
+Assistant details use overview and files/memory tabs. Tab changes
 preserve unsaved drafts; overview name and model changes are saved through the footer,
 while native instruction files retain their own save and conflict handling. Closing
-requires confirmation if either kind of draft is unsaved. The workspace quick-access skill list is not an effective
-agent tool-policy or sandbox report; show its actual scope and never guess permissions.
+requires confirmation if either kind of draft is unsaved. Do not present the workspace
+quick-access skill list as an agent-specific skill or permissions report.
 Assistant model selectors display the selected provider alongside the model name,
 including when different providers offer identically named models.
 Keep the overview focused on editable identity and model, workspace and messaging;

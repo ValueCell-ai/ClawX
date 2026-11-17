@@ -11,7 +11,6 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
-import { AgentCapabilities } from './AgentCapabilities';
 import { ModelPicker } from '@/components/common/ModelPicker';
 import type { FilePreviewTarget } from '@/components/file-preview/types';
 import { hostApi, type ChannelGroupItem } from '@/lib/host-api';
@@ -127,7 +126,7 @@ export function AgentDetails({ open, agent, workspace, channelGroups, onClose, o
       <Suspense fallback={null}><FileReader file={file} open={open && readerOpen} onClose={() => setReaderOpen(false)} onReturnFocus={() => fileTriggerRef.current?.focus()} testId="agent-file-reader" /></Suspense>
       <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col">
         <TabsList variant="page" className="mx-6 mb-1 mt-3 shrink-0" aria-label={t('settingsDialog.title', { name: agent.name })}>
-          {(['overview', 'profile', 'capabilities'] as const).map(value => <TabsTrigger key={value} variant="page" value={value} disabled={busy} data-testid={`agent-tab-${value}`}>{t(`detailTabs.${value}`)}</TabsTrigger>)}
+          {(['overview', 'profile'] as const).map(value => <TabsTrigger key={value} variant="page" value={value} disabled={busy} data-testid={`agent-tab-${value}`}>{t(`detailTabs.${value}`)}</TabsTrigger>)}
         </TabsList>
         <div data-testid="agent-detail-content" className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-4">
           <TabsContent value="overview" className="m-0">
@@ -172,9 +171,6 @@ export function AgentDetails({ open, agent, workspace, channelGroups, onClose, o
               {workspace?.readOnly && soulFile && <p className="text-sm text-muted-foreground">{t('profile.readOnlyStyle')}</p>}
               {!hasMemory && workspace && !workspace.error && <p className="text-sm leading-relaxed text-muted-foreground">{t('profile.memoryHint')}</p>}
             </section>
-          </TabsContent>
-          <TabsContent value="capabilities" className="m-0">
-            <AgentCapabilities workspace={agent.workspace} onManageSkills={() => requestClose(() => navigate('/skills'))} onOpenFile={openFile} />
           </TabsContent>
         </div>
       </Tabs>

@@ -133,21 +133,11 @@
     "detailTabs": {
         "overview": "概览",
         "profile": "资料与记忆",
-        "capabilities": "技能与权限",
         "manage": "管理",
         "defaultAssistant": "默认助手",
         "viewAndEdit": "查看与编辑",
         "styleSource": "摘自 SOUL.md",
         "directory": "工作目录",
-        "capabilitiesHint": "查看工作空间中的技能及运行权限说明。",
-        "viewCapabilities": "查看详情",
-        "noBindings": "暂无消息入口",
-        "workspaceSkills": "工作空间技能",
-        "manageSkills": "管理技能",
-        "skillsScope": "此工作空间中可选择的已开启技能。技能列表不代表工具权限或完整的运行策略。",
-        "skillsFailed": "未能读取技能，请刷新重试。",
-        "skillsEmpty": "此工作空间暂无可选择的技能。",
-        "toolsAndSandbox": "工具权限与沙箱",
-        "permissionsScope": "由 OpenClaw 的全局、助手和会话配置共同决定。当前页面不展示生效权限，请在 OpenClaw 中查看和配置。"
+        "noBindings": "暂无消息入口"
     }
 }

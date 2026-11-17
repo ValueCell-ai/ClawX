@@ -42,7 +42,6 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
           [key('agents', 'updateModel', { id: 'main', modelRef: modelB })]: modelSnapshot,
           [key('agents', 'create', { name: 'Planner', inheritWorkspace: true, instructions: plannerStyle, modelRef: modelB })]: { ...modelSnapshot, agents: [...modelSnapshot.agents, planner] },
           [key('channels', 'accounts')]: { success: true, channels: [{ channelType: 'telegram', defaultAccountId: 'one', status: 'connected', accounts: [{ accountId: 'one', name: 'First', agentId: 'main' }, { accountId: 'two', name: 'Second', agentId: 'main' }, { accountId: 'three', name: 'Third', agentId: 'main' }] }] },
-          [key('skills', 'quickAccess', { workspace: main.workspace })]: { success: true, skills: [{ name: 'research', description: 'Use primary sources.', source: 'workspace', sourceLabel: 'Workspace', manifestPath: join(main.workspace, 'SKILL.md'), baseDir: main.workspace }] },
           [key('providers', 'accounts')]: [{ id: 'custom-12345678', vendorId: 'custom', label: 'Research Lab', authMode: 'local', enabled: true, model: 'model-alpha', metadata: { customModels: ['model-alpha', 'model-beta', 'gpt-5.5'] }, updatedAt: '2026-10-31' }],
           [key('providers', 'vendors')]: [{ id: 'custom', name: 'Custom' }],
           [key('providers', 'accountKeyInfo')]: [],
@@ -175,9 +174,7 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       expect((await getRecordedHostInvocations(app)).filter(call => call.module === 'agents' && call.action === 'updateModel')).toHaveLength(0);
       await expect(dialog.getByTestId('agent-overview-save')).toBeEnabled();
       await expect(page.getByRole('dialog')).toHaveCount(1);
-      await dialog.getByTestId('agent-tab-capabilities').click();
-      await expect(dialog.getByTestId('agent-workspace-skills')).toContainText('research');
-      await expect(dialog).toContainText(text.detailTabs.permissionsScope);
+      await expect(dialog.getByTestId('agent-tab-capabilities')).toHaveCount(0);
       await dialog.getByTestId('agent-tab-profile').click();
       await expect(dialog.getByRole('button', { name: text.profile.editStyle, exact: true })).toHaveCSS('font-size', '14px');
       await dialog.getByRole('button', { name: text.profile.editStyle, exact: true }).click();
@@ -202,7 +199,7 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       await dialog.getByRole('button', { name: text.profile.saveStyle, exact: true }).click();
       await expect(editor).toHaveCount(0);
       expect(await readFile(join(main.workspace, 'SOUL.md'), 'utf8')).toBe(updatedStyle);
-      await expect(dialog).toContainText('Investigate carefully.');
+      await expect(dialog).not.toContainText('Investigate carefully.');
       if (language === 'ru') {
         await page.setViewportSize({ width: 960, height: 650 });
         await page.evaluate(() => document.documentElement.classList.add('dark'));

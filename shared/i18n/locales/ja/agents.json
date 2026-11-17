@@ -133,21 +133,11 @@
     "detailTabs": {
         "overview": "概要",
         "profile": "資料とメモリー",
-        "capabilities": "スキルと権限",
         "manage": "管理",
         "defaultAssistant": "既定のアシスタント",
         "viewAndEdit": "表示・編集",
         "styleSource": "SOUL.md からの抜粋",
         "directory": "作業ディレクトリ",
-        "capabilitiesHint": "ワークスペースのスキルと実行権限の管理方法を確認します。",
-        "viewCapabilities": "詳細を表示",
-        "noBindings": "メッセージ入口なし",
-        "workspaceSkills": "ワークスペースのスキル",
-        "manageSkills": "スキルを管理",
-        "skillsScope": "このワークスペースで選択できる有効なスキルです。ツールの権限や実行ポリシー全体を示すものではありません。",
-        "skillsFailed": "スキルを読み込めませんでした。更新して再試行してください。",
-        "skillsEmpty": "選択できるスキルはありません。",
-        "toolsAndSandbox": "ツールとサンドボックス",
-        "permissionsScope": "アクセスは OpenClaw のグローバル・アシスタント・セッション設定で決まります。この画面には実効権限を表示しません。OpenClaw で確認・設定してください。"
+        "noBindings": "メッセージ入口なし"
     }
 }

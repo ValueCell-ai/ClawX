@@ -1,11 +1,11 @@
 ---
 id: refine-assistant-details-tabs
-title: Organize assistant details around overview, files and capabilities
+title: Organize assistant details around overview and files
 scenario: gateway-backend-communication
 scenarios:
   - chat-workspace-and-navigation
 taskType: runtime-bridge
-intent: Implement the approved assistant demo with native configuration editing, shared file previews and an honest workspace skill overview.
+intent: Provide native configuration editing and shared file previews in assistant details.
 touchedAreas:
   - src/pages/Agents/**
   - src/components/common/ModelPicker.tsx
@@ -20,11 +20,11 @@ touchedAreas:
   - README.ja-JP.md
 expectedUserBehavior:
   - Assistant cards expose management and start-task actions without invented descriptions or activity.
-  - A bounded details dialog separates overview, profile files and skills with shared Radix tabs.
+  - A bounded details dialog separates overview and profile files with shared Radix tabs.
   - Name and model are staged in the overview and saved through the footer; full SOUL.md editing remains separately saved with conflict and unsaved-change protection.
   - Assistant models are selected from configured options; an existing external model remains visible and unchanged until an explicit selection.
   - Starting a task from the assistant list preserves drafts and uses the selected assistant and workspace without sending.
-  - Skills are loaded on demand through the existing workspace quick-access API, not presented as an authoritative tool-permission report.
+  - Skills remain managed on the dedicated skills page; assistant details do not present a workspace scan as effective agent permissions.
   - File previews reuse the shared Workspace reader drawer and return focus to the opener.
 requiredProfiles:
   - fast
@@ -40,11 +40,11 @@ requiredTests:
   - tests/unit/agents-page.test.tsx
 acceptance:
   - No new transport, runtime configuration or migration is introduced.
-  - Missing skills and read failures have localized states; tools and sandbox are never guessed from the skill list.
+  - File read failures have localized states; tools and sandbox are never guessed from a skill list.
   - Tabs preserve unsaved drafts; leaving the dialog retains existing discard confirmation.
   - All labels support en, zh, ja and ru and the dialog remains bounded in narrow windows.
 docs:
   required: true
 ---
 
-The overview uses compact labeled rows; profile and skills remain separate tabs.
+The overview uses compact labeled rows; profile files remain in their own tab.

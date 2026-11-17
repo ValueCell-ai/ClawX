@@ -133,21 +133,11 @@
     "detailTabs": {
         "overview": "Overview",
         "profile": "Files & memory",
-        "capabilities": "Skills & permissions",
         "manage": "Manage",
         "defaultAssistant": "Default assistant",
         "viewAndEdit": "View & edit",
         "styleSource": "Excerpt from SOUL.md",
         "directory": "Working directory",
-        "capabilitiesHint": "View workspace skills and how runtime permissions are managed.",
-        "viewCapabilities": "View details",
-        "noBindings": "No messaging entry points",
-        "workspaceSkills": "Workspace skills",
-        "manageSkills": "Manage skills",
-        "skillsScope": "Enabled skills available for selection in this workspace. This list does not describe tool permissions or the complete runtime policy.",
-        "skillsFailed": "Could not load skills. Refresh to try again.",
-        "skillsEmpty": "No selectable skills in this workspace.",
-        "toolsAndSandbox": "Tools & sandbox",
-        "permissionsScope": "Global, assistant and session settings in OpenClaw determine access. This page does not report effective permissions; view and configure them in OpenClaw."
+        "noBindings": "No messaging entry points"
     }
 }
