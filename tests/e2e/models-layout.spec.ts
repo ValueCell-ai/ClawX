@@ -131,6 +131,7 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       await voiceConfigure.click();
       const voiceDialog = page.getByTestId('asr-config-dialog');
       await expect(voiceDialog).toBeVisible();
+      await expect(voiceDialog.locator('summary')).toHaveCSS('font-size', '14px');
       await expect(voiceDialog.getByTestId('asr-base-url-input')).not.toBeVisible();
       await voiceDialog.getByTestId('asr-preset-select').click();
       await page.getByRole('option', { name: text.settings.asr.presets.bailian, exact: true }).click();
@@ -151,6 +152,7 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       await page.getByTestId('image-generation-summary').getByTestId('image-generation-configure').click();
       const imageDialog = page.getByTestId('image-generation-config-dialog');
       await expect(imageDialog.getByTestId('image-generation-save')).toBeDisabled();
+      await expect(imageDialog.locator('summary')).toHaveCSS('font-size', '14px');
       await expect(imageDialog.getByTestId('image-generation-relay-api-key')).toHaveValue('');
       await expect(imageDialog.getByTestId('image-generation-agent-auth-table')).not.toBeVisible();
       await imageDialog.locator('summary').click();

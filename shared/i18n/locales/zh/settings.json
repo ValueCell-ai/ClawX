@@ -367,7 +367,7 @@
     "language": "语言",
     "languageAuto": "自动识别（推荐）",
     "apiKey": "API 密钥",
-    "apiKeyConfiguredPlaceholder": "此 Provider 已配置 API 密钥，留空保持不变",
+    "apiKeyConfiguredPlaceholder": "留空以保留已保存的 API 密钥",
     "apiKeyLink": "获取 API 密钥",
     "apiKeyLinkTitle": "前往服务商控制台获取 API 密钥",
     "save": "保存",
