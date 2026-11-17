@@ -11,6 +11,12 @@ appliesTo:
 
 Route every new user-visible string through `react-i18next` with matching English, Chinese, Japanese, and Russian locale coverage. Do not hardcode display text in pages or components.
 
+Native menu code imports the dedicated menu-labels entry point, not the renderer's
+full resource graph. In development, page translation edits replace renderer resource
+bundles through Vite HMR while preserving language and component state; changing native
+menu translations may still rebuild the Electron main process. Reapply registered
+extension translation additions and overrides before notifying the UI after an update.
+
 Read and follow [DESIGN.md](../../../DESIGN.md) before any UI work. It is the canonical project-wide visual contract, including text-role size/line-height/weight mappings, popup group readability, layout density, surfaces and shared patterns. Apply the same contract to shared primitives and product pages. Do not introduce per-component size scales or use inconsistent existing UI as a precedent. Token definitions live in `tailwind.config.js`; implementation substitutions and shared motion live in `src/styles/globals.css`. When the contract changes, update the affected implementation and remove superseded guidance instead of maintaining another visual scale in this rule. Existing legacy typography converges incrementally in touched UI with scoped Electron E2E coverage.
 
 Use DESIGN.md to select grouped rows, independent cards or unboxed rows by their content and interaction purpose. Apply its surface, radius, color, button and passive badge rules through shared primitives; review affected states and responsive layouts rather than checking typography alone. Document purposeful exceptions, and update the contract and shared implementation together when a recurring pattern changes.

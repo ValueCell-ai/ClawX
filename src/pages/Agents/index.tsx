@@ -17,7 +17,6 @@ import { useChatStore } from '@/stores/chat';
 import { useSettingsStore } from '@/stores/settings';
 import { hostApi, type ChannelGroupItem } from '@/lib/host-api';
 import { hostEvents } from '@/lib/host-events';
-import type { AgentWorkspaceSnapshot } from '@/lib/agent-workspace';
 import { CHANNEL_NAMES, type ChannelType } from '@/types/channel';
 import type { AgentSummary } from '@/types/agent';
 import type { ChatSession } from '@shared/chat/types';

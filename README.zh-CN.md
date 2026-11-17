@@ -275,6 +275,8 @@ pnpm package         # 为当前平台打包（可用 :mac / :win / :linux 后�
 
 开发模式的文件监听会跳过生成的 `build/`、`release/`、`dist-electron/`、`artifacts/` 和 `playwright-report/` 目录，避免运行时打包产物拖慢编译，尤其是在 Windows 上。源码和链接的扩展仍支持热重载。
 
+使用 `pnpm dev` 时，页面翻译的修改通过渲染进程热更新，不会重启 Electron 或 Gateway；原生菜单翻译独立维护，修改时仍可能重新构建主进程。
+
 > 项目结构、技术栈、完整命令列表、E2E 并行策略、性能诊断与通信回归检查等细节，请参阅 [docs/zh-CN/development.md](docs/zh-CN/development.md)。
 
 ## 参与贡献

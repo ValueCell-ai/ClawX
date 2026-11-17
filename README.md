@@ -274,6 +274,8 @@ Electron’s install script is allowed in `pnpm-workspace.yaml` so dependency in
 
 Development file watching skips generated `build/`, `release/`, `dist-electron/`, `artifacts/`, and `playwright-report/` trees to keep runtime bundles from slowing down compilation, especially on Windows. Source files and linked extensions continue to support hot reload.
 
+During `pnpm dev`, page translation edits use renderer hot updates without restarting Electron or the Gateway. Native menu translations are separate and can still rebuild the main process.
+
 > For the project structure, complete command list, E2E parallel policy, performance diagnostics, communication regression checks, and tech stack, see [docs/en-US/development.md](docs/en-US/development.md).
 
 ## Contributing
