@@ -3,6 +3,7 @@ import type { RawMessage } from '@shared/chat/types';
 import {
   alignOpenClawMediaTurns,
   extractOpenClawMediaTurns,
+  selectOpenClawTranscriptTurn,
 } from '@/lib/acp/openclaw-media-compat';
 import {
   appendSyntheticAssistantMessage,
@@ -83,6 +84,44 @@ function availableAttachment(id: string, identity: string): AttachmentRenderPart
 }
 
 describe('OpenClaw MEDIA transcript extraction', () => {
+  it.each([
+    {
+      name: 'assistant MEDIA directive',
+      output: { role: 'assistant', content: 'MEDIA:/tmp/hidden-report.pdf' } as RawMessage,
+    },
+    {
+      name: 'canonical assistant media fact',
+      output: {
+        role: 'assistant',
+        content: 'Internal report',
+        __openclaw: { media: [{ path: '/tmp/hidden-report.pdf' }] },
+      } as RawMessage,
+    },
+    {
+      name: 'confirmed internal-UI tool delivery',
+      output: {
+        role: 'toolresult',
+        toolName: 'message',
+        content: 'Internal delivery',
+        details: {
+          status: 'ok', deliveryStatus: 'sent', sourceReplySink: 'internal-ui',
+          sourceReplyDeliveryMode: 'message_tool_only',
+          sourceReply: { mediaUrl: '/tmp/hidden-report.pdf' },
+        },
+      } as RawMessage,
+    },
+  ])('does not recover hidden $name while retaining visible output', ({ output }) => {
+    const request: RawMessage = { role: 'user', content: 'Create the report' };
+    const [hiddenTurn] = extract(transcript(
+      request,
+      { ...output, ...{ display: false } },
+      { role: 'assistant', content: 'MEDIA:/tmp/visible-report.pdf' },
+    ));
+    expect(hiddenTurn?.candidates.map((candidate) => candidate.uri)).toEqual(['/tmp/visible-report.pdf']);
+    const [visibleTurn] = extract(transcript(request, output));
+    expect(visibleTurn?.candidates.map((candidate) => candidate.uri)).toEqual(['/tmp/hidden-report.pdf']);
+  });
+
   it('accepts the approved explicit reference forms and preserves directive order', () => {
     const [turn] = extract(transcript(
       { role: 'user', content: 'Create the exports' },
@@ -476,6 +515,53 @@ describe('OpenClaw MEDIA transcript extraction', () => {
 });
 
 describe('OpenClaw MEDIA transcript turn alignment', () => {
+  it.each([
+    { name: 'hidden display', metadata: { display: false } },
+    { name: 'internal system provenance', metadata: { provenance: { kind: 'internal_system' } } },
+    { name: 'inter-session provenance', metadata: { provenance: { kind: 'inter_session' } } },
+    { name: 'internal system input provenance', metadata: { inputProvenance: { kind: 'internal_system' } } },
+    { name: 'inter-session input provenance', metadata: { inputProvenance: { kind: 'inter_session' } } },
+    { name: 'legacy inter-session envelope', metadata: {}, text: '[Inter-session message] Continue the export' },
+  ])('keeps recovered attachments on the original turn across $name', ({ metadata, text }) => {
+    const request: RawMessage = { role: 'user', content: 'Create the report' };
+    const control: RawMessage = {
+      role: 'user',
+      content: text ?? 'Continue the current task from the existing transcript',
+      ...metadata,
+    };
+    const reply: RawMessage = { role: 'assistant', content: 'MEDIA:report.pdf' };
+    const messages = transcript(request, control, reply, { role: 'user', content: 'Next request' });
+    const snapshot = timeline([
+      { userId: 'original', userText: 'Create the report' },
+      { userId: 'next', userText: 'Next request' },
+    ]);
+
+    expect(alignOpenClawMediaTurns(snapshot, extract(messages), {})).toMatchObject([{
+      acpTurnId: 'original', candidates: [{ uri: 'report.pdf' }],
+    }]);
+    expect(selectOpenClawTranscriptTurn(messages, snapshot, 'original')).toEqual([request, control, reply]);
+  });
+
+  it('keeps unmarked recovery-like user text as a separate media turn', () => {
+    const recoveryText = 'Continue the current task from the existing transcript';
+    const messages = transcript(
+      { role: 'user', content: 'Create the report' },
+      { role: 'assistant', content: 'MEDIA:first.pdf' },
+      { role: 'user', content: recoveryText },
+      { role: 'assistant', content: 'MEDIA:second.pdf' },
+    );
+    const snapshot = timeline([
+      { userId: 'first', userText: 'Create the report' },
+      { userId: 'authored-recovery', userText: recoveryText },
+    ]);
+
+    expect(alignOpenClawMediaTurns(snapshot, extract(messages), {})).toMatchObject([
+      { acpTurnId: 'first', candidates: [{ uri: 'first.pdf' }] },
+      { acpTurnId: 'authored-recovery', candidates: [{ uri: 'second.pdf' }] },
+    ]);
+    expect(selectOpenClawTranscriptTurn(messages, snapshot, 'authored-recovery')).toEqual(messages.slice(2));
+  });
+
   it('aligns a structured resource-link user turn with OpenClaw transcript projection', () => {
     const resourcePath = 'C:\\Users\\Administrator\\.openclaw\\media\\input.xlsx';
     const snapshot = timeline([{

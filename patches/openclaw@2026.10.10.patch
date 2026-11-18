@@ -605,9 +605,9 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  				runId,
 +				resumedFromRunId: payload.resumedFromRunId,
  				approvalEvent
- 			});
- 			return;
- 		}
++			});
++			return;
++		}
 +		if (stream === "compaction") {
 +			const compactionPending = this.findPendingBySessionKey(sessionKey, runId, payload.resumedFromRunId);
 +			if (!compactionPending) return;
@@ -644,16 +644,41 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
 +						text: thoughtDelta
 +					}
 +				}
-+			});
-+			return;
-+		}
+ 			});
+ 			return;
+ 		}
  		if (stream !== "tool" && (stream !== "item" || data.kind !== "preamble")) return;
 -		const pending = this.findPendingBySessionKey(sessionKey, runId);
 +		const pending = this.findPendingBySessionKey(sessionKey, runId, payload.resumedFromRunId);
  		if (!pending) return;
  		let update;
  		if (stream === "item") {
-@@ -772,6 +830,8 @@
+@@ -720,6 +778,7 @@
+ 				pending.sentPreambles?.delete("");
+ 				pending.toolCalls ??= /* @__PURE__ */ new Map();
+ 				if (pending.toolCalls.has(toolCallId)) return;
++				closeAcpTextSegment(pending);
+ 				const args = data.args;
+ 				const title = formatToolTitle(name, args);
+ 				const kind = inferToolKind(name);
+@@ -753,7 +812,7 @@
+ 			} else return;
+ 			pending.preambleNeedsSeparator = false;
+ 		}
+-		await this.sessionUpdates.emit({
++		const emission = this.sessionUpdates.emit({
+ 			sessionId: pending.sessionId,
+ 			sessionKey: pending.sessionKey,
+ 			...pending.ledgerSessionId ? { ledgerSessionId: pending.ledgerSessionId } : {},
+@@ -761,6 +820,7 @@
+ 			record: true,
+ 			update
+ 		});
++		await (update.sessionUpdate === "agent_message_chunk" ? trackAcpTextEmission(pending, update.content.text, emission) : emission);
+ 	}
+ 	handleExecApprovalRequestEvent(evt) {
+ 		const payload = evt.payload;
+@@ -772,6 +832,8 @@
  		if (!sessionKey) return;
  		this.startApprovalRelay({
  			sessionKey,
@@ -662,7 +687,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  			approvalEvent
  		});
  	}
-@@ -806,7 +866,7 @@
+@@ -806,7 +868,7 @@
  		this.runApprovalRelay(relay, correlatedApprovalEvent);
  	}
  	findPendingForApproval(params) {
@@ -671,7 +696,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  		const toolCallId = params.approvalEvent.toolCallId;
  		let match;
  		for (const pending of this.pendingPrompts.values()) {
-@@ -883,106 +943,94 @@
+@@ -883,106 +945,94 @@
  //#endregion
  //#region src/acp/translator.disconnects.ts
  const ACP_GATEWAY_DISCONNECT_GRACE_MS = 5e3;
@@ -722,20 +747,19 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
 -		if (this.pendingPrompts.size === 0) return;
 -		for (const pending of this.pendingPrompts.values()) pending.disconnectContext = disconnectContext;
 -		this.armDisconnectTimer(disconnectContext);
--	}
--	armForActiveContext() {
--		if (this.activeDisconnectContext && !this.disconnectTimer) this.armDisconnectTimer(this.activeDisconnectContext);
--	}
--	clearWhenIdle() {
--		if (this.pendingPrompts.size === 0) this.clearDisconnectTimer();
--	}
 +		// Failed reconnect handshakes are the same outage, not a fresh grace budget.
 +		if (this.activeDisconnectContext) { this.armDisconnectTimer(); return; }
 +		const context = { generation: ++this.disconnectGeneration, reason, startedAt: Date.now() };
 +		this.activeDisconnectContext = context;
 +		for (const pending of this.pendingPrompts.values()) pending.disconnectContext = context;
 +		this.armDisconnectTimer();
-+	}
+ 	}
+-	armForActiveContext() {
+-		if (this.activeDisconnectContext && !this.disconnectTimer) this.armDisconnectTimer(this.activeDisconnectContext);
+-	}
+-	clearWhenIdle() {
+-		if (this.pendingPrompts.size === 0) this.clearDisconnectTimer();
+-	}
 +	armForActiveContext() { this.armDisconnectTimer(); }
 +	clearWhenIdle() { if (this.pendingPrompts.size === 0) this.clearDisconnectTimer(); }
  	clearDisconnectTimer() {
@@ -769,17 +793,16 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
 -		if (!pending.sendAccepted || this.activeDisconnectContext?.generation === disconnectContext.generation) await this.rejectPendingPrompt(pending, /* @__PURE__ */ new Error(`Gateway disconnected: ${disconnectContext.reason}`), { recordDisconnectNotice: true });
 -		else pending.disconnectContext = void 0;
 -		return false;
--	}
--	async reconcilePendingPrompts(observedDisconnectGeneration, deadlineExpired) {
--		if (this.pendingPrompts.size === 0) {
--			if (this.disconnectGeneration === observedDisconnectGeneration) this.clearDisconnectTimer();
 +	async reconcilePendingPrompts(generation) {
 +		for (const [sessionId, pending] of [...this.pendingPrompts]) {
 +			if (generation !== this.disconnectGeneration) return;
 +			if (this.pendingPrompts.get(sessionId) !== pending || !pending.disconnectContext) continue;
 +			await this.reconcilePendingPrompt(sessionId, pending);
 +		}
-+	}
+ 	}
+-	async reconcilePendingPrompts(observedDisconnectGeneration, deadlineExpired) {
+-		if (this.pendingPrompts.size === 0) {
+-			if (this.disconnectGeneration === observedDisconnectGeneration) this.clearDisconnectTimer();
 +	async reconcilePendingPrompt(sessionId, pending) {
 +		const context = pending.disconnectContext;
 +		const observedRunId = pending.idempotencyKey;
@@ -816,28 +839,26 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
 -			this.log(`agent.wait reconcile failed for ${pending.idempotencyKey}: ${String(err)}`);
 -			if (deadlineExpired) return await this.expirePendingPrompt(pending, disconnectContext);
 -			return true;
--		}
++			this.log(`agent.wait reconcile failed for ${observedRunId}: ${String(err)}`);
++			return;
+ 		}
 -		const currentPending = this.getPendingPrompt(sessionId, pending.idempotencyKey);
 -		if (!currentPending) return false;
 -		const hasVisibleReply = result?.terminalReply?.disposition === "visible";
 -		if (result?.status === "ok" || result?.status === "error" || result?.status === "timeout" && hasVisibleReply) {
 -			await this.settleRecoveredPrompt(sessionId, currentPending, result);
 -			return false;
--		}
--		if (deadlineExpired) return await this.expirePendingPrompt(currentPending, disconnectContext);
--		return true;
-+			this.log(`agent.wait reconcile failed for ${observedRunId}: ${String(err)}`);
-+			return;
-+		}
 +		if (!isCurrent()) return;
 +		if (result?.runId && result.runId !== observedRunId) {
 +			if (result.resumedFromRunId !== observedRunId || this.findPendingBySessionKey(pending.sessionKey, result.runId, result.resumedFromRunId) !== pending) return;
-+		}
+ 		}
+-		if (deadlineExpired) return await this.expirePendingPrompt(currentPending, disconnectContext);
+-		return true;
 +		if (result?.status === "ok" || result?.status === "error" || result?.status === "timeout" && result?.terminalReply?.disposition === "visible") await this.settleRecoveredPrompt(sessionId, pending, result);
  	}
  };
  //#endregion
-@@ -996,7 +1044,7 @@
+@@ -996,7 +1046,7 @@
  	return (err instanceof Error ? err.message : String(err)).startsWith("gateway closed (");
  }
  var AcpTranslatorPromptStream = class {
@@ -846,7 +867,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  		this.gateway = gateway;
  		this.opts = opts;
  		this.sessionStore = sessionStore;
-@@ -1004,16 +1052,19 @@
+@@ -1004,16 +1054,19 @@
  		this.sessionState = sessionState;
  		this.approvalRelays = approvalRelays;
  		this.log = log;
@@ -868,7 +889,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  		const sessions = /* @__PURE__ */ new Map();
  		for (const pending of this.pendingPrompts.values()) sessions.set(pending.sessionId, {
  			sessionId: pending.sessionId,
-@@ -1023,14 +1074,24 @@
+@@ -1023,14 +1076,24 @@
  		for (const admission of this.pendingPromptAdmissions.values()) sessions.set(admission.session.sessionId, admission.session);
  		await Promise.all([...sessions.values()].map((session) => this.cancelSessionWork(session, ACP_SHUTDOWN_ABORT_TIMEOUT_MS)));
  	}
@@ -894,7 +915,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  		if (evt.event === "chat") {
  			await this.handleChatEvent(evt);
  			return;
-@@ -1039,7 +1100,21 @@
+@@ -1039,7 +1102,21 @@
  			this.agentEvents.handleExecApprovalRequestEvent(evt);
  			return;
  		}
@@ -917,7 +938,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  	}
  	async prompt(params) {
  		const session = this.sessionStore.getSession(params.sessionId);
-@@ -1052,7 +1127,13 @@
+@@ -1052,7 +1129,13 @@
  			settled: createDeferredCore()
  		};
  		this.pendingPromptAdmissions.set(params.sessionId, admission);
@@ -932,7 +953,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  		try {
  			if (!this.ownsPromptAdmission(admission)) return { stopReason: "cancelled" };
  			if (session.abortController || this.pendingPrompts.has(params.sessionId)) {
-@@ -1064,8 +1145,24 @@
+@@ -1064,8 +1147,24 @@
  				if (!this.ownsPromptAdmission(admission)) return { stopReason: "cancelled" };
  				admission.previous = void 0;
  			}
@@ -957,7 +978,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  			admission.settled.resolve();
  			if (this.pendingPromptAdmissions.get(params.sessionId) === admission) this.pendingPromptAdmissions.delete(params.sessionId);
  		}
-@@ -1123,6 +1220,8 @@
+@@ -1123,6 +1222,8 @@
  					const pending = this.getPendingPrompt(params.sessionId, runId);
  					if (!pending) return false;
  					pending.sendAccepted = true;
@@ -966,7 +987,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  					return true;
  				};
  				const applyTerminalAck = async (ack) => {
-@@ -1237,8 +1336,11 @@
+@@ -1237,12 +1338,22 @@
  		const state = payload.state;
  		const runId = payload.runId;
  		if (!sessionKey || !state) return;
@@ -977,10 +998,22 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
 +			await this.ambient.handleChatEvent(evt);
 +			return;
 +		}
++		// Protocol v4 clears its current message buffer between assistant messages.
++		// Keep the run's delivered segments, but reset the snapshot comparison so
++		// an identical next message is still delivered as independent content.
++		if (state === "delta" && payload.replace === true && payload.deltaText === "") {
++			closeAcpTextSegment(pending);
++			pending.sentText = "";
++		}
  		const messageData = state === "delta" ? mergeChatStreamMessage(pending.streamMessage, payload) : payload.message;
  		if (isRecord(messageData) && (state === "delta" || state === "final")) {
  			pending.streamMessage = messageData;
-@@ -1255,8 +1357,10 @@
+-			if (!await this.handleDeltaEvent(pending, messageData) || this.getPendingPrompt(pending.sessionId, pending.idempotencyKey) !== pending || state === "delta") return;
++			if (!await this.handleDeltaEvent(pending, messageData, state === "final") || this.getPendingPrompt(pending.sessionId, pending.idempotencyKey) !== pending || state === "delta") return;
+ 		}
+ 		if (state === "final") {
+ 			const stopReason = payload.stopReason === "max_tokens" ? "max_tokens" : "end_turn";
+@@ -1255,11 +1366,13 @@
  			return;
  		}
  		if (state === "error") {
@@ -992,8 +1025,12 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
 +			await this.rejectPendingPrompt(pending, new Error(errorMessage));
  		}
  	}
- 	async handleDeltaEvent(pending, messageData) {
-@@ -1275,10 +1379,12 @@
+-	async handleDeltaEvent(pending, messageData) {
++	async handleDeltaEvent(pending, messageData, isFinal = false) {
+ 		const content = messageData.content;
+ 		const sessionId = pending.sessionId;
+ 		if (this.getPendingPrompt(sessionId, pending.idempotencyKey) !== pending) return false;
+@@ -1275,10 +1388,14 @@
  			"agent_message_chunk"
  		]]) {
  			const fullText = content?.filter((block) => block?.type === blockType).map((block) => block[field] ?? "").join("\n").trimEnd();
@@ -1003,22 +1040,36 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
 -			await this.emitPromptChunk(pending, kind, fullText.slice(sent.length));
 +			const previousText = pending[sentField] ?? "";
 +			const nextText = resolveAcpEventTextSnapshot(previousText, { text: fullText });
-+			const delta = resolveAcpTextDelta(previousText, nextText);
++			// A final message may summarize the entire run rather than the current
++			// assistant message. Reconcile only a proven ordered emitted prefix.
++			const delta = (isFinal && kind === "agent_message_chunk" ? resolveAcpFinalTextDelta(pending, fullText) : void 0) ?? resolveAcpTextDelta(previousText, nextText);
 +			if (!delta) continue;
 +			pending[sentField] = nextText;
 +			await this.emitPromptChunk(pending, kind, delta);
  			if (this.getPendingPrompt(sessionId, pending.idempotencyKey) !== pending) return false;
  		}
  		return true;
-@@ -1326,6 +1432,7 @@
+@@ -1309,7 +1426,7 @@
+ 		}
+ 	}
+ 	async emitPromptChunk(pending, kind, text, waitForDelivery = true) {
+-		await this.sessionUpdates.emit({
++		const emission = this.sessionUpdates.emit({
+ 			sessionId: pending.sessionId,
+ 			sessionKey: pending.sessionKey,
+ 			...pending.ledgerSessionId ? { ledgerSessionId: pending.ledgerSessionId } : {},
+@@ -1324,8 +1441,10 @@
+ 				}
+ 			}
  		});
++		await (kind === "agent_message_chunk" ? trackAcpTextEmission(pending, text, emission) : emission);
  	}
  	async settleRecoveredPrompt(sessionId, pending, result) {
 +		const observedRunId = pending.idempotencyKey;
  		const signal = this.sessionStore.getSession(sessionId)?.abortController?.signal ?? new AbortController().signal;
  		const reply = await recoverTerminalReply({
  			runId: pending.idempotencyKey,
-@@ -1337,7 +1444,7 @@
+@@ -1337,17 +1456,18 @@
  			outputText: void 0,
  			unavailable: "recovery-cancelled"
  		}));
@@ -1026,8 +1077,21 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
 +		if (this.getPendingPrompt(sessionId, observedRunId) !== pending || !this.claimPendingPrompt(pending)) return;
  		const sentText = pending.sentText ?? "";
  		const outputText = reply.outputText;
- 		const unavailable = reply.unavailable ?? (outputText?.startsWith(sentText) === false ? "reply-rewritten" : void 0);
-@@ -1357,7 +1464,27 @@
+-		const unavailable = reply.unavailable ?? (outputText?.startsWith(sentText) === false ? "reply-rewritten" : void 0);
++		const reconciledText = resolveAcpFinalTextDelta(pending, outputText);
++		const unavailable = reply.unavailable ?? (reconciledText === void 0 && outputText?.startsWith(sentText) === false ? "reply-rewritten" : void 0);
+ 		if (unavailable) {
+ 			const message = `Full reply recovery unavailable (${unavailable}). Check the session history.`;
+ 			await this.emitPromptChunk(pending, "agent_message_chunk", `[OpenClaw interruption] ${message}`, false);
+ 			await this.rejectPendingPrompt(pending, new Error(message), { claimed: true });
+ 			return;
+ 		}
+-		const recoveredText = outputText?.slice(sentText.length);
++		const recoveredText = reconciledText ?? outputText?.slice(sentText.length);
+ 		if (recoveredText) await this.emitPromptChunk(pending, "agent_message_chunk", recoveredText, false);
+ 		if (result.status !== "error") {
+ 			await this.finishPrompt(sessionId, pending, "end_turn", { claimed: true });
+@@ -1357,7 +1477,28 @@
  		await this.emitPromptChunk(pending, "agent_message_chunk", `[OpenClaw interruption] ${message}`, false);
  		await this.rejectPendingPrompt(pending, new Error(message), { claimed: true });
  	}
@@ -1045,6 +1109,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
 +				pending.toolCalls?.clear();
 +				pending.idempotencyKey = runId;
 +				pending.sentText = "";
++				pending.emittedText = void 0;
 +				pending.sentThought = "";
 +				pending.streamMessage = void 0;
 +				const session = this.sessionStore.getSession(pending.sessionId);
@@ -1056,11 +1121,10 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  		for (const pending of this.pendingPrompts.values()) {
  			if (pending.sessionKey !== sessionKey) continue;
  			if (runId && pending.idempotencyKey !== runId) continue;
-@@ -1368,6 +1495,16 @@
- 			this.reconcilePendingSessionKey(pending, sessionKey);
+@@ -1369,6 +1510,16 @@
  			return pending;
  		}
-+	}
+ 	}
 +	/** ClawX: resolve an operation event without a run id only when unambiguous. */
 +	findUniquePendingBySessionKey(sessionKey) {
 +		let found;
@@ -1070,10 +1134,11 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
 +			found = pending;
 +		}
 +		return found;
- 	}
++	}
  	reconcilePendingSessionKey(pending, sessionKey) {
  		if (pending.sessionKey === sessionKey) return;
-@@ -1395,8 +1532,89 @@
+ 		this.log(`session key reconciled: ${pending.sessionKey} -> ${sessionKey}`);
+@@ -1395,8 +1546,137 @@
  };
  //#endregion
  //#region src/acp/translator.replay.ts
@@ -1096,6 +1161,47 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
 +	if (nextText.startsWith(previousText)) return nextText.slice(previousText.length);
 +	if (previousText.startsWith(nextText)) return "";
 +	return nextText;
++}
++// ClawX: Gateway finalization joins ordered reply payloads with blank lines.
++// Track only text actually emitted by this run, including native preambles.
++// This is a bounded producer compatibility check, never a global text filter.
++const ACP_EMITTED_TEXT_LIMIT = 2 * 1024 * 1024;
++function trackAcpTextEmission(state, text, emission) {
++	// emit() queues delivery synchronously. Track before awaiting it: another
++	// Gateway callback may close this message or finalize the run meanwhile.
++	recordAcpEmittedText(state, text);
++	const emitted = state.emittedText;
++	return emission.catch((error) => {
++		if (state.emittedText === emitted) state.emittedText = null;
++		throw error;
++	});
++}
++function recordAcpEmittedText(state, text) {
++	if (!text || state.emittedText === null) return;
++	const emitted = state.emittedText ??= { completed: "", current: "" };
++	if (emitted.completed.length + emitted.current.length + text.length > ACP_EMITTED_TEXT_LIMIT) {
++		state.emittedText = null;
++		return;
++	}
++	emitted.current += text;
++}
++function closeAcpTextSegment(state) {
++	const emitted = state.emittedText;
++	const current = emitted?.current.trim();
++	if (!current) return;
++	if (emitted.completed.length + (emitted.completed ? 2 : 0) + current.length > ACP_EMITTED_TEXT_LIMIT) {
++		state.emittedText = null;
++		return;
++	}
++	emitted.completed += (emitted.completed ? "\n\n" : "") + current;
++	emitted.current = "";
++}
++function resolveAcpFinalTextDelta(state, finalText) {
++	const emitted = state.emittedText;
++	if (!emitted || typeof finalText !== "string") return;
++	const current = emitted.current.trim();
++	const prefix = emitted.completed + (emitted.completed && current ? "\n\n" : "") + current;
++	if (prefix && finalText.startsWith(prefix)) return finalText.slice(prefix.length);
 +}
 +// ClawX: replay tool results so a loaded ACP session shows completed tools.
 +function extractToolResultReplay(message) {
@@ -1147,6 +1253,13 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
 +	};
 +}
  function extractReplayChunks(message) {
++	// The model transcript also contains hidden execution/control inputs. Apply
++	// native visibility before every replay path, including missing ledgers.
++	if (message.display === false) return [];
++	if (message.role === "user" && [message.provenance, message.inputProvenance].some((value) => {
++		const kind = asOptionalRecord(value)?.kind;
++		return kind === "internal_system" || kind === "inter_session";
++	})) return [];
 +	const compaction = message.__openclaw;
 +	if (compaction?.kind === "compaction" && typeof compaction.id === "string" && compaction.id.trim()) return [{
 +		sessionUpdate: "session_info_update",
@@ -1163,7 +1276,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  	if (role !== "user" && role !== "assistant") return [];
  	if (typeof message.content === "string") return message.content.length > 0 ? [{
  		sessionUpdate: role === "user" ? "user_message_chunk" : "agent_message_chunk",
-@@ -1418,8 +1636,117 @@
+@@ -1418,10 +1698,118 @@
  			sessionUpdate: "agent_thought_chunk",
  			text: typedBlock.thinking
  		});
@@ -1184,8 +1297,8 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
 +		}
  	}
  	return replayChunks;
-+}
-+//#endregion
+ }
+ //#endregion
 +//#region src/acp/translator.transcript-tail.ts
 +const ACP_TRANSCRIPT_REPLAY_META = "openclaw.ai/transcript-replay";
 +function readAcpTranscriptIdentity(message) {
@@ -1227,8 +1340,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
 +		if (id && nativeIds.has(id)) return [];
 +		if (id) nativeIds.add(id);
 +		const runId = normalizeOptionalString(meta?.runId);
-+		const provenance = asOptionalRecord(message.provenance ?? message.inputProvenance);
-+		const chunks = message.role === "user" && (provenance?.kind === "internal_system" || provenance?.kind === "inter_session") ? [] : extractReplayChunks(message);
++		const chunks = extractReplayChunks(message);
 +		const offsets = [];
 +		let run = runId && nativeRuns.get(runId);
 +		if (runId && !run) nativeRuns.set(runId, run = { text: "", thought: "" });
@@ -1278,10 +1390,12 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
 +		}
 +	}
 +	return planned;
- }
- //#endregion
++}
++//#endregion
  //#region src/acp/translator.session-list.ts
-@@ -1465,10 +1792,497 @@
+ const ACP_LIST_SESSIONS_DEFAULT_PAGE_SIZE = 100;
+ const ACP_LIST_SESSIONS_MAX_PAGE_SIZE = 100;
+@@ -1465,10 +1853,497 @@
  	return Math.min(ACP_LIST_SESSIONS_MAX_PAGE_SIZE, Math.max(1, Math.floor(requested)));
  }
  //#endregion
@@ -1780,7 +1894,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  		this.gateway = gateway;
  		this.opts = opts;
  		this.sessionStore = sessionStore;
-@@ -1477,9 +2291,11 @@
+@@ -1477,9 +2352,11 @@
  		this.sessionCreateRateLimiter = sessionCreateRateLimiter;
  		this.cancelSessionWork = cancelSessionWork;
  		this.log = log;
@@ -1792,7 +1906,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  		this.enforceSessionCreateRateLimit("newSession");
  		const sessionId = randomUUID();
  		const meta = parseSessionMeta(params["_meta"]);
-@@ -1506,6 +2322,7 @@
+@@ -1506,6 +2383,7 @@
  	}
  	async loadSession(params) {
  		this.assertSupportedSessionSetup(params.mcpServers);
@@ -1800,7 +1914,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  		if (!this.sessionStore.hasSession(params.sessionId)) this.enforceSessionCreateRateLimit("loadSession");
  		const meta = parseSessionMeta(params["_meta"]);
  		const hasExplicitRouting = Boolean(meta.sessionKey || meta.sessionLabel || this.opts.defaultSessionKey || this.opts.defaultSessionLabel);
-@@ -1522,7 +2339,7 @@
+@@ -1522,7 +2400,7 @@
  			meta,
  			fallbackKey: routedLedgerReplay.sessionKey ?? params.sessionId
  		});
@@ -1809,7 +1923,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  			sessionId: params.sessionId,
  			sessionKey
  		});
-@@ -1534,29 +2351,35 @@
+@@ -1534,29 +2412,35 @@
  		});
  		await this.sessionUpdates.startLedgerSession(session, { complete: ledgerReplay.complete });
  		this.log(`loadSession: ${session.sessionId} -> ${session.sessionKey}`);
@@ -1866,7 +1980,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  		const requestedCwd = normalizeOptionalString(params.cwd);
  		if (requestedCwd) assertAbsoluteCwd(requestedCwd, "session/list");
  		const fallbackCwd = requestedCwd ?? process.cwd();
-@@ -1590,6 +2413,7 @@
+@@ -1590,6 +2474,7 @@
  	}
  	async resumeSession(params) {
  		this.assertSupportedSessionSetup(params.mcpServers ?? []);
@@ -1874,7 +1988,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  		assertAbsoluteCwd(params.cwd, "session/resume");
  		const existingSession = this.sessionStore.getSession(params.sessionId);
  		if (!existingSession) this.enforceSessionCreateRateLimit("resumeSession");
-@@ -1606,11 +2430,13 @@
+@@ -1606,11 +2491,13 @@
  			cwd: params.cwd
  		});
  		await this.sessionUpdates.startLedgerSession(session, { complete: false });
@@ -1888,10 +2002,11 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  		await this.cancelSessionWork(session);
  		this.sessionStore.deleteSession(params.sessionId);
  		this.log(`closeSession: ${params.sessionId}`);
-@@ -2121,6 +2947,16 @@
+@@ -2120,6 +3007,16 @@
+ 		} catch (err) {
  			this.options.log(`event ledger session start failed for ${session.sessionId}: ${String(err)}`);
  		}
- 	}
++	}
 +	async importTranscriptTail(session, transcript) {
 +		if (!this.options.eventLedger.importTranscriptTail) return;
 +		let replay;
@@ -1901,11 +2016,10 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
 +			});
 +		});
 +		return replay;
-+	}
+ 	}
  	readLedgerReplay(params) {
  		return this.readReplay(() => this.options.eventLedger.readReplay(params), `replay fallback for ${params.sessionId}`);
- 	}
-@@ -2238,12 +3074,13 @@
+@@ -2238,12 +3135,13 @@
  			log: this.log
  		});
  		const sessionState = new AcpTranslatorSessionState(gateway, this.sessionUpdates, this.log);
@@ -1921,7 +2035,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  		this.newSession = sessionLifecycle.newSession.bind(sessionLifecycle);
  		this.loadSession = sessionLifecycle.loadSession.bind(sessionLifecycle);
  		this.listSessions = sessionLifecycle.listSessions.bind(sessionLifecycle);
-@@ -2268,7 +3105,7 @@
+@@ -2268,7 +3166,7 @@
  		}
  	}
  	handleGatewayReconnect() {
@@ -1930,7 +2044,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  	}
  	handleGatewayDisconnect(reason) {
  		this.promptStream.handleGatewayDisconnect(reason);
-@@ -2303,6 +3140,67 @@
+@@ -2303,6 +3201,67 @@
  };
  //#endregion
  //#region src/acp/server.ts
@@ -1998,7 +2112,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  const MAX_STARTUP_ACP_BUFFER_BYTES = 1048576;
  function createStartupInputMonitor(input) {
  	const [monitor, readable] = input.tee();
-@@ -2365,6 +3263,7 @@
+@@ -2365,6 +3324,7 @@
  	const startupAbortController = new AbortController();
  	let stopped = false;
  	let gatewayConnected = false;
@@ -2006,7 +2120,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  	const { promise: gatewayReady, resolve: resolveGatewayReady, reject: rejectReady } = createDeferredCore();
  	const rejectGatewayReady = (err) => {
  		rejectReady(err instanceof Error ? err : new Error(String(err)));
-@@ -2408,13 +3307,15 @@
+@@ -2408,13 +3368,15 @@
  		onHelloOk: () => {
  			gatewayConnected = true;
  			resolveGatewayReady();
@@ -2023,7 +2137,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  			rejectGatewayReady(/* @__PURE__ */ new Error(`gateway closed before ready (${code}): ${reason}`));
  			agent?.handleGatewayDisconnect(`${code}: ${reason}`);
  		}
-@@ -2433,6 +3334,7 @@
+@@ -2433,6 +3395,7 @@
  		shuttingDown = (async () => {
  			if (!stopped) {
  				stopped = true;
@@ -2031,7 +2145,7 @@ diff --git a/dist/server-D2T0Amp5.mjs b/dist/server-D2T0Amp5.mjs
  				startupAbortController.abort();
  				startupInput.dispose();
  				process.stdin.pause();
-@@ -2503,6 +3405,10 @@
+@@ -2503,6 +3466,10 @@
  		connection = new AgentSideConnection((conn) => {
  			agent = new AcpGatewayAgent(conn, gateway, {
  				...opts,

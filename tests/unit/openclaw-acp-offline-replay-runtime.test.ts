@@ -24,7 +24,7 @@ function nativeMessage(id: string, run: string, at: number, content: unknown, ex
 const text = (value: string) => [{ type: 'text', text: value }];
 const assistantText = (updates: Json[]) => updates.filter((u) => u.sessionUpdate === 'agent_message_chunk').map((u) => (u.content as Json).text as string).join('');
 
-async function fixture() {
+async function fixture(ledgerState: 'complete' | 'incomplete' | 'absent' = 'complete') {
   const home = await mkdtemp(path.join(tmpdir(), 'clawx-acp-offline-'));
   cleanups.push(() => rm(home, { recursive: true, force: true }));
   const config = path.join(home, 'openclaw.json');
@@ -113,13 +113,72 @@ async function fixture() {
     } finally { db.close(); }
   }
   const acp = await startAcp();
-  const created = await acp.call('session/new', { cwd: home, mcpServers: [], _meta: { sessionKey: key } });
-  await acp.call('session/prompt', { sessionId: created.sessionId, prompt: [{ type: 'text', text: 'Original request' }] });
-  await new Promise((resolve) => setTimeout(resolve, 10));
+  if (ledgerState !== 'absent') {
+    const created = await acp.call('session/new', { cwd: home, mcpServers: [], _meta: { sessionKey: key } });
+    await acp.call('session/prompt', { sessionId: created.sessionId, prompt: [{ type: 'text', text: 'Original request' }] });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    if (ledgerState === 'incomplete') {
+      const db = new DatabaseSync(path.join(home, 'state/openclaw.sqlite'));
+      try { db.prepare('UPDATE acp_replay_sessions SET complete = 0 WHERE session_key = ?').run(key); }
+      finally { db.close(); }
+    }
+  }
   return { state, requests, acp, ledger, startAcp, at: Date.now(), databasePath: path.join(home, 'state/openclaw.sqlite') };
 }
 
 describe('installed ACP offline transcript-tail replay', () => {
+  it.each(['absent', 'incomplete'] as const)('hides structured control inputs with an %s ledger while preserving real users and execution output', async (ledgerState) => {
+    const f = await fixture(ledgerState);
+    const continuation = 'Continue the current task from the existing transcript, preserving completed work.';
+    const execFailure = 'Exec failed (synthetic-process, code 0)\n\nThe command was terminated, but external side effects may already have completed.';
+    const cronPrompt = '[cron:synthetic-job Scheduled check]\nThis is an unattended scheduled run. Nobody is present to clarify or approve.';
+    const user = (id: string, content: unknown, extra: Json = {}) => nativeMessage(id, 'retained-run', f.at, content, { role: 'user', ...extra });
+    f.state.messages = [
+      user('record101', text(continuation)),
+      user('record102', text(execFailure), { provenance: { kind: 'external_user' } }),
+      user('record103', text(cronPrompt)),
+      user('record104', text(execFailure), { provenance: { kind: 'internal_system', sourceTool: 'exec' } }),
+      user('record105', text(cronPrompt), { provenance: { kind: 'internal_system', sourceTool: 'cron' }, display: false }),
+      user('record106', continuation, { provenance: { kind: 'internal_system', sourceTool: 'main_session_restart_recovery' } }),
+      user('record107', text('HIDDEN_INTER_SESSION'), { provenance: { kind: 'inter_session', sourceTool: 'sessions_send' } }),
+      user('record108', text('HIDDEN_BY_NATIVE_VISIBILITY'), { display: false }),
+      user('record109', text('HIDDEN_LEGACY_INPUT_PROVENANCE'), { inputProvenance: { kind: 'internal_system', sourceTool: 'exec' } }),
+      user('record113', text(cronPrompt), { provenance: { kind: 'internal_system', sourceTool: 'cron' } }),
+      user('record114', text('HIDDEN_SECOND_PROVENANCE_FIELD'), {
+        provenance: { kind: 'external_user' },
+        inputProvenance: { kind: 'internal_system', sourceTool: 'exec' },
+      }),
+      nativeMessage('record110', 'retained-run', f.at, [
+        { type: 'thinking', thinking: 'VISIBLE_THOUGHT' },
+        ...text('VISIBLE_BEFORE_TOOL'),
+        { type: 'toolCall', id: 'retained-tool', name: 'exec', arguments: { command: 'synthetic inspection' } },
+      ], { stopReason: 'toolUse' }),
+      nativeMessage('record111', 'retained-run', f.at + 1, text('VISIBLE_TOOL_RESULT'), { role: 'toolResult', toolCallId: 'retained-tool' }),
+      nativeMessage('record112', 'retained-run', f.at + 2, text('VISIBLE_AFTER_TOOL')),
+    ];
+    const first = await f.acp.load();
+    const repeated = await f.acp.load();
+    await f.acp.close();
+    const fresh = await f.startAcp();
+    const restarted = await fresh.load();
+    for (const updates of [first, repeated, restarted]) {
+      const visibleUsers = updates.filter((update) => update.sessionUpdate === 'user_message_chunk')
+        .map((update) => (update.content as Json).text);
+      // The same words remain visible when the native transcript identifies a
+      // genuine user; text-pattern filtering would fail these positive controls.
+      expect(visibleUsers).toEqual([continuation, execFailure, cronPrompt]);
+      expect(assistantText(updates)).toBe('VISIBLE_BEFORE_TOOLVISIBLE_AFTER_TOOL');
+      expect(updates.filter((update) => update.sessionUpdate === 'agent_thought_chunk')
+        .map((update) => (update.content as Json).text)).toEqual(['VISIBLE_THOUGHT']);
+      expect(updates.filter((update) => update.sessionUpdate === 'tool_call')).toMatchObject([
+        { toolCallId: 'retained-tool', rawInput: { command: 'synthetic inspection' } },
+      ]);
+      expect(updates.filter((update) => update.sessionUpdate === 'tool_call_update')).toMatchObject([
+        { toolCallId: 'retained-tool', status: 'completed', rawOutput: { content: text('VISIBLE_TOOL_RESULT') } },
+      ]);
+    }
+  }, 30_000);
+
   it('repairs a legacy complete ledger once, persists native commit time, and survives another prompt and a fresh process', async () => {
     const f = await fixture();
     const before = f.ledger();
@@ -228,6 +287,9 @@ describe('installed ACP offline transcript-tail replay', () => {
       nativeMessage('record41', 'invalid', Number.NaN, text('INVALID_TIMESTAMP')),
       { role: 'assistant', timestamp: f.at, content: text('NO_NATIVE_ID') },
       nativeMessage('record42', 'control', f.at, 'internal control', { role: 'user', provenance: { kind: 'internal_system' } }),
+      nativeMessage('record44', 'hidden-user', f.at, text('HIDDEN_NATIVE_USER'), { role: 'user', display: false }),
+      nativeMessage('record45', 'hidden-assistant', f.at, text('HIDDEN_NATIVE_ASSISTANT'), { display: false }),
+      nativeMessage('record46', 'legacy-control', f.at, text('HIDDEN_LEGACY_CONTROL'), { role: 'user', inputProvenance: { kind: 'internal_system' } }),
       nativeMessage('record43', 'offline', f.at, text('VALID_TAIL')),
     ];
     const updates = await f.acp.load();

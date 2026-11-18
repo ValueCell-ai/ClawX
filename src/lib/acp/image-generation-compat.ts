@@ -356,6 +356,9 @@ export function extractImageGenerationTranscriptSupplement(
   let completionFailed = false;
 
   for (const message of messages) {
+    // Hidden user records may still carry an approved completion trigger. Hidden
+    // outputs cannot establish a task or reintroduce captions/media omitted by ACP.
+    if (transcriptRole(message) !== 'user' && asRecord(message)?.display === false) continue;
     if (transcriptRole(message) === 'user') {
       const trigger = transcriptCompletionTrigger(message);
       if (trigger && activeTaskIds.has(trigger.taskId)) {

@@ -17,7 +17,7 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { builtinModules } from 'node:module';
+import { isBuiltin } from 'node:module';
 
 /**
  * Compaction policy per mirror directory, shared by bundle-openclaw-plugins.mjs
@@ -250,7 +250,6 @@ async function bundleModules({ rootDir, boundary, entries, external, esbuild, mo
   if (readJson(path.join(rootDir, 'package.json')).type !== 'module') {
     throw new Error(`Cannot compact ${label}: chunks are ESM .js files, so the package needs "type": "module"`);
   }
-  const builtins = new Set(builtinModules.flatMap((name) => [name, `node:${name}`]));
   const unresolved = new Set();
   const keep = new Set(['openclaw', ...external]);
   const isInside = (file) => {
@@ -261,7 +260,7 @@ async function bundleModules({ rootDir, boundary, entries, external, esbuild, mo
     name: 'clawx-keep-unresolved-external',
     setup(build) {
       build.onResolve({ filter: /.*/ }, async (args) => {
-        if (args.pluginData?.clawxResolving || !isBareSpecifier(args.path) || builtins.has(args.path)) return undefined;
+        if (args.pluginData?.clawxResolving || !isBareSpecifier(args.path) || isBuiltin(args.path)) return undefined;
         if (keep.has(packageNameOf(args.path))) return { path: args.path, external: true };
         const result = await build.resolve(args.path, {
           kind: args.kind,
@@ -367,7 +366,9 @@ async function bundleModules({ rootDir, boundary, entries, external, esbuild, mo
       problems.push(`${path.relative(rootDir, file.path)}: would be written outside the package to ${targetRel}`);
     }
     for (const imported of meta?.imports ?? []) {
-      if (imported.external && !isBareSpecifier(imported.path) && !builtins.has(imported.path)) {
+      // builtinModules omits prefix-only modules such as node:sqlite on older
+      // build hosts. Ask Node directly without allowing arbitrary node: URLs.
+      if (imported.external && !isBareSpecifier(imported.path) && !isBuiltin(imported.path)) {
         problems.push(`${targetRel}: keeps a non-package import ${imported.path}`);
       }
     }
