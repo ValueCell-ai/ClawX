@@ -1740,6 +1740,92 @@ describe('syncProviderConfigToOpenClaw', () => {
     ]);
   });
 
+  it('delivers GPT-6.2 Astra as a Responses reasoning model and migrates an existing custom account', async () => {
+    const id = 'gpt-6.2-astra';
+    const ref = 'custom-example/' + id;
+    await writeOpenClawJson({
+      models: { providers: { 'custom-example': { api: 'openai-completions', models: [
+        { id, reasoning: false, contextWindow: 200000 }, { id: 'other', reasoning: false },
+      ] } } },
+      agents: { defaults: { models: { [ref]: { params: { extra_body: { reasoning_effort: 'low', keep: true } } } } } },
+    });
+    const { sanitizeOpenClawConfig, syncProviderConfigToOpenClaw } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+    const expected = {
+      id, api: 'openai-responses', reasoning: true, contextWindow: 200000,
+      thinkingLevelMap: { off: null, minimal: null, low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max' },
+    };
+    const provider = (config: Awaited<ReturnType<typeof readOpenClawJson>>) =>
+      (config.models as { providers: Record<string, { api: string; models: Record<string, unknown>[] }> }).providers['custom-example'];
+    const migrated = await readOpenClawJson();
+    expect(provider(migrated).models).toEqual([expected, { id: 'other', reasoning: false }]);
+    expect(migrated.agents).toMatchObject({ defaults: { models: { [ref]: { params: { extra_body: { keep: true } } } } } });
+    expect(migrated.agents).not.toHaveProperty(['defaults', 'models', ref, 'params', 'extra_body', 'reasoning_effort']);
+    await syncProviderConfigToOpenClaw('custom-example', id, { api: 'openai-completions', baseUrl: 'https://example.com/v1' });
+    const updated = provider(await readOpenClawJson());
+    expect(updated.api).toBe('openai-completions');
+    expect(updated.models.find((m) => m.id === id)).toMatchObject(expected);
+  });
+
+  it('repairs legacy enterprise DeepSeek rows and isolates the next login using the same provider key', async () => {
+    const { createRequire } = await import('node:module');
+    const { mutateOpenClawConfig } = await import('@electron/gateway/config-delivery');
+    const { sanitizeOpenClawConfig, removeProviderFromOpenClaw } = await import('@electron/utils/openclaw-auth');
+    const key = 'custom-enterpri';
+    const id = 'deepseek-v4.1-flash-1017';
+    const ref = `${key}/${id}`;
+    const root = join(testHome, '.openclaw');
+    const dir = join(root, 'agents/main/agent');
+    const registry = join(dir, 'models.json');
+    const row = { name: id, id, reasoning: false, maxTokens: 12000, compat: { supportsUsageInStreaming: false } };
+    const provider = { api: 'openai-completions', baseUrl: 'https://account-a.invalid/v1', models: [row] };
+    const catalog = { [ref]: { alias: 'my-flash' }, 'other/untouched': { alias: 'keep' } };
+    await writeOpenClawJson({ models: { providers: { [key]: provider } }, agents: { defaults: { models: catalog } } });
+    await mkdir(dir, { recursive: true });
+    await writeFile(registry, JSON.stringify({ providers: { [key]: provider } }));
+    vi.stubEnv('OPENCLAW_STATE_DIR', root);
+    vi.stubEnv('OPENCLAW_CONFIG_PATH', join(root, 'openclaw.json'));
+    try {
+      await sanitizeOpenClawConfig();
+      const migrated = await readOpenClawJson();
+      const expected = { ...row, reasoning: true, compat: { ...row.compat, thinkingFormat: 'deepseek' } };
+      expect(migrated).toMatchObject({ models: { providers: { [key]: { models: [expected] } } }, agents: { defaults: { models: catalog } } });
+      expect(migrated).not.toHaveProperty(['agents', 'defaults', 'models', ref, 'params']);
+      await sanitizeOpenClawConfig();
+      expect(await readOpenClawJson()).toEqual(migrated);
+
+      // Regenerate a stale agent-local catalog through the pinned OpenClaw runtime.
+      const requireRuntime = createRequire(import.meta.url);
+      const { ensureOpenClawModelsJson } = requireRuntime(join(process.cwd(), 'node_modules/openclaw/dist/agents/models-config.runtime.js'));
+      await ensureOpenClawModelsJson(migrated, dir, { providerDiscoveryProviderIds: [key], env: { OPENCLAW_STATE_DIR: root } });
+      expect(JSON.parse(await readFile(registry, 'utf8')).providers[key].models).toMatchObject([expected]);
+
+      await removeProviderFromOpenClaw(key);
+      await sanitizeOpenClawConfig();
+      const loggedOut = await readOpenClawJson();
+      expect(loggedOut).not.toHaveProperty(['models', 'providers', key]);
+      expect(loggedOut).not.toHaveProperty(['agents', 'defaults', 'models', ref]);
+      expect(loggedOut).toHaveProperty(['agents', 'defaults', 'models', 'other/untouched', 'alias'], 'keep');
+      expect(JSON.parse(await readFile(registry, 'utf8')).providers).not.toHaveProperty(key);
+
+      const nextRow = { name: 'B', id: 'account-b-only', reasoning: false };
+      const nextProvider = { ...provider, baseUrl: 'https://account-b.invalid/v1', models: [nextRow] };
+      await mutateOpenClawConfig(config => { config.models = { providers: { [key]: nextProvider } }; });
+      await sanitizeOpenClawConfig();
+      expect((await readOpenClawJson()).models).toMatchObject({ providers: { [key]: nextProvider } });
+      expect(nextRow).not.toHaveProperty('thinkingLevelMap');
+      expect(JSON.stringify(await readOpenClawJson())).not.toContain(id);
+
+      // The enterprise extension also writes this same object to its agent files after delivery.
+      const restored = structuredClone(provider);
+      await mutateOpenClawConfig(config => { config.models = { providers: { [key]: restored } }; });
+      expect(restored.models).toMatchObject([expected]);
+      expect(await readOpenClawJson()).not.toHaveProperty(['agents', 'defaults', 'models', ref]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  }, 60_000);
+
   it('defaults custom Astra completions runtime params to reasoning_effort low', async () => {
     await writeOpenClawJson({ models: { providers: {} } });
 

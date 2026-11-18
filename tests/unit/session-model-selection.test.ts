@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { applyProviderModelCompatibility } from '@electron/shared/providers/model-compat';
 import { createSessionsApi } from '@electron/services/sessions-api';
 
 const key = 'agent:main:session-1';
@@ -30,6 +31,33 @@ describe('session model selection', () => {
     await expect(api.getModel({ sessionKey: key })).resolves.toEqual({ modelRef: null });
     await expect(api.getModel({ sessionKey: key })).resolves.toEqual({ modelRef: null, exists: false });
     expect(rpc.mock.calls.map(([method]) => method)).toEqual(['sessions.describe', 'sessions.describe']);
+  });
+
+  it('reads the exact draft model profile and preserves provider labels and ordering', async () => {
+    const levels = [{ id: 'off', label: 'off' }, { id: 'low', label: 'on' }];
+    const rpc = vi.fn().mockResolvedValue({ models: [
+      { provider: 'other', id: 'vendor/model', thinkingLevels: [{ id: 'max', label: 'max' }] },
+      { provider: 'custom', id: 'vendor/model', thinkingLevels: levels, thinkingDefault: 'low' },
+    ] });
+    const api = createSessionsApi({ gatewayManager: { rpc } });
+    await expect(api.getDraftThinking({ sessionKey: key, modelRef: 'custom/vendor/model' }))
+      .resolves.toMatchObject({ levels, defaultLevel: 'low' });
+    await expect(api.getDraftThinking({ sessionKey: key, modelRef: 'custom/unknown' })).resolves.toBeNull();
+    expect(rpc).toHaveBeenCalledWith('models.list', {
+      agentId: 'main', provider: 'custom', view: 'configured', preparedOnly: true,
+    });
+  });
+
+  it.each(['high', null])('changes only the thinking preference for selection %s', async (thinkingLevel) => {
+    const rpc = vi.fn().mockResolvedValueOnce({ session: existing }).mockResolvedValueOnce({
+      ok: true, key, entry: { thinkingLevel }, resolved: {
+        thinkingLevels: [{ id: 'high', label: 'on' }], modelProvider: 'openai', model: 'gpt-4.1',
+      },
+    });
+    const api = createSessionsApi({ gatewayManager: { rpc } });
+    const result = await api.setModel({ sessionKey: key, thinkingLevel });
+    expect(result.thinking?.selectedLevel).toBe(thinkingLevel ?? undefined);
+    expect(rpc).toHaveBeenLastCalledWith('sessions.patch', { key, expectedSessionId: existing.sessionId, thinkingLevel });
   });
 
   it.each(['openai/gpt-4.1', null])('patches only the observed session identity for selection %s', async (modelRef) => {
@@ -82,6 +110,38 @@ describe('bundled OpenClaw session model selection', () => {
     vi.unstubAllEnvs();
     await rm(home, { recursive: true, force: true });
   });
+
+  it('offers Astra effort levels from the pinned Gateway for the configured 6.2 model ID', async () => {
+    const { i: resolveProfile } = await import(runtime('session-utils-model-h78SGs03.mjs'));
+    const id = 'gpt-6.2-astra';
+    const provider = 'custom-example';
+    const entry = { api: 'openai-completions', models: [{ id, reasoning: false }] };
+    applyProviderModelCompatibility(entry, provider);
+    const [model] = entry.models;
+    const profile = resolveProfile({
+      cfg: {}, provider, model: id, agentId: 'main', agentRuntime: 'openclaw', modelCatalog: [{ ...model, provider }],
+    });
+    expect(model).toMatchObject({ id, reasoning: true, api: 'openai-responses' });
+    expect(profile.thinkingLevels.map(({ id }: { id: string }) => id)).toEqual(['low', 'medium', 'high', 'xhigh', 'max', 'ultra']);
+  }, 30_000);
+
+  it('projects the pinned runtime profiles for reasoning and non-reasoning models', async () => {
+    const { i: resolveProfile } = await import(runtime('session-utils-model-h78SGs03.mjs'));
+    for (const [provider, model, reasoning, supportsAdaptive] of [
+      ['openai', 'gpt-4.1', false, false],
+      ['google', 'gemini-2.5-pro', true, true],
+      ['anthropic', 'claude-opus-4-7', true, true],
+    ] as const) {
+      const profile = resolveProfile({
+        cfg: {}, agentId: 'main', provider, model, agentRuntime: 'openclaw', modelCatalog: [{ provider, id: model, reasoning }],
+      });
+      const rpc = vi.fn().mockResolvedValue({ session: { ...existing, modelProvider: provider, model, ...profile } });
+      const { thinking } = await createSessionsApi({ gatewayManager: { rpc } }).getModel({ sessionKey: key });
+      expect(thinking?.levels).toEqual(profile.thinkingLevels);
+      expect(thinking?.defaultLevel).toBe(profile.thinkingDefault);
+      expect(thinking?.levels.some(({ id }) => id === 'adaptive')).toBe(supportsAdaptive);
+    }
+  }, 30_000);
 
   it('recovers explicit version 0.6.1 overrides without promoting historical usage to a selection', async () => {
     const { P: buildSessionRow } = await import(runtime('session-row-prepared-read-BTwaWWsn.mjs'));

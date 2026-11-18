@@ -148,6 +148,12 @@ For valid ClawX 0.6.1 multi-Agent configurations, upgrade preserves each Agent's
 
 Use the model picker in a conversation to choose a specific model for its next messages. The picker shows the current model and lists configured models. Conversations without a selection automatically use the Agent’s default model; choosing a model saves it for that conversation. When upgrading from 0.6.1, existing Agent defaults and explicit conversation model selections are preserved.
 
+For configured OpenAI-compatible providers, ClawX recognizes `gpt-6.2-astra` as a Responses reasoning model and supplies its low through max effort levels.
+
+Open **Thinking strength** beside the model picker and drag the slider. Release to apply the level to the conversation. OpenClaw supplies the choices for the selected model and runtime. Choose **Default** to restore automatic selection.
+
+For enterprise DeepSeek V4.1 Flash (including the `-1017` model), **Off** explicitly disables thinking on the request. Ordinary enabled levels send `high`, while `xhigh` and `max` send `max`.
+
 When you select an `@agent` in the composer, the picker shows and changes the model for that Agent’s main conversation. Remove the mention to see the original conversation’s model again.
 
 ClawX upgrades OpenClaw directly from official ClawX 0.6.1 (`2026.7.1-2`) or a main build using `2026.10.5` to `2026.10.10`. Before startup writes it retains `backups/clawx-openclaw-2026.10.10-pre-migration` under the OpenClaw state directory, independently of any 10.5 snapshot. This private snapshot includes configuration, channel credentials, legacy history, plugin payloads, media and configured external Agent/session stores. SQLite online backups include committed WAL data. Startup stops if backup fails; Gateway readiness never deletes it. OpenClaw owns schema migration before ClawX synchronizes credentials, allowing interrupted migration to retry. Workspaces and runtime binaries are not backed up. Keep the matching old installer and the snapshot until validation is complete; the snapshot contains secrets and must not be shared.

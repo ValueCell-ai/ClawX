@@ -129,6 +129,30 @@ describe('OpenClaw config delivery coordinator', () => {
     expect(killSpy).not.toHaveBeenCalled();
   });
 
+  it('repairs an equal legacy DeepSeek provider replacement on login and skips a redundant refresh commit', async () => {
+    const provider = { api: 'openai-completions', models: [{ id: 'deepseek-v4.1-flash', reasoning: false }] };
+    const key = 'custom-enterpri';
+    let raw = JSON.stringify({ models: { providers: { [key]: provider } } });
+    const gateway = createGatewayManager();
+    gateway.rpc.mockImplementation(async (method, args) => {
+      if (method === 'config.get') return { raw, hash: 'current' };
+      if (method !== 'config.set') throw new Error(`Unexpected method ${method}`);
+      raw = args.raw;
+      return { ok: true };
+    });
+    registerOpenClawConfigCoordinator(gateway);
+    for (const shouldCommit of [true, false]) {
+      const replacement = structuredClone(provider);
+      const changed = await mutateOpenClawConfig(config => {
+        config.models = { providers: { [key]: replacement } };
+      });
+      expect(changed).toBe(shouldCommit);
+      expect(replacement.models[0]).toMatchObject({ reasoning: true, compat: { thinkingFormat: 'deepseek' } });
+      expect(JSON.parse(raw).models.providers[key]).toEqual(replacement);
+    }
+    expect(gateway.rpc.mock.calls.filter(([name]) => name === 'config.set')).toHaveLength(1);
+  });
+
   it('reads the running Gateway snapshot instead of a stale local file', async () => {
     await writeFile(configPath, '{ localOnly: true }\n', 'utf8');
     const gatewayManager = createGatewayManager();

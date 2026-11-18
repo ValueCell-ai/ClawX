@@ -303,7 +303,7 @@ function deferredPromise() {
 describe('ACP Chat page', () => {
   beforeEach(() => {
     setSessionModel.mockReset().mockImplementation(async (_key, modelRef) => ({ modelRef }));
-    useComposerDraftStore.setState({ drafts: {}, modelRefs: {} });
+    useComposerDraftStore.setState({ drafts: {}, modelRefs: {}, thinkingLevels: {} });
     targetPromptAdmitted.mockReset();
     ensureAcpChatSubscriptions.mockReset();
     acpState.loading = false;
@@ -1006,8 +1006,9 @@ describe('ACP Chat page', () => {
     expect(chatState.acknowledgeAcpSessionCreated).not.toHaveBeenCalled();
   });
 
-  it('optimistically binds an absent current session before first-send ACP creation', async () => {
+  it('applies a thinking-only draft to an absent session before its first ACP prompt', async () => {
     const sessionKey = 'agent:main:session-send-missing';
+    useComposerDraftStore.getState().setThinkingLevel(sessionKey, 'high');
     chatState.sessions = [];
     chatState.currentSessionKey = sessionKey;
     acpState.activeSessionKey = sessionKey;
@@ -1015,7 +1016,7 @@ describe('ACP Chat page', () => {
     acpState.cwd = '/workspace';
     acpState.timeline = { ...emptyTimeline(), sessionId: sessionKey };
     render(<Chat />);
-    await waitFor(() => expect(resolveWorkspaceContext).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-disabled', 'false'));
     acpState.loadSession.mockClear();
     chatState.selectAcpSession.mockClear();
 
@@ -1038,6 +1039,9 @@ describe('ACP Chat page', () => {
     expect(chatState.selectAcpSession.mock.invocationCallOrder.at(-1)!).toBeLessThan(
       acpState.loadSession.mock.invocationCallOrder.at(-1)!,
     );
+    expect(setSessionModel).toHaveBeenCalledWith(sessionKey, undefined, { createIfMissing: true, thinkingLevel: 'high' });
+    expect(setSessionModel.mock.invocationCallOrder.at(-1)!).toBeLessThan(acpState.sendPrompt.mock.invocationCallOrder.at(-1)!);
+    expect(useComposerDraftStore.getState().thinkingLevels[sessionKey]).toBeUndefined();
   });
 
   it('loads ACP sessions and keeps the composer enabled while Gateway is stopped', async () => {

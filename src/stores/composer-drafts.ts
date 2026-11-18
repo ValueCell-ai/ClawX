@@ -4,6 +4,8 @@ import type { SetStateAction } from 'react';
 type ComposerDraftState = {
   drafts: Record<string, string>;
   modelRefs: Record<string, string>;
+  thinkingLevels: Record<string, string>;
+  setThinkingLevel: (sessionKey: string, level: string | null) => void;
   setModelRef: (sessionKey: string, modelRef: string | null) => void;
   setDraft: (sessionKey: string, update: SetStateAction<string>) => void;
   clearDraft: (sessionKey: string) => void;
@@ -12,6 +14,13 @@ type ComposerDraftState = {
 export const useComposerDraftStore = create<ComposerDraftState>((set) => ({
   drafts: {},
   modelRefs: {},
+  thinkingLevels: {},
+  setThinkingLevel: (sessionKey, level) => set((state) => {
+    const thinkingLevels = { ...state.thinkingLevels };
+    if (level) thinkingLevels[sessionKey] = level;
+    else delete thinkingLevels[sessionKey];
+    return { thinkingLevels };
+  }),
   setModelRef: (sessionKey, modelRef) => set((state) => {
     const modelRefs = { ...state.modelRefs };
     if (modelRef) modelRefs[sessionKey] = modelRef;
@@ -42,12 +51,14 @@ export const useComposerDraftStore = create<ComposerDraftState>((set) => ({
   clearDraft: (sessionKey) => {
     if (!sessionKey) return;
     set((state) => {
-      if (!(sessionKey in state.drafts) && !(sessionKey in state.modelRefs)) return state;
+      if (!(sessionKey in state.drafts) && !(sessionKey in state.modelRefs) && !(sessionKey in state.thinkingLevels)) return state;
       const drafts = { ...state.drafts };
       const modelRefs = { ...state.modelRefs };
       delete drafts[sessionKey];
       delete modelRefs[sessionKey];
-      return { drafts, modelRefs };
+      const thinkingLevels = { ...state.thinkingLevels };
+      delete thinkingLevels[sessionKey];
+      return { drafts, modelRefs, thinkingLevels };
     });
   },
 }));

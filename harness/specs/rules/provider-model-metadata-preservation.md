@@ -32,6 +32,10 @@ Provider-level request settings are also preserved on rewrite. ClawX must not
 inject a default `timeoutSeconds` into provider entries; absent values remain
 absent and explicit values remain user-owned.
 
+For the exact GPT-6.2 Astra model on OpenAI-compatible routes, ClawX supplies Responses reasoning metadata during provider delivery and startup repair. Preserve explicit effort lists, deployment limits and subscription transports. Skip the legacy custom Astra Completions body default for this model.
+
+Enterprise DeepSeek V4.1 Flash and its 1017 alias use the native DeepSeek Chat Completions toggle. Project capabilities onto existing model rows during delivery and repair. Other custom routes can declare the DeepSeek wire format explicitly. Preserve alternate protocols and explicit compatibility settings. Keep per-turn thinking choices out of provider defaults and per-account storage.
+
 One narrow compatibility default is ClawX-owned: an Astra model under a
 `custom-*` provider using `openai-completions` receives
 `agents.defaults.models["provider/model"].params.extra_body.reasoning_effort =
