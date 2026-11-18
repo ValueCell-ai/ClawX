@@ -32,6 +32,14 @@ and are never migrated as part of this presentation change.
 Add and edit forms share dialog and connection-field patterns. Retain existing validation,
 OAuth, local-provider defaults and immutable model-ID behavior. Keep diagnostics behind
 advanced disclosure and preserve native Host API authority and secret handling.
+In Add service, scope credentials and form drafts to the chosen service. Preserve input
+when switching authentication for that service. Validate required fields inline before
+contacting the provider. Keep connection presets above the fields they populate, with
+separate URL and model drafts. During OAuth, use the shared footer for the next action
+and cancellation. Pass the chosen model ID through the native OAuth request.
+Show each regional service as its own adjacent option in the left list. Let the service
+list and form scroll independently and keep the two footer buttons anchored as the
+service, authentication method and form height change.
 
 Background usage refresh must preserve valid page selection, filters and scroll position.
 Only deliberate range changes reset pagination; clamp invalid pages when records shrink.

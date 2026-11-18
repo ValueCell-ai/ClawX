@@ -425,14 +425,13 @@ async function requestOAuth(payload: ProviderPayload<'requestOAuth'>) {
   const options = {
     accountId: typeof body.accountId === 'string' ? body.accountId : undefined,
     label: typeof body.label === 'string' ? body.label : undefined,
+    modelId: typeof body.modelId === 'string' ? body.modelId.trim() || undefined : undefined,
   };
   try {
-    if (provider === 'openai' || provider === 'tokendance') {
-      await browserOAuthManager.startFlow(provider as BrowserOAuthProviderType, options);
-    } else {
-      await deviceOAuthManager.startFlow(provider as OAuthProviderType, region, options);
-    }
-    return { success: true };
+    const started = provider === 'openai' || provider === 'tokendance'
+      ? await browserOAuthManager.startFlow(provider as BrowserOAuthProviderType, options)
+      : await deviceOAuthManager.startFlow(provider as OAuthProviderType, region, options);
+    return { success: started };
   } catch (error) {
     logger.error('providers.requestOAuth failed', error);
     return { success: false, error: String(error) };

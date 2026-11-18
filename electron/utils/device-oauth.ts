@@ -20,7 +20,6 @@ import { BrowserWindow, shell } from 'electron';
 import { logger } from './logger';
 import { saveProvider, getProvider, ProviderConfig } from './secure-storage';
 import { getProviderDefaultModel } from './provider-registry';
-import { proxyAwareFetch } from './proxy-fetch';
 import { saveOAuthTokenToOpenClaw, setOpenClawDefaultModelWithOverride } from './openclaw-auth';
 import { loginMiniMaxPortalOAuth, type MiniMaxOAuthToken, type MiniMaxRegion } from './minimax-oauth';
 
@@ -33,23 +32,18 @@ export type { MiniMaxRegion, MiniMaxOAuthToken };
 // DeviceOAuthManager
 // ─────────────────────────────────────────────────────────────
 
-class DeviceOAuthManager extends EventEmitter {
-    private activeProvider: OAuthProviderType | null = null;
-    private activeAccountId: string | null = null;
-    private activeLabel: string | null = null;
-    private active: boolean = false;
-    private mainWindow: BrowserWindow | null = null;
+interface DeviceOAuthFlow {
+    provider: OAuthProviderType;
+    accountId: string;
+    label?: string;
+    modelId?: string;
+    controller: AbortController;
+}
 
-    private async runWithProxyAwareFetch<T>(task: () => Promise<T>): Promise<T> {
-        const originalFetch = globalThis.fetch;
-        globalThis.fetch = ((input: string | URL, init?: RequestInit) =>
-            proxyAwareFetch(input, init)) as typeof fetch;
-        try {
-            return await task();
-        } finally {
-            globalThis.fetch = originalFetch;
-        }
-    }
+class DeviceOAuthManager extends EventEmitter {
+    private activeFlow: DeviceOAuthFlow | null = null;
+    private persistence: Promise<void> | null = null;
+    private mainWindow: BrowserWindow | null = null;
 
     setWindow(window: BrowserWindow) {
         this.mainWindow = window;
@@ -58,67 +52,63 @@ class DeviceOAuthManager extends EventEmitter {
     async startFlow(
         provider: OAuthProviderType,
         region: MiniMaxRegion = 'global',
-        options?: { accountId?: string; label?: string },
+        options?: { accountId?: string; label?: string; modelId?: string },
     ): Promise<boolean> {
-        if (this.active) {
+        if (this.activeFlow) {
             await this.stopFlow();
         }
-
-        this.active = true;
-        this.emit('oauth:start', { provider, accountId: options?.accountId || provider });
-        this.activeProvider = provider;
-        this.activeAccountId = options?.accountId || provider;
-        this.activeLabel = options?.label || null;
+        const flow: DeviceOAuthFlow = {
+            provider,
+            accountId: options?.accountId || provider,
+            label: options?.label,
+            modelId: options?.modelId?.trim().replace(/^minimax-portal(?:-cn)?\//, '') || undefined,
+            controller: new AbortController(),
+        };
+        this.activeFlow = flow;
+        this.emit('oauth:start', { provider, accountId: flow.accountId });
 
         try {
-            if (provider === 'minimax-portal' || provider === 'minimax-portal-cn') {
-                const actualRegion = provider === 'minimax-portal-cn' ? 'cn' : (region || 'global');
-                await this.runMiniMaxFlow(actualRegion, provider);
-            } else {
+            if (provider !== 'minimax-portal' && provider !== 'minimax-portal-cn') {
                 throw new Error(`Unsupported OAuth provider type: ${provider}`);
             }
-            return true;
+            await this.runMiniMaxFlow(provider === 'minimax-portal-cn' ? 'cn' : region, flow);
+            return !flow.controller.signal.aborted;
         } catch (error) {
-            if (!this.active) {
-                // Flow was cancelled — not an error
-                return false;
-            }
+            if (flow.controller.signal.aborted) return false;
             logger.error(`[DeviceOAuth] Flow error for ${provider}:`, error);
             this.emitError(error instanceof Error ? error.message : String(error));
-            this.active = false;
-            this.activeProvider = null;
-            this.activeAccountId = null;
-            this.activeLabel = null;
             return false;
+        } finally {
+            if (this.activeFlow === flow) this.activeFlow = null;
         }
     }
 
     async stopFlow(): Promise<void> {
-        this.active = false;
-        this.activeProvider = null;
-        this.activeAccountId = null;
-        this.activeLabel = null;
+        if (this.persistence) {
+            // Authorization succeeded. Let its configuration writes finish together.
+            await this.persistence.catch(() => {});
+            return;
+        }
+        this.activeFlow?.controller.abort();
+        this.activeFlow = null;
         logger.info('[DeviceOAuth] Flow explicitly stopped');
     }
 
-    // ─────────────────────────────────────────────────────────
-    // MiniMax flow
-    // ─────────────────────────────────────────────────────────
-
-    private async runMiniMaxFlow(region?: MiniMaxRegion, providerType: OAuthProviderType = 'minimax-portal'): Promise<void> {
-        const provider = this.activeProvider!;
-
-        const token: MiniMaxOAuthToken = await this.runWithProxyAwareFetch(() => loginMiniMaxPortalOAuth({
+    private async runMiniMaxFlow(region: MiniMaxRegion, flow: DeviceOAuthFlow): Promise<void> {
+        const { provider, controller: { signal } } = flow;
+        const token = await loginMiniMaxPortalOAuth({
             region,
+            signal,
             openUrl: async (url: string) => {
-                logger.info(`[DeviceOAuth] MiniMax opening browser: ${url}`);
+                if (signal.aborted) return;
+                logger.info('[DeviceOAuth] MiniMax opening browser');
                 // Open the authorization URL in the system browser
                 shell.openExternal(url).catch((err: unknown) =>
                     logger.warn(`[DeviceOAuth] Failed to open browser:`, err)
                 );
             },
             note: async (message: string, _title?: string) => {
-                if (!this.active) return;
+                if (signal.aborted) return;
                 // The extension calls note() with a message containing
                 // the user_code and verification_uri — parse them for the UI
                 const { verificationUri, userCode } = this.parseNote(message);
@@ -132,42 +122,21 @@ class DeviceOAuthManager extends EventEmitter {
                 update: (msg: string) => logger.info(`[DeviceOAuth] MiniMax progress: ${msg}`),
                 stop: (msg?: string) => logger.info(`[DeviceOAuth] MiniMax progress done: ${msg ?? ''}`),
             },
-        }));
-
-        if (!this.active) return;
-
-        await this.onSuccess(providerType, {
-            access: token.access,
-            refresh: token.refresh,
-            expires: token.expires,
-            // MiniMax returns a per-account resourceUrl as the API base URL
-            resourceUrl: token.resourceUrl,
-            // Revert back to anthropic-messages
-            api: 'anthropic-messages',
-            region,
         });
+
+        if (signal.aborted) return;
+
+        const persistence = this.onSuccess(flow, token);
+        this.persistence = persistence;
+        try {
+            await persistence;
+        } finally {
+            this.persistence = null;
+        }
     }
 
-
-
-    // ─────────────────────────────────────────────────────────
-    // Success handler
-    // ─────────────────────────────────────────────────────────
-
-    private async onSuccess(providerType: OAuthProviderType, token: {
-        access: string;
-        refresh: string;
-        expires: number;
-        resourceUrl?: string;
-        api: 'anthropic-messages' | 'openai-completions';
-        region?: MiniMaxRegion;
-    }) {
-        const accountId = this.activeAccountId || providerType;
-        const accountLabel = this.activeLabel;
-        this.active = false;
-        this.activeProvider = null;
-        this.activeAccountId = null;
-        this.activeLabel = null;
+    private async onSuccess(flow: DeviceOAuthFlow, token: MiniMaxOAuthToken) {
+        const { provider: providerType, accountId, label: accountLabel, modelId } = flow;
         logger.info(`[DeviceOAuth] Successfully completed OAuth for ${providerType}`);
 
         // 1. Write OAuth token to OpenClaw's auth-profiles.json in native OAuth format.
@@ -207,9 +176,9 @@ class DeviceOAuthManager extends EventEmitter {
 
         try {
             const tokenProviderId = providerType.startsWith('minimax-portal') ? 'minimax-portal' : providerType;
-            await setOpenClawDefaultModelWithOverride(tokenProviderId, undefined, {
+            await setOpenClawDefaultModelWithOverride(tokenProviderId, modelId ? `${tokenProviderId}/${modelId}` : undefined, {
                 baseUrl,
-                api: token.api,
+                api: 'anthropic-messages',
                 // Tells OpenClaw's anthropic adapter to use `Authorization: Bearer` instead of `x-api-key`
                 authHeader: providerType.startsWith('minimax-portal') ? true : undefined,
                 // OAuth placeholder — tells Gateway to resolve credentials
@@ -233,7 +202,7 @@ class DeviceOAuthManager extends EventEmitter {
             enabled: existing?.enabled ?? true,
             baseUrl, // Save the dynamically resolved URL (Global vs CN)
 
-            model: getProviderDefaultModel(providerType) || existing?.model,
+            model: modelId || getProviderDefaultModel(providerType) || existing?.model,
             createdAt: existing?.createdAt || new Date().toISOString(),
             updatedAt: new Date().toISOString(),
         };

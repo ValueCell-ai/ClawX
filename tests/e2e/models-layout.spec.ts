@@ -134,8 +134,19 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
 
       const add = page.getByTestId('providers-add-button');
       await add.click();
-      await page.getByTestId('add-provider-type-custom').click();
       const dialog = page.getByTestId('add-provider-dialog');
+      await expect(dialog).toHaveAccessibleName(text.settings.aiProviders.dialog.title);
+      await expect(dialog).not.toHaveAttribute('aria-describedby');
+      const customService = dialog.getByTestId('add-provider-type-custom');
+      const availableServices = dialog.getByTestId('add-provider-catalog');
+      await expect(availableServices.getByTestId('add-provider-type-openai')).toBeVisible();
+      await customService.focus();
+      await customService.press('Enter');
+      await expect(customService).toHaveAttribute('aria-pressed', 'true');
+      await expect(customService).toBeFocused();
+      await expect(availableServices.getByTestId('add-provider-type-openai')).toBeVisible();
+      await expect(dialog).not.toHaveAttribute('aria-describedby');
+      await expect(dialog.getByText(text.settings.aiProviders.dialog.apiKeyStored, { exact: true })).toHaveCount(0);
       await expect(dialog.getByTestId('add-provider-model-id-input')).toBeEnabled();
       await expect(dialog.getByTestId('add-provider-model-id-input')).toHaveAccessibleDescription(text.settings.aiProviders.dialog.singleModelHint);
       await expect(dialog.getByTestId('add-provider-base-url-input')).toHaveCSS('height', '36px');

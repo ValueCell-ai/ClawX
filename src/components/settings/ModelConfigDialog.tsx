@@ -4,13 +4,14 @@ import { ConfigDialogContent } from '@/components/ui/config-dialog-content';
 import { Dialog } from '@/components/ui/dialog';
 
 /** Common bounded configuration surface for chat, voice and image services. */
-export function ModelConfigDialog({ open, onClose, title, description, children, footer, busy = false, testId, returnFocusRef }: {
+export function ModelConfigDialog({ open, onClose, title, description, children, footer, layout, busy = false, testId, returnFocusRef }: {
   open: boolean;
   onClose: () => void;
   title: string;
-  description: string;
+  description?: string;
   children: ReactNode;
   footer?: ReactNode;
+  layout?: 'standard' | 'split';
   busy?: boolean;
   testId: string;
   returnFocusRef?: RefObject<HTMLElement | null>;
@@ -28,6 +29,7 @@ export function ModelConfigDialog({ open, onClose, title, description, children,
         closeTestId={testId === 'add-provider-dialog' ? 'add-provider-close-button' : `${testId}-close`}
         onClose={onClose}
         footer={footer}
+        layout={layout}
         onOpenAutoFocus={() => { openerRef.current = document.activeElement as HTMLElement | null; }}
         onCloseAutoFocus={event => {
           const target = returnFocusRef?.current ?? openerRef.current;
@@ -41,3 +43,4 @@ export function ModelConfigDialog({ open, onClose, title, description, children,
 }
 
 export const modelFieldClasses = 'h-9 rounded-lg bg-surface-modal font-sans text-sm shadow-none';
+export const modelFieldLabelClasses = 'text-sm text-foreground/80 font-medium';

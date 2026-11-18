@@ -299,15 +299,16 @@ describe('hostApi facade', () => {
     const { hostApi } = await import('@/lib/host-api');
 
     await expect(hostApi.providers.requestOAuth({
-      ['provider']: 'openai',
+      provider: 'openai',
       accountId: 'openai',
       label: 'OpenAI',
+      modelId: 'example-model',
     })).resolves.toEqual({ success: true });
     await expect(hostApi.providers.cancelOAuth()).resolves.toEqual({ success: true });
     expect(hostInvoke).toHaveBeenNthCalledWith(1, expect.objectContaining({
       module: 'providers',
       action: 'requestOAuth',
-      payload: { ['provider']: 'openai', accountId: 'openai', label: 'OpenAI' },
+      payload: { provider: 'openai', accountId: 'openai', label: 'OpenAI', modelId: 'example-model' },
     }));
     expect(hostInvoke).toHaveBeenNthCalledWith(2, expect.objectContaining({
       module: 'providers',

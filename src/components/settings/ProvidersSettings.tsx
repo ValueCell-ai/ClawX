@@ -19,7 +19,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ModelConfigDialog, modelFieldClasses } from './ModelConfigDialog';
+import { ModelConfigDialog, modelFieldClasses, modelFieldLabelClasses } from './ModelConfigDialog';
 import { ProviderConnectionFields } from './ProviderConnectionFields';
 import { normalizeModelIdForRuntimeProvider, resolveRuntimeProviderKey } from '@/lib/model-options';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -57,7 +57,7 @@ import { hostEvents } from '@/lib/host-events';
 import type { OAuthCodeEvent, OAuthErrorEvent, OAuthSuccessEvent } from '@shared/host-events/contract';
 
 const inputClasses = modelFieldClasses;
-const labelClasses = 'text-sm text-foreground/80 font-medium';
+const labelClasses = modelFieldLabelClasses;
 type CodePlanMode = 'apikey' | 'codeplan';
 
 function isZaiProviderType(type: string | undefined): boolean {
@@ -576,7 +576,7 @@ function AddProviderDialog({
   onValidateKey,
   devModeUnlocked,
 }: AddProviderDialogProps) {
-  const { t, i18n } = useTranslation('settings');
+  const { t, i18n } = useTranslation(['settings', 'common']);
   const [selectedType, setSelectedType] = useState<ProviderType | null>(null);
   const [name, setName] = useState('');
   const [apiKey, setApiKey] = useState('');
@@ -589,6 +589,9 @@ function AddProviderDialog({
   const [showKey, setShowKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [baseUrlError, setBaseUrlError] = useState<string>();
+  const [modelError, setModelError] = useState<string>();
+  const connectionDrafts = useRef<Partial<Record<CodePlanMode, { baseUrl: string; modelId: string }>>>({});
 
   // OAuth Flow State
   const [oauthFlowing, setOauthFlowing] = useState(false);
@@ -604,32 +607,75 @@ function AddProviderDialog({
   } | null>(null);
   const [manualCodeInput, setManualCodeInput] = useState('');
   const [oauthError, setOauthError] = useState<string | null>(null);
+  const [oauthSubmitting, setOauthSubmitting] = useState(false);
+  const [oauthCancelling, setOauthCancelling] = useState(false);
   // For providers that support both OAuth and API key, let the user choose.
   // Default to the vendor's declared auth mode instead of hard-coding OAuth.
   const [authMode, setAuthMode] = useState<'oauth' | 'apikey'>('apikey');
-  const [prevOpen, setPrevOpen] = useState(open);
-  const pendingOAuthRef = React.useRef<{ accountId: string; label: string } | null>(null);
+  const [prevOpen, setPrevOpen] = useState(false);
+  const pendingOAuthRef = useRef<{ accountId: string; provider: ProviderType } | null>(null);
+  const oauthPanelRef = useRef<HTMLDivElement | null>(null);
+
+  const clearServiceDraft = () => {
+    setApiKey('');
+    setShowKey(false);
+    setApiProtocol('openai-completions');
+    setUserAgent('');
+    setShowAdvancedConfig(false);
+    setValidationError(null);
+    setBaseUrlError(undefined);
+    setModelError(undefined);
+    connectionDrafts.current = {};
+  };
+
+  const vendorMap = new Map(vendors.map((vendor) => [vendor.id, vendor]));
+  const availableTypes = PROVIDER_TYPE_INFO.filter((type) => {
+    // Skip providers that are temporarily hidden or unavailable in this UI language.
+    if (type.hidden) return false;
+    if (!isProviderAvailableForLanguage(type, i18n.resolvedLanguage || i18n.language)) return false;
+
+    // MiniMax portal variants are mutually exclusive — hide BOTH variants
+    // when either one already exists (account may have vendorId of either variant).
+    const hasMinimax = existingVendorIds.has('minimax-portal') || existingVendorIds.has('minimax-portal-cn');
+    if ((type.id === 'minimax-portal' || type.id === 'minimax-portal-cn') && hasMinimax) return false;
+
+    // Z.AI CN/Global both map to OpenClaw key `zai` — mutually exclusive in the UI.
+    const hasZai = existingVendorIds.has('zai') || existingVendorIds.has('zai-global');
+    if (isZaiProviderType(type.id) && hasZai) return false;
+
+    const vendor = vendorMap.get(type.id);
+    if (!vendor) {
+      return !existingVendorIds.has(type.id) || type.id === 'custom';
+    }
+    return vendor.supportsMultipleAccounts || !existingVendorIds.has(type.id);
+  });
+
+  const chooseService = (type: typeof PROVIDER_TYPE_INFO[number]) => {
+    clearServiceDraft();
+    const defaultBaseUrl = type.defaultBaseUrl || '';
+    const defaultModelId = type.defaultModelId || '';
+    const vendor = vendorMap.get(type.id);
+    setSelectedType(type.id);
+    setName(type.id === 'custom' ? t('aiProviders.custom') : type.name);
+    setBaseUrl(defaultBaseUrl);
+    setModelId(defaultModelId);
+    setAuthMode(!type.hideOAuthUi && vendor && vendor.defaultAuthMode !== 'api_key' ? 'oauth' : 'apikey');
+    setCodePlanMode(isCodePlanMode(defaultBaseUrl, defaultModelId, type.codePlanPresetBaseUrl, type.codePlanPresetModelId) ? 'codeplan' : 'apikey');
+  };
 
   if (prevOpen !== open) {
     setPrevOpen(open);
     if (open) {
-      setSelectedType(null);
-      setName('');
-      setApiKey('');
-      setBaseUrl('');
-      setModelId('');
-      setApiProtocol('openai-completions');
-      setShowAdvancedConfig(false);
-      setUserAgent('');
-      setCodePlanMode('apikey');
-      setShowKey(false);
+      const initialService = availableTypes.find(type => type.id === 'openai') ?? availableTypes[0];
+      if (initialService) chooseService(initialService);
+      else setSelectedType(null);
       setSaving(false);
-      setValidationError(null);
       setOauthFlowing(false);
       setOauthData(null);
       setManualCodeInput('');
       setOauthError(null);
-      setAuthMode('apikey');
+      setOauthSubmitting(false);
+      setOauthCancelling(false);
       pendingOAuthRef.current = null;
     }
   }
@@ -649,48 +695,59 @@ function AddProviderDialog({
   const isOAuth = typeInfo?.isOAuth ?? false;
   const supportsApiKey = typeInfo?.supportsApiKey ?? false;
   const oauthUiHidden = typeInfo?.hideOAuthUi ?? false;
-  const vendorMap = new Map(vendors.map((vendor) => [vendor.id, vendor]));
-  const selectedVendor = selectedType ? vendorMap.get(selectedType) : undefined;
+  const canChooseAuthMode = isOAuth && supportsApiKey && !oauthUiHidden;
   const showUserAgentInAddDialog = shouldShowUserAgentFieldForNewProvider(selectedType);
-  const preferredOAuthMode = selectedVendor?.supportedAuthModes.includes('oauth_browser')
-    ? 'oauth_browser'
-    : (selectedVendor?.supportedAuthModes.includes('oauth_device')
-      ? 'oauth_device'
-      : null);
   // Effective OAuth mode: pure OAuth providers, or dual-mode with oauth selected
   const useOAuthFlow = isOAuth && !oauthUiHidden && (!supportsApiKey || authMode === 'oauth');
+  const oauthPending = useOAuthFlow && oauthFlowing;
+  const requiresApiKey = !useOAuthFlow && (!!typeInfo?.requiresApiKey || canChooseAuthMode);
+  const isOllama = selectedType === 'ollama';
+  const fieldsLocked = saving || oauthPending;
 
-  useEffect(() => {
-    if (!selectedVendor || !isOAuth || !supportsApiKey) {
-      return;
-    }
-    if (oauthUiHidden) {
-      setAuthMode('apikey');
-      return;
-    }
-    setAuthMode(selectedVendor.defaultAuthMode === 'api_key' ? 'apikey' : 'oauth');
-  }, [selectedVendor, isOAuth, supportsApiKey, oauthUiHidden]);
+  const chooseConnectionPreset = (mode: CodePlanMode) => {
+    if (!codePlanPreset || mode === codePlanMode) return;
+    connectionDrafts.current[codePlanMode] = { baseUrl, modelId };
+    const nextDraft = connectionDrafts.current[mode] ?? (mode === 'codeplan' ? codePlanPreset : {
+      baseUrl: typeInfo?.defaultBaseUrl || '',
+      modelId: typeInfo?.defaultModelId || '',
+    });
+    setCodePlanMode(mode);
+    setBaseUrl(nextDraft.baseUrl);
+    setModelId(nextDraft.modelId);
+    setBaseUrlError(undefined);
+    setModelError(undefined);
+    setValidationError(null);
+  };
 
-  useEffect(() => {
-    if (!typeInfo?.codePlanPresetBaseUrl || !typeInfo?.codePlanPresetModelId) {
-      setCodePlanMode('apikey');
-      return;
+  const validateDraft = () => {
+    const url = baseUrl.trim();
+    let urlMessage: string | undefined;
+    if (selectedType === 'custom' && !url) {
+      urlMessage = t('aiProviders.dialog.baseUrlRequired');
+    } else if (typeInfo?.showBaseUrl && url) {
+      const parsed = URL.canParse(url) ? new URL(url) : null;
+      if (!parsed || !['http:', 'https:'].includes(parsed.protocol) || !/^https?:\/\//i.test(url)) {
+        urlMessage = t('aiProviders.dialog.baseUrlInvalid');
+      }
     }
-    setCodePlanMode(
-      isCodePlanMode(
-        baseUrl,
-        modelId,
-        typeInfo.codePlanPresetBaseUrl,
-        typeInfo.codePlanPresetModelId,
-      ) ? 'codeplan' : 'apikey'
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedType]);
+    const modelMessage = showModelIdField && !modelId.trim()
+      ? t('aiProviders.toast.modelRequired')
+      : showModelIdField && /[,，]/.test(modelId)
+        ? t('aiProviders.dialog.modelIdSingle')
+        : undefined;
+    const keyMessage = requiresApiKey && !normalizeProviderApiKeyInput(apiKey)
+      ? t('aiProviders.dialog.apiKeyRequired')
+      : null;
+    setBaseUrlError(urlMessage);
+    setModelError(modelMessage);
+    setValidationError(keyMessage);
+    return !(urlMessage || modelMessage || keyMessage);
+  };
 
   // Keep refs to the latest values so event handlers see the current dialog state.
-  const latestRef = React.useRef({ selectedType, typeInfo, onAdd, onClose, t });
+  const latestRef = useRef({ onClose, t });
   useEffect(() => {
-    latestRef.current = { selectedType, typeInfo, onAdd, onClose, t };
+    latestRef.current = { onClose, t };
   });
 
   // Manage OAuth events
@@ -700,6 +757,7 @@ function AddProviderDialog({
     }
 
     const handleCode = (payload: OAuthCodeEvent) => {
+      if (payload.provider !== pendingOAuthRef.current?.provider) return;
       if ('mode' in payload && payload.mode === 'manual') {
         setOauthData({
           mode: 'manual',
@@ -718,13 +776,15 @@ function AddProviderDialog({
     };
 
     const handleSuccess = (payload: OAuthSuccessEvent) => {
+      if (payload.accountId !== pendingOAuthRef.current?.accountId) return;
       setOauthFlowing(false);
       setOauthData(null);
       setManualCodeInput('');
+      setOauthSubmitting(false);
       setValidationError(null);
 
       const { onClose: close, t: translate } = latestRef.current;
-      const accountId = payload?.accountId || pendingOAuthRef.current?.accountId;
+      const { accountId } = payload;
       pendingOAuthRef.current = null;
 
       // The Main process only emits success after credentials are persisted.
@@ -752,8 +812,10 @@ function AddProviderDialog({
     };
 
     const handleError = (data: OAuthErrorEvent) => {
+      if (!pendingOAuthRef.current) return;
       setOauthError(getOAuthErrorMessage(data.message, latestRef.current.t));
       setOauthData(null);
+      setOauthSubmitting(false);
       pendingOAuthRef.current = null;
     };
 
@@ -773,7 +835,7 @@ function AddProviderDialog({
   }, [open]);
 
   const handleStartOAuth = async () => {
-    if (!selectedType) return;
+    if (!selectedType || pendingOAuthRef.current) return;
 
     const hasMinimax = existingVendorIds.has('minimax-portal') || existingVendorIds.has('minimax-portal-cn');
     if ((selectedType === 'minimax-portal' || selectedType === 'minimax-portal-cn') && hasMinimax) {
@@ -786,74 +848,122 @@ function AddProviderDialog({
       return;
     }
 
+    if (!validateDraft()) return;
     setOauthFlowing(true);
     setOauthData(null);
     setManualCodeInput('');
     setOauthError(null);
+    setOauthSubmitting(false);
 
+    const vendor = vendorMap.get(selectedType);
+    const supportsMultipleAccounts = vendor?.supportsMultipleAccounts ?? selectedType === 'custom';
+    const accountId = supportsMultipleAccounts ? `${selectedType}-${crypto.randomUUID()}` : selectedType;
+    const label = name.trim() || typeInfo?.name || selectedType;
+    const pending = { accountId, provider: selectedType };
+    pendingOAuthRef.current = pending;
     try {
-      const vendor = vendorMap.get(selectedType);
-      const supportsMultipleAccounts = vendor?.supportsMultipleAccounts ?? selectedType === 'custom';
-      const accountId = supportsMultipleAccounts ? `${selectedType}-${crypto.randomUUID()}` : selectedType;
-      const label = name || (typeInfo?.id === 'custom' ? t('aiProviders.custom') : typeInfo?.name) || selectedType;
-      pendingOAuthRef.current = { accountId, label };
-      await hostApi.providers.requestOAuth({
-        ['provider']: selectedType,
+      const result = await hostApi.providers.requestOAuth({
+        provider: selectedType,
         accountId,
         label,
+        modelId: showModelIdField ? modelId.trim() : undefined,
       });
-    } catch (e) {
-      setOauthError(String(e));
-      setOauthFlowing(false);
+      if (!result.success) throw new Error(result.error || t('aiProviders.oauth.authFailed'));
+    } catch (error) {
+      if (pendingOAuthRef.current !== pending) return;
+      setOauthError(getOAuthErrorMessage(error instanceof Error ? error.message : String(error), t));
+      setOauthData(null);
       pendingOAuthRef.current = null;
     }
   };
 
   const handleCancelOAuth = async () => {
-    setOauthFlowing(false);
-    setOauthData(null);
-    setManualCodeInput('');
-    setOauthError(null);
-    pendingOAuthRef.current = null;
-    await hostApi.providers.cancelOAuth();
+    const pending = pendingOAuthRef.current;
+    setOauthCancelling(true);
+    try {
+      if (pending) {
+        const result = await hostApi.providers.cancelOAuth();
+        if (!result.success) throw new Error(result.error || t('aiProviders.oauth.authFailed'));
+        if (pendingOAuthRef.current === pending) pendingOAuthRef.current = null;
+      }
+      setOauthFlowing(false);
+      setOauthData(null);
+      setManualCodeInput('');
+      setOauthError(null);
+      setOauthSubmitting(false);
+    } catch (error) {
+      setOauthError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setOauthCancelling(false);
+    }
   };
 
   const handleSubmitManualOAuthCode = async () => {
     const value = manualCodeInput.trim();
-    if (!value) return;
+    const pending = pendingOAuthRef.current;
+    if (!value || !pending || oauthSubmitting) return;
+    setOauthSubmitting(true);
+    setOauthError(null);
     try {
-      await hostApi.providers.submitOAuth({ code: value });
-      setOauthError(null);
+      const result = await hostApi.providers.submitOAuth({ code: value });
+      if (!result.success) throw new Error(result.error || t('aiProviders.oauth.authFailed'));
     } catch (error) {
-      setOauthError(String(error));
+      if (pendingOAuthRef.current === pending) {
+        setOauthError(error instanceof Error ? error.message : String(error));
+        setOauthSubmitting(false);
+      }
     }
   };
 
-  const availableTypes = PROVIDER_TYPE_INFO.filter((type) => {
-    // Skip providers that are temporarily hidden or unavailable in this UI language.
-    if (type.hidden) return false;
-    if (!isProviderAvailableForLanguage(type, i18n.resolvedLanguage || i18n.language)) return false;
+  const customType = availableTypes.find(type => type.id === 'custom');
+  const serviceFamilies = new Map<string, typeof availableTypes>();
+  for (const type of availableTypes) {
+    if (type.id === 'custom') continue;
 
-    // MiniMax portal variants are mutually exclusive — hide BOTH variants
-    // when either one already exists (account may have vendorId of either variant).
-    const hasMinimax = existingVendorIds.has('minimax-portal') || existingVendorIds.has('minimax-portal-cn');
-    if ((type.id === 'minimax-portal' || type.id === 'minimax-portal-cn') && hasMinimax) return false;
-
-    // Z.AI CN/Global both map to OpenClaw key `zai` — mutually exclusive in the UI.
-    const hasZai = existingVendorIds.has('zai') || existingVendorIds.has('zai-global');
-    if (isZaiProviderType(type.id) && hasZai) return false;
-
-    const vendor = vendorMap.get(type.id);
-    if (!vendor) {
-      return !existingVendorIds.has(type.id) || type.id === 'custom';
+    const familyId = type.id.replace(/-(cn|global)$/, '');
+    const family = serviceFamilies.get(familyId);
+    if (family) {
+      family.push(type);
+    } else {
+      serviceFamilies.set(familyId, [type]);
     }
-    return vendor.supportsMultipleAccounts || !existingVendorIds.has(type.id);
-  });
+  }
 
-  const sortedTypes = [...availableTypes].sort((a, b) => Number(b.id === 'custom') - Number(a.id === 'custom'));
+  const renderServiceOption = (type: typeof PROVIDER_TYPE_INFO[number]) => {
+    const icon = getProviderIconUrl(type.id);
+    const region = type.name.match(/ \((?:CN|Global)\)$/)?.[0];
+    return (
+      <Button
+        key={type.id}
+        type="button"
+        variant="ghost"
+        size="sm"
+        data-testid={`add-provider-type-${type.id}`}
+        aria-pressed={selectedType === type.id}
+        disabled={fieldsLocked || oauthCancelling}
+        onClick={() => {
+          if (selectedType !== type.id) chooseService(type);
+        }}
+        className={cn(
+          'h-auto min-h-9 w-full justify-start gap-2 whitespace-normal px-2 py-1.5 text-left focus-visible:ring-inset focus-visible:ring-offset-0',
+          selectedType === type.id && 'bg-accent hover:bg-accent dark:hover:bg-accent',
+        )}
+      >
+        {icon ? (
+          <img src={icon} alt="" className={cn('h-5 w-5 shrink-0 object-contain', shouldInvertInDark(type.id) && 'dark:invert')} />
+        ) : (
+          <span aria-hidden="true" className="flex h-5 w-5 shrink-0 items-center justify-center text-base">{type.icon}</span>
+        )}
+        <span className="min-w-0 [overflow-wrap:anywhere]">
+          {type.id === 'custom' ? t('aiProviders.dialog.customService') : region ? type.name.slice(0, -region.length) : type.name}
+          {region && <span className="font-normal text-muted-foreground">{region}</span>}
+        </span>
+      </Button>
+    );
+  };
 
   const handleAdd = async () => {
-    if (!selectedType) return;
+    if (!selectedType || saving || useOAuthFlow) return;
 
     const hasMinimax = existingVendorIds.has('minimax-portal') || existingVendorIds.has('minimax-portal-cn');
     if ((selectedType === 'minimax-portal' || selectedType === 'minimax-portal-cn') && hasMinimax) {
@@ -866,19 +976,12 @@ function AddProviderDialog({
       return;
     }
 
-    setSaving(true);
-    setValidationError(null);
+    if (!validateDraft()) return;
 
+    setSaving(true);
     try {
-      // Validate key first if the provider requires one and a key was entered
-      const requiresKey = typeInfo?.requiresApiKey ?? false;
       const normalizedApiKey = normalizeProviderApiKeyInput(apiKey);
-      if (requiresKey && !normalizedApiKey) {
-        setValidationError(t('aiProviders.toast.invalidKey')); // reusing invalid key msg or should add 'required' msg? null checks
-        setSaving(false);
-        return;
-      }
-      if (requiresKey && normalizedApiKey) {
+      if (normalizedApiKey && requiresApiKey) {
         const result = await onValidateKey(selectedType, normalizedApiKey, {
           baseUrl: baseUrl.trim() || undefined,
           apiProtocol: (selectedType === 'custom' || selectedType === 'ollama') ? apiProtocol : undefined,
@@ -886,16 +989,8 @@ function AddProviderDialog({
         });
         if (!result.valid) {
           setValidationError(getProviderValidationError(result, t));
-          setSaving(false);
           return;
         }
-      }
-
-      const requiresModel = showModelIdField;
-      if (requiresModel && !modelId.trim()) {
-        setValidationError(t('aiProviders.toast.modelRequired'));
-        setSaving(false);
-        return;
       }
 
       await onAdd(
@@ -907,7 +1002,7 @@ function AddProviderDialog({
           apiProtocol: (selectedType === 'custom' || selectedType === 'ollama') ? apiProtocol : undefined,
           headers: userAgent.trim() ? { 'User-Agent': userAgent.trim() } : undefined,
           model: resolveProviderModelForSave(typeInfo, modelId, devModeUnlocked),
-          authMode: useOAuthFlow ? (preferredOAuthMode || 'oauth_device') : selectedType === 'ollama'
+          authMode: selectedType === 'ollama'
             ? 'local'
             : (isOAuth && supportsApiKey && authMode === 'apikey')
               ? 'api_key'
@@ -921,95 +1016,173 @@ function AddProviderDialog({
     }
   };
 
+  const apiKeyField = !useOAuthFlow && (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+        <Label htmlFor="apiKey" className={labelClasses}>
+          {t('aiProviders.dialog.apiKey')}
+          {isOllama && <span className="text-muted-foreground"> ({t('aiProviders.notRequired')})</span>}
+        </Label>
+        {typeInfo?.apiKeyUrl && (
+          <a
+            href={typeInfo.apiKeyUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm text-primary hover:underline font-medium flex items-center gap-1"
+          >
+            {t('aiProviders.oauth.getApiKey')} <ExternalLink className="h-3 w-3" />
+          </a>
+        )}
+      </div>
+      <div className="relative">
+        <Input
+          data-testid="add-provider-api-key-input"
+          id="apiKey"
+          type={showKey ? 'text' : 'password'}
+          placeholder={isOllama ? undefined : typeInfo?.placeholder}
+          value={apiKey}
+          disabled={saving}
+          aria-invalid={!!validationError}
+          aria-describedby={validationError ? 'add-provider-api-key-error' : undefined}
+          onChange={(e) => {
+            setApiKey(e.target.value);
+            setValidationError(null);
+          }}
+          className={cn(inputClasses, 'pr-9')}
+        />
+        <button
+          type="button"
+          aria-label={t(showKey ? 'aiProviders.dialog.hideKey' : 'aiProviders.dialog.showKey')}
+          onClick={() => setShowKey(!showKey)}
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+        >
+          {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        </button>
+      </div>
+      {validationError && (
+        <p id="add-provider-api-key-error" role="alert" className="text-sm text-destructive">{validationError}</p>
+      )}
+    </div>
+  );
+
+  const waitingForOAuth = oauthPending && !oauthData && !oauthError;
+  useEffect(() => {
+    oauthPanelRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [oauthData, oauthError]);
+
+  const waitingLabel = selectedType === 'minimax-portal' || selectedType === 'minimax-portal-cn'
+    ? 'aiProviders.oauth.requestingCode'
+    : 'aiProviders.oauth.waitingApproval';
+  const choiceGroup = 'flex rounded-xl border border-border text-sm font-medium p-1 gap-1';
+  const choiceButton = (selected: boolean) => cn(
+    'min-w-0 flex-1 break-words rounded-lg px-2 py-2 transition-colors disabled:cursor-default',
+    selected ? 'bg-accent text-foreground' : 'text-muted-foreground enabled:hover:bg-accent',
+  );
+  let submit: { label: string; testId: string; disabled: boolean; busy: boolean; onClick: () => void | Promise<void> } = {
+    label: t('aiProviders.dialog.add'),
+    testId: 'add-provider-submit-button',
+    disabled: saving,
+    busy: saving,
+    onClick: handleAdd,
+  };
+  if (useOAuthFlow) {
+    submit = {
+      label: t(waitingForOAuth ? waitingLabel : oauthPending && oauthError ? 'aiProviders.oauth.tryAgain' : 'aiProviders.oauth.loginButton'),
+      testId: 'add-provider-oauth-login-button',
+      disabled: waitingForOAuth || oauthCancelling,
+      busy: waitingForOAuth,
+      onClick: handleStartOAuth,
+    };
+    if (oauthPending && oauthData?.mode === 'manual') {
+      submit = {
+        label: t(oauthSubmitting ? 'aiProviders.oauth.waitingApproval' : 'aiProviders.oauth.submitCode'),
+        testId: 'add-provider-oauth-submit-code',
+        disabled: !manualCodeInput.trim() || oauthSubmitting || oauthCancelling,
+        busy: oauthSubmitting,
+        onClick: handleSubmitManualOAuthCode,
+      };
+    } else if (oauthPending && oauthData?.mode === 'device') {
+      const verificationUri = oauthData.verificationUri;
+      submit = {
+        label: t('aiProviders.oauth.openLoginPage'),
+        testId: 'add-provider-oauth-open-login',
+        disabled: oauthCancelling,
+        busy: false,
+        onClick: () => { void hostApi.shell.openExternal(verificationUri); },
+      };
+    }
+  }
+
   return (
-    <ModelConfigDialog open={open} onClose={onClose} title={t('aiProviders.dialog.title')} description={t('aiProviders.dialog.desc')} testId="add-provider-dialog" busy={saving} returnFocusRef={returnFocusRef}
-      footer={selectedType && !useOAuthFlow ? (
-              <div data-testid="add-provider-footer" className="flex justify-end gap-2">
-                <Button variant="outline" className="h-9" disabled={saving} onClick={onClose}>{t('aiProviders.dialog.cancel')}</Button>
-                <Button
-                  data-testid="add-provider-submit-button"
-                  onClick={handleAdd}
-                  className={cn("rounded-md px-4 h-9 text-sm font-medium shadow-none", useOAuthFlow && "hidden")}
-                  disabled={!selectedType || saving || (showModelIdField && modelId.trim().length === 0)}
-                >
-                  {saving ? (
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  ) : null}
-                  {t('aiProviders.dialog.add')}
-                </Button>
-              </div>
-        ) : undefined}
+    <ModelConfigDialog open={open} onClose={onClose} title={t('aiProviders.dialog.title')} testId="add-provider-dialog" layout="split" busy={saving || oauthCancelling} returnFocusRef={returnFocusRef}
+      footer={(
+        <div data-testid="add-provider-footer" className="flex max-w-full justify-end gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            disabled={saving || oauthCancelling}
+            onClick={oauthPending ? handleCancelOAuth : onClose}
+          >
+            {t('aiProviders.dialog.cancel')}
+          </Button>
+          <div className="relative grid h-9 min-w-0">
+            {['aiProviders.dialog.add', 'aiProviders.oauth.loginButton', 'aiProviders.oauth.submitCode', 'aiProviders.oauth.openLoginPage'].map(key => (
+              <span key={key} aria-hidden="true" className="invisible col-start-1 row-start-1 self-center whitespace-nowrap px-3 text-sm font-medium">
+                {t(key)}
+              </span>
+            ))}
+            <Button
+              type="button"
+              size="sm"
+              className="absolute inset-0 min-w-0 gap-2"
+              data-testid={submit.testId}
+              onClick={submit.onClick}
+              disabled={submit.disabled || !selectedType}
+            >
+              {submit.busy && <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden="true" />}
+              <span className="truncate">{submit.label}</span>
+            </Button>
+          </div>
+        </div>
+      )}
     >
-          {!selectedType ? (
-            <div className="space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {sortedTypes.map((type) => (
-                <button
-                  data-testid={`add-provider-type-${type.id}`}
-                  key={type.id}
-                  onClick={() => {
-                    setSelectedType(type.id);
-                    setName(type.id === 'custom' ? t('aiProviders.custom') : type.name);
-                    setBaseUrl(type.defaultBaseUrl || '');
-                    setModelId(type.defaultModelId || '');
-                    setUserAgent('');
-                    setShowAdvancedConfig(false);
-                    setCodePlanMode('apikey');
-                  }}
-                  className="flex items-center gap-3 p-2.5 rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <div className="h-8 w-8 shrink-0 flex items-center justify-center bg-black/5 dark:bg-white/5 rounded-lg">
-                    {getProviderIconUrl(type.id) ? (
-                      <img src={getProviderIconUrl(type.id)} alt={type.name} className={cn('h-6 w-6', shouldInvertInDark(type.id) && 'dark:invert')} />
-                    ) : (
-                      <span className="text-2xl">{type.icon}</span>
-                    )}
-                  </div>
-                  <p className="font-medium text-meta">{type.id === 'custom' ? t('aiProviders.custom') : type.name}</p>
-                </button>
-              ))}
+          <div className="grid min-h-0 flex-1 grid-cols-[minmax(8rem,30%)_minmax(0,1fr)] sm:grid-cols-[13rem_minmax(0,1fr)]">
+            <div role="group" aria-label={t('aiProviders.dialog.serviceList')} data-testid="add-provider-catalog"
+              className="flex min-h-0 min-w-0 flex-col border-r border-border"
+            >
+              <div data-testid="add-provider-service-list" className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain p-2 sm:px-3">
+                {[...serviceFamilies.values()].flat().map(renderServiceOption)}
               </div>
+              {customType && (
+                <div className="shrink-0 border-t border-border p-2 sm:px-3">
+                  {renderServiceOption(customType)}
+                </div>
+              )}
             </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-transparent border-0">
-                <div className="h-10 w-10 shrink-0 flex items-center justify-center bg-black/5 dark:bg-white/5 rounded-xl">
+            {selectedType && (
+            <div key={selectedType} data-testid="add-provider-details" className="min-w-0 space-y-4 overflow-y-auto overscroll-contain p-3 sm:p-5">
+              <div className="flex items-center gap-2">
+                <div className="flex h-6 w-6 shrink-0 items-center justify-center">
                   {getProviderIconUrl(selectedType!) ? (
                     <img src={getProviderIconUrl(selectedType!)} alt={typeInfo?.name} className={cn('h-6 w-6', shouldInvertInDark(selectedType!) && 'dark:invert')} />
                   ) : (
                     <span className="text-xl">{typeInfo?.icon}</span>
                   )}
                 </div>
-                <div>
-                  <p className="font-semibold text-sm">{typeInfo?.id === 'custom' ? t('aiProviders.custom') : typeInfo?.name}</p>
-                  <button
-                  data-testid="add-provider-change-type"
-                  onClick={() => {
-                    setSelectedType(null);
-                    setValidationError(null);
-                    setBaseUrl('');
-                    setModelId('');
-                    setUserAgent('');
-                    setShowAdvancedConfig(false);
-                    setCodePlanMode('apikey');
-                  }}
-                  className="text-meta text-blue-500 hover:text-blue-600 font-medium"
-                >
-                    {t('aiProviders.dialog.change')}
-                  </button>
+                <div className="min-w-0">
+                  <h3 className="break-words text-base font-medium">{typeInfo?.id === 'custom' ? t('aiProviders.dialog.customService') : typeInfo?.name}</h3>
                   {effectiveDocsUrl && (
-                    <>
-                      <span className="mx-2 text-foreground/20">|</span>
-                      <a
-                        href={effectiveDocsUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-meta text-blue-500 hover:text-blue-600 font-medium inline-flex items-center gap-1"
-                      >
-                        {t('aiProviders.dialog.customDoc')}
-                        <ExternalLink className="h-3 w-3" />
-                      </a>
-                    </>
+                    <a
+                      href={effectiveDocsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-primary hover:underline font-medium inline-flex items-center gap-1"
+                    >
+                      {t(codePlanMode === 'codeplan' && typeInfo?.codePlanDocsUrl ? 'aiProviders.dialog.codePlanDoc' : 'aiProviders.dialog.customDoc')}
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
                   )}
                 </div>
               </div>
@@ -1022,143 +1195,101 @@ function AddProviderDialog({
                     id="name"
                     placeholder={typeInfo?.id === 'custom' ? t('aiProviders.custom') : typeInfo?.name}
                     value={name}
+                    disabled={fieldsLocked}
                     onChange={(e) => setName(e.target.value)}
                     className={inputClasses}
                   />
                 </div>
 
                 {/* Auth mode toggle for providers supporting both */}
-                {isOAuth && supportsApiKey && !oauthUiHidden && (
-                  <div className="flex rounded-xl border border-black/10 dark:border-white/10 overflow-hidden text-meta font-medium shadow-sm bg-transparent p-1 gap-1">
-                    <button
-                      data-testid="add-provider-auth-oauth-tab"
-                      onClick={() => setAuthMode('oauth')}
-                      className={cn(
-                        'flex-1 py-2 px-3 rounded-lg transition-colors',
-                        authMode === 'oauth' ? 'bg-black/5 dark:bg-white/10 text-foreground' : 'text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5'
-                      )}
-                    >
-                      {t('aiProviders.oauth.loginMode')}
-                    </button>
-                    <button
-                      data-testid="add-provider-auth-apikey-tab"
-                      onClick={() => setAuthMode('apikey')}
-                      className={cn(
-                        'flex-1 py-2 px-3 rounded-lg transition-colors',
-                        authMode === 'apikey' ? 'bg-black/5 dark:bg-white/10 text-foreground' : 'text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5'
-                      )}
-                    >
-                      {t('aiProviders.oauth.apikeyMode')}
-                    </button>
-                  </div>
-                )}
-
-                {/* API Key input — shown for non-OAuth providers or when apikey mode is selected */}
-                {(!isOAuth || (supportsApiKey && authMode === 'apikey')) && (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="apiKey" className={labelClasses}>{t('aiProviders.dialog.apiKey')}</Label>
-                      {typeInfo?.apiKeyUrl && (
-                        <a
-                          href={typeInfo.apiKeyUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-meta text-blue-500 hover:text-blue-600 font-medium flex items-center gap-1"
-                          tabIndex={-1}
-                        >
-                          {t('aiProviders.oauth.getApiKey')} <ExternalLink className="h-3 w-3" />
-                        </a>
-                      )}
-                    </div>
-                    <div className="relative">
-                      <Input
-                        data-testid="add-provider-api-key-input"
-                        id="apiKey"
-                        type={showKey ? 'text' : 'password'}
-                        placeholder={typeInfo?.id === 'ollama' ? t('aiProviders.notRequired') : typeInfo?.placeholder}
-                        value={apiKey}
-                        onChange={(e) => {
-                          setApiKey(e.target.value);
-                          setValidationError(null);
-                        }}
-                        className={inputClasses}
-                      />
+                {canChooseAuthMode && (
+                  <fieldset className="min-w-0" disabled={fieldsLocked}>
+                    <Label asChild className={cn(labelClasses, 'mb-2')}>
+                      <legend>{t('aiProviders.oauth.method')}</legend>
+                    </Label>
+                    <div className={choiceGroup}>
                       <button
                         type="button"
-                        aria-label={t(showKey ? 'aiProviders.dialog.hideKey' : 'aiProviders.dialog.showKey')}
-                        onClick={() => setShowKey(!showKey)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        data-testid="add-provider-auth-oauth-tab"
+                        aria-pressed={authMode === 'oauth'}
+                        onClick={() => setAuthMode('oauth')}
+                        className={choiceButton(authMode === 'oauth')}
                       >
-                        {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        {t('aiProviders.oauth.loginMode')}
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="add-provider-auth-apikey-tab"
+                        aria-pressed={authMode === 'apikey'}
+                        onClick={() => setAuthMode('apikey')}
+                        className={choiceButton(authMode === 'apikey')}
+                      >
+                        {t('aiProviders.oauth.apikeyMode')}
                       </button>
                     </div>
-                    {validationError && (
-                      <p className="text-meta text-red-500 font-medium">{validationError}</p>
-                    )}
-                    <p className="text-xs text-muted-foreground">
-                      {t('aiProviders.dialog.apiKeyStored')}
-                    </p>
-                  </div>
+                  </fieldset>
                 )}
 
-                <ProviderConnectionFields prefix="add-provider" baseUrl={baseUrl} onBaseUrlChange={setBaseUrl} modelId={modelId} onModelChange={value => { setModelId(value); setValidationError(null); }} protocol={apiProtocol} onProtocolChange={setApiProtocol} showBaseUrl={!!typeInfo?.showBaseUrl} showModel={showModelIdField} showProtocol={selectedType === 'custom'} modelPlaceholder={typeInfo?.id === 'custom' ? 'model-id' : typeInfo?.modelIdPlaceholder} modelTestId="add-provider-model-id-input" baseUrlTestId="add-provider-base-url-input" />
                 {codePlanPreset && (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <Label className={labelClasses}>{t('aiProviders.dialog.codePlanPreset')}</Label>
-                      {typeInfo?.codePlanDocsUrl && (
-                        <a
-                          href={typeInfo.codePlanDocsUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-meta text-blue-500 hover:text-blue-600 font-medium inline-flex items-center gap-1"
-                          tabIndex={-1}
-                        >
-                          {t('aiProviders.dialog.codePlanDoc')}
-                          <ExternalLink className="h-3 w-3" />
-                        </a>
-                      )}
-                    </div>
-                    <div className="flex gap-2 text-meta">
+                  <fieldset className="min-w-0" disabled={fieldsLocked}>
+                    <Label asChild className={cn(labelClasses, 'mb-2')}>
+                      <legend>{t('aiProviders.dialog.connectionPreset')}</legend>
+                    </Label>
+                    <div className={choiceGroup}>
                       <button
                         type="button"
                         data-testid="add-provider-codeplan-apikey-tab"
-                        onClick={() => {
-                          setCodePlanMode('apikey');
-                          setBaseUrl(typeInfo?.defaultBaseUrl || '');
-                          if (modelId.trim() === codePlanPreset.modelId) {
-                            setModelId(typeInfo?.defaultModelId || '');
-                          }
-                          setValidationError(null);
-                        }}
-                        className={cn("flex-1 py-1.5 px-3 rounded-lg border transition-colors", codePlanMode === 'apikey' ? "bg-surface-modal border-black/20 dark:border-white/20 shadow-sm font-medium" : "border-transparent bg-black/5 dark:bg-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10")}
+                        aria-pressed={codePlanMode === 'apikey'}
+                        onClick={() => chooseConnectionPreset('apikey')}
+                        className={choiceButton(codePlanMode === 'apikey')}
                       >
-                        {t('aiProviders.authModes.apiKey')}
+                        {t('aiProviders.dialog.generalApiPreset')}
                       </button>
                       <button
                         type="button"
                         data-testid="add-provider-codeplan-mode-tab"
-                        onClick={() => {
-                          setCodePlanMode('codeplan');
-                          setBaseUrl(codePlanPreset.baseUrl);
-                          setModelId(codePlanPreset.modelId);
-                          setValidationError(null);
-                        }}
-                        className={cn("flex-1 py-1.5 px-3 rounded-lg border transition-colors", codePlanMode === 'codeplan' ? "bg-surface-modal border-black/20 dark:border-white/20 shadow-sm font-medium" : "border-transparent bg-black/5 dark:bg-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10")}
+                        aria-pressed={codePlanMode === 'codeplan'}
+                        onClick={() => chooseConnectionPreset('codeplan')}
+                        className={choiceButton(codePlanMode === 'codeplan')}
                       >
                         {t('aiProviders.dialog.codePlanMode')}
                       </button>
                     </div>
-                    {codePlanMode === 'codeplan' && (
-                      <p className="text-xs text-muted-foreground">
-                        {t('aiProviders.dialog.codePlanPresetDesc', {
-                          baseUrl: codePlanPreset.baseUrl,
-                          modelId: codePlanPreset.modelId,
-                        })}
-                      </p>
-                    )}
-                  </div>
+                  </fieldset>
                 )}
+
+                {!canChooseAuthMode && !isOllama && apiKeyField}
+
+                <ProviderConnectionFields
+                  prefix="add-provider"
+                  baseUrl={baseUrl}
+                  onBaseUrlChange={value => {
+                    setBaseUrl(value);
+                    setBaseUrlError(undefined);
+                    setValidationError(null);
+                  }}
+                  modelId={modelId}
+                  onModelChange={value => {
+                    setModelId(value);
+                    setModelError(undefined);
+                    setValidationError(null);
+                  }}
+                  protocol={apiProtocol}
+                  onProtocolChange={value => {
+                    setApiProtocol(value);
+                    setValidationError(null);
+                  }}
+                  showBaseUrl={!!typeInfo?.showBaseUrl}
+                  showModel={showModelIdField}
+                  showProtocol={selectedType === 'custom'}
+                  modelPlaceholder={typeInfo?.modelIdPlaceholder}
+                  modelTestId="add-provider-model-id-input"
+                  baseUrlTestId="add-provider-base-url-input"
+                  baseUrlError={baseUrlError}
+                  modelError={modelError}
+                  disabled={fieldsLocked}
+                />
+                {isOllama && apiKeyField}
                 {showUserAgentInAddDialog && (
                   <div className="space-y-2">
                     <button
@@ -1184,104 +1315,63 @@ function AddProviderDialog({
                     )}
                   </div>
                 )}
-                {/* Device OAuth Trigger — only shown when in OAuth mode */}
-                {useOAuthFlow && (
-                  <div className="space-y-4 pt-2">
-                    <div className="rounded-xl bg-blue-500/10 border border-blue-500/20 p-5 text-center">
-                      <p className="text-meta font-medium text-blue-600 dark:text-blue-400 mb-4 block">
-                        {t('aiProviders.oauth.loginPrompt')}
-                      </p>
-                      <Button
-                        data-testid="add-provider-oauth-login-button"
-                        onClick={handleStartOAuth}
-                        disabled={oauthFlowing}
-                        className="w-full"
-                      >
-                        {oauthFlowing ? (
-                          <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{t('aiProviders.oauth.waiting')}</>
-                        ) : (
-                          t('aiProviders.oauth.loginButton')
-                        )}
-                      </Button>
-                    </div>
+                {canChooseAuthMode && !oauthPending && (
+                  <div className="min-h-16">{apiKeyField}</div>
+                )}
+                {waitingForOAuth && <p role="status" className="text-sm text-muted-foreground">{submit.label}</p>}
 
-                    {/* OAuth Active State Modal / Inline View */}
-                    {oauthFlowing && (
-                      <div className="mt-4 p-5 border border-black/10 dark:border-white/10 rounded-2xl bg-surface-modal shadow-sm relative overflow-hidden">
-                        {/* Background pulse effect */}
-                        <div className="absolute inset-0 bg-blue-500/5 animate-pulse" />
+                {oauthPending && (oauthData || oauthError) && (
+                  <div ref={oauthPanelRef} className="rounded-xl border border-border bg-muted/30 p-4 text-center">
+                      {!oauthData ? (
+                        <div role="alert" className="text-destructive space-y-2">
+                          <XCircle className="h-5 w-5 mx-auto" aria-hidden="true" />
+                          <p className="font-semibold text-sm">{t('aiProviders.oauth.authFailed')}</p>
+                          {oauthError !== t('aiProviders.oauth.authFailed') && <p className="text-sm">{oauthError}</p>}
+                        </div>
+                      ) : oauthData.mode === 'manual' ? (
+                        <div className="space-y-4 w-full">
+                          {oauthData.message && (
+                            <p className="text-meta text-muted-foreground text-left bg-black/5 dark:bg-white/5 p-4 rounded-xl">
+                              {oauthData.message}
+                            </p>
+                          )}
 
-                        <div className="relative z-10 flex flex-col items-center justify-center text-center space-y-5">
-                          {oauthError ? (
-                            <div className="text-red-500 space-y-3">
-                              <XCircle className="h-10 w-10 mx-auto" />
-                              <p className="font-semibold text-sm">{t('aiProviders.oauth.authFailed')}</p>
-                              <p className="text-meta opacity-80">{oauthError}</p>
-                              <Button variant="outline" size="sm" onClick={handleCancelOAuth} className="mt-2">
-                                {t('aiProviders.oauth.tryAgain')}
-                              </Button>
-                            </div>
-                          ) : !oauthData ? (
-                            <div className="space-y-4 py-6">
-                              <Loader2 className="h-10 w-10 animate-spin text-blue-500 mx-auto" />
-                              <p className="text-meta font-medium text-muted-foreground animate-pulse">{t('aiProviders.oauth.requestingCode')}</p>
-                            </div>
-                          ) : oauthData.mode === 'manual' ? (
-                            <div className="space-y-4 w-full">
-                              <div className="space-y-2">
-                                <h3 className="font-semibold text-base text-foreground">{t('aiProviders.oauth.completeBrowserLogin')}</h3>
-                                <p className="text-meta text-muted-foreground text-left bg-black/5 dark:bg-white/5 p-4 rounded-xl">
-                                  {oauthData.message || t('aiProviders.oauth.manualCallbackHelp')}
-                                </p>
-                              </div>
+                          <Button
+                            variant="secondary"
+                            className="w-full"
+                            onClick={() => hostApi.shell.openExternal(oauthData.authorizationUrl)}
+                          >
+                            <ExternalLink className="h-4 w-4 mr-2" />
+                            {t('aiProviders.oauth.openAuthorizationPage')}
+                          </Button>
 
-                              <Button
-                                variant="secondary"
-                                className="w-full"
-                                onClick={() => hostApi.shell.openExternal(oauthData.authorizationUrl)}
-                              >
-                                <ExternalLink className="h-4 w-4 mr-2" />
-                                {t('aiProviders.oauth.openAuthorizationPage')}
-                              </Button>
+                          <Input
+                            aria-label={t('aiProviders.oauth.callbackPlaceholder')}
+                            placeholder={t('aiProviders.oauth.callbackPlaceholder')}
+                            value={manualCodeInput}
+                            disabled={oauthSubmitting || oauthCancelling}
+                            onChange={(e) => setManualCodeInput(e.target.value)}
+                            className={inputClasses}
+                          />
 
-                              <Input
-                                placeholder={t('aiProviders.oauth.callbackPlaceholder')}
-                                value={manualCodeInput}
-                                onChange={(e) => setManualCodeInput(e.target.value)}
-                                className={inputClasses}
-                              />
+                          {oauthError && <p role="alert" className="text-sm text-destructive">{oauthError}</p>}
+                        </div>
+                      ) : (
+                        <div className="space-y-5 w-full">
+                          <p className="text-meta text-muted-foreground">{t('aiProviders.oauth.enterDeviceCode')}</p>
 
-                              <Button
-                                className="w-full"
-                                onClick={handleSubmitManualOAuthCode}
-                                disabled={!manualCodeInput.trim()}
-                              >
-                                {t('aiProviders.oauth.submitCode')}
-                              </Button>
-
-                              <Button variant="ghost" className="w-full text-muted-foreground" onClick={handleCancelOAuth}>
-                                {t('aiProviders.oauth.cancel')}
-                              </Button>
-                            </div>
-                          ) : (
-                            <div className="space-y-5 w-full">
-                              <div className="space-y-2">
-                                <h3 className="font-semibold text-base text-foreground">{t('aiProviders.oauth.approveLogin')}</h3>
-                                <div className="text-meta text-muted-foreground text-left mt-2 space-y-1.5 bg-black/5 dark:bg-white/5 p-4 rounded-xl">
-                                  <p>1. {t('aiProviders.oauth.step1')}</p>
-                                  <p>2. {t('aiProviders.oauth.step2')}</p>
-                                  <p>3. {t('aiProviders.oauth.step3')}</p>
-                                </div>
-                              </div>
-
-                              <div className="flex items-center justify-center gap-3 p-4 bg-transparent border border-black/5 dark:border-white/5 rounded-xl shadow-inner">
-                                <code className="text-3xl font-mono tracking-[0.2em] font-bold text-foreground">
-                                  {oauthData.userCode}
-                                </code>
+                          <div className="flex items-center justify-center gap-3 p-4 bg-transparent border border-black/5 dark:border-white/5 rounded-xl shadow-inner">
+                            <code className="text-3xl font-mono tracking-[0.2em] font-bold text-foreground">
+                              {oauthData.userCode}
+                            </code>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
                                 <Button
+                                  type="button"
                                   variant="ghost"
                                   size="icon"
                                   className="h-10 w-10 rounded-full hover:bg-black/5 dark:hover:bg-white/10"
+                                  aria-label={t('common:actions.copy')}
                                   onClick={() => {
                                     navigator.clipboard.writeText(oauthData.userCode);
                                     toast.success(t('aiProviders.oauth.codeCopied'));
@@ -1289,37 +1379,27 @@ function AddProviderDialog({
                                 >
                                   <Copy className="h-5 w-5" />
                                 </Button>
-                              </div>
+                              </TooltipTrigger>
+                              <TooltipContent>{t('common:actions.copy')}</TooltipContent>
+                            </Tooltip>
+                          </div>
 
-                              <Button
-                                variant="secondary"
-                                className="w-full"
-                                onClick={() => hostApi.shell.openExternal(oauthData.verificationUri)}
-                              >
-                                <ExternalLink className="h-4 w-4 mr-2" />
-                                {t('aiProviders.oauth.openLoginPage')}
-                              </Button>
+                          {oauthError && <p role="alert" className="text-sm text-destructive">{oauthError}</p>}
 
-                              <div className="flex items-center justify-center gap-2 text-meta font-medium text-muted-foreground pt-2">
-                                <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
-                                <span>{t('aiProviders.oauth.waitingApproval')}</span>
-                              </div>
-
-                              <Button variant="ghost" className="w-full text-muted-foreground" onClick={handleCancelOAuth}>
-                                {t('aiProviders.oauth.cancel')}
-                              </Button>
-                            </div>
-                          )}
+                          <div role="status" className="flex items-center justify-center gap-2 text-meta font-medium text-muted-foreground pt-2">
+                            <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                            <span>{t('aiProviders.oauth.waitingApproval')}</span>
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )}
                   </div>
                 )}
               </div>
 
 
             </div>
-          )}
+            )}
+          </div>
     </ModelConfigDialog>
   );
 }

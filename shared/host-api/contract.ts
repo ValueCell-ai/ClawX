@@ -511,6 +511,7 @@ export type ProviderOAuthRequestPayload = {
   region?: 'global' | 'cn';
   accountId?: string;
   label?: string;
+  modelId?: string;
 };
 export type ProviderOAuthSubmitPayload = { code: string };
 

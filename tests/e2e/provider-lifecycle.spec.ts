@@ -149,7 +149,7 @@ test.describe('ClawX provider lifecycle', () => {
     }
   });
 
-  test('shows OpenAI OAuth and API key auth mode toggle in add-provider dialog', async ({ page }) => {
+  test('keeps OpenAI fields and footer in place when switching authentication', async ({ page }) => {
     await completeSetup(page);
 
     await navigateToSection(page, 'models');
@@ -159,13 +159,174 @@ test.describe('ClawX provider lifecycle', () => {
     await expect(page.getByTestId('add-provider-dialog')).toBeVisible();
 
     await page.getByTestId('add-provider-type-openai').click();
-    await expect(page.getByTestId('add-provider-auth-oauth-tab')).toBeVisible();
-    await expect(page.getByTestId('add-provider-auth-apikey-tab')).toBeVisible();
+    const dialog = page.getByTestId('add-provider-dialog');
+    const [icon, nameField] = await Promise.all([
+      dialog.getByRole('img', { name: 'OpenAI', exact: true }).locator('..').boundingBox(),
+      dialog.getByTestId('add-provider-name-input').boundingBox(),
+    ]);
+    expect(icon!.x).toBeCloseTo(nameField!.x, 0);
 
-    await page.getByTestId('add-provider-auth-oauth-tab').click();
-    await expect(page.getByTestId('add-provider-oauth-login-button')).toBeVisible();
-    await expect(page.getByTestId('add-provider-oauth-login-button')).toHaveCSS('border-radius', '6px');
-    await expect(page.getByTestId('add-provider-api-key-input')).toHaveCount(0);
+    const authMethod = page.getByRole('group', { name: 'Authentication method', exact: true });
+    const oauth = authMethod.getByTestId('add-provider-auth-oauth-tab');
+    const apiKey = authMethod.getByTestId('add-provider-auth-apikey-tab');
+    const modelId = dialog.getByTestId('add-provider-model-id-input');
+    const keyInput = dialog.getByTestId('add-provider-api-key-input');
+    const footer = dialog.getByTestId('add-provider-footer');
+    const cancel = footer.getByRole('button', { name: 'Cancel', exact: true });
+    const submit = footer.getByTestId('add-provider-submit-button');
+    const browserLogin = footer.getByTestId('add-provider-oauth-login-button');
+    const sharedBounds = () => Promise.all([
+      dialog.boundingBox(),
+      dialog.getByTestId('add-provider-name-input').boundingBox(),
+      authMethod.boundingBox(),
+      modelId.boundingBox(),
+      dialog.locator('footer').boundingBox(),
+      cancel.boundingBox(),
+      footer.getByRole('button').last().boundingBox(),
+    ]);
+    await expect(oauth).toBeVisible();
+    await expect(apiKey).toBeVisible();
+
+    await apiKey.click();
+    await expect(cancel).toBeVisible();
+    await expect(submit).toBeVisible();
+    await keyInput.fill('sk-fixture');
+    await modelId.fill('model-fixture');
+    const apiKeyBounds = await sharedBounds();
+
+    await oauth.click();
+    await expect(oauth).toHaveAttribute('aria-pressed', 'true');
+    await expect(apiKey).toHaveAttribute('aria-pressed', 'false');
+    await expect(cancel).toBeVisible();
+    await expect(browserLogin).toBeVisible();
+    await expect(browserLogin).toHaveCSS('height', '36px');
+    await expect(keyInput).toHaveCount(0);
+    await expect(modelId).toHaveValue('model-fixture');
+    expect(await sharedBounds()).toEqual(apiKeyBounds);
+
+    await apiKey.click();
+    await expect(keyInput).toHaveValue('sk-fixture');
+    expect(await sharedBounds()).toEqual(apiKeyBounds);
+  });
+
+  test('validates only the selected service and isolates its draft from other services', async ({ page }) => {
+    await completeSetup(page);
+    await navigateToSection(page, 'models');
+    await page.getByTestId('providers-add-button').click();
+    const dialog = page.getByTestId('add-provider-dialog');
+    const submit = dialog.getByTestId('add-provider-submit-button');
+    const keyInput = dialog.getByTestId('add-provider-api-key-input');
+    const baseUrl = dialog.getByTestId('add-provider-base-url-input');
+    const modelId = dialog.getByTestId('add-provider-model-id-input');
+
+    await dialog.getByTestId('add-provider-type-custom').click();
+    await keyInput.fill('sk-fixture');
+    await dialog.getByRole('button', { name: 'Show API key' }).click();
+    const protocol = dialog.getByRole('combobox', { name: 'Protocol' });
+    await protocol.click();
+    await page.getByRole('option', { name: 'OpenAI Responses' }).click();
+    await modelId.fill('model-a,model-b');
+    await submit.click();
+    await expect(baseUrl).toHaveAccessibleDescription('Enter a base URL.');
+    await expect(modelId).toHaveAccessibleDescription('Enter a single model ID.');
+    await baseUrl.fill('invalid-url');
+    await modelId.fill('model-a');
+    await submit.click();
+    await expect(baseUrl).toHaveAccessibleDescription(/valid URL/);
+
+    await dialog.getByTestId('add-provider-type-google').click();
+    await expect(keyInput).toHaveValue('');
+    await expect(keyInput).toHaveAttribute('type', 'password');
+    await dialog.getByTestId('add-provider-name-input').press('Tab');
+    await expect(dialog.getByRole('link', { name: 'Get API Key' })).toBeFocused();
+    await submit.click();
+    await expect(keyInput).toHaveAccessibleDescription('Enter an API key.');
+
+    await dialog.getByTestId('add-provider-type-custom').click();
+    await expect(protocol).toHaveText('OpenAI Chat Completions');
+    await dialog.getByTestId('add-provider-type-ollama').click();
+    const [urlBounds, modelBounds, keyBounds] = await Promise.all([baseUrl, modelId, keyInput].map(field => field.boundingBox()));
+    expect(urlBounds!.y).toBeLessThan(modelBounds!.y);
+    expect(modelBounds!.y).toBeLessThan(keyBounds!.y);
+    await expect(keyInput).toHaveAccessibleName('API Key (Not required)');
+  });
+
+  test('keeps OAuth actions in the shared footer and authorizes the entered model', async ({ electronApp, page }) => {
+    await completeSetup(page);
+    await electronApp.evaluate(async () => {
+      const { ipcMain, BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+      const handlers = (ipcMain as unknown as {
+        _invokeHandlers: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
+      })._invokeHandlers;
+      const original = handlers.get('host:invoke')!;
+      const state = { modelId: '', codes: 0, cancellations: 0 };
+      (globalThis as typeof globalThis & { providerOAuthE2E?: typeof state }).providerOAuthE2E = state;
+      ipcMain.removeHandler('host:invoke');
+      ipcMain.handle('host:invoke', async (event, request: {
+        id: string; module: string; action: string; payload?: { provider?: string; modelId?: string };
+      }) => {
+        if (request.module !== 'providers') return original(event, request);
+        if (request.action === 'requestOAuth') {
+          state.modelId = request.payload?.modelId ?? '';
+          const provider = request.payload?.provider;
+          BrowserWindow.getAllWindows()[0].webContents.send('oauth:code', provider === 'openai'
+            ? { provider, mode: 'manual', authorizationUrl: 'https://example.invalid/oauth' }
+            : { provider, verificationUri: 'https://example.invalid/oauth', userCode: 'TEST-CODE', expiresIn: 300 });
+        } else if (request.action === 'submitOAuth') {
+          state.codes += 1;
+        } else if (request.action === 'cancelOAuth') {
+          state.cancellations += 1;
+        } else {
+          return original(event, request);
+        }
+        return { id: request.id, ok: true, data: { success: true } };
+      });
+    });
+
+    await navigateToSection(page, 'models');
+    await page.getByTestId('providers-add-button').click();
+    const dialog = page.getByTestId('add-provider-dialog');
+    const footer = dialog.getByTestId('add-provider-footer');
+    const keyMode = dialog.getByTestId('add-provider-auth-apikey-tab');
+    const oauthMode = dialog.getByTestId('add-provider-auth-oauth-tab');
+    const keyInput = dialog.getByTestId('add-provider-api-key-input');
+    const modelId = dialog.getByTestId('add-provider-model-id-input');
+    const cancel = footer.getByRole('button', { name: 'Cancel', exact: true });
+    const snapshot = () => electronApp.evaluate(() => (
+      (globalThis as typeof globalThis & {
+        providerOAuthE2E?: { modelId: string; codes: number; cancellations: number };
+      }).providerOAuthE2E
+    ));
+
+    await dialog.getByTestId('add-provider-type-openai').click();
+    await keyMode.click();
+    await keyInput.fill('sk-fixture');
+    await modelId.fill('my-oauth-model');
+    await oauthMode.click();
+    await footer.getByTestId('add-provider-oauth-login-button').click();
+    await expect(keyMode).toBeDisabled();
+    await expect(dialog.getByTestId('add-provider-type-minimax-portal')).toBeDisabled();
+    const submitCode = footer.getByTestId('add-provider-oauth-submit-code');
+    await expect(submitCode).toBeDisabled();
+    await dialog.getByRole('textbox', { name: 'Paste callback URL or code' }).fill('fixture-code');
+    await submitCode.click();
+    await expect.poll(snapshot).toEqual({ modelId: 'my-oauth-model', codes: 1, cancellations: 0 });
+    await cancel.click();
+    await keyMode.click();
+    await expect(keyInput).toHaveValue('sk-fixture');
+    await expect(modelId).toHaveValue('my-oauth-model');
+
+    await dialog.getByTestId('add-provider-type-minimax-portal').click();
+    await keyMode.click();
+    await footer.getByTestId('add-provider-submit-button').click();
+    await expect(keyInput).toHaveAccessibleDescription('Enter an API key.');
+    await oauthMode.click();
+    await footer.getByTestId('add-provider-oauth-login-button').click();
+    await expect(dialog.locator('code')).toHaveText('TEST-CODE');
+    await expect(footer.getByTestId('add-provider-oauth-open-login')).toBeVisible();
+    await cancel.click();
+    await expect(keyMode).toBeEnabled();
+    await expect.poll(snapshot).toEqual({ modelId: 'MiniMax-M3', codes: 1, cancellations: 2 });
   });
 
   test('only exposes TokenDance setup in Chinese and cancels it when the dialog closes', async ({ electronApp, page }) => {
@@ -229,7 +390,8 @@ test.describe('ClawX provider lifecycle', () => {
 
     const tokenDanceType = page.getByTestId('add-provider-type-tokendance');
     await expect(tokenDanceType).toBeVisible();
-    const tokenDanceLogo = tokenDanceType.getByRole('img', { name: 'TokenDance' });
+    await expect(tokenDanceType).toHaveAccessibleName('TokenDance');
+    const tokenDanceLogo = tokenDanceType.locator('img');
     await expect(tokenDanceLogo).toHaveAttribute('src', /^data:image\/svg\+xml,/);
     await expect(tokenDanceLogo).not.toHaveClass(/dark:invert/);
 
@@ -245,13 +407,21 @@ test.describe('ClawX provider lifecycle', () => {
     await page.getByTestId('add-provider-auth-oauth-tab').click();
     await page.getByTestId('add-provider-oauth-login-button').click();
     await expect(page.getByTestId('add-provider-oauth-login-button')).toBeDisabled();
+    await expect(page.getByTestId('add-provider-dialog').getByRole('status')).toHaveText('等待授权…');
+
+    await page.getByTestId('add-provider-footer').getByRole('button', { name: '取消', exact: true }).click();
+    await expect(page.getByTestId('add-provider-dialog')).toBeVisible();
+    await expect(page.getByTestId('add-provider-oauth-login-button')).toBeEnabled();
+    await expect(page.getByTestId('add-provider-dialog').getByRole('status')).toHaveCount(0);
+
+    await page.getByTestId('add-provider-oauth-login-button').click();
     await page.getByTestId('add-provider-close-button').click();
 
     await expect.poll(() => electronApp.evaluate(() => (
       (globalThis as typeof globalThis & {
         tokenDanceOAuthE2E?: { requests: number; cancellations: number };
       }).tokenDanceOAuthE2E
-    ))).toEqual({ requests: 1, cancellations: 1 });
+    ))).toEqual({ requests: 2, cancellations: 2 });
 
     await page.getByTestId('providers-add-button').click();
     await page.getByTestId('add-provider-type-tokendance').click();
@@ -260,7 +430,7 @@ test.describe('ClawX provider lifecycle', () => {
       (globalThis as typeof globalThis & {
         tokenDanceOAuthE2E?: { requests: number; cancellations: number };
       }).tokenDanceOAuthE2E?.requests
-    ))).toBe(2);
+    ))).toBe(3);
   });
 
   test('shows TokenDance recovery guidance returned by Main validation', async ({ electronApp, page }) => {
@@ -521,14 +691,25 @@ test.describe('ClawX provider lifecycle', () => {
     await expect(page.getByTestId('add-provider-model-id-input')).toHaveValue('glm-5.3-flash');
     await expect(page.getByTestId('add-provider-codeplan-mode-tab')).toBeVisible();
 
+    const dialog = page.getByTestId('add-provider-dialog');
+    const baseUrl = dialog.getByTestId('add-provider-base-url-input');
+    const modelId = dialog.getByTestId('add-provider-model-id-input');
+    await baseUrl.fill('https://example.test/general');
+    await modelId.fill('general-model');
     await page.getByTestId('add-provider-codeplan-mode-tab').click();
-    await expect(page.getByTestId('add-provider-base-url-input')).toHaveValue('https://open.bigmodel.cn/api/coding/paas/v4');
-    await expect(page.getByTestId('add-provider-model-id-input')).toHaveValue('glm-5.3-flash');
+    await expect(baseUrl).toHaveValue('https://open.bigmodel.cn/api/coding/paas/v4');
+    await expect(modelId).toHaveValue('glm-5.3-flash');
+    await expect(dialog.getByRole('link', { name: 'Code Plan docs' })).toHaveCount(1);
+    await baseUrl.fill('https://example.test/code-plan');
+    await modelId.fill('plan-model');
 
     await page.getByTestId('add-provider-codeplan-apikey-tab').click();
-    await expect(page.getByTestId('add-provider-base-url-input')).toHaveValue('https://open.bigmodel.cn/api/paas/v4');
+    await expect(baseUrl).toHaveValue('https://example.test/general');
+    await expect(modelId).toHaveValue('general-model');
+    await page.getByTestId('add-provider-codeplan-mode-tab').click();
+    await expect(baseUrl).toHaveValue('https://example.test/code-plan');
+    await expect(modelId).toHaveValue('plan-model');
 
-    await page.getByTestId('add-provider-change-type').click();
     await page.getByTestId('add-provider-type-zai-global').click();
     await expect(page.getByTestId('add-provider-base-url-input')).toHaveValue('https://api.z.ai/api/paas/v4');
     await page.getByTestId('add-provider-codeplan-mode-tab').click();
@@ -570,10 +751,7 @@ test.describe('ClawX provider lifecycle', () => {
       ['siliconflow', 'zai-org/GLM-5.3'],
     ];
 
-    for (const [index, [providerId, expectedModelId]] of expectedDefaults.entries()) {
-      if (index > 0) {
-        await page.getByTestId('add-provider-change-type').click();
-      }
+    for (const [providerId, expectedModelId] of expectedDefaults) {
       await page.getByTestId(`add-provider-type-${providerId}`).click();
       const modelIdInput = page.getByTestId('add-provider-model-id-input');
       await expect(modelIdInput).toHaveValue(expectedModelId);
@@ -634,6 +812,92 @@ test.describe('ClawX provider lifecycle', () => {
   });
 });
 
+
+test('keeps service options on the left and the footer stable when the form changes', async ({ page }, testInfo) => {
+  await completeSetup(page);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+
+  const dialog = page.getByTestId('add-provider-dialog');
+  const catalog = dialog.getByTestId('add-provider-catalog');
+  const serviceList = catalog.getByTestId('add-provider-service-list');
+  const details = dialog.getByTestId('add-provider-details');
+  const custom = catalog.getByRole('button', { name: 'Custom service' });
+  const openAi = catalog.getByRole('button', { name: 'OpenAI', exact: true });
+  const footer = dialog.getByTestId('add-provider-footer');
+  const cancel = footer.getByRole('button', { name: 'Cancel', exact: true });
+  const primary = footer.getByRole('button').last();
+  const regionalPairs = [
+    ['MiniMax (CN)', 'MiniMax (Global)'],
+    ['Moonshot (CN)', 'Moonshot (Global)'],
+    ['Z.AI (CN)', 'Z.AI (Global)'],
+  ];
+  const layout = () => Promise.all([
+    dialog.boundingBox(), catalog.boundingBox(), details.boundingBox(), cancel.boundingBox(), primary.boundingBox(),
+  ]);
+
+  for (const { theme, width, height } of [
+    { theme: 'Light', width: 1100, height: 730 },
+    { theme: 'Dark', width: 480, height: 570 },
+  ]) {
+    await navigateToSection(page, 'general');
+    await page.getByRole('button', { name: theme, exact: true }).click();
+    await navigateToSection(page, 'models');
+    await page.getByTestId('providers-add-button').click();
+    await page.setViewportSize({ width, height });
+    await page.mouse.move(0, 0);
+    await expect(openAi).toHaveAttribute('aria-pressed', 'true');
+    await expect(openAi.locator(':scope > img')).toBeVisible();
+    await expect(openAi).toHaveCSS('border-top-width', '0px');
+    await expect(details.getByRole('heading', { name: 'OpenAI' })).toBeVisible();
+    await expect(primary).toBeInViewport();
+
+    const initialBounds = await layout();
+    const [dialogBounds, catalogBounds, detailsBounds, , actionBounds] = initialBounds;
+    expect(catalogBounds!.x + catalogBounds!.width).toBeCloseTo(detailsBounds!.x, 0);
+    expect(catalogBounds!.y).toBeCloseTo(detailsBounds!.y, 0);
+    expect(actionBounds!.y).toBeGreaterThan(detailsBounds!.y + detailsBounds!.height);
+    const rightInset = await dialog.locator('footer').evaluate(element => parseFloat(getComputedStyle(element).paddingRight));
+    expect(dialogBounds!.x + dialogBounds!.width - actionBounds!.x - actionBounds!.width).toBeCloseTo(rightInset, 0);
+
+    const options = (await catalog.getByRole('button').allTextContents()).map(content => content.trim());
+    for (const [cn, global] of regionalPairs) {
+      expect(options.indexOf(cn)).toBeGreaterThanOrEqual(0);
+      expect(options.indexOf(global)).toBe(options.indexOf(cn) + 1);
+    }
+    expect(options.at(-1)).toBe('Custom service');
+
+    const cn = catalog.getByRole('button', { name: 'MiniMax (CN)', exact: true });
+    await cn.click();
+    await expect(cn).toHaveAttribute('aria-pressed', 'true');
+    await expect(details.getByRole('heading', { name: 'MiniMax (CN)', exact: true })).toBeVisible();
+    expect(await layout()).toEqual(initialBounds);
+
+    const global = catalog.getByRole('button', { name: 'MiniMax (Global)', exact: true });
+    await global.click();
+    await expect(global).toHaveAttribute('aria-pressed', 'true');
+    await expect(details.getByRole('heading', { name: 'MiniMax (Global)', exact: true })).toBeVisible();
+    await expect(primary).toHaveText('Login with Browser');
+    expect(await layout()).toEqual(initialBounds);
+
+    await custom.focus();
+    await custom.press('Enter');
+    await expect(custom).toBeFocused();
+    await expect(details.getByTestId('add-provider-base-url-input')).toBeVisible();
+    await expect(primary).toHaveText('Add service');
+    const catalogScroll = await serviceList.evaluate(element => element.scrollTop);
+    await details.getByRole('button', { name: 'Advanced configuration' }).click();
+    await details.getByLabel('User-Agent').scrollIntoViewIfNeeded();
+    await expect(primary).toBeInViewport();
+    expect(await serviceList.evaluate(element => element.scrollTop)).toBe(catalogScroll);
+    expect(await layout()).toEqual(initialBounds);
+    await dialog.screenshot({ path: testInfo.outputPath(`provider-split-${theme.toLowerCase()}.png`), animations: 'disabled' });
+
+    await cancel.click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByTestId('providers-add-button')).toBeFocused();
+    await page.setViewportSize({ width: 1100, height: 730 });
+  }
+});
 
 test('provider configuration stays discoverable and its submit action stays visible', async ({ page }, testInfo) => {
   await completeSetup(page);
