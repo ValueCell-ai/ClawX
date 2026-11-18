@@ -247,6 +247,7 @@ test.describe('ClawX chat workspace context', () => {
       } catch (error) {
         if (!String(error).includes('ERR_FILE_NOT_FOUND')) throw error;
       }
+      await page.getByTestId(`sidebar-session-${DEFAULT_SESSION_KEY}`).click();
 
       const defaultGroup = page.getByTestId(workspaceSessionGroupTestId(DEFAULT_WORKSPACE));
       await expect(defaultGroup).toBeVisible({ timeout: 30_000 });
@@ -285,6 +286,7 @@ test.describe('ClawX chat workspace context', () => {
           throw error;
         }
       }
+      await page.getByTestId(`sidebar-session-${SESSION_KEY}`).click();
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
 
@@ -357,6 +359,7 @@ test.describe('ClawX chat workspace context', () => {
           throw error;
         }
       }
+      await page.getByTestId(`sidebar-session-${SESSION_KEY}`).click();
 
       const workspaceSelector = page.getByTestId('chat-workspace-selector');
       const composerInput = page.getByTestId('chat-composer-input');
@@ -427,6 +430,7 @@ test.describe('ClawX chat workspace context', () => {
       } catch (error) {
         if (!String(error).includes('ERR_FILE_NOT_FOUND')) throw error;
       }
+      await page.getByTestId(`sidebar-session-${SESSION_KEY}`).click();
 
       const chatTitle = page.getByTestId('chat-session-title');
       await expect(chatTitle).toHaveText('Workspace chat', { timeout: 30_000 });
@@ -461,6 +465,7 @@ test.describe('ClawX chat workspace context', () => {
           throw error;
         }
       }
+      await page.getByTestId(`sidebar-session-${SESSION_KEY}`).click();
 
       const workspaceSelector = page.getByTestId('chat-workspace-selector');
       await expect(workspaceSelector).toHaveText(SESSION_WORKSPACE_LABEL, { timeout: 30_000 });
@@ -644,6 +649,7 @@ test.describe('ClawX chat workspace context', () => {
           throw error;
         }
       }
+      await page.getByTestId(`sidebar-session-${SESSION_KEY}`).click();
 
       const workspaceSelector = page.getByTestId('chat-workspace-selector');
       await expect(workspaceSelector).toHaveText(SESSION_WORKSPACE_LABEL, { timeout: 30_000 });
@@ -686,6 +692,7 @@ test.describe('ClawX chat workspace context', () => {
       } catch (error) {
         if (!String(error).includes('ERR_FILE_NOT_FOUND')) throw error;
       }
+      await page.getByTestId(`sidebar-session-${SESSION_KEY}`).click();
 
       await expect(page.getByTestId('chat-workspace-selector')).toHaveText(SESSION_WORKSPACE_LABEL, {
         timeout: 30_000,

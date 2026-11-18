@@ -209,6 +209,7 @@ test.describe('ClawX sidebar session attention', () => {
       const targetUnread = page.getByTestId(`sidebar-session-unread-${TARGET_SESSION_KEY}`);
 
       await expect(page.getByTestId('chat-page')).toBeVisible();
+      await controlRow.click();
       await expect(controlRow).toHaveAttribute('aria-current', 'page');
       await expect(targetRow).not.toHaveAttribute('aria-current', 'page');
       await expect(targetTime).toBeVisible();
@@ -310,6 +311,7 @@ test.describe('ClawX sidebar session attention', () => {
       const controlRow = page.getByTestId(`sidebar-session-${CONTROL_SESSION_KEY}`);
       const targetRow = page.getByTestId(`sidebar-session-${TARGET_SESSION_KEY}`);
 
+      await controlRow.click();
       await expect(controlRow).toHaveAttribute('aria-current', 'page');
       await expect(composer).toBeEnabled({ timeout: 30_000 });
       const controlDraft = 'Unsent control draft';

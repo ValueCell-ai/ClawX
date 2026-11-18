@@ -13,7 +13,7 @@ test.describe('ClawX chat model picker', () => {
 
         const reviewerKey = 'agent:reviewer:primary';
         const sessionModels = new Map<string, string>([[reviewerKey, refs.betaModelRef]]);
-        let freshMainSession: 'missing' | 'created' | null = null;
+        let catalogUnavailable = false;
         const hostRequests: Array<{ path: string; method: string; body: unknown }> = [];
         const now = new Date().toISOString();
         let releaseProviderAccounts: (() => void) | undefined;
@@ -72,7 +72,7 @@ test.describe('ClawX chat model picker', () => {
         ipcMain.handle('gateway:rpc', async (_event: unknown, method: string, params: unknown) => {
           hostRequests.push({ path: `gateway:${method}`, method: 'RPC', body: params ?? null });
           if (method === 'sessions.list') {
-            if (freshMainSession === 'missing') return { success: false, error: 'Session catalog not ready' };
+            if (catalogUnavailable) return { success: false, error: 'Session catalog not ready' };
             return { success: true, result: { sessions } };
           }
           return { success: true, result: {} };
@@ -122,7 +122,7 @@ test.describe('ClawX chat model picker', () => {
             const params = body?.params ?? null;
             hostRequests.push({ path: `gateway:${method}`, method: 'RPC', body: params });
             if (method === 'sessions.list') {
-              if (freshMainSession === 'missing') return {
+              if (catalogUnavailable) return {
                 id: request.id, ok: false, error: { code: 'INTERNAL', message: 'Session catalog not ready' },
               };
               return makeResponse(request.id, { sessions });
@@ -133,9 +133,6 @@ test.describe('ClawX chat model picker', () => {
             return makeResponse(request.id, agentsSnapshot());
           }
           if (request?.module === 'sessions' && request.action === 'getModel') {
-            if (freshMainSession === 'missing' && body?.sessionKey === 'agent:main:main') {
-              return makeResponse(request.id, { modelRef: null, exists: false });
-            }
             return makeResponse(request.id, { modelRef: sessionModels.get(String(body?.sessionKey)) ?? null });
           }
           if (request?.module === 'sessions' && request.action === 'setModel') {
@@ -145,11 +142,12 @@ test.describe('ClawX chat model picker', () => {
               } };
             }
             const key = String(body?.sessionKey);
-            if (freshMainSession === 'missing' && key === 'agent:main:main') {
+            if (catalogUnavailable) {
               if (!body?.createIfMissing) return {
                 id: request.id, ok: false, error: { code: 'INTERNAL', message: 'Session no longer exists' },
               };
-              freshMainSession = 'created';
+              catalogUnavailable = false;
+              sessions.push({ key, displayName: 'Use my selection for this first turn.', workspacePath });
             }
             if (typeof body?.modelRef === 'string') sessionModels.set(key, body.modelRef);
             else sessionModels.delete(key);
@@ -240,10 +238,9 @@ test.describe('ClawX chat model picker', () => {
           __releaseChatModelProviders?: () => void;
         }).__releaseChatModelProviders = releaseProviderAccounts;
         (globalThis as typeof globalThis & {
-          __prepareFreshMainSession?: () => void;
-        }).__prepareFreshMainSession = () => {
-          freshMainSession = 'missing';
-          sessionModels.delete('agent:main:main');
+          __makeSessionCatalogUnavailable?: () => void;
+        }).__makeSessionCatalogUnavailable = () => {
+          catalogUnavailable = true;
           hostRequests.length = 0;
         };
       }, { alphaModelRef, betaModelRef });
@@ -483,9 +480,9 @@ test.describe('ClawX chat model picker', () => {
         expect(routed.findIndex((r) => r.path === 'sessions:setModel')).toBeLessThan(promptIndex);
       });
 
-      await test.step('keeps an automatically prepared first conversation as a draft until prompt dispatch', async () => {
+      await test.step('keeps the startup task local and stages its model while the catalog is unavailable', async () => {
         await app.evaluate(() => {
-          (globalThis as typeof globalThis & { __prepareFreshMainSession?: () => void }).__prepareFreshMainSession?.();
+          (globalThis as typeof globalThis & { __makeSessionCatalogUnavailable?: () => void }).__makeSessionCatalogUnavailable?.();
         });
         await page.reload();
         const startupRequests = () => app.evaluate(() => (
@@ -494,10 +491,9 @@ test.describe('ClawX chat model picker', () => {
           }).__chatModelPickerRequests ?? []
         ));
         await expect.poll(async () => (await startupRequests()).some((request) => (
-          request.path === 'chat:loadAcpSession'
-          && request.body?.sessionKey === 'agent:main:main'
-          && request.body?.createIfMissing === true
+          request.path === 'gateway:sessions.list'
         ))).toBe(true);
+        expect((await startupRequests()).filter((request) => request.path === 'chat:loadAcpSession')).toEqual([]);
         // Unsent local drafts stay out of the persisted conversation list.
         await expect(page.getByTestId('sidebar-session-agent:main:main')).toHaveCount(0);
         await expect(picker).toHaveText(/model-alpha/);
@@ -512,12 +508,15 @@ test.describe('ClawX chat model picker', () => {
         const startup = await startupRequests();
         const firstPrompt = startup.findIndex((request) => request.path === 'chat:sendAcpPrompt');
         const modelWrite = startup.findIndex((request) => request.path === 'sessions:setModel');
+        const startupDraftKey = startup[firstPrompt].body?.sessionKey;
+        expect(startupDraftKey).toMatch(/^agent:main:session-\d+$/);
         expect(modelWrite).toBeGreaterThanOrEqual(0);
         expect(modelWrite).toBeLessThan(firstPrompt);
         expect(startup[modelWrite].body).toEqual({
-          sessionKey: 'agent:main:main', modelRef: 'openai/gpt-5.6', createIfMissing: true,
+          sessionKey: startupDraftKey, modelRef: 'openai/gpt-5.6', createIfMissing: true,
         });
         await page.reload();
+        await page.getByTestId(`sidebar-session-${startupDraftKey}`).click();
         await expect(picker).toHaveText(/gpt-5.6/);
       });
 

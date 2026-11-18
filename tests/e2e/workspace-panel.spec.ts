@@ -46,6 +46,7 @@ test.describe('Workspace panel refinement', { tag: E2E_EXCLUSIVE_TAG }, () => {
         await page.reload();
         await page.bringToFront();
         await page.setViewportSize({ width: 1600, height: 900 });
+        await page.getByTestId(`sidebar-session-${SESSION}`).click();
         await page.getByTestId('chat-toolbar-workspace').click();
         const panel = page.getByTestId('artifact-panel');
         const tree = panel.getByTestId('workspace-tree');

@@ -196,6 +196,7 @@ async function reloadStableWindow(app: ElectronApplication): Promise<Page> {
     if (!String(error).includes('ERR_FILE_NOT_FOUND')) throw error;
   }
   await expect(page.getByTestId('main-layout')).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId(`sidebar-session-${PARENT_KEY}`).click();
   return page;
 }
 

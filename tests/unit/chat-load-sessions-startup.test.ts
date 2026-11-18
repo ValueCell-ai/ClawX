@@ -68,6 +68,37 @@ describe('chat session catalog startup', () => {
     vi.restoreAllMocks();
   });
 
+  it('keeps the startup draft selected through a failed catalog fetch and a retry with existing history', async () => {
+    const oldMain = 'agent:main:main';
+    gatewayRpcMock.mockRejectedValue(new Error('Gateway not connected'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { useChatStore } = await import('@/stores/chat');
+    const draftKey = useChatStore.getState().currentSessionKey;
+    expect(draftKey).toMatch(/^agent:main:session-\d+$/);
+    expect(useChatStore.getState().sessions).toEqual([
+      expect.objectContaining({ key: draftKey, createdLocally: true }),
+    ]);
+
+    await useChatStore.getState().loadSessions();
+    expect(warn).toHaveBeenCalledWith('Failed to load sessions:', expect.any(Error));
+    expect(useChatStore.getState().currentSessionKey).toBe(draftKey);
+    expect(useChatStore.getState().sessions).toHaveLength(1);
+
+    gatewayRpcMock.mockResolvedValue({
+      sessions: [{ key: oldMain, displayName: 'Previous conversation', updatedAt: 10_000 }],
+    });
+    await useChatStore.getState().loadSessions({ force: true });
+    expect(useChatStore.getState().currentSessionKey).toBe(draftKey);
+    expect(useChatStore.getState().sessions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: draftKey, createdLocally: true }),
+      expect.objectContaining({ key: oldMain }),
+    ]));
+
+    useChatStore.getState().switchSession(oldMain);
+    expect(useChatStore.getState().currentSessionKey).toBe(oldMain);
+    expect(useChatStore.getState().sessions.map((session) => session.key)).toEqual([oldMain]);
+  });
+
   it('starts a distinct task for another agent and carries the unsent draft without replacing main history', async () => {
     const { useChatStore } = await import('@/stores/chat');
     const { useComposerDraftStore } = await import('@/stores/composer-drafts');

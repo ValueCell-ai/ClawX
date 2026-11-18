@@ -218,7 +218,6 @@ export function Chat() {
   const currentAgentId = useChatStore((s) => s.currentAgentId);
   const composerDraft = useComposerDraftStore((s) => s.drafts[currentSessionKey] ?? '');
   const setComposerDraft = useComposerDraftStore((s) => s.setDraft);
-  const loadSessions = useChatStore((s) => s.loadSessions);
   const switchSession = useChatStore((s) => s.switchSession);
   const selectAcpSession = useChatStore((s) => s.selectAcpSession);
   const acknowledgeAcpSessionCreated = useChatStore((s) => s.acknowledgeAcpSessionCreated);
@@ -232,7 +231,6 @@ export function Chat() {
   const removeWorkspace = useSettingsStore((s) => s.removeWorkspace);
   const fetchAgents = useAgentsStore((s) => s.fetchAgents);
   const agents = useAgentsStore((s) => s.agents);
-  const [sessionDiscoveryAttempted, setSessionDiscoveryAttempted] = useState(false);
   const [lastPromptAttemptSessionKey, setLastPromptAttemptSessionKey] = useState<string | null>(null);
   const [questionDirectoryOpenSessionKey, setQuestionDirectoryOpenSessionKey] = useState<string | null>(null);
   const [resolvedWorkspaceContext, setResolvedWorkspaceContext] = useState<{
@@ -462,19 +460,6 @@ export function Chat() {
   );
 
   useEffect(() => {
-    if (currentSessionKey !== DEFAULT_SESSION_KEY || sessions.length > 0 || sessionDiscoveryAttempted) return;
-    let cancelled = false;
-    void loadSessions()
-      .finally(() => {
-        if (!cancelled) setSessionDiscoveryAttempted(true);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [currentSessionKey, loadSessions, sessionDiscoveryAttempted, sessions.length]);
-
-  useEffect(() => {
     if (!currentSessionKey || !cwd || !currentSession?.createdLocally || promptOrigin === currentSessionKey) return;
     acpLoadInFlightKeyRef.current = null;
     const hasStaleTimeline = acpTimeline.sessionId !== currentSessionKey || acpTimeline.itemOrder.length > 0;
@@ -483,29 +468,21 @@ export function Chat() {
   }, [acpActiveSessionKey, acpCwd, acpTimeline.itemOrder.length, acpTimeline.sessionId, acpWorkspaceRoot, currentSession, currentSessionKey, cwd, prepareLocalAcpSession, promptOrigin]);
 
   useEffect(() => {
-    if (!currentSessionKey || !cwd || !workspaceContextAvailable || promptOrigin === currentSessionKey) return;
-    if (currentSessionKey === DEFAULT_SESSION_KEY && sessions.length === 0 && acpActiveSessionKey == null && !sessionDiscoveryAttempted) return;
+    if (!currentSession || currentSession.createdLocally || !cwd || !workspaceContextAvailable || promptOrigin === currentSessionKey) return;
     if (acpActiveSessionKey === currentSessionKey && acpWorkspaceRoot === cwd && acpCwd === cwd) return;
     const acpLoadKey = `${currentSessionKey}\0${cwd}`;
     if (acpLoadInFlightKeyRef.current === acpLoadKey) return;
-    const currentSession = sessions.find((session) => session.key === currentSessionKey);
-    if (currentSession?.createdLocally) return;
-    const createIfMissing = !currentSession;
     acpLoadInFlightKeyRef.current = acpLoadKey;
-    // ACP preparation does not persist a Gateway session. Keep its local-draft
-    // marker until first send so a model choice is staged with creation permission.
-    if (createIfMissing) selectAcpSession(currentSessionKey, cwd);
     void loadAcpSession({
       sessionKey: currentSessionKey,
       workspaceRoot: cwd,
       cwd,
-      ...(createIfMissing ? { createIfMissing: true } : {}),
     }).finally(() => {
       if (acpLoadInFlightKeyRef.current === acpLoadKey) {
         acpLoadInFlightKeyRef.current = null;
       }
     });
-  }, [acpActiveSessionKey, acpCwd, acpWorkspaceRoot, currentSessionKey, cwd, loadAcpSession, promptOrigin, selectAcpSession, sessionDiscoveryAttempted, sessions, workspaceContextAvailable]);
+  }, [acpActiveSessionKey, acpCwd, acpWorkspaceRoot, currentSession, currentSessionKey, cwd, loadAcpSession, promptOrigin, workspaceContextAvailable]);
 
   const platform = window.electron?.platform;
   const isMac = platform === 'darwin';
@@ -555,7 +532,13 @@ export function Chat() {
   }, [t, visibleAcpTimeline]);
   const questionDirectoryVisible = questionDirectoryOpenSessionKey === currentSessionKey
     && questionDirectoryItems.length > 1;
-  const composerContextUsage = visibleAcpTimeline.metadata.usage;
+  // A session can report stored usage before it has any conversation to show.
+  const hasConversationMessages = visibleAcpTimeline.itemOrder.some(
+    (itemId) => visibleAcpTimeline.itemsById[itemId]?.kind === 'message-segment',
+  );
+  const composerContextUsage = !acpPresentationPending && hasConversationMessages
+    ? visibleAcpTimeline.metadata.usage
+    : undefined;
   const currentPlan = useMemo(
     () => visibleAcpTimeline.sessionId === currentSessionKey
       ? getCurrentAcpPlan(visibleAcpTimeline)

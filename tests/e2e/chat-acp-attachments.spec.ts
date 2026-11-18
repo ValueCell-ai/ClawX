@@ -92,6 +92,7 @@ async function openChat(app: ElectronApplication): Promise<Page> {
   }
   await expect(page.getByTestId('main-layout')).toBeVisible();
   await expect(page.getByTestId('chat-page')).toBeVisible();
+  await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
   return page;
 }
 
@@ -600,7 +601,7 @@ test.describe('ACP media attachments', () => {
       await expect(thumbnail).toBeVisible();
       await expect(thumbnail).toHaveAttribute('alt', 'photo.png');
       const [bubbleBox, thumbnailBox] = await Promise.all([
-        userMessage.locator('.bg-brand').first().boundingBox(),
+        userMessage.locator('.bg-message-user').first().boundingBox(),
         thumbnail.locator('..').boundingBox(),
       ]);
       expect(bubbleBox).not.toBeNull();

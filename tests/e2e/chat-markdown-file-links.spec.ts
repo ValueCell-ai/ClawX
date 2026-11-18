@@ -33,6 +33,7 @@ test('previews replayed Markdown file links through real scoped attachment acces
     await fixture.setTranscriptResponses(SESSION_KEY, [[]]);
     const page = await getStableWindow(app);
     await page.reload();
+    await page.getByTestId(`sidebar-session-${SESSION_KEY}`).click();
     const message = page.getByTestId('acp-assistant-message');
     const reportLink = message.getByRole('button', { name: 'report.md', exact: true });
     await expect(reportLink).toBeVisible({ timeout: 30_000 });
@@ -75,6 +76,7 @@ test('handles streamed links, unavailable files, and directory system open', asy
     await fixture.setTranscriptResponses(SESSION_KEY, [[]]);
     const page = await getStableWindow(app);
     await page.reload();
+    await page.getByTestId(`sidebar-session-${SESSION_KEY}`).click();
     await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
     const prefix = '[Streamed report](';
     await fixture.emitAcpSessionUpdates({ sessionKey: SESSION_KEY, updates: [{

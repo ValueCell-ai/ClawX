@@ -111,6 +111,7 @@ test.describe('ClawX chat scroll-to-latest affordance', () => {
       }
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
+      await page.getByTestId(`sidebar-session-${SESSION_KEY}`).click();
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
       await emitAcpSessionUpdates(app, seededUpdates);
       await expect(page.getByText('Chat history message 36')).toBeVisible({ timeout: 30_000 });

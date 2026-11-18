@@ -69,6 +69,7 @@ async function openChat(app: ElectronApplication): Promise<Page> {
   }
   await expect(page.getByTestId('main-layout')).toBeVisible();
   await expect(page.getByTestId('chat-page')).toBeVisible();
+  await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
   return page;
 }
 

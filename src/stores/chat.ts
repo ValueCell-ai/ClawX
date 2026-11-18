@@ -318,6 +318,15 @@ function clearSessionEntryFromMap<T extends Record<string, unknown>>(entries: T,
   return Object.fromEntries(Object.entries(entries).filter(([key]) => key !== sessionKey)) as T;
 }
 
+function nextLocalDraftKey(prefix: string, sessions: ChatSession[]): string {
+  let timestamp = Date.now();
+  let key = `${prefix}:session-${timestamp}`;
+  while (sessions.some((session) => session.key === key)) {
+    key = `${prefix}:session-${++timestamp}`;
+  }
+  return key;
+}
+
 function buildSessionSwitchPatch(
   state: Pick<ChatState, 'currentSessionKey' | 'sessions' | 'sessionLabels' | 'sessionLastActivity'>,
   nextSessionKey: string,
@@ -503,9 +512,12 @@ async function fetchChatSessionsList(): Promise<Record<string, unknown>> {
   });
 }
 
+const startupDraftKey = nextLocalDraftKey(DEFAULT_CANONICAL_PREFIX, []);
+localDraftSessionKeys.add(startupDraftKey);
+
 export const useChatStore = create<ChatState>((set, get) => ({
-  sessions: [],
-  currentSessionKey: DEFAULT_SESSION_KEY,
+  sessions: ensureSessionEntry([], startupDraftKey, { createdLocally: true }),
+  currentSessionKey: startupDraftKey,
   currentAgentId: 'main',
   sessionLabels: {},
   sessionLastActivity: {},
@@ -1258,11 +1270,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       : getCanonicalPrefixFromSessionKey(currentSessionKey)
         ?? getCanonicalPrefixFromSessions(sessions)
         ?? DEFAULT_CANONICAL_PREFIX;
-    let timestamp = Date.now();
-    let sessionKey = `${prefix}:session-${timestamp}`;
-    while (sessions.some((session) => session.key === sessionKey)) {
-      sessionKey = `${prefix}:session-${++timestamp}`;
-    }
+    const sessionKey = nextLocalDraftKey(prefix, sessions);
     if (sessions.some((session) => session.key === currentSessionKey && session.createdLocally)) {
       localDraftSessionKeys.delete(currentSessionKey);
       useComposerDraftStore.getState().clearDraft(currentSessionKey);
