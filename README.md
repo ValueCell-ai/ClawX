@@ -142,6 +142,13 @@ The wizard preselects your system language when it is supported, and falls back 
 
 ### Upgrading existing OpenClaw data
 
+On Windows, upgrade repair uses the bundled npm and moves the legacy image model setting to `agents.defaults.mediaModels.image`. If you are already on 0.7.0 and startup reports `spawn npm.cmd ENOENT` or flags `imageGenerationModel` as unrecognized, follow these steps.
+
+1. Quit ClawX from the system tray. Back up your OpenClaw state directory (normally `%USERPROFILE%\.openclaw`), including the existing databases and migration backups.
+2. Open `openclaw.json` in the state directory. If `agents.defaults` contains `imageGenerationModel`, check whether it also has `mediaModels.image`. Keep any existing `mediaModels.image` value. If it is missing, create it with the entire value of `imageGenerationModel`, including any `primary`, `fallbacks`, and `timeoutMs`. Remove the old field, preserve the other media settings, and save.
+3. Using the same Windows account, open PowerShell in the folder containing `ClawX.exe`. Run `npm.cmd --version`. If Windows cannot find it, add a Node.js installation with npm to your PATH, then open a new PowerShell window in that folder and check again. Doctor may need access to the npm registry to install a configured provider such as DeepSeek.
+4. In the PowerShell window where npm reported its version, run `.\ClawX.exe`. Let the automatic Doctor repair finish and check that the Gateway is ready. If it still fails, open **Settings → Advanced → Developer → Run Doctor Fix**. Once the repair succeeds, restart the Gateway and confirm it is ready.
+
 On Windows, upgrade cleanup recognizes both drive-letter and network plugin paths left by older installations. Missing or bundled plugin paths are removed from legacy load lists; existing external plugins and relative package references are retained.
 
 For valid ClawX 0.6.1 multi-Agent configurations, upgrade preserves each Agent's effective workspace and the recorded default Agent's responsibilities. Agent settings, later Agent edits, and workspace preparation use the same runtime path rules; explicitly configured external workspaces keep their paths.

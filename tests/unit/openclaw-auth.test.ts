@@ -496,6 +496,47 @@ describe('sanitizeOpenClawConfig', () => {
     logSpy.mockRestore();
   });
 
+  it('moves the legacy image generation model and all its options before Gateway startup', async () => {
+    const image = {
+      primary: 'clawx-openai-image/qwen-image-3.0',
+      fallbacks: ['openai/gpt-image-2'],
+      timeoutMs: 180_000,
+    };
+    await writeOpenClawJson({ agents: { defaults: { imageGenerationModel: image } } });
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+
+    await sanitizeOpenClawConfig();
+    const migrated = await readOpenClawJson();
+    expect(migrated).toHaveProperty('agents.defaults.mediaModels', { image });
+    expect(migrated).not.toHaveProperty('agents.defaults.imageGenerationModel');
+
+    await sanitizeOpenClawConfig();
+    expect(await readOpenClawJson()).toEqual(migrated);
+  });
+
+  it.each([
+    { mediaModels: { video: 'provider/video' }, image: 'provider/legacy' },
+    { mediaModels: { video: 'provider/video', image: 'provider/current' }, image: 'provider/current' },
+    { mediaModels: { video: 'provider/video', image: null }, image: null },
+  ])('preserves existing media settings when migrating into $mediaModels', async ({ mediaModels, image }) => {
+    await writeOpenClawJson({ agents: { defaults: { imageGenerationModel: 'provider/legacy', mediaModels } } });
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+
+    await sanitizeOpenClawConfig();
+    const result = await readOpenClawJson();
+    expect(result).toHaveProperty('agents.defaults.mediaModels', { video: 'provider/video', image });
+    expect(result).not.toHaveProperty('agents.defaults.imageGenerationModel');
+  });
+
+  it.each([{ mediaModels: null }, { mediaModels: ['provider/video'] }])('retains malformed mediaModels $mediaModels and the legacy value for Doctor', async ({ mediaModels }) => {
+    const defaults = { imageGenerationModel: 'provider/legacy', mediaModels };
+    await writeOpenClawJson({ agents: { defaults } });
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+
+    await sanitizeOpenClawConfig();
+    expect(await readOpenClawJson()).toHaveProperty('agents.defaults', defaults);
+  });
+
   it('repairs additional legacy config keys rejected by OpenClaw 2026.10', async () => {
     await writeOpenClawJson({
       agents: {

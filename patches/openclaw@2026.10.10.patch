@@ -3691,3 +3691,13 @@ index 6ceca57..31d4aad 100644
  				const terminalReason = forcedReason;
  				settleResult(adapter);
  				const reason = terminalReason ?? (result.signal != null ? "signal" : "exit");
+diff --git a/dist/npm-install-env-B-C07WJc.mjs b/dist/npm-install-env-B-C07WJc.mjs
+--- a/dist/npm-install-env-B-C07WJc.mjs
++++ b/dist/npm-install-env-B-C07WJc.mjs
+@@ -34,4 +34,4 @@
+-/** Bun must run the packaged CLI directly; npm's executable requires Node. */
++/** Windows desktop installs ship npm with OpenClaw, separately from the executable. */
+ function resolveNpmCommand(args) {
+-	return process.versions.bun ? resolveBundledNpmCommand(args) : ["npm", ...args];
++	return process.platform === "win32" || process.versions.bun ? resolveBundledNpmCommand(args) : ["npm", ...args];
+ }

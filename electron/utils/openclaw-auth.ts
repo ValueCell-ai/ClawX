@@ -3392,11 +3392,19 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       console.log('[sanitize] Removed retired config metadata "meta.lastTouchedAt"');
     }
 
-    // OpenClaw 2026.10 owns media-provider fallback selection and rejects the
-    // legacy ClawX flag. Removing it keeps the new runtime default intact.
     const agentDefaults = isPlainRecord(config.agents) && isPlainRecord(config.agents.defaults)
       ? config.agents.defaults
       : null;
+    // Migrate the old image setting before Doctor validates the config.
+    // Leave malformed mediaModels containers intact for Doctor to diagnose.
+    if (agentDefaults && Object.hasOwn(agentDefaults, 'imageGenerationModel')
+      && (agentDefaults.mediaModels === undefined || isPlainRecord(agentDefaults.mediaModels))) {
+      writeImageGenerationModelValue(agentDefaults, readImageGenerationModelValue(agentDefaults));
+      modified = true;
+      console.log('[sanitize] Migrated legacy image generation setting to "agents.defaults.mediaModels.image"');
+    }
+    // OpenClaw 2026.10 owns media-provider fallback selection and rejects the
+    // legacy ClawX flag. Removing it keeps the new runtime default intact.
     if (agentDefaults && Object.hasOwn(agentDefaults, 'mediaGenerationAutoProviderFallback')) {
       delete agentDefaults.mediaGenerationAutoProviderFallback;
       modified = true;

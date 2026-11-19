@@ -138,6 +138,13 @@ pnpm dev
 
 ### 升级已有 OpenClaw 数据
 
+Windows 升级修复会使用内置 npm，并将旧版图像模型设置迁移到 `agents.defaults.mediaModels.image`。如果已升级到 0.7.0，启动时出现 `spawn npm.cmd ENOENT`，或提示无法识别 `imageGenerationModel`，可按以下步骤恢复。
+
+1. 从系统托盘退出 ClawX。备份整个 OpenClaw 状态目录（默认为 `%USERPROFILE%\.openclaw`），保留现有数据库和迁移备份。
+2. 打开状态目录中的 `openclaw.json`。如果 `agents.defaults` 下有旧字段 `imageGenerationModel`，先看同一处是否已有 `mediaModels` 下的 `image`。已有则沿用现有值。如果缺少此项，则创建它并填入旧字段的完整值，包含原有的 `primary`、`fallbacks`、`timeoutMs` 等设置。移除旧字段，保留其他媒体设置后保存文件。
+3. 使用平时运行 ClawX 的 Windows 账户，在包含 `ClawX.exe` 的目录打开 PowerShell，运行 `npm.cmd --version`。如果找不到命令，请将带有 npm 的 Node.js 安装目录加入 PATH，在同一目录重新打开 PowerShell 并确认版本。如果配置了 DeepSeek 等供应商，Doctor 可能需要访问 npm 软件源来安装对应插件。
+4. 在刚刚成功显示 npm 版本的 PowerShell 窗口中运行 `.\ClawX.exe`。等待 Doctor 自动修复结束，确认网关已就绪。若仍启动失败，打开 **设置 → 高级 → 开发者 → 运行 Doctor 并修复**。修复成功后重启网关，再次确认就绪状态。
+
 Windows 升级会识别旧安装遗留的盘符路径和网络插件路径，从旧版加载列表中清理已失效或指向内置插件的路径，并保留仍存在的外部插件和相对包引用。
 
 从 ClawX 0.6.1 升级时，有效的多 Agent 配置会保留各 Agent 原先实际使用的工作区，以及配置中旧默认 Agent 的职责。Agent 设置、后续 Agent 编辑和工作区准备使用一致的运行时路径规则；显式配置的外部工作区保留原路径。

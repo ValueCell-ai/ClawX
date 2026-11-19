@@ -124,6 +124,9 @@ legacy external routes for internal sessions. See
 Native Windows upgrade evidence for the independent official 0.6.1 and main
 inputs is recorded in `harness/reference/windows-sqlite-upgrade-validation-20261109.md`,
 including SQLite snapshot cleanup diagnostics and the limits of isolated probes.
+Startup migrates the legacy image model setting before Doctor validates the
+upgraded profile. On Windows, Doctor can run its npm package checks when the
+user has no system npm. See [Windows upgrade repair](../tasks/windows-upgrade-doctor-npm.md).
 
 The chat composer reads and updates session model selections through Main.
 Conversation switches, workspace changes and Agent routing must preserve the

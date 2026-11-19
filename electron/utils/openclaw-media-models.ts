@@ -1,7 +1,7 @@
 /**
  * OpenClaw 2026.10 moved `agents.defaults.imageGenerationModel` to
  * `agents.defaults.mediaModels.image` and rejects the legacy key. The legacy
- * value is still read until doctor migrates it, and every ClawX write drops it.
+ * value is still read until prelaunch migration or an explicit model write.
  */
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -13,7 +13,7 @@ export function readImageGenerationModelValue(
 ): unknown {
   if (!defaults) return undefined;
   const mediaModels = isRecord(defaults.mediaModels) ? defaults.mediaModels : undefined;
-  return mediaModels?.image ?? defaults.imageGenerationModel;
+  return mediaModels && Object.hasOwn(mediaModels, 'image') ? mediaModels.image : defaults.imageGenerationModel;
 }
 
 export function writeImageGenerationModelValue(
