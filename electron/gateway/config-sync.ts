@@ -314,7 +314,18 @@ function buildPluginSourceSignatures(configuredChannels: string[]): Record<strin
   return signatures;
 }
 
-function buildPluginMaintenanceCacheKey(openclawDir: string, configuredChannels: string[]): string {
+export function buildPluginMaintenanceCacheKey(
+  openclawDir: string,
+  configuredChannels: string[],
+  extensionsDir = join(homedir(), '.openclaw', 'extensions'),
+): string {
+  // Child directory mtimes don't change when a manifest is overwritten in place.
+  // Including installed manifests also retires keys from before descriptor repair.
+  const installedManifests: Record<string, string> = {};
+  for (const channel of configuredChannels) {
+    const plugin = CHANNEL_PLUGIN_MAP[channel];
+    if (plugin) installedManifests[channel] = pathSignature(join(extensionsDir, plugin.dirName, 'openclaw.plugin.json'));
+  }
   return buildPrelaunchMaintenanceCacheKey({
     task: 'plugin-maintenance',
     appVersion: appVersionForCache(),
@@ -322,7 +333,8 @@ function buildPluginMaintenanceCacheKey(openclawDir: string, configuredChannels:
     runtimePackage: readPluginPackageMetadata(join(openclawDir, 'package.json')),
     cwd: process.cwd(),
     configuredChannels: [...configuredChannels].sort(),
-    extensionsDir: directoryChildrenSignature(join(homedir(), '.openclaw', 'extensions')),
+    extensionsDir: directoryChildrenSignature(extensionsDir),
+    installedManifests,
     sourceSignatures: buildPluginSourceSignatures(configuredChannels),
   });
 }
