@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -55,6 +55,33 @@ describe('replacePluginMirror', () => {
     const stagingRoot = join(openclawDir, '.clawx-plugin-staging');
     return existsSync(stagingRoot) ? readdirSync(stagingRoot) : [];
   }
+
+  it.each([
+    ['@wecom/wecom-openclaw-plugin', 'wecom', 'wecom', 20],
+    ['@dingtalk-real-ai/dingtalk-connector', 'dingtalk', 'dingtalk', 20],
+    ['@openclaw/feishu', 'feishu-openclaw-plugin', 'feishu', 30],
+    ['@tencent-weixin/openclaw-weixin', 'openclaw-weixin', 'openclaw-weixin', 100],
+  ] as const)('repairs the same-version %s channel descriptor in place', async (npmName, dirName, channel, cap) => {
+    const upstream = join(process.cwd(), 'node_modules', npmName);
+    const installed = join(home.path, '.openclaw', 'extensions', dirName);
+    mkdirSync(installed, { recursive: true });
+    for (const name of ['openclaw.plugin.json', 'package.json']) {
+      copyFileSync(join(upstream, name), join(installed, name));
+    }
+    const manifestPath = join(installed, 'openclaw.plugin.json');
+    const { ensurePluginInstalled } = await import('@electron/utils/plugin-install');
+    expect(await ensurePluginInstalled(dirName, [upstream], channel)).toMatchObject({ installed: true });
+    const descriptor = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    expect(descriptor.id).toBe(channel);
+    expect(descriptor.channelConfigs[channel]).toMatchObject({ outboundMediaMaxMb: cap, schema: { type: 'object' } });
+    expect(descriptor.channelConfigs['dingtalk-connector']).toBeUndefined();
+
+    // A subsequent plugin release can supply its own budget.
+    descriptor.channelConfigs[channel].outboundMediaMaxMb = 11;
+    writeFileSync(manifestPath, JSON.stringify(descriptor));
+    expect(await ensurePluginInstalled(dirName, [upstream], channel)).toMatchObject({ installed: true });
+    expect(JSON.parse(readFileSync(manifestPath, 'utf8')).channelConfigs[channel].outboundMediaMaxMb).toBe(11);
+  });
 
   it('swaps in a complete mirror and removes the previous one', async () => {
     writeMirror(targetDir, '1.0.0');
@@ -122,10 +149,11 @@ describe('replacePluginMirror', () => {
       writeFileSync(join(dir, 'openclaw.plugin.json'), JSON.stringify({ id: 'wecom' }));
       writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: '@wecom/wecom-openclaw-plugin', version }));
     }
-    persist.mockImplementationOnce(() => { throw new Error('disk full'); });
+    persist.mockImplementation(() => { throw new Error('disk full'); });
     const { ensurePluginInstalled } = await import('@electron/utils/plugin-install');
     expect(await ensurePluginInstalled('wecom', [source], 'WeCom')).toMatchObject({ installed: false });
     expect(JSON.parse(readFileSync(join(target, 'package.json'), 'utf8')).version).toBe('2026.8.17');
+    persist.mockReturnValue(true);
     expect(await ensurePluginInstalled('wecom', [source], 'WeCom')).toMatchObject({ installed: true });
     expect(JSON.parse(readFileSync(join(target, 'package.json'), 'utf8')).version).toBe('2026.10.30');
   });
