@@ -356,13 +356,13 @@ describe('snapshot-backed scheduled worker deadlines', () => {
     getClawxMigratedLauncher: (job: Json) => { command: string; timeoutSeconds: number } | undefined;
   };
 
-  async function timeoutFixture() {
+  async function timeoutFixture(historicalSeconds = 60) {
     const f = await fixture();
     const command = 'uv run python "C:\\Scheduled Jobs\\legacy.py" --start --timeout-seconds 900';
-    f.job.payload = { kind: 'agentTurn', message: '启动独立 worker：' + command, timeoutSeconds: 60 };
+    f.job.payload = { kind: 'agentTurn', message: '启动独立 worker：' + command, timeoutSeconds: historicalSeconds };
     const definition = structuredClone(f.job);
     delete definition.agentId;
-    const launcher = { command, timeoutSeconds: 3600 };
+    const launcher = { command, timeoutSeconds: historicalSeconds === 60 ? 3600 : historicalSeconds };
     const manifestPath = path.join(homes.at(-1)!, 'workers.json');
     await writeFile(manifestPath, JSON.stringify({ version: 1, jobs: [{ definition, jobId: f.job.id, agentId: 'main', ...launcher }] }));
     f.job.inferenceBinding = f.binding;
@@ -378,8 +378,42 @@ describe('snapshot-backed scheduled worker deadlines', () => {
     const run = () => timeouts.migrateClawxCronTimeouts({
       cron: { readJob: f.cron.readJob, updateWithPrecondition: update }, env: { CLAWX_CRON_TIMEOUT_MIGRATION_MANIFEST: manifestPath }, log: f.log,
     });
-    return { ...f, launcher, run, update };
+    return { ...f, launcher, manifestPath, run, update };
   }
+
+  it('registers an unchanged custom timeout across starts and respects a later edit', async () => {
+    const f = await timeoutFixture(600);
+    const original = structuredClone(f.job);
+    for (let start = 0; start < 2; start++) {
+      await f.run();
+      expect(timeouts.getClawxMigratedLauncher(f.job)).toEqual(f.launcher);
+      expect(f.job).toEqual(original);
+    }
+    f.job.payload.timeoutSeconds = 450;
+    expect(timeouts.getClawxMigratedLauncher(f.job)).toBeUndefined();
+    await f.run();
+    expect(timeouts.getClawxMigratedLauncher(f.job)).toBeUndefined();
+    expect(f.job.payload.timeoutSeconds).toBe(450);
+    expect(f.update).not.toHaveBeenCalled();
+  });
+
+  it('preserves an existing receipt when a custom timeout snapshot claims the same job', async () => {
+    const f = await timeoutFixture();
+    await f.run();
+    const original = await readFile(f.manifestPath, 'utf8');
+    const conflicting = JSON.parse(original);
+    conflicting.jobs[0].timeoutSeconds = 600;
+    conflicting.jobs[0].definition.payload.timeoutSeconds = 600;
+    f.job.payload.timeoutSeconds = 600;
+    await writeFile(f.manifestPath, JSON.stringify(conflicting));
+    await f.run();
+    expect(timeouts.getClawxMigratedLauncher(f.job)).toBeUndefined();
+    await writeFile(f.manifestPath, original);
+    f.job.payload.timeoutSeconds = 3600;
+    await f.run();
+    expect(timeouts.getClawxMigratedLauncher(f.job)).toEqual(f.launcher);
+    expect(f.update).toHaveBeenCalledOnce();
+  });
 
   it('changes only the deadline once, restores the exact launcher across starts, and respects a later manual change back to 60', async () => {
     const f = await timeoutFixture();

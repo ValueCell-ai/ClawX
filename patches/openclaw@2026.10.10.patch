@@ -3580,10 +3580,10 @@ index 0000000..8ab59a4
 +}
 diff --git a/dist/clawx-cron-timeout-migration.mjs b/dist/clawx-cron-timeout-migration.mjs
 new file mode 100644
-index 0000000..78fb0e1
+index 0000000..09ab728
 --- /dev/null
 +++ b/dist/clawx-cron-timeout-migration.mjs
-@@ -0,0 +1,88 @@
+@@ -0,0 +1,90 @@
 +import { createHash } from "node:crypto";
 +import { readFile } from "node:fs/promises";
 +import { DatabaseSync } from "node:sqlite";
@@ -3614,7 +3614,8 @@ index 0000000..78fb0e1
 +async function applyTimeout(cron, entry, db) {
 +	const { definition, jobId, command, timeoutSeconds } = entry;
 +	if (!definition || definition.id !== jobId || typeof command !== "string" || !command || !definition.payload?.message?.includes(command) ||
-+		!Number.isSafeInteger(timeoutSeconds) || timeoutSeconds <= 0 || timeoutSeconds > MAX_TIMER_TIMEOUT_SECONDS || ![undefined, 60].includes(definition.payload.timeoutSeconds)) return false;
++		!Number.isSafeInteger(timeoutSeconds) || timeoutSeconds <= 0 || timeoutSeconds > MAX_TIMER_TIMEOUT_SECONDS ||
++		![undefined, 60, timeoutSeconds].includes(definition.payload.timeoutSeconds)) return false;
 +	const job = await cron.readJob(jobId);
 +	if (!job || !isRuntimeToolAllowed("exec", job.payload?.toolsAllow)) return false;
 +	const revision = resolveCronJobConfigRevision(job);
@@ -3633,6 +3634,7 @@ index 0000000..78fb0e1
 +	}
 +	if (receipt && (receipt.original_revision !== revision || receipt.updated_at !== job.updatedAtMs)) return false;
 +	if (!matchesSnapshot(job, definition, entry.agentId)) return false;
++	if (job.payload.timeoutSeconds === timeoutSeconds) return remember(revision);
 +	const updated = { ...job, payload: { ...job.payload, timeoutSeconds } };
 +	const targetRevision = resolveCronJobConfigRevision(updated);
 +	// Record the intent before the native write. If the app is interrupted, resume only the same revision.

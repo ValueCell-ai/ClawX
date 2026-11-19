@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { lstat, mkdir, readFile, realpath, rename, writeFile } from 'node:fs/promises';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, posix, relative, resolve, sep, win32 } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { homedir } from 'node:os';
 import JSON5 from 'json5';
@@ -65,23 +65,63 @@ export async function openCronSnapshot(snapshotDir: string) {
   }
   const hasTable = (db: DatabaseSync, name: string) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name);
   const configFile = files.find(file => /^config[/\\][^/\\]+$/.test(file));
-  const loadJobs = async () => {
+  const loadJobs = async (cfg: RecordValue) => {
+    const stateDir = string(manifest.stateDir);
+    const paths = stateDir && /^(?:[a-z]:[\\/]|\\\\)/i.test(stateDir) ? win32 : posix;
+    const stateStore = stateDir && paths.join(stateDir, 'cron', 'jobs.json');
+    const configPath = string(manifest.configPath);
+    const recordedDefault = string(manifest.defaultCronStorePath);
+    // Older v2 markers did not record which environment override won. Either
+    // directory could have supplied the default partition when they differ.
+    const ambiguousDefault = !recordedDefault && !!stateDir && !!configPath
+      && paths.dirname(configPath) !== paths.normalize(stateDir);
+    let selected = string(record(cfg.cron).store);
+    const activeStore = (selection?: string) => {
+      const candidate = selection ?? recordedDefault ?? (ambiguousDefault ? undefined : stateStore);
+      if (!candidate) return;
+      // OpenClaw resolves relative and home-prefixed keys at launch. The legacy
+      // snapshot does not record that launch's working directory or home.
+      if (paths === win32 && !/^(?:[a-z]:[\\/]|[\\/]{2}[^\\/]+[\\/][^\\/]+)/i.test(candidate)) return;
+      return paths.isAbsolute(candidate) ? paths.resolve(candidate) : undefined;
+    };
     const stateFile = find('state-files/state/openclaw.sqlite');
     if (stateFile) {
       const stored = await database(stateFile, db => {
-        if (!hasTable(db, 'cron_jobs')) return undefined;
-        const columns = db.prepare("PRAGMA table_info(cron_jobs)").all();
-        return { jobs: db.prepare('SELECT job_json FROM cron_jobs').all().map(row => record(JSON.parse(String(row.job_json)))),
-          legacy: columns.some(column => column.name === 'payload_timeout_seconds') };
+        const columns = db.prepare('PRAGMA table_info(cron_jobs)').all();
+        const legacy = columns.some(column => column.name === 'payload_timeout_seconds');
+        if (!selected && hasTable(db, 'config_machine_state')) {
+          const row = db.prepare("SELECT value_json FROM config_machine_state WHERE state_key='cron.store'").get();
+          if (typeof row?.value_json === 'string') selected = string(JSON.parse(row.value_json));
+        }
+        if (!columns.length) return undefined;
+        if (!selected && ambiguousDefault) return { jobs: [], legacy };
+        // Partitioned databases key a job by (store_key, job_id). A previous
+        // profile or cron.store can leave a valid but inactive copy of that ID.
+        const rows = columns.some(column => column.name === 'store_key')
+          ? db.prepare('SELECT job_json FROM cron_jobs WHERE store_key=?').all(activeStore(selected) ?? null)
+          : db.prepare('SELECT job_json FROM cron_jobs').all();
+        return { jobs: rows.map(row => record(JSON.parse(String(row.job_json)))), legacy };
       });
       if (stored) return stored;
     }
-    const cronFile = find('state-files/cron/jobs.json');
+    const storePath = activeStore(selected);
+    const usesStateJson = !selected && !ambiguousDefault && (!recordedDefault || (!!storePath && storePath === stateStore));
+    let cronFile = usesStateJson ? find('state-files/cron/jobs.json') : undefined;
+    if (!cronFile && storePath && Array.isArray(manifest.restoreRoots)) {
+      for (const entry of manifest.restoreRoots.map(record)) {
+        if (!entry.existed || typeof entry.source !== 'string' || typeof entry.backup !== 'string') continue;
+        const suffix = paths.relative(entry.source, storePath);
+        if (suffix && (!entry.directory || paths.isAbsolute(suffix) || suffix === '..' || suffix.startsWith('..' + paths.sep))) continue;
+        const captured = posix.join(entry.backup.replaceAll('\\', '/'), suffix.split(paths.sep).join('/'));
+        cronFile = find(captured);
+        if (cronFile) break;
+      }
+    }
     const data = cronFile ? await json(cronFile) : {};
     return { jobs: Array.isArray(data.jobs) ? data.jobs.map(record) : [], legacy: !!cronFile };
   };
   let jobs: ReturnType<typeof loadJobs> | undefined;
-  const readJobs = () => jobs ??= loadJobs();
+  const readJobs = (cfg: RecordValue) => jobs ??= loadJobs(cfg);
   return { root, manifest, within, find, json, database, hasTable, configFile, readJobs };
 }
 
@@ -110,7 +150,7 @@ export async function prepareCronInferenceMigration(snapshotDir: string, snapsho
   const cfg = await json(configFile);
   const { agents, defaults, defaultId } = historicalAgentConfig(cfg);
   const stateFile = find('state-files/state/openclaw.sqlite');
-  const { jobs } = await readJobs();
+  const { jobs } = await readJobs(cfg);
   let sharedProfiles: RecordValue | undefined;
   if (stateFile) await database(stateFile, db => {
     const owner = cell(db, 'auth.sharedStore');
@@ -264,7 +304,12 @@ function legacyWorkerLauncher(job: RecordValue): { command: string; timeoutSecon
   if (candidates.length !== 1 || !string(job.id)) return;
   const command = candidates[0];
   const current = payload.timeoutSeconds;
-  if (current !== undefined && current !== 60) return;
+  if (current !== undefined && current !== 60) {
+    if (typeof current === 'number' && Number.isSafeInteger(current) && current > 0 && current <= MAX_CRON_TIMER_SECONDS) {
+      return { command, timeoutSeconds: current };
+    }
+    return;
+  }
   // Only an explicitly named overall or exec-tool deadline is evidence of a larger budget.
   // Script options for refresh, delivery and retry phases do not describe the whole job.
   const budgets = [
@@ -282,7 +327,7 @@ export async function prepareCronTimeoutMigration(snapshotDir: string, snapshot 
   const parts = version?.match(/^(\d{4})\.(\d{1,2})\.(\d{1,2})(?:[-+.]|$)/);
   const datedVersion = parts ? Number(parts[1]) * 10000 + Number(parts[2]) * 100 + Number(parts[3]) : undefined;
   if (datedVersion !== undefined && datedVersion >= 20261010) return { eligible: 0 };
-  const { jobs, legacy } = await readJobs();
+  const { jobs, legacy } = await readJobs(cfg);
   if (datedVersion === undefined && !legacy) return { eligible: 0 };
   const { defaultId } = historicalAgentConfig(cfg);
   const entries = jobs.flatMap(definition => {

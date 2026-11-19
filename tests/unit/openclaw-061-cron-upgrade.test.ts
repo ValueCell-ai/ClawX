@@ -26,6 +26,7 @@ it('upgrades real 0.6.1 cron storage through doctor and two Gateway starts', asy
   // Windows state ownership accepts a private profile child; shared Temp may inherit broader ACLs.
   const home = await mkdtemp(join(process.platform === 'win32' ? homedir() : tmpdir(), 'clawx-061-cron-'));
   const stateDir = join(home, '.openclaw');
+  const storeKey = join(stateDir, 'cron', 'jobs.json');
   const configPath = join(stateDir, 'openclaw.json');
   const dbPath = join(stateDir, 'state', 'openclaw.sqlite');
   const env: NodeJS.ProcessEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
@@ -56,13 +57,17 @@ it('upgrades real 0.6.1 cron storage through doctor and two Gateway starts', asy
     let jobs: Job[];
     try {
       // v0.6.1 indexed jobs by the absolute store path of the originating profile.
-      old.prepare('UPDATE cron_jobs SET store_key=?').run(join(stateDir, 'cron', 'jobs.json'));
+      old.prepare('UPDATE cron_jobs SET store_key=?').run(storeKey);
       jobs = old.prepare('SELECT job_json FROM cron_jobs ORDER BY job_id').all().map(row => JSON.parse(String(row.job_json)));
+      // A previous store can retain a job with the same ID as the active store.
+      old.exec("CREATE TEMP TABLE previous_launcher AS SELECT * FROM cron_jobs WHERE job_id='legacy-launcher'");
+      old.prepare('UPDATE previous_launcher SET store_key=?').run(join(home, 'previous', 'cron', 'jobs.json'));
+      old.exec('INSERT INTO cron_jobs SELECT * FROM previous_launcher');
     } finally { old.close(); }
 
     const snapshot = await ensureOpenClawUpgradeSnapshot({ stateDir, configPath });
     const manifest = await prepareCronTimeoutMigration(snapshot.snapshotDir);
-    expect(manifest.eligible).toBe(1);
+    expect(manifest.eligible).toBe(2);
     expect(manifest.manifestPath).toBeTruthy();
     env.CLAWX_CRON_TIMEOUT_MIGRATION_MANIFEST = manifest.manifestPath;
     await cli(process.execPath, [entry, 'doctor', '--fix', '--yes', '--non-interactive'], { cwd: home, env, timeout: 240_000 });
@@ -87,7 +92,7 @@ it('upgrades real 0.6.1 cron storage through doctor and two Gateway starts', asy
         await expect.poll(() => {
           const db = new DatabaseSync(dbPath, { readOnly: true });
           try {
-            const row = db.prepare('SELECT job_json FROM cron_jobs WHERE job_id=?').get('legacy-launcher');
+            const row = db.prepare('SELECT job_json FROM cron_jobs WHERE store_key=? AND job_id=?').get(storeKey, 'legacy-launcher');
             return row && JSON.parse(String(row.job_json)).payload.timeoutSeconds;
           } finally { db.close(); }
         }, { timeout: 120_000, interval: 150 }).toBe(3600);
