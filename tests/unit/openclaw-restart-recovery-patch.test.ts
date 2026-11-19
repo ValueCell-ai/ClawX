@@ -470,14 +470,17 @@ describe('OpenClaw restart recovery contract', () => {
 
   it('keeps every patched runtime JavaScript chunk syntactically valid', async () => {
     const patch = await readFile(path.join(root, PATCH_PATH), 'utf8');
-    const files = [...patch.matchAll(/^diff --git a\/(dist\/[^ ]+) b\//gm)].map((match) => match[1])
-      .filter(file => /\.(?:mjs|cjs|js)$/.test(file));
+    const chunks = [...patch.matchAll(/^diff --git a\/(dist\/[^ ]+) b\//gm)].map(match => match[1]);
+    const files = [...new Set(chunks.filter(file => /\.(?:mjs|cjs|js)$/.test(file)))];
     expect(files.length).toBeGreaterThan(0);
-    for (const file of new Set(files)) {
-      await expect(execFileAsync(process.execPath, [
-        '--check',
-        path.join(root, 'node_modules/openclaw', file),
-      ])).resolves.toMatchObject({ stderr: '' });
+
+    // One patch may touch a chunk more than once. Limit concurrent Node launches on CI.
+    const batchSize = 4;
+    for (let index = 0; index < files.length; index += batchSize) {
+      await Promise.all(files.slice(index, index + batchSize).map(file =>
+        expect(execFileAsync(process.execPath, ['--check', path.join(root, 'node_modules/openclaw', file)]))
+          .resolves.toMatchObject({ stderr: '' }),
+      ));
     }
-  }, 60_000); // One Node syntax check per patched chunk, including on loaded CI runners.
+  }, 30_000);
 });

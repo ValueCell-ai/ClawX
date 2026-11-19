@@ -170,6 +170,8 @@ Windows でのアップグレード時に、ClawX はワーカーを起動して
 
 公式 Discord、Feishu、WhatsApp は `2026.10.10` に統一します。WeCom は新しい設定 API に対応する `2026.10.30`、DingTalk は `0.8.26`、Weixin は `2.4.10` です。Feishu の移行処理は main と同じです。
 
+ゲートウェイが送信待ちの添付ファイルを保存する際は、アカウント、チャネル、エージェントのデフォルト設定の順でサイズ上限を適用します。すべて未設定の場合、アップグレード後の一時保存上限は WeCom と DingTalk が 20 MiB、Feishu が 30 MiB、Weixin が 100 MiB です。アップロード時には、各チャネルのファイル種別ごとの制限も適用されます。
+
 OpenClaw 2026.10.5 では 2 つのチャネルプラグインの提供元が変わり、ClawX は最初の Gateway 起動前に両方を移行します。QQ ボットは `@openclaw/qqbot` から Tencent QQBot 2.0（`@tencent-connect/openclaw-qqbot`、プラグイン id `openclaw-qqbot`）に切り替わり、デフォルトアカウントは `channels.qqbot` の最上位に移動します。開放されていた DM は承認マーカー `openclaw:approval-disabled` を使って開放のまま維持されます。承認、シークレットファイル、グループコマンドのポリシーを含む QQ ボット設定は OpenClaw Doctor に任せます。Feishu は `@larksuite/openclaw-lark` から公式の `@openclaw/feishu` に切り替わり、アプリの認証情報はそのまま使えます。公式プラグインの Feishu ツールは 39 個から 14 個になり、カレンダー、タスク、ユーザー OAuth、シート、検索のツールは使えなくなります。
 
 OpenClaw 2026.10 は、公式インストールではないプラグインの機能について同意を求めます。ClawX は同梱プラグイン（DingTalk、WeCom、Feishu、QQ ボット、OpenAI 画像リレー）が有効な場合、Gateway 起動前に `openclaw plugins enable --accept-capabilities` を実行して同意を記録します。これはこれらのプラグインのインストールまたはアップグレード後にのみ行われ、その起動はプラグインごとに約 10 秒長くなります。ClawX は無効にしたプラグインを有効にせず、ユーザーが自分でインストールしたプラグインの機能には同意しません。

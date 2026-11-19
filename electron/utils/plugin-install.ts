@@ -253,9 +253,10 @@ function ensureDingTalkWsPackage(targetDir: string): string | null {
  * known manifest-ID mismatches so the Gateway can load the plugin.
  * Also keeps package.json npm metadata usable by OpenClaw's repair planner.
  */
-export function fixupPluginManifest(targetDir: string): void {
+export function fixupPluginManifest(targetDir: string, pluginDirName = path.basename(targetDir)): void {
   // 1. Fix openclaw.plugin.json id
   const manifestPath = join(targetDir, 'openclaw.plugin.json');
+  let updatedManifest: string | undefined;
   try {
     const raw = readFileSync(fsPath(manifestPath), 'utf-8');
     const manifest = JSON.parse(raw);
@@ -291,12 +292,28 @@ export function fixupPluginManifest(targetDir: string): void {
       logger.info('[plugin] Added WeCom channelConfigs compatibility descriptor');
     }
 
+    // Add a default to the installed channel descriptor after ID remapping.
+    // Operator limits live in openclaw.json; a connector's own declaration wins.
+    const definition = TRUSTED_OFFICIAL_EXTENSION_PLUGINS[pluginDirName];
+    const descriptor = manifest.channelConfigs?.[manifest.id];
+    if (definition?.outboundMediaMaxMb && manifest.id === (definition.pluginId ?? pluginDirName)
+      && descriptor && typeof descriptor === 'object' && !Array.isArray(descriptor)
+      && !Object.hasOwn(descriptor, 'outboundMediaMaxMb')) {
+      const packageName = readPluginName(join(targetDir, 'package.json'));
+      if (packageName === definition.npmName || (manifest.id === 'wecom' && packageName === '@wecom/wecom')) {
+        descriptor.outboundMediaMaxMb = definition.outboundMediaMaxMb;
+        modified = true;
+      }
+    }
+
     if (modified) {
-      writeFileSync(fsPath(manifestPath), JSON.stringify(manifest, null, 2) + '\n', 'utf-8');
+      updatedManifest = JSON.stringify(manifest, null, 2) + '\n';
     }
   } catch {
     // manifest may not exist yet — ignore
   }
+  // Let install/prelaunch retry if the updated descriptor could not be saved.
+  if (updatedManifest !== undefined) writeFileSync(fsPath(manifestPath), updatedManifest, 'utf-8');
 
   // 2. Keep package.json package-manager metadata valid
   const pkgPath = join(targetDir, 'package.json');
@@ -513,6 +530,8 @@ const PLUGIN_NPM_NAMES: Record<string, string> = {
  */
 type TrustedOfficialExtensionPlugin = {
   npmName: string;
+  /** Default outbound attachment budget advertised by the managed mirror, in MiB. */
+  outboundMediaMaxMb?: number;
   /** Effective manifest/config id when it differs from the mirror directory. */
   pluginId?: string;
   /** Path records keep OpenClaw from replacing a ClawX-patched mirror. */
@@ -523,6 +542,7 @@ type TrustedOfficialExtensionPlugin = {
 const TRUSTED_OFFICIAL_EXTENSION_PLUGINS: Record<string, TrustedOfficialExtensionPlugin> = {
   dingtalk: {
     npmName: DINGTALK_OFFICIAL_NPM,
+    outboundMediaMaxMb: 20,
     pluginId: DINGTALK_PLUGIN_ID,
     recordSource: 'path',
     legacyPluginIds: [DINGTALK_OFFICIAL_PLUGIN_ID],
@@ -533,6 +553,7 @@ const TRUSTED_OFFICIAL_EXTENSION_PLUGINS: Record<string, TrustedOfficialExtensio
   // replace the compatibility-patched mirror with the raw npm package.
   wecom: {
     npmName: '@wecom/wecom-openclaw-plugin',
+    outboundMediaMaxMb: 20,
     recordSource: 'path',
     legacyPluginIds: ['wecom-openclaw-plugin'],
   },
@@ -542,6 +563,7 @@ const TRUSTED_OFFICIAL_EXTENSION_PLUGINS: Record<string, TrustedOfficialExtensio
   // @larksuite/openclaw-lark main-entry workaround.
   'feishu-openclaw-plugin': {
     npmName: '@openclaw/feishu',
+    outboundMediaMaxMb: 30,
     pluginId: 'feishu',
     recordSource: 'path',
     legacyPluginIds: ['openclaw-lark', 'feishu-openclaw-plugin'],
@@ -557,7 +579,9 @@ const TRUSTED_OFFICIAL_EXTENSION_PLUGINS: Record<string, TrustedOfficialExtensio
     recordSource: 'path',
     legacyPluginIds: [...QQBOT_LEGACY_PLUGIN_IDS],
   },
-  'openclaw-weixin': { npmName: '@tencent-weixin/openclaw-weixin' },
+  // Weixin delegates upload admission to the CDN. Use OpenClaw's document
+  // budget here, rather than interpreting the inbound cache limit as a send limit.
+  'openclaw-weixin': { npmName: '@tencent-weixin/openclaw-weixin', outboundMediaMaxMb: 100 },
   'clawx-openai-image': {
     npmName: 'clawx-openai-image-plugin',
     recordSource: 'path',
@@ -1082,7 +1106,7 @@ export async function ensurePluginInstalled(
   async function publish(populate: (stagedDir: string) => void): Promise<PluginInstallResult> {
     const transaction = replacePluginMirror(targetDir, (stagedDir) => {
       populate(stagedDir);
-      fixupPluginManifest(stagedDir);
+      fixupPluginManifest(stagedDir, pluginDirName);
       if (TRUSTED_OFFICIAL_EXTENSION_PLUGINS[pluginDirName]
         && !buildTrustedOfficialPluginInstallRecord(pluginDirName, stagedDir)) {
         throw new Error(`Invalid bundled ${pluginLabel} identity`);

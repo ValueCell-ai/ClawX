@@ -8,7 +8,6 @@ touchedAreas:
   - patches/openclaw@2026.10.10.patch
   - pnpm-lock.yaml
   - tests/unit/openclaw-*cron*.test.ts
-  - tests/unit/openclaw-restart-recovery-patch.test.ts
   - electron/gateway/**
   - electron/utils/openclaw-cron*.ts
   - tests/unit/config-sync.test.ts
