@@ -6,7 +6,7 @@ import { getUvMirrorEnv } from '../utils/uv-env';
 import { isPythonReady, setupManagedPython } from '../utils/uv-setup';
 import { logger } from '../utils/logger';
 import { prependPathEntry } from '../utils/env-path';
-import { forkOpenClawUtilityProcess } from '../utils/openclaw-utility-process';
+import { launchOpenClawCommandProcess } from '../utils/openclaw-cli';
 import { probeGatewayReady } from './ws-client';
 import { LifecycleSupersededError } from './lifecycle-controller';
 
@@ -329,7 +329,7 @@ export async function runOpenClawDoctorRepair(options: {
       OPENCLAW_NO_RESPAWN: '1',
     };
 
-    const child = forkOpenClawUtilityProcess(entryScript, doctorArgs, {
+    const child = launchOpenClawCommandProcess(entryScript, doctorArgs, {
       cwd: openclawDir,
       stdio: 'pipe',
       env: forkEnv as NodeJS.ProcessEnv,
@@ -376,7 +376,7 @@ export async function runOpenClawDoctorRepair(options: {
       }
     });
 
-    child.on('exit', (code: number) => {
+    child.on('exit', (code: number | null) => {
       clearTimeout(timeout);
       if (settled) return;
       if (code === 0) {
