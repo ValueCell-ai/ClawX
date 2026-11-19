@@ -2949,20 +2949,51 @@ diff --git a/dist/service-pOwE_Xvo.mjs b/dist/service-pOwE_Xvo.mjs
  			if (generation !== this.state.lifecycleGeneration) {
  				stop(this.state);
 diff --git a/dist/server-cron-BOAcxlHX.mjs b/dist/server-cron-BOAcxlHX.mjs
+index 00e5319..c0cc69e 100644
 --- a/dist/server-cron-BOAcxlHX.mjs
 +++ b/dist/server-cron-BOAcxlHX.mjs
-@@ -3352,6 +3352,11 @@
+@@ -1,4 +1,6 @@
+ import { c as normalizeOptionalLowercaseString, l as normalizeOptionalString } from "./string-coerce-1VuiLaaR.mjs";
++import { runClawxCronJob } from "./clawx-cron-run-context.mjs";
++import { getClawxMigratedLauncher } from "./clawx-cron-timeout-migration.mjs";
+ import { h as finiteSecondsToTimerSafeMilliseconds } from "./number-coercion-CkhMiRw8.mjs";
+ import { d as toErrorObject } from "./error-coercion-BwMr25F8.mjs";
+ import { a as resolveGlobalSingleton } from "./global-singleton-DrXvEBww.mjs";
+@@ -3352,6 +3354,16 @@ function buildGatewayCronService(params) {
  		}
  	};
  	const cron = new CronService({
 +		beforeStart: async () => {
-+			if (!env.CLAWX_CRON_MIGRATION_MANIFEST) return;
-+			const { migrateClawxCronInference } = await import("./clawx-cron-inference-migration.mjs");
-+			await migrateClawxCronInference({ cron, getConfig: readRuntimeConfig, env, log: cronLogger });
++			if (env.CLAWX_CRON_MIGRATION_MANIFEST) {
++				const { migrateClawxCronInference } = await import("./clawx-cron-inference-migration.mjs");
++				await migrateClawxCronInference({ cron, getConfig: readRuntimeConfig, env, log: cronLogger });
++			}
++			if (env.CLAWX_CRON_TIMEOUT_MIGRATION_MANIFEST) {
++				const { migrateClawxCronTimeouts } = await import("./clawx-cron-timeout-migration.mjs");
++				await migrateClawxCronTimeouts({ cron, env, log: cronLogger });
++			}
 +		},
  		scheduler: params.scheduler,
  		storePath,
  		cronEnabled,
+@@ -3415,7 +3427,7 @@ function buildGatewayCronService(params) {
+ 			const { job } = request;
+ 			const { agentId, cfg: runtimeConfig } = resolveCronAgent(job.agentId);
+ 			const sessionKey = resolveCronSessionTargetSessionKey(job.sessionTarget) ?? `cron:${job.id}`;
+-			return await runCronIsolatedAgentTurn({
++			return await runClawxCronJob({
+ 				...request,
+ 				cfg: runtimeConfig,
+ 				deps: params.deps,
+@@ -3423,7 +3435,7 @@ function buildGatewayCronService(params) {
+ 				sessionKey,
+ 				trigger: "cron",
+ 				lane: "cron"
+-			});
++			}, runCronIsolatedAgentTurn, getClawxMigratedLauncher(job));
+ 		},
+ 		runCommandJob: async ({ job, abortSignal, deliveryAttemptFence }) => {
+ 			const result = await runCronCommandJob({
 diff --git a/dist/model-selection-bKuk9voj.mjs b/dist/model-selection-bKuk9voj.mjs
 --- a/dist/model-selection-bKuk9voj.mjs
 +++ b/dist/model-selection-bKuk9voj.mjs
@@ -3093,13 +3124,16 @@ diff --git a/dist/authorization-DKL02XyX.mjs b/dist/authorization-DKL02XyX.mjs
  				await execution.prepare({
  					assertCurrent,
 diff --git a/dist/postinstall-inventory.json b/dist/postinstall-inventory.json
+index fa0d799..480999e 100644
 --- a/dist/postinstall-inventory.json
 +++ b/dist/postinstall-inventory.json
-@@ -1118,6 +1118,7 @@
+@@ -1118,6 +1118,9 @@
    "dist/claws-removal-journal-DnhsGbTc.mjs",
    "dist/claws-update-cli.runtime-CjtDlU-J.mjs",
    "dist/claws-update-cli.runtime.js",
 +  "dist/clawx-cron-inference-migration.mjs",
++  "dist/clawx-cron-run-context.mjs",
++  "dist/clawx-cron-timeout-migration.mjs",
    "dist/cleanup-DW96Zyc2.mjs",
    "dist/cleanup-DsPdoD3K.mjs",
    "dist/cleanup-JDubYhxM.mjs",
@@ -3387,3 +3421,273 @@ diff --git a/dist/tools-invoke-DGTW5Yi2.mjs b/dist/tools-invoke-DGTW5Yi2.mjs
  				not_found: "not_found",
  				tool_call_blocked: "forbidden",
  				tool_error: "internal_error"
+diff --git a/dist/bash-tools-B7jTXO_k.mjs b/dist/bash-tools-B7jTXO_k.mjs
+index f8bae0b..73b2a8b 100644
+--- a/dist/bash-tools-B7jTXO_k.mjs
++++ b/dist/bash-tools-B7jTXO_k.mjs
+@@ -93,6 +93,7 @@ import { o as buildExecApprovalUnavailableReplyPayload } from "./exec-approval-r
+ import { o as registerExecApprovalFollowupRuntimeHandoff } from "./bash-tools.exec-approval-followup-state-BqTxtUdJ.mjs";
+ import { n as rejectUnsafeExecControlShellCommand, r as rejectUnsafeExecLiveStateSqliteShellCommand } from "./exec-control-command-guard-Cj791Bpi.mjs";
+ import { t as lookupCronRunExecSource } from "./cron-run-exec-source-BYare2tS.mjs";
++import { getClawxCronLauncher } from "./clawx-cron-run-context.mjs";
+ import { t as buildCronExecOperationBinding } from "./operator-approval-standing-grants-BD1yAf5B.mjs";
+ import { g as validateCronStandingGrant, t as consumeCronStandingGrant } from "./operator-approval-store-BmYTnAFR.mjs";
+ import { t as parsePreparedSystemRunPayload } from "./system-run-approval-context-CfP7XGQk.mjs";
+@@ -1278,6 +1279,7 @@ async function processGatewayAllowlist(params) {
+ 							workdir: params.workdir,
+ 							env: params.env,
+ 							secretEgressBindings: params.secretEgressBindings,
++							clawxCronLauncher: params.clawxCronLauncher,
+ 							githubProfileDir: params.githubProfileDir,
+ 							pathPrepend: params.pathPrepend,
+ 							sandbox: void 0,
+@@ -3722,10 +3724,13 @@ function createExecTool(defaults) {
+ 					notifyOnExit
+ 				});
+ 				if (!workdir) throw new Error("exec internal error: local execution requires a resolved workdir");
++				let clawxCronLauncher = host === "gateway" && process.platform === "win32" && !secretEgressEnabled ? getClawxCronLauncher(defaults, params, defaultTimeoutSec) : void 0;
++				if (clawxCronLauncher && params.workdir && workdir !== resolveExistingHostWorkdir(defaults?.cwd ?? safeCurrentCwd())) clawxCronLauncher = void 0;
+ 				const githubProfileDir = host === "gateway" && preparedRunEnvironment.managedLocalIdentity ? preparedRunEnvironment.localIdentityEnv.GH_CONFIG_DIR : void 0;
+ 				if (host === "gateway" && !bypassApprovals) {
+ 					gatewayApproval = await processGatewayAllowlist({
+ 						...hostApprovalParams(),
++						clawxCronLauncher,
+ 						workdir,
+ 						secretEgressBindings,
+ 						githubProfileDir,
+@@ -3762,6 +3767,7 @@ function createExecTool(defaults) {
+ 				assertSourceActive();
+ 				run = await runExecProcess({
+ 					command: params.command,
++					clawxCronLauncher,
+ 					execCommand: execCommandOverride,
+ 					workdir,
+ 					env,
+@@ -3845,7 +3851,7 @@ function createExecTool(defaults) {
+ 				backgrounded.resolve({ status: "backgrounded" });
+ 			};
+ 			try {
+-				if (!toolAborted && allowBackground && yieldWindow !== null) {
++				if (!toolAborted && !run.waitForCronLauncher && allowBackground && yieldWindow !== null) {
+ 					if (yieldWindow === 0) onYieldNow();
+ 					else yieldTimer = setTimeout(onYieldNow, yieldWindow);
+ 				}
+diff --git a/dist/bash-tools.exec-runtime-DV-8QM6d.mjs b/dist/bash-tools.exec-runtime-DV-8QM6d.mjs
+index 5b443be..d676729 100644
+--- a/dist/bash-tools.exec-runtime-DV-8QM6d.mjs
++++ b/dist/bash-tools.exec-runtime-DV-8QM6d.mjs
+@@ -762,7 +762,14 @@ function buildExecRuntimeErrorOutcome(params) {
+ }
+ /** Starts a host or sandbox exec process and registers it for polling/backgrounding. */
+ async function runExecProcess({ startupSignal: initialStartupSignal, onUpdate: initialOnUpdate, beforeSpawn: initialBeforeSpawn, assertCurrent: initialAssertCurrent, initiateSpawn: initialInitiateSpawn, releaseSpawn: initialReleaseSpawn, onSettledBeforeNotify: initialOnSettledBeforeNotify, ...opts }) {
+-	const requestSignal = execRequestAbortSignal(opts.requestOwners);
++	// An approval may replace the shell command. Only the certified launcher inherits
++	// the migrated lifetime; secret-backed exec still revokes its grant at root exit.
++	const candidate = opts.clawxCronLauncher;
++	const launcher = candidate && !opts.usePty && !opts.sandbox && !opts.secretEgressBindings && (opts.execCommand ?? opts.command).trim() === candidate.command ? candidate : void 0;
++	if (launcher) opts.timeoutSec = launcher.timeoutSeconds;
++	const timeoutMs = resolveExecTimeoutMs(opts.timeoutSec);
++	const cronSignal = launcher?.signal;
++	const requestSignal = execRequestAbortSignal(opts.requestOwners, cronSignal);
+ 	const startupSignal = requestSignal && initialStartupSignal ? AbortSignal.any([requestSignal, initialStartupSignal]) : requestSignal ?? initialStartupSignal;
+ 	let assertSourceActive = captureAgentToolSourceExecutionGuard(startupSignal);
+ 	let operatorAuthority = getGatewayToolCallerIdentity()?.operatorAuthority;
+@@ -846,7 +853,6 @@ async function runExecProcess({ startupSignal: initialStartupSignal, onUpdate: i
+ 			emitUpdate();
+ 		}
+ 	};
+-	const timeoutMs = resolveExecTimeoutMs(opts.timeoutSec);
+ 	let sandboxFinalizeToken;
+ 	let assertSandboxCurrent;
+ 	let sandboxPrepared = false;
+@@ -888,7 +894,7 @@ async function runExecProcess({ startupSignal: initialStartupSignal, onUpdate: i
+ 				managedRun.cancel();
+ 				const extinction = await managedRun.waitForExtinction();
+ 				session.cleanupUncertain = extinction?.status === "uncertain";
+-				if (session.requestCancelled && session.cleanupUncertain) throw new Error("Command descendant cleanup could not be confirmed");
++				if ((session.requestCancelled || cronSignal) && session.cleanupUncertain) throw new Error("Command descendant cleanup could not be confirmed");
+ 			}
+ 			if (outcome.exitReason !== "exit") beginSandboxTermination();
+ 			await sandboxTermination;
+@@ -1032,6 +1038,7 @@ async function runExecProcess({ startupSignal: initialStartupSignal, onUpdate: i
+ 			cwd: spawnSpec.cwd ?? opts.workdir,
+ 			env: spawnSpec.env,
+ 			timeoutMs,
++			waitForWindowsCronDescendants: Boolean(cronSignal),
+ 			captureOutput: false,
+ 			onStdout: handleOutput("stdout", sanitizeStdout),
+ 			onStderr: handleOutput("stderr", sanitizeStderr)
+@@ -1107,6 +1114,7 @@ async function runExecProcess({ startupSignal: initialStartupSignal, onUpdate: i
+ 	});
+ 	return {
+ 		session,
++		waitForCronLauncher: Boolean(launcher),
+ 		startedAt,
+ 		pid: session.pid ?? void 0,
+ 		promise,
+diff --git a/dist/child-DRU8rxky.mjs b/dist/child-DRU8rxky.mjs
+index 4107bc6..61d173f 100644
+--- a/dist/child-DRU8rxky.mjs
++++ b/dist/child-DRU8rxky.mjs
+@@ -1686,6 +1686,8 @@ async function createChildAdapter(params) {
+ 				return output ? await joinProcessCompletionAndOutput(completion.promise, output) : await completion.promise;
+ 			},
+ 			...process.platform === "win32" && { waitForExtinction: () => windowsCleanup ?? cleanup.promise.then(() => windowsFallback) },
++			// Only present after admission to the kernel Job. The fallback cannot certify descendants.
++			windowsJobExtinction: windowsCleanup,
+ 			kill,
+ 			dispose,
+ 			closeStartGate: params.ownedWorker ? disconnectWorkerIpc : void 0,
+diff --git a/dist/clawx-cron-run-context.mjs b/dist/clawx-cron-run-context.mjs
+new file mode 100644
+index 0000000..8ab59a4
+--- /dev/null
++++ b/dist/clawx-cron-run-context.mjs
+@@ -0,0 +1,34 @@
++// Each local exec tool holds the same host-issued instance as its admitted agent.
++// Object identity survives the lane queue and distinguishes separate admissions.
++const launchers = new WeakMap();
++
++export function getClawxCronLauncher(defaults, params, configuredTimeoutSec) {
++	const launcher = launchers.get(defaults?.operationalRunInstance);
++	if (!launcher || typeof params.command !== "string" || params.command.trim() !== launcher.command || params.background === true || params.pty === true || params.env && Object.keys(params.env).length > 0) return;
++	return {
++		...launcher,
++		timeoutSeconds: params.timeoutSeconds ?? (defaults?.timeoutSec === void 0 ? launcher.timeoutSeconds : configuredTimeoutSec)
++	};
++}
++
++export async function runClawxCronJob(request, run, migratedLauncher) {
++	const { abortSignal, executionIdentity } = request;
++	if (!migratedLauncher || !abortSignal || !executionIdentity?.onPostAdmission) return run(request);
++	const settled = new AbortController();
++	const signal = AbortSignal.any([abortSignal, settled.signal]);
++	try {
++		return await run({
++			...request,
++			executionIdentity: {
++				...executionIdentity,
++				async onPostAdmission(admitted) {
++					await executionIdentity.onPostAdmission(admitted);
++					const instance = admitted?.operationalRunInstance;
++					if (instance && typeof instance === "object") launchers.set(instance, { ...migratedLauncher, signal });
++				}
++			}
++		});
++	} finally {
++		settled.abort();
++	}
++}
+diff --git a/dist/clawx-cron-timeout-migration.mjs b/dist/clawx-cron-timeout-migration.mjs
+new file mode 100644
+index 0000000..09ab728
+--- /dev/null
++++ b/dist/clawx-cron-timeout-migration.mjs
+@@ -0,0 +1,90 @@
++import { createHash } from "node:crypto";
++import { readFile } from "node:fs/promises";
++import { DatabaseSync } from "node:sqlite";
++import { isDeepStrictEqual } from "node:util";
++import { sameLegacyCronDefinition } from "./clawx-cron-inference-migration.mjs";
++import { t as resolveCronJobConfigRevision } from "./config-revision-CDMRKKW-.mjs";
++
++import { r as MAX_TIMER_TIMEOUT_SECONDS } from "./number-coercion-CkhMiRw8.mjs";
++import { a as isRuntimeToolAllowed } from "./tool-policy-match--5jlhAPZ.mjs";
++
++const launchers = new Map();
++
++/** Only registered snapshot operations can opt into host-supervised worker completion. */
++export function getClawxMigratedLauncher(job) {
++	const owner = job && launchers.get(job.id);
++	if (owner && resolveCronJobConfigRevision(job) === owner.revision) return owner.launcher;
++}
++
++function matchesSnapshot(job, historical, provenAgentId) {
++	if (!job || job.sessionTarget !== "isolated" || job.payload?.kind !== "agentTurn" || Object.hasOwn(job, "declarationKey")) return false;
++	// The native account migration can already have restored a missing binding.
++	// A historical binding and all authored model or permission settings still have to match.
++	const current = { ...job };
++	if (!Object.hasOwn(historical, "inferenceBinding")) delete current.inferenceBinding;
++	return sameLegacyCronDefinition(current, historical, provenAgentId);
++}
++
++async function applyTimeout(cron, entry, db) {
++	const { definition, jobId, command, timeoutSeconds } = entry;
++	if (!definition || definition.id !== jobId || typeof command !== "string" || !command || !definition.payload?.message?.includes(command) ||
++		!Number.isSafeInteger(timeoutSeconds) || timeoutSeconds <= 0 || timeoutSeconds > MAX_TIMER_TIMEOUT_SECONDS ||
++		![undefined, 60, timeoutSeconds].includes(definition.payload.timeoutSeconds)) return false;
++	const job = await cron.readJob(jobId);
++	if (!job || !isRuntimeToolAllowed("exec", job.payload?.toolsAllow)) return false;
++	const revision = resolveCronJobConfigRevision(job);
++	const evidence = createHash("sha256").update(JSON.stringify(entry)).digest("hex");
++	const receipt = db.prepare("SELECT * FROM timeout_migrations WHERE job_id = ?").get(jobId);
++	if (receipt && receipt.evidence !== evidence) return false;
++	const remember = (appliedRevision) => {
++		launchers.set(jobId, { revision: appliedRevision, launcher: Object.freeze({ command, timeoutSeconds }) });
++		return true;
++	};
++	if (receipt?.applied_revision) return receipt.applied_revision === revision && remember(revision);
++	if (receipt && receipt.target_revision === revision) {
++		// A restart after the native commit can finish the existing receipt without replay.
++		db.prepare("UPDATE timeout_migrations SET applied_revision = ? WHERE job_id = ?").run(revision, jobId);
++		return remember(revision);
++	}
++	if (receipt && (receipt.original_revision !== revision || receipt.updated_at !== job.updatedAtMs)) return false;
++	if (!matchesSnapshot(job, definition, entry.agentId)) return false;
++	if (job.payload.timeoutSeconds === timeoutSeconds) return remember(revision);
++	const updated = { ...job, payload: { ...job.payload, timeoutSeconds } };
++	const targetRevision = resolveCronJobConfigRevision(updated);
++	// Record the intent before the native write. If the app is interrupted, resume only the same revision.
++	db.prepare("INSERT OR IGNORE INTO timeout_migrations (job_id,evidence,original_revision,target_revision,updated_at) VALUES (?,?,?,?,?)")
++		.run(jobId, evidence, revision, targetRevision, job.updatedAtMs);
++	const result = await cron.updateWithPrecondition(jobId, { payload: { kind: "agentTurn", timeoutSeconds } }, (current) => {
++		if (!isDeepStrictEqual(current, job)) throw new Error("scheduled worker definition changed before commit");
++	});
++	const appliedRevision = resolveCronJobConfigRevision(result);
++	db.prepare("UPDATE timeout_migrations SET applied_revision = ? WHERE job_id = ?").run(appliedRevision, jobId);
++	return remember(appliedRevision);
++}
++
++export async function migrateClawxCronTimeouts({ cron, env = process.env, log }) {
++	const path = env.CLAWX_CRON_TIMEOUT_MIGRATION_MANIFEST;
++	launchers.clear();
++	if (!path) return;
++	let db;
++	try {
++		const raw = await readFile(path, "utf8");
++		if (raw.length > 8 * 1024 * 1024) throw new Error("oversized manifest");
++		const manifest = JSON.parse(raw);
++		if (manifest.version !== 1 || !Array.isArray(manifest.jobs) || manifest.jobs.length > 1000) throw new Error("invalid manifest");
++		if (new Set(manifest.jobs.map((entry) => entry?.jobId)).size !== manifest.jobs.length) throw new Error("duplicate job IDs");
++		db = new DatabaseSync(path + ".receipts.sqlite");
++		db.exec("CREATE TABLE IF NOT EXISTS timeout_migrations (job_id TEXT PRIMARY KEY, evidence TEXT NOT NULL, original_revision TEXT NOT NULL, target_revision TEXT NOT NULL, updated_at INTEGER NOT NULL, applied_revision TEXT) STRICT");
++		for (const entry of manifest.jobs) {
++			try {
++				await applyTimeout(cron, entry, db);
++			} catch {
++				log?.warn({ jobId: entry?.jobId }, "clawx: scheduled worker timeout migration skipped");
++			}
++		}
++	} catch {
++		log?.warn({}, "clawx: scheduled worker timeout evidence unavailable");
++	} finally {
++		db?.close();
++	}
++}
+diff --git a/dist/supervisor-D58YpK8r.mjs b/dist/supervisor-D58YpK8r.mjs
+index 6ceca57..31d4aad 100644
+--- a/dist/supervisor-D58YpK8r.mjs
++++ b/dist/supervisor-D58YpK8r.mjs
+@@ -506,6 +506,12 @@ function createProcessSupervisor() {
+ 			};
+ 			const waitPromise = (async () => {
+ 				const result = await adapter.wait();
++				// A scheduled launcher can exit while its Job still owns a worker. Retain the
++				// original deadline, cancellation and native ownership until the Job is empty.
++				if (input.waitForWindowsCronDescendants && adapter.windowsJobExtinction && !forcedReason && result.code === 0 && result.signal == null) {
++					await adapter.windowsJobExtinction;
++					if (overallDeadline.deadlineMs !== null && performance.now() >= overallDeadline.deadlineMs) requestCancel("overall-timeout");
++				}
+ 				const terminalReason = forcedReason;
+ 				settleResult(adapter);
+ 				const reason = terminalReason ?? (result.signal != null ? "signal" : "exit");

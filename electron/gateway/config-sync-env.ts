@@ -27,10 +27,12 @@ export function stripSystemdSupervisorEnv(env: GatewayEnv): GatewayEnv {
 }
 
 /** Only the current managed launch may supply cron migration evidence. */
-export function withCronMigrationManifestEnv(env: GatewayEnv, manifestPath: string | undefined): GatewayEnv {
+export function withCronMigrationManifestEnv(env: GatewayEnv, manifestPath: string | undefined, timeoutManifest?: string): GatewayEnv {
   const next = { ...env };
   delete next.CLAWX_CRON_MIGRATION_MANIFEST;
+  delete next.CLAWX_CRON_TIMEOUT_MIGRATION_MANIFEST;
   if (manifestPath) next.CLAWX_CRON_MIGRATION_MANIFEST = manifestPath;
+  if (timeoutManifest) next.CLAWX_CRON_TIMEOUT_MIGRATION_MANIFEST = timeoutManifest;
   return next;
 }
 

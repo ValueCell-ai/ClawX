@@ -41,6 +41,8 @@ ownedPaths:
   - tests/unit/session-label-hydration.test.ts
   - tests/e2e/chat-sidebar-session-attention.spec.ts
   - tests/unit/session-key-utils.test.ts
+  - scripts/test-windows-cron-worker.mjs
+  - tests/unit/openclaw-windows-cron-descendants.test.ts
   - tests/unit/openclaw-acp-stream-patch.test.ts
   - patches/openclaw@2026.10.10.patch
   - patches/@wecom__wecom-openclaw-plugin@2026.10.30.patch
@@ -176,6 +178,8 @@ ClawX disables memory-core dreaming during prelaunch config synchronization whil
 Scheduled-task history is Main-owned backend data. Current OpenClaw versions must be queried through the Gateway `cron.runs` RPC; direct run-log file reads are allowed only as a compatibility fallback for older file-backed runtimes. When a run's bounded summary ends with OpenClaw's truncation ellipsis, Main may recover the complete final assistant reply from the run transcript identified by that `cron.runs` entry, but only when the transcript reply is longer and shares the entire summary prefix. When a cron base session has no ACP replay, Renderer may project that typed host result into a generation-scoped, in-memory historical ACP timeline, but must not replace or duplicate non-empty ACP replay.
 
 Scheduled-task upgrade continuity is a backend contract. Main prepares verified snapshot evidence; the managed Gateway restores eligible legacy inference bindings through native authorization and conditional updates after credential projection and before scheduled dispatch. Trusted extension evidence can continue an expected previous binding after temporary credential cleanup only for the same encrypted login session and credential. Auth synchronization preserves authorization lifetimes for unchanged credentials and retains revocation semantics. See `harness/specs/tasks/preserve-cron-inference-on-upgrade.md` and `harness/reference/cron-inference-upgrade.md` for boundaries and validation evidence.
+
+The active cron store identifies which legacy jobs belong to the scheduler. For a verified Windows launcher, the managed Gateway supervises the worker through completion or its deadline, including a custom deadline inherited from the old job. See [the scheduled worker upgrade tests](../tasks/preserve-scheduled-exec-upgrade.md).
 
 The local HTML Preview privileged bridge is also Main-owned: Renderer may load a validated local HTML file or open that current file externally through the typed Host API. The guest is an implementation detail of the existing `preview` tab; there is no `web-browser` artifact tab or general address navigation. The durable guest contract is `harness/reference/web-browser.md`.
 

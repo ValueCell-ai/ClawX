@@ -38,6 +38,25 @@ type SnapshotOptions = {
   configPath?: string;
 };
 
+/** OpenClaw 2026.7.1-2 used its config directory for the default cron partition. Its SQLite database used the state directory. */
+function resolveDefaultCronStorePath(options: SnapshotOptions): string {
+  const homeValue = (value: string | undefined) => {
+    const text = value?.trim();
+    return text && text !== 'undefined' && text !== 'null' ? text : undefined;
+  };
+  const osHome = homeValue(process.env.HOME) ?? homeValue(process.env.USERPROFILE) ?? homedir();
+  const expand = (value: string, home: string) => resolve(value.replace(/^~(?=$|[\\/])/, () => home));
+  const home = expand(homeValue(process.env.OPENCLAW_HOME) ?? osHome, osHome);
+  const stateOverride = process.env.OPENCLAW_STATE_DIR?.trim();
+  const configOverride = process.env.OPENCLAW_CONFIG_PATH?.trim();
+  let directory = join(home, '.openclaw');
+  if (options.stateDir !== undefined) directory = resolve(options.stateDir);
+  else if (stateOverride) directory = expand(stateOverride, home);
+  else if (options.configPath !== undefined) directory = dirname(resolve(options.configPath));
+  else if (configOverride) directory = dirname(expand(configOverride, home));
+  return join(directory, 'cron', 'jobs.json');
+}
+
 type SnapshotInventory = {
   files: Record<string, { mode: number; sha256: string }>;
   directories: string[];
@@ -182,10 +201,11 @@ export async function ensureOpenClawUpgradeSnapshot(
   options: SnapshotOptions = {},
 ): Promise<OpenClawUpgradeSnapshotResult> {
   const stateDir = resolve(options.stateDir ?? resolveOpenClawStateDir());
-  const key = `${stateDir}\0${resolve(options.configPath ?? resolveOpenClawConfigPath())}`;
+  const configPath = resolve(options.configPath ?? resolveOpenClawConfigPath());
+  const key = `${stateDir}\0${configPath}`;
   const pending = pendingSnapshots.get(key);
   if (pending) return pending;
-  const operation = createUpgradeSnapshot({ ...options, stateDir });
+  const operation = createUpgradeSnapshot(stateDir, configPath, resolveDefaultCronStorePath(options));
   pendingSnapshots.set(key, operation);
   try {
     return await operation;
@@ -194,9 +214,7 @@ export async function ensureOpenClawUpgradeSnapshot(
   }
 }
 
-async function createUpgradeSnapshot(options: SnapshotOptions): Promise<OpenClawUpgradeSnapshotResult> {
-  const stateDir = resolve(options.stateDir ?? resolveOpenClawStateDir());
-  const configPath = resolve(options.configPath ?? resolveOpenClawConfigPath());
+async function createUpgradeSnapshot(stateDir: string, configPath: string, defaultCronStorePath: string): Promise<OpenClawUpgradeSnapshotResult> {
   const snapshotDir = resolveSnapshotDir(stateDir);
   const markerPath = join(snapshotDir, 'snapshot.json');
 
@@ -360,6 +378,7 @@ async function createUpgradeSnapshot(options: SnapshotOptions): Promise<OpenClaw
       createdAt: new Date().toISOString(),
       configPath,
       stateDir,
+      defaultCronStorePath,
       files,
       fileInfo: inventory.files,
       directories: inventory.directories,
