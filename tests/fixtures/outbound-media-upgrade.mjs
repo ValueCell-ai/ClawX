@@ -24,8 +24,8 @@ const snapshot = loadPluginMetadataSnapshot({ config, stateDir, env: process.env
 setGatewayPluginMetadataSnapshot(snapshot, { config, env: process.env });
 const channels = ['dingtalk', 'openclaw-weixin', 'wecom', 'feishu'];
 const receipts = [];
-const capMb = (channel, cfg = config) =>
-  resolveOutboundMediaMaxBytes({ channel, accountId: 'work', cfg }) / (1024 * 1024);
+const capMb = (channel, cfg = config, accountId = 'work') =>
+  resolveOutboundMediaMaxBytes({ channel, accountId, cfg }) / (1024 * 1024);
 
 if (phase === 'limits') {
   // Resolve in a cold process before any channel adapter is registered.
@@ -39,7 +39,8 @@ if (phase === 'limits') {
     } };
     configured[id] = [agent, channel, account].map(cfg => capMb(id, cfg));
   }
-  console.log(JSON.stringify({ defaults, configured }));
+  const migratedAccounts = Object.fromEntries(channels.map(id => [id, ['limited', 'large'].map(account => capMb(id, config, account))]));
+  console.log(JSON.stringify({ defaults, configured, migratedAccounts }));
 } else if (phase === 'plugin-uploads') {
   const { checkPluginUploads } = await import('./outbound-media-plugin-uploads.mjs');
   await checkPluginUploads(join(stateDir, 'workspace', 'report.xlsm'));
@@ -74,8 +75,7 @@ if (phase === 'limits') {
         mediaAccess: { localRoots: [join(stateDir, 'workspace')] },
       };
       const batch = await prepareOutboundPayloadBatch(params);
-      const smallCap = { ...config, channels: { ...config.channels, [channel]: { mediaMaxMb: 5 } } };
-      await assert.rejects(stageAndEnqueueOutboundDelivery({ ...params, cfg: smallCap }, batch), /5MB limit.*9\.89MB/);
+      await assert.rejects(stageAndEnqueueOutboundDelivery({ ...params, accountId: 'limited' }, batch), /5MB limit.*9\.89MB/);
       assert.equal((await stageAndEnqueueOutboundDelivery(params, batch)).created, true);
     }
   } else if (phase === 'reconnect') {

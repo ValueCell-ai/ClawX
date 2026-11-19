@@ -7,19 +7,33 @@ import { dirname, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import * as XLSX from 'xlsx';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { fixupPluginManifest } from '@electron/utils/plugin-install';
 
 vi.mock('electron', () => ({ app: { getAppPath: () => process.cwd(), getPath: () => tmpdir() } }));
 
-const packages = {
-  wecom: '@wecom/wecom-openclaw-plugin',
-  'openclaw-weixin': '@tencent-weixin/openclaw-weixin',
-  dingtalk: '@dingtalk-real-ai/dingtalk-connector',
-  'feishu-openclaw-plugin': '@openclaw/feishu',
-};
+// Installed identities from ClawX v0.6.1 / OpenClaw 2026.7.1-2, after ClawX's ID fixes.
+const mirrors = [
+  { dir: 'wecom', name: '@wecom/wecom-openclaw-plugin', version: '2026.8.17', id: 'wecom' },
+  { dir: 'openclaw-weixin', name: '@tencent-weixin/openclaw-weixin', version: '2.4.8', id: 'openclaw-weixin' },
+  { dir: 'dingtalk', name: '@dingtalk-real-ai/dingtalk-connector', version: '0.8.25', id: 'dingtalk' },
+  { dir: 'feishu-openclaw-plugin', name: '@larksuite/openclaw-lark', version: '2026.7.16', id: 'openclaw-lark' },
+];
 const channels = ['wecom', 'openclaw-weixin', 'dingtalk', 'feishu'];
-const legacyConfig = JSON.stringify({ channels: Object.fromEntries(channels.map(c => [c, { enabled: true }])) });
+const oldIds = mirrors.map(mirror => mirror.id);
+const oldChannels = {
+  wecom: { botId: 'fixture', secret: 'synthetic' },
+  dingtalk: { clientId: 'fixture', clientSecret: 'synthetic' },
+  'openclaw-weixin': {},
+  feishu: { appId: 'fixture', appSecret: 'synthetic', streaming: true },
+};
+const legacyConfig = {
+  channels: Object.fromEntries(Object.entries(oldChannels).map(([id, credentials]) => [id, {
+    ...credentials, enabled: true, accounts: { work: { enabled: true }, limited: { mediaMaxMb: 5 }, large: { mediaMaxMb: 128 } },
+  }])),
+  plugins: { allow: oldIds, entries: Object.fromEntries(oldIds.map(id => [id, { enabled: true }])) },
+};
+let testHome: string;
 let stateDir: string;
+let migratedConfig: string;
 async function runPhase(phase: string) {
   const { stdout } = await promisify(execFile)(process.execPath, [resolve('tests/fixtures/outbound-media-upgrade.mjs'), phase], {
     env: { ...process.env, OPENCLAW_STATE_DIR: stateDir, OPENCLAW_HOME: stateDir, OPENCLAW_CONFIG_PATH: join(stateDir, 'openclaw.json') },
@@ -27,34 +41,70 @@ async function runPhase(phase: string) {
   return JSON.parse(stdout.trim().split('\n').at(-1)!);
 }
 
-describe('outbound attachments after upgrading an existing profile', () => {
+describe('outbound attachments after upgrading directly from ClawX 0.6.1', () => {
   beforeAll(async () => {
-    stateDir = await mkdtemp(join(tmpdir(), 'clawx-outbound-upgrade-'));
-    await mkdir(join(stateDir, 'workspace'));
-    await writeFile(join(stateDir, 'openclaw.json'), legacyConfig);
-    // The runtime scans the same manifests the installer writes; no test cap is injected.
-    for (const [mirror, name] of Object.entries(packages)) {
-      const source = resolve('node_modules', name);
-      const target = join(stateDir, 'extensions', mirror);
-      await mkdir(target, { recursive: true });
+    testHome = await mkdtemp(join(tmpdir(), 'clawx-outbound-upgrade-'));
+    stateDir = join(testHome, '.openclaw');
+    vi.stubEnv('HOME', testHome);
+    vi.stubEnv('USERPROFILE', testHome);
+    vi.stubEnv('OPENCLAW_STATE_DIR', stateDir);
+    vi.stubEnv('OPENCLAW_CONFIG_PATH', join(stateDir, 'openclaw.json'));
+    const { ensurePluginInstalled } = await import('@electron/utils/plugin-install');
+    const { readPluginInstallRecordsFromSqlite, upsertPluginInstallRecordsIntoSqlite } = await import('@electron/utils/plugin-install-index');
+    const { syncFeishuPluginRegistrationWithInstalledPlugin } = await import('@electron/utils/openclaw-auth');
+    await mkdir(join(stateDir, 'workspace'), { recursive: true });
+    await writeFile(join(stateDir, 'openclaw.json'), JSON.stringify(legacyConfig));
+
+    for (const { dir, id, name, version } of mirrors) {
+      const installed = join(stateDir, 'extensions', dir);
+      await mkdir(installed, { recursive: true });
+      await writeFile(join(installed, 'package.json'), JSON.stringify({ name, version }));
+      await writeFile(join(installed, 'openclaw.plugin.json'), JSON.stringify({ id }));
+      const ownership = id === 'openclaw-weixin'
+        ? { source: 'npm', spec: name, resolvedName: name, resolvedVersion: version, resolvedSpec: `${name}@${version}` }
+        : { source: 'path', spec: installed, sourcePath: installed };
+      upsertPluginInstallRecordsIntoSqlite({ [id]: { ...ownership, installPath: installed, version } }, { throwOnError: true });
+    }
+    expect(Object.keys(readPluginInstallRecordsFromSqlite()).sort()).toEqual([...oldIds].sort());
+
+    for (const { dir, id, name } of mirrors) {
+      const installed = join(stateDir, 'extensions', dir);
+      // Mirror publication needs the real package metadata. Executable upload code
+      // is exercised separately from node_modules at each plugin's transport boundary.
+      const nextName = id === 'openclaw-lark' ? '@openclaw/feishu' : name;
+      const source = resolve('node_modules', nextName);
+      const bundled = join(testHome, 'bundled', dir);
+      await mkdir(bundled, { recursive: true });
       for (const file of ['package.json', 'openclaw.plugin.json']) {
-        await copyFile(join(source, file), join(target, file));
+        await copyFile(join(source, file), join(bundled, file));
       }
       const pkg = JSON.parse(await readFile(join(source, 'package.json'), 'utf8'));
       const { extensions, runtimeExtensions = [], runtimeSetupEntry, setupEntry } = pkg.openclaw;
       for (const entry of new Set<string>([...extensions, ...runtimeExtensions, runtimeSetupEntry, setupEntry].filter(Boolean))) {
-        await mkdir(dirname(join(target, entry)), { recursive: true });
-        await writeFile(join(target, entry), "throw new Error('Static manifest lookup must not run the channel');\n");
+        await mkdir(dirname(join(bundled, entry)), { recursive: true });
+        await writeFile(join(bundled, entry), "throw new Error('Static manifest lookup must not run the channel');\n");
       }
-      fixupPluginManifest(target);
+      expect(await ensurePluginInstalled(dir, [bundled], dir)).toMatchObject({ installed: true });
+      expect(JSON.parse(await readFile(join(installed, 'package.json'), 'utf8'))).toMatchObject({ name: nextName, version: pkg.version });
     }
+    await syncFeishuPluginRegistrationWithInstalledPlugin();
+    expect(Object.keys(readPluginInstallRecordsFromSqlite()).sort()).toEqual([...channels].sort());
+    migratedConfig = await readFile(join(stateDir, 'openclaw.json'), 'utf8');
+    expect(JSON.parse(migratedConfig)).toEqual({
+      channels: { ...legacyConfig.channels, feishu: { ...legacyConfig.channels.feishu, streaming: { mode: 'partial' } } },
+      plugins: { allow: channels, entries: Object.fromEntries(channels.map(id => [id, { enabled: true }])) },
+    });
+  }, 30_000);
+  afterAll(async () => {
+    vi.unstubAllEnvs();
+    if (testHome) await rm(testHome, { recursive: true, force: true });
   });
-  afterAll(async () => { if (stateDir) await rm(stateDir, { recursive: true, force: true }); });
 
   it('resolves installed channel capabilities with account, channel and agent overrides in order', async () => {
     expect(await runPhase('limits')).toEqual({
       defaults: { wecom: 20, feishu: 30, 'openclaw-weixin': 100, dingtalk: 20, telegram: 100, 'unknown-channel': 5 },
       configured: Object.fromEntries(channels.map(c => [c, [7, 128, 5]])),
+      migratedAccounts: Object.fromEntries(channels.map(c => [c, [5, 128]])),
     });
   }, 30_000);
 
@@ -82,6 +132,6 @@ describe('outbound attachments after upgrading an existing profile', () => {
       expect(receipts).toContainEqual({ channel, bytes: bytes.length, sha256 });
     }
     expect(await runPhase('recover')).toEqual([]);
-    expect(await readFile(join(stateDir, 'openclaw.json'), 'utf8')).toBe(legacyConfig);
+    expect(await readFile(join(stateDir, 'openclaw.json'), 'utf8')).toBe(migratedConfig);
   }, 90_000);
 });

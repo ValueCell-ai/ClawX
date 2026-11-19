@@ -41,6 +41,7 @@ requiredTests:
   - tests/unit/config-sync.test.ts
   - tests/unit/plugin-mirror-replace.test.ts
 acceptance:
+  - Upgrade the four managed plugin mirrors from their v0.6.1 identities and versions (OpenClaw 2026.7.1-2). Verify the Feishu owner transition from openclaw-lark, account limits and attachment delivery under OpenClaw 2026.10.10.
   - Exercise outbound delivery limit resolution for wecom, dingtalk (plugin id dingtalk-connector), feishu and openclaw-weixin with an upgraded configuration that omits media limits.
   - Preserve the established precedence of explicit settings, including a smaller account or channel limit.
   - Surface known media size errors through /tools/invoke with HTTP 413, a channel and byte counts where known. Keep private paths and other internal diagnostics out of the response.
@@ -50,4 +51,6 @@ docs:
   required: true
 ---
 
-The regression test uses synthetic configuration and payloads. Connector upload success against a live account requires separate evidence.
+CI seeds the v0.6.1 package identities, versions, activation settings and legacy SQLite install records in a temporary profile. It runs the production mirror installer and Feishu registration migration before staging the workbook. Plugin upload tests use the installed npm packages with simulated remote responses.
+
+A separate local probe used the v0.6.1 installer code and all four original plugin packages, with synthetic profiles for default and explicit limits. Neither run requires live channel accounts.
