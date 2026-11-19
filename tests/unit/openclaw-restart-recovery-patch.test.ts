@@ -473,11 +473,11 @@ describe('OpenClaw restart recovery contract', () => {
     const files = [...patch.matchAll(/^diff --git a\/(dist\/[^ ]+) b\//gm)].map((match) => match[1])
       .filter(file => /\.(?:mjs|cjs|js)$/.test(file));
     expect(files.length).toBeGreaterThan(0);
-    for (const file of files) {
+    for (const file of new Set(files)) {
       await expect(execFileAsync(process.execPath, [
         '--check',
         path.join(root, 'node_modules/openclaw', file),
       ])).resolves.toMatchObject({ stderr: '' });
     }
-  });
+  }, 60_000); // One Node syntax check per patched chunk, including on loaded CI runners.
 });

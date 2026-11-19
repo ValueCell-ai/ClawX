@@ -41,6 +41,8 @@ ownedPaths:
   - tests/unit/session-label-hydration.test.ts
   - tests/e2e/chat-sidebar-session-attention.spec.ts
   - tests/unit/session-key-utils.test.ts
+  - scripts/test-windows-cron-worker.mjs
+  - tests/unit/openclaw-windows-cron-descendants.test.ts
   - tests/unit/openclaw-acp-stream-patch.test.ts
   - patches/openclaw@2026.10.10.patch
   - patches/@wecom__wecom-openclaw-plugin@2026.10.30.patch

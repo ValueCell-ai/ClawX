@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { lstat, mkdir, readFile, realpath, rename, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -28,10 +28,7 @@ export type CronInferenceMigrationEntry = {
   credentialDigest: string;
 };
 
-/** No credentials are copied into the launch manifest. All evidence is immutable snapshot data. */
-export async function prepareCronInferenceMigration(snapshotDir: string): Promise<{
-  manifestPath?: string; eligible: number; skipped: number;
-}> {
+export async function openCronSnapshot(snapshotDir: string) {
   const root = await realpath(snapshotDir);
   const manifest = record(JSON.parse(await readFile(join(root, 'snapshot.json'), 'utf8')));
   if (manifest.formatVersion !== 2 || manifest.upgrade !== 'openclaw-2026.10.10') {
@@ -67,14 +64,28 @@ export async function prepareCronInferenceMigration(snapshotDir: string): Promis
     try { return read(db); } finally { db.close(); }
   }
   const hasTable = (db: DatabaseSync, name: string) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name);
-  const cell = (db: DatabaseSync, key: string): RecordValue | undefined => {
-    if (!hasTable(db, 'config_machine_state')) return undefined;
-    const row = db.prepare('SELECT value_json FROM config_machine_state WHERE state_key=?').get(key);
-    return typeof row?.value_json === 'string' ? record(JSON.parse(row.value_json)) : undefined;
-  };
   const configFile = files.find(file => /^config[/\\][^/\\]+$/.test(file));
-  if (!configFile) return { eligible: 0, skipped: 0 };
-  const cfg = await json(configFile);
+  const loadJobs = async () => {
+    const stateFile = find('state-files/state/openclaw.sqlite');
+    if (stateFile) {
+      const stored = await database(stateFile, db => {
+        if (!hasTable(db, 'cron_jobs')) return undefined;
+        const columns = db.prepare("PRAGMA table_info(cron_jobs)").all();
+        return { jobs: db.prepare('SELECT job_json FROM cron_jobs').all().map(row => record(JSON.parse(String(row.job_json)))),
+          legacy: columns.some(column => column.name === 'payload_timeout_seconds') };
+      });
+      if (stored) return stored;
+    }
+    const cronFile = find('state-files/cron/jobs.json');
+    const data = cronFile ? await json(cronFile) : {};
+    return { jobs: Array.isArray(data.jobs) ? data.jobs.map(record) : [], legacy: !!cronFile };
+  };
+  let jobs: ReturnType<typeof loadJobs> | undefined;
+  const readJobs = () => jobs ??= loadJobs();
+  return { root, manifest, within, find, json, database, hasTable, configFile, readJobs };
+}
+
+function historicalAgentConfig(cfg: RecordValue) {
   const agentConfig = record(cfg.agents);
   const agents: RecordValue[] = Array.isArray(agentConfig.list) ? agentConfig.list.map(record)
     : Object.entries(record(agentConfig.entries)).map(([id, entry]) => ({ ...record(entry), id }));
@@ -82,21 +93,30 @@ export async function prepareCronInferenceMigration(snapshotDir: string): Promis
   const defaultAgents = agents.filter(agent => agent.default === true);
   const defaultId = string(agentConfig.default) ?? (defaultAgents.length === 1 ? string(defaultAgents[0].id) : undefined)
     ?? (agents.length === 0 ? 'main' : agents.length === 1 ? string(agents[0].id) : undefined);
+  return { agents, defaults, defaultId };
+}
+
+/** No credentials are copied into the launch manifest. All evidence is immutable snapshot data. */
+export async function prepareCronInferenceMigration(snapshotDir: string, snapshot = openCronSnapshot(snapshotDir)): Promise<{
+  manifestPath?: string; eligible: number; skipped: number;
+}> {
+  const { root, manifest, within, find, json, database, hasTable, configFile, readJobs } = await snapshot;
+  const cell = (db: DatabaseSync, key: string): RecordValue | undefined => {
+    if (!hasTable(db, 'config_machine_state')) return undefined;
+    const row = db.prepare('SELECT value_json FROM config_machine_state WHERE state_key=?').get(key);
+    return typeof row?.value_json === 'string' ? record(JSON.parse(row.value_json)) : undefined;
+  };
+  if (!configFile) return { eligible: 0, skipped: 0 };
+  const cfg = await json(configFile);
+  const { agents, defaults, defaultId } = historicalAgentConfig(cfg);
   const stateFile = find('state-files/state/openclaw.sqlite');
-  let jobs: RecordValue[] | undefined;
+  const { jobs } = await readJobs();
   let sharedProfiles: RecordValue | undefined;
   if (stateFile) await database(stateFile, db => {
-    if (hasTable(db, 'cron_jobs')) jobs = db.prepare('SELECT job_json FROM cron_jobs').all()
-      .map(row => record(JSON.parse(String(row.job_json))));
     const owner = cell(db, 'auth.sharedStore');
     if (owner?.location === 'state-db') sharedProfiles = record(cell(db, 'authProfiles.store')?.profiles);
     else if (owner && owner.location !== 'legacy-main') throw new Error('Invalid snapshot auth store owner');
   });
-  if (!jobs) {
-    const cronFile = find('state-files/cron/jobs.json');
-    const data = cronFile ? await json(cronFile) : {};
-    jobs = Array.isArray(data.jobs) ? data.jobs.map(record) : [];
-  }
   const stores = new Map<string, RecordValue>();
   function authBackupPrefix(agentId: string): string | undefined {
     const agent = agents.find(item => item.id === agentId);
@@ -212,4 +232,68 @@ export async function prepareCronInferenceMigration(snapshotDir: string): Promis
   await writeFile(temporary, JSON.stringify({ version: 1, jobs: entries }), { mode: 0o600 });
   await rename(temporary, manifestPath);
   return { manifestPath, eligible: entries.length, skipped };
+}
+
+// OpenClaw's finiteSecondsToTimerSafeMilliseconds reserves headroom below Node's 32-bit timer.
+const MAX_CRON_TIMER_SECONDS = 2_147_000;
+
+/** Select a single literal launcher command. A task description alone cannot identify an exec call. */
+function legacyWorkerLauncher(job: RecordValue): { command: string; timeoutSeconds: number } | undefined {
+  const payload = record(job.payload);
+  if (job.sessionTarget !== 'isolated' || payload.kind !== 'agentTurn' || Object.hasOwn(job, 'declarationKey')) return;
+  if (payload.toolsAllow !== undefined && (!Array.isArray(payload.toolsAllow)
+    || !payload.toolsAllow.some(tool => tool === 'exec' || tool === 'group:runtime' || tool === '*'))) return;
+  const message = string(payload.message);
+  const contract = [message, string(job.description)].filter(Boolean).join('\n');
+  if (!message || !/(?:独立\s*(?:worker|进程)|后台(?:运行|执行|启动)|不(?:再)?等待.{0,12}(?:完成|结束)|(?:independent|background|detached)\s+(?:worker|process)|(?:do not|don't|without)\s+wait(?:ing)?)/iu.test(contract)) return;
+  const lines = message.split(/\r?\n|[：。；]/u);
+  const candidates: string[] = [];
+  for (const line of lines) {
+    // Allow an inline English instruction before the command. Keep Windows drive letters intact.
+    const raw = line.replace(/^[^"'\\/\n]*?:[ \t]+/, '').trim().replace(/^\x60([^\x60]*)\x60$/u, '$1').trim();
+    const command = /^(?:(?<interpreter>(?:uv(?:\.exe)?\s+run\s+)?python(?:w|3(?:\.\d+)?)?(?:\.exe)?|node(?:\.exe)?|(?:pwsh|powershell)(?:\.exe)?\s+-File)\s+)?(?:"(?<quoted>[^"]+)"|'(?<single>[^']+)'|(?<plain>[^\s"']+))\s+(?<args>.+)$/iu.exec(raw)?.groups;
+    if (!command || !/(?:^|\s)--start(?:\s|$)/u.test(command.args) || /[;&|<>\x60$%]/u.test(raw)) continue;
+    const script = command.quoted ?? command.single ?? command.plain;
+    if (!/^(?:[a-z]:[\\/]|\\\\[^\\]+\\[^\\]+\\)/iu.test(script)) continue;
+    const extension = command.interpreter === undefined ? /\.(?:exe|cmd|bat)$/iu
+      : /python/iu.test(command.interpreter) ? /\.pyw?$/iu
+      : /^node/iu.test(command.interpreter) ? /\.(?:[cm]?js)$/iu : /\.ps1$/iu;
+    if (!extension.test(script)) continue;
+    candidates.push(raw);
+  }
+  if (candidates.length !== 1 || !string(job.id)) return;
+  const command = candidates[0];
+  const current = payload.timeoutSeconds;
+  if (current !== undefined && current !== 60) return;
+  // Only an explicitly named overall or exec-tool deadline is evidence of a larger budget.
+  // Script options for refresh, delivery and retry phases do not describe the whole job.
+  const budgets = [
+    ...command.matchAll(/(?:^|\s)--(?:overall|total)-timeout-seconds(?:=|\s+)(\d+)(?=\s|$)/giu),
+    ...message.matchAll(/\bexec\.(?:timeoutSeconds|timeout)\s*[:=]\s*(\d+)\b/giu),
+  ].map(match => Math.min(Number(match[1]), MAX_CRON_TIMER_SECONDS)).filter(value => value > 0);
+  const explicit = budgets.reduce((max, value) => Math.max(max, value), 0);
+  return { command, timeoutSeconds: explicit ? Math.max(Number(current ?? 0), explicit) : 3600 };
+}
+
+export async function prepareCronTimeoutMigration(snapshotDir: string, snapshot = openCronSnapshot(snapshotDir)): Promise<{ manifestPath?: string; eligible: number }> {
+  const { root, readJobs, configFile, json } = await snapshot;
+  const cfg = configFile ? await json(configFile) : {};
+  const version = string(record(cfg.meta).lastTouchedVersion);
+  const parts = version?.match(/^(\d{4})\.(\d{1,2})\.(\d{1,2})(?:[-+.]|$)/);
+  const datedVersion = parts ? Number(parts[1]) * 10000 + Number(parts[2]) * 100 + Number(parts[3]) : undefined;
+  if (datedVersion !== undefined && datedVersion >= 20261010) return { eligible: 0 };
+  const { jobs, legacy } = await readJobs();
+  if (datedVersion === undefined && !legacy) return { eligible: 0 };
+  const { defaultId } = historicalAgentConfig(cfg);
+  const entries = jobs.flatMap(definition => {
+    const agentId = string(definition.agentId) ?? string(definition.sessionKey)?.match(/^agent:([^:]+):/)?.[1] ?? defaultId;
+    const launcher = legacyWorkerLauncher(definition);
+    return launcher ? [{ jobId: definition.id, definition, agentId, ...launcher }] : [];
+  });
+  if (!entries.length) return { eligible: 0 };
+  const manifestPath = join(dirname(root), 'clawx-cron-timeout-migration.json');
+  const temporary = manifestPath + '.' + randomUUID() + '.tmp';
+  await writeFile(temporary, JSON.stringify({ version: 1, jobs: entries }), { mode: 0o600 });
+  await rename(temporary, manifestPath);
+  return { manifestPath, eligible: entries.length };
 }

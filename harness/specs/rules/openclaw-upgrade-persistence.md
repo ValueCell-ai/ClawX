@@ -23,6 +23,7 @@ Rules:
 Validation:
   - Focused isolated SQLite and migration regression tests.
   - Communication replay and compare for changed Main/Gateway paths.
+  - When changing the bundled runtime, exercise a direct 0.6.1 upgrade and a Windows scheduled launcher whose worker outlives its parent. Check natural completion, the original deadline, cancellation and Gateway shutdown, using a temporary local marker for completion.
   - Scheduled-task upgrade coverage must distinguish shared and per-agent stores, community and synthetic enterprise credentials, repeated startup, model catalog changes and credential replacement. Real local-model execution and enterprise quit/restore require separate evidence from unit tests and chat-only upgrade probes. See `harness/reference/cron-inference-upgrade.md`.
 
 Scheduled-task inference continuity:

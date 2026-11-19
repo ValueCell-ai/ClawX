@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
-import { prepareCronInferenceMigration } from '@electron/utils/openclaw-cron-migration';
+import { prepareCronInferenceMigration, prepareCronTimeoutMigration } from '@electron/utils/openclaw-cron-migration';
 import { ensureOpenClawUpgradeSnapshot } from '@electron/utils/openclaw-upgrade-snapshot';
 
 type JsonRecord = Record<string, unknown>;
@@ -247,7 +247,7 @@ describe('legacy cron migration snapshot evidence', () => {
   });
   it('rejects path traversal in restore-root metadata', async () => {
     const f = await fixture();
-    const custom = join(f.root, 'external-agent');
+    const custom = join(await realpath(f.root), 'external-agent');
     await writeFile(f.configPath, JSON.stringify({ agents: { defaults: { model: 'custom/model' }, entries: { research: { agentDir: custom } } } }));
     await f.json('cron/jobs.json', { jobs: [job('traversal', { agentId: 'research' })] });
     await mkdir(custom);
@@ -261,5 +261,70 @@ describe('legacy cron migration snapshot evidence', () => {
     marker.fileInfo[outsidePath] = { sha256: createHash('sha256').update(await readFile(authFile)).digest('hex') };
     await writeFile(markerPath, JSON.stringify(marker));
     await expect(prepareCronInferenceMigration(snapshot.snapshotDir)).rejects.toThrow('Unsafe cron migration snapshot path');
+  });
+});
+
+describe('verified historical scheduled worker deadlines', () => {
+  const command = (name: string, flags = '') => 'uv run python "C:\\My Tasks\\' + name + '.py" --start' + flags;
+  const legacy = (name: string, message: string, timeoutSeconds?: number, extra = {}) =>
+    job(name, { payload: { kind: 'agentTurn', message, timeoutSeconds }, ...extra });
+  const brief = (cmd: string) => '启动独立 worker，不等待宏完成：' + cmd + ' 。命令退出后立即结束。';
+  const read = async (f: Awaited<ReturnType<typeof fixture>>) => {
+    const { snapshotDir } = await f.snapshot();
+    const { manifestPath } = await prepareCronTimeoutMigration(snapshotDir);
+    return manifestPath ? JSON.parse(await readFile(manifestPath, 'utf8')).jobs as {
+      jobId: string; command: string; timeoutSeconds: number;
+    }[] : [];
+  };
+
+  it.each(['json', 'sqlite'])('keeps three literal worker launchers from the %s store, without model or account evidence', async storage => {
+    const f = await fixture({});
+    const morning = command('morning', ' --refresh-timeout-seconds 1260 --send-timeout-seconds 900');
+    const afternoon = command('afternoon', ' --refresh-timeout-seconds 1260 --send-timeout-seconds 900');
+    const night = command('night', ' --timeout-seconds 900');
+    const jobs = [
+      legacy('morning', brief(morning), 60), legacy('afternoon', brief(afternoon), 60),
+      legacy('night', '固定命令一次：\n' + night + '\n命令返回后立即结束，不检查 worker 状态。', 60, { description: '独立 worker 启动器' }),
+      ...[[], ['read']].map((toolsAllow, i) => legacy('no-exec-' + i, brief(night), 60, {
+        payload: { kind: 'agentTurn', message: brief(night), timeoutSeconds: 60, toolsAllow },
+      })),
+      legacy('foreground', command('quick').replace(' --start', ''), 60), legacy('interactive', command('other'), 60),
+      legacy('unbounded', brief(night), 0), legacy('custom-limit', brief(night), 4200),
+      legacy('not-a-script', brief('python -c "print(1)" --start'), 60),
+      legacy('wrong-mode', brief(night), 60, { sessionTarget: 'main' }),
+      legacy('multiple', brief(morning) + '\n' + brief(afternoon), 60),
+      legacy('shell', brief(night + ' && whoami'), 60), legacy('relative', brief('uv run python helper.py --start'), 60),
+    ];
+    if (storage === 'json') await f.json('cron/jobs.json', { jobs });
+    else {
+      await f.json('cron/jobs.json', { jobs: [legacy('stale-json', brief(night), 60)] });
+      await f.sqlite('state/openclaw.sqlite', db => {
+        seedCron(db, jobs);
+        db.exec('ALTER TABLE cron_jobs ADD COLUMN payload_timeout_seconds INTEGER');
+      });
+    }
+    expect((await read(f)).map(e => [e.jobId, e.command, e.timeoutSeconds])).toEqual([
+      ['morning', morning, 3600], ['afternoon', afternoon, 3600], ['night', night, 3600],
+    ]);
+  });
+
+  it('uses explicit overall signals and keeps stage flags out of the calculation', async () => {
+    const f = await fixture({ meta: { lastTouchedVersion: '2026.7.1-2' } });
+    await f.json('cron/jobs.json', { jobs: [
+      legacy('known-short', brief(command('short', ' --total-timeout-seconds 900')), 60),
+      legacy('known-long', brief(command('long', ' --overall-timeout-seconds=7200'))),
+      legacy('exec-budget', brief(command('budget')) + ' exec.timeoutSeconds=4800', 60),
+      legacy('stage', brief(command('stage', ' --refresh-timeout-seconds 1260'))),
+      legacy('large-budget', brief(command('long', ' --total-timeout-seconds ' + '9'.repeat(100)))),
+    ] });
+    expect((await read(f)).map(e => e.timeoutSeconds)).toEqual([900, 7200, 4800, 3600, 2_147_000]);
+  });
+
+  it('ignores current-version snapshots before touching the cron store', async () => {
+    const f = await fixture({ meta: { lastTouchedVersion: '2026.10.10' } });
+    await f.json('cron/jobs.json', { jobs: [legacy('new', brief(command('new')), 60)] });
+    const { snapshotDir } = await f.snapshot();
+    await writeFile(join(snapshotDir, 'state-files/cron/jobs.json'), 'changed');
+    expect(await prepareCronTimeoutMigration(snapshotDir)).toEqual({ eligible: 0 });
   });
 });
