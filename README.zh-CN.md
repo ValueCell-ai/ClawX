@@ -164,6 +164,8 @@ Doctor 也识别已验证的 `2026.10.5`/schema 25 情况：首次启动 Gateway
 
 官方 Discord、飞书和 WhatsApp 依赖同步到 `2026.10.10`；企业微信升级到 `2026.10.30` 以适配当前配置 API，钉钉保持 `0.8.26`，微信保持 `2.4.10`。飞书沿用 main 已有迁移逻辑。
 
+网关将待发附件放入队列时，依次使用账号、频道、智能体默认设置中已有的大小上限。如果都未设置，升级后会自动采用对应的暂存上限，企业微信和钉钉为 20 MiB，飞书为 30 MiB，微信为 100 MiB。实际上传仍遵循各频道对不同文件类型的限制。
+
 OpenClaw 2026.10.5 更换了两个渠道插件，ClawX 会在首次启动 Gateway 前完成迁移。QQ 机器人从 `@openclaw/qqbot` 切换到腾讯 QQBot 2.0（`@tencent-connect/openclaw-qqbot`，插件 id `openclaw-qqbot`），默认账号移到 `channels.qqbot` 顶层，原本开放的私聊保持开放（使用审批标记 `openclaw:approval-disabled`）。带审批、密钥文件或群命令策略的 QQ 机器人配置交给 OpenClaw Doctor 处理。飞书从 `@larksuite/openclaw-lark` 切换到官方 `@openclaw/feishu`，应用凭据保持不变；官方插件提供 14 个飞书工具（原为 39 个），不再提供日历、任务、用户 OAuth、表格和搜索类工具。
 
 OpenClaw 2026.10 要求对非官方安装的插件授权其能力。对于 ClawX 自带且已启用的插件（钉钉、企业微信、飞书、QQ 机器人和 OpenAI 图片中转），ClawX 会在 Gateway 启动前执行 `openclaw plugins enable --accept-capabilities` 完成授权。这只在这些插件安装或升级后发生，当次启动每个插件约多花 10 秒。ClawX 不会启用你关闭的插件，也不会替你自己安装的插件授权。

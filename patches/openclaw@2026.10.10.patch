@@ -3103,3 +3103,287 @@ diff --git a/dist/postinstall-inventory.json b/dist/postinstall-inventory.json
    "dist/cleanup-DW96Zyc2.mjs",
    "dist/cleanup-DsPdoD3K.mjs",
    "dist/cleanup-JDubYhxM.mjs",
+diff --git a/dist/bundled-plugin-metadata-QbDJ_Ojn.mjs b/dist/bundled-plugin-metadata-QbDJ_Ojn.mjs
+index 7381ee5..e5b4f49 100644
+--- a/dist/bundled-plugin-metadata-QbDJ_Ojn.mjs
++++ b/dist/bundled-plugin-metadata-QbDJ_Ojn.mjs
+@@ -83,6 +83,7 @@ function collectBundledChannelConfigsCore(params) {
+ 		const commands = existing?.commands ?? channelMeta?.commands;
+ 		existingChannelConfigs[channelId] = {
+ 			schema: surface?.schema ?? existing?.schema ?? {},
++			...existing?.outboundMediaMaxMb !== void 0 ? { outboundMediaMaxMb: existing.outboundMediaMaxMb } : {},
+ 			...Object.keys(uiHints).length > 0 ? { uiHints } : {},
+ 			...runtime ? { runtime } : {},
+ 			...label ? { label } : {},
+diff --git a/dist/configured-max-bytes-gpyR5PVQ.mjs b/dist/configured-max-bytes-gpyR5PVQ.mjs
+index 26a8c2f..484832b 100644
+--- a/dist/configured-max-bytes-gpyR5PVQ.mjs
++++ b/dist/configured-max-bytes-gpyR5PVQ.mjs
+@@ -3,6 +3,7 @@ import { n as normalizeAccountId } from "./account-id-ifCOO7_9.mjs";
+ import { a as maxBytesForKind } from "./constants-GzjKtFvA.mjs";
+ import { r as resolveChannelAccountEntry } from "./account-lookup-Dm5zJglt.mjs";
+ import { t as MEDIA_MAX_BYTES } from "./store-BSH_8q1Q.mjs";
++import { r as snapshotReaderSlot } from "./plugin-metadata-snapshot-readers-BVwX7oya.mjs";
+ //#region src/media/configured-max-bytes.ts
+ const MB = 1048576;
+ /** Native local audio/video displayed by webchat is streamed, independently of channel caps. */
+@@ -24,9 +25,20 @@ function resolveChannelAccountMediaMaxMb(params) {
+ 	const accountMediaMax = (accountId && channelId ? asOptionalObjectRecord(resolveChannelAccountEntry(accountsObj, accountId, channelId, normalizeAccountId)) : void 0)?.mediaMaxMb;
+ 	return (typeof accountMediaMax === "number" ? accountMediaMax : void 0) ?? channelMediaMax;
+ }
+-/** Resolves the byte cap for staging an outbound reply's media from its configured channel/account, agent, or Telegram default. */
++/** Read the selected channel owner's upload budget without importing plugin code or scanning disk. */
++function resolveChannelOutboundMediaDefault(params) {
++	const channel = params.channel?.trim().toLowerCase();
++	if (!channel) return;
++	const snapshot = snapshotReaderSlot.getCurrentPluginMetadataSnapshot?.({
++		config: params.cfg,
++		allowScopedSnapshot: true,
++		allowWorkspaceScopedSnapshot: true,
++		allowSynchronousPolicyRead: false
++	});
++	return snapshot?.owners.channelOutboundMediaMaxMb?.get(channel) ?? (channel === "telegram" ? TELEGRAM_DEFAULT_MEDIA_MAX_MB : void 0);
++}
+ function resolveOutboundMediaMaxBytes(params) {
+-	const limitMb = resolveChannelAccountMediaMaxMb(params) ?? params.cfg.agents?.defaults?.mediaMaxMb ?? (params.channel?.trim().toLowerCase() === "telegram" ? TELEGRAM_DEFAULT_MEDIA_MAX_MB : void 0);
++	const limitMb = resolveChannelAccountMediaMaxMb(params) ?? params.cfg.agents?.defaults?.mediaMaxMb ?? resolveChannelOutboundMediaDefault(params);
+ 	return typeof limitMb === "number" && Number.isFinite(limitMb) && limitMb > 0 ? Math.floor(limitMb * MB) : MEDIA_MAX_BYTES;
+ }
+ //#endregion
+diff --git a/dist/manifest-4vUugjdC.mjs b/dist/manifest-4vUugjdC.mjs
+index b858507..c030814 100644
+--- a/dist/manifest-4vUugjdC.mjs
++++ b/dist/manifest-4vUugjdC.mjs
+@@ -603,8 +603,10 @@ function normalizeChannelConfigs(value) {
+ 	return normalizeNamedMetadataRecord(value, (rawEntry) => {
+ 		const schema = isRecord(rawEntry.schema) ? rawEntry.schema : null;
+ 		if (!schema) return;
++		const cap = rawEntry.outboundMediaMaxMb;
+ 		return omitUndefinedManifestFields({
+ 			schema,
++			outboundMediaMaxMb: Number.isSafeInteger(cap) && cap > 0 && Number.isSafeInteger(cap * 1048576) ? cap : void 0,
+ 			uiHints: normalizeConfigUiHints(rawEntry.uiHints),
+ 			runtime: isRecord(rawEntry.runtime) && typeof rawEntry.runtime.safeParse === "function" ? rawEntry.runtime : void 0,
+ 			label: normalizeOptionalString(rawEntry.label),
+diff --git a/dist/native-hook-relay/resolve-CRvcp7e4.mjs b/dist/native-hook-relay/resolve-CRvcp7e4.mjs
+index 7ac25da..8e2d181 100644
+--- a/dist/native-hook-relay/resolve-CRvcp7e4.mjs
++++ b/dist/native-hook-relay/resolve-CRvcp7e4.mjs
+@@ -4795,8 +4795,10 @@ function normalizeChannelConfigs(value) {
+ 	return normalizeNamedMetadataRecord(value, (rawEntry) => {
+ 		const schema = isRecord(rawEntry.schema) ? rawEntry.schema : null;
+ 		if (!schema) return;
++		const cap = rawEntry.outboundMediaMaxMb;
+ 		return omitUndefinedManifestFields({
+ 			schema,
++			outboundMediaMaxMb: Number.isSafeInteger(cap) && cap > 0 && Number.isSafeInteger(cap * 1048576) ? cap : void 0,
+ 			uiHints: normalizeConfigUiHints(rawEntry.uiHints),
+ 			runtime: isRecord(rawEntry.runtime) && typeof rawEntry.runtime.safeParse === "function" ? rawEntry.runtime : void 0,
+ 			label: normalizeOptionalString(rawEntry.label),
+diff --git a/dist/plugin-metadata-snapshot-BBKj8yr8.mjs b/dist/plugin-metadata-snapshot-BBKj8yr8.mjs
+index f3dd50a..2e34fff 100644
+--- a/dist/plugin-metadata-snapshot-BBKj8yr8.mjs
++++ b/dist/plugin-metadata-snapshot-BBKj8yr8.mjs
+@@ -296,6 +296,7 @@ function buildPluginMetadataOwnerMaps(manifestRegistry, index) {
+ 		}
+ 	}
+ 	for (const map of Object.values(owners)) map.forEach((pluginIds) => Object.freeze(pluginIds));
++	const channelOutboundMediaMaxMb = new Map();
+ 	const channelAccountKeyPolicies = /* @__PURE__ */ new Map();
+ 	const selectedChannels = /* @__PURE__ */ new Set();
+ 	const enabledPluginIds = new Set(index.plugins.filter((plugin) => plugin.enabled).map((plugin) => plugin.pluginId));
+@@ -303,12 +304,15 @@ function buildPluginMetadataOwnerMaps(manifestRegistry, index) {
+ 	for (const owner of channelOwners) for (const channel of owner.channels) {
+ 		if (selectedChannels.has(channel)) continue;
+ 		selectedChannels.add(channel);
++		const cap = owner.channelConfigs?.[channel]?.outboundMediaMaxMb;
++		if (cap !== void 0) channelOutboundMediaMaxMb.set(channel, cap);
+ 		const policy = owner.channelAccountKeyPolicies?.[channel];
+ 		if (policy) channelAccountKeyPolicies.set(channel, policy);
+ 	}
+ 	return {
+ 		...owners,
+ 		channelAccountKeyPolicies,
++		channelOutboundMediaMaxMb,
+ 		...buildPluginMetadataProviderFacts(plugins, enabledPluginIds)
+ 	};
+ }
+diff --git a/dist/plugin-metadata-snapshot-CSQkhuFe.d.ts b/dist/plugin-metadata-snapshot-CSQkhuFe.d.ts
+index 7266e08..684aa88 100644
+--- a/dist/plugin-metadata-snapshot-CSQkhuFe.d.ts
++++ b/dist/plugin-metadata-snapshot-CSQkhuFe.d.ts
+@@ -1707,6 +1707,7 @@ type PluginProviderAuthContribution = {
+ type PluginMetadataSnapshotOwnerMaps = {
+   channels: ReadonlyMap<string, readonly string[]>;
+   channelAccountKeyPolicies?: ReadonlyMap<string, ChannelAccountKeyPolicy>;
++  channelOutboundMediaMaxMb?: ReadonlyMap<string, number>;
+   channelConfigs: ReadonlyMap<string, readonly string[]>;
+   providers: ReadonlyMap<string, readonly string[]>;
+   modelCatalogProviders: ReadonlyMap<string, readonly string[]>;
+diff --git a/dist/types-D7I_F5Ux.d.ts b/dist/types-D7I_F5Ux.d.ts
+index d67590c..e915b8a 100644
+--- a/dist/types-D7I_F5Ux.d.ts
++++ b/dist/types-D7I_F5Ux.d.ts
+@@ -855,6 +855,8 @@ type PluginDiagnostic = {
+   };
+ };
+ type PluginManifestChannelConfig = {
++  /** Default outbound attachment staging budget in MiB, before channel processing. */
++  outboundMediaMaxMb?: number;
+   schema: JsonSchemaObject;
+   uiHints?: Record<string, PluginConfigUiHint>;
+   runtime?: ChannelConfigRuntimeSchema;
+diff --git a/dist/store.shared-CVpD4EkK.mjs b/dist/store.shared-CVpD4EkK.mjs
+--- a/dist/store.shared-CVpD4EkK.mjs
++++ b/dist/store.shared-CVpD4EkK.mjs
+@@ -21,5 +21,27 @@
+ 		return new SaveMediaSourceError("too-large", `Media exceeds ${limit} limit`, options);
+ 	}
+ };
++// Only byte counts and the channel id are part of the public delivery error.
++const outboundMediaLimitCode = "OUTBOUND_MEDIA_TOO_LARGE";
++class OutboundMediaLimitError extends Error {
++	constructor(message, limitBytes, actualBytes, options) {
++		super(message, options);
++		this.code = outboundMediaLimitCode;
++		this.limitBytes = limitBytes;
++		this.actualBytes = actualBytes;
++	}
++}
++function publicOutboundMediaLimit(value, channel = value?.channel) {
++	if (value?.code !== outboundMediaLimitCode) return;
++	const { limitBytes, actualBytes } = value;
++	if (!Number.isSafeInteger(limitBytes) || limitBytes < 1) return;
++	if (actualBytes !== void 0 && (!Number.isSafeInteger(actualBytes) || actualBytes <= limitBytes)) return;
++	const details = { code: outboundMediaLimitCode, limitBytes };
++	if (actualBytes !== void 0) details.actualBytes = actualBytes;
++	if (typeof channel === "string" && /^[a-z][a-z0-9_-]{0,63}$/.test(channel)) details.channel = channel;
++	const message = `Media exceeds ${formatMediaSize(limitBytes)} limit` + (actualBytes === void 0 ? "" : ` (got ${formatMediaSize(actualBytes)})`);
++	return { details, message: details.channel ? `${details.channel}: ${message}` : message };
++}
++export { OutboundMediaLimitError, publicOutboundMediaLimit };
+ //#endregion
+ export { formatMediaSize as n, SaveMediaSourceError as t };
+diff --git a/dist/web-media-B8mlVr8x.mjs b/dist/web-media-B8mlVr8x.mjs
+--- a/dist/web-media-B8mlVr8x.mjs
++++ b/dist/web-media-B8mlVr8x.mjs
+@@ -17,7 +17,7 @@
+ import { t as MAX_IMAGE_INPUT_PIXELS } from "./image-processor-config-C3AXiVc4.mjs";
+ import { d as readImageMetadataFromHeader, f as readImageProbeFromHeader, h as createImageProcessorWithPixelLimits, m as createImageProcessor, s as isAnimatedWebpBuffer } from "./image-ops-CPoFRSYd.mjs";
+ import { n as readOutboundMediaFile } from "./bounded-read-file-BXBH3Nms.mjs";
+-import { n as formatMediaSize } from "./store.shared-CVpD4EkK.mjs";
++import { n as formatMediaSize, OutboundMediaLimitError } from "./store.shared-CVpD4EkK.mjs";
+ import { o as extractOriginalFilename, s as getMediaDir } from "./store-BSH_8q1Q.mjs";
+ import { r as resolveInboundMediaReference } from "./media-reference-CG6joraC.mjs";
+ import { a as readLocalMediaFile, n as LocalMediaAccessError, r as assertLocalMediaAllowed, t as HostReadMediaTypeError } from "./local-media-access-B0CtHohQ.mjs";
+@@ -30,9 +30,9 @@
+ import { assertNoWindowsNetworkPath, safeFileURLToPath } from "@openclaw/fs-safe/advanced";
+ //#region src/media/image-optimization-error.ts
+ /** Internal signal that image optimization could not satisfy its final byte budget. */
+-var ImageOptimizationLimitError = class extends Error {
+-	constructor(message, maxBytes) {
+-		super(message);
++var ImageOptimizationLimitError = class extends OutboundMediaLimitError {
++	constructor(message, maxBytes, actualBytes) {
++		super(message, maxBytes, actualBytes);
+ 		this.maxBytes = maxBytes;
+ 		this.name = "ImageOptimizationLimitError";
+ 	}
+@@ -435,7 +435,7 @@
+ 	const isAnimatedWebp = isAnimatedWebpBuffer(params.buffer);
+ 	let originalContentType = isAnimatedWebp ? "image/webp" : params.contentType ?? null;
+ 	if (originalContentType === "image/gif" || isAnimatedWebp) {
+-		if (params.buffer.length > cap) throw new ImageOptimizationLimitError(formatCapLimit(isAnimatedWebp ? "Animated WebP" : "GIF", cap, params.buffer.length), cap);
++		if (params.buffer.length > cap) throw new ImageOptimizationLimitError(formatCapLimit(isAnimatedWebp ? "Animated WebP" : "GIF", cap, params.buffer.length), cap, params.buffer.length);
+ 		assertImageSatisfiesHardDimensionPolicy(params.buffer, params.imageCompression);
+ 	} else originalContentType = resolvePreservableOriginalImageContentType({
+ 		buffer: params.buffer,
+@@ -466,7 +466,7 @@
+ 	});
+ 	if (optimized.chosen.transparency === "flattened" && shouldLogVerbose()) logVerbose(`Image transparency flattened to fit ${formatMediaSize(cap)} optimization budget`);
+ 	logOptimizedImage(params.buffer.length, optimized);
+-	if (optimized.data.length > cap) throw new ImageOptimizationLimitError(formatCapReduce("Media", cap, optimized.data.length), cap);
++	if (optimized.data.length > cap) throw new ImageOptimizationLimitError(formatCapReduce("Media", cap, optimized.data.length), cap, optimized.data.length);
+ 	return reconcileImageFileName({
+ 		buffer: optimized.data,
+ 		contentType: optimized.mimeType,
+@@ -498,7 +498,7 @@
+ 			});
+ 			const imageCap = effectiveImageBytesCap(cap, imageCompression) ?? cap;
+ 			const isGif = params.contentType === "image/gif";
+-			if (params.buffer.length > imageCap) throw new Error(formatCapLimit(isGif ? "GIF" : "Media", imageCap, params.buffer.length));
++			if (params.buffer.length > imageCap) throw new OutboundMediaLimitError(formatCapLimit(isGif ? "GIF" : "Media", imageCap, params.buffer.length), imageCap, params.buffer.length);
+ 			assertImageSatisfiesHardDimensionPolicy(params.buffer, imageCompression);
+ 			return {
+ 				buffer: params.buffer,
+@@ -507,7 +507,7 @@
+ 				fileName: params.fileName
+ 			};
+ 		}
+-		if (params.buffer.length > cap) throw new Error(formatCapLimit("Media", cap, params.buffer.length));
++		if (params.buffer.length > cap) throw new OutboundMediaLimitError(formatCapLimit("Media", cap, params.buffer.length), cap, params.buffer.length);
+ 		return {
+ 			buffer: params.buffer,
+ 			contentType: params.contentType ?? void 0,
+@@ -562,7 +562,7 @@
+ 		});
+ 	} catch (err) {
+ 		if (err instanceof FsSafeError) {
+-			if (err.code === "too-large") throw new Error(`Media exceeds ${formatMediaSize(sourceReadCap)} limit`, { cause: err });
++			if (err.code === "too-large") throw new OutboundMediaLimitError(`Media exceeds ${formatMediaSize(sourceReadCap)} limit`, sourceReadCap, void 0, { cause: err });
+ 			if (err.code === "not-found") throw new LocalMediaAccessError("not-found", `Local media file not found: ${mediaUrl}`, { cause: err });
+ 			if (err.code === "not-file") throw new LocalMediaAccessError("not-file", `Local media path is not a file: ${mediaUrl}`, { cause: err });
+ 			if (err.code === "path-mismatch") throw new LocalMediaAccessError("path-not-allowed", `Local media path is not under an allowed directory: ${mediaUrl}`, { cause: err });
+diff --git a/dist/send-D7lm0aSx.mjs b/dist/send-D7lm0aSx.mjs
+--- a/dist/send-D7lm0aSx.mjs
++++ b/dist/send-D7lm0aSx.mjs
+@@ -1,3 +1,4 @@
++import { OutboundMediaLimitError, publicOutboundMediaLimit } from "./store.shared-CVpD4EkK.mjs";
+ import { c as normalizeOptionalLowercaseString, g as readStringValue, l as normalizeOptionalString } from "./string-coerce-1VuiLaaR.mjs";
+ import { t as createDeferredCore } from "./deferred-D0La5CRk.mjs";
+ import { r as normalizeArrayBackedTrimmedStringList } from "./string-normalization-D6DKCpwE.mjs";
+@@ -191,6 +192,13 @@
+ 			error: authorizationError.error
+ 		}
+ 	});
++	if (unsentError instanceof OutboundMediaLimitError) {
++		const limit = publicOutboundMediaLimit(unsentError, params.channel);
++		if (limit) return createGatewayInflightResult({
++			...params,
++			result: { ok: false, error: errorShape(ErrorCodes.INVALID_REQUEST, limit.message, { details: limit.details, retryable: false }) }
++		});
++	}
+ 	const partialDelivery = isChannelPartialDeliveryError(params.err) ? params.err.deliveryResult : void 0;
+ 	const queuedDelivery = !partialDelivery && params.err instanceof OutboundDeliveryError && params.err.queueCustody === "held";
+ 	const error = errorShape(ErrorCodes.UNAVAILABLE, String(params.err), partialDelivery ? {
+diff --git a/dist/tools-invoke-shared-CGhBS7S7.mjs b/dist/tools-invoke-shared-CGhBS7S7.mjs
+--- a/dist/tools-invoke-shared-CGhBS7S7.mjs
++++ b/dist/tools-invoke-shared-CGhBS7S7.mjs
+@@ -1,3 +1,4 @@
++import { OutboundMediaLimitError, publicOutboundMediaLimit } from "./store.shared-CVpD4EkK.mjs";
+ import { c as normalizeOptionalLowercaseString, l as normalizeOptionalString } from "./string-coerce-1VuiLaaR.mjs";
+ import { a as asOptionalRecord, c as isRecord } from "./record-coerce-TIsquoVR.mjs";
+ import { t as formatErrorMessage } from "./errors-CQHIobuu.mjs";
+@@ -354,6 +355,11 @@
+ 	} catch (err) {
+ 		const inputStatus = resolveToolInputErrorStatus(err);
+ 		if (inputStatus !== null) return failure(inputStatus === 403 ? 403 : 400, "tool_error", formatErrorMessage(err) || "invalid tool arguments");
++		if (toolName === "message" && resolveToolSource(tool) === "core") {
++			const limit = err instanceof OutboundMediaLimitError ? publicOutboundMediaLimit(err, args.channel) :
++				err instanceof GatewayClientRequestError && err.code === ErrorCodes.INVALID_REQUEST ? publicOutboundMediaLimit(err.details) : void 0;
++			if (limit) return failure(413, "media_too_large", limit.message, limit.details);
++		}
+ 		if (!params.signal?.aborted) logWarn(`tools-invoke: tool execution failed: ${String(err)}`);
+ 		return failure(500, "tool_error", "tool execution failed");
+ 	}
+diff --git a/dist/tools-invoke-DGTW5Yi2.mjs b/dist/tools-invoke-DGTW5Yi2.mjs
+--- a/dist/tools-invoke-DGTW5Yi2.mjs
++++ b/dist/tools-invoke-DGTW5Yi2.mjs
+@@ -47,6 +47,7 @@
+ 		error: {
+ 			code: outcome.error.requiresApproval ? "requires_approval" : {
+ 				invalid_request: "validation_error",
++				media_too_large: "validation_error",
+ 				not_found: "not_found",
+ 				tool_call_blocked: "forbidden",
+ 				tool_error: "internal_error"
