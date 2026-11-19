@@ -22,6 +22,7 @@ Rules:
   - An offline SQLite session rename must update the logical entry_json label/updatedAt and their indexed session_nodes columns in one transaction. Validate the existing source against its projected session identity/timestamp, preserve unrelated fields, and fail without mutation on inconsistent rows; never change schema or report success from a projection-only write.
 Validation:
   - Exercise Windows Doctor's package-manager resolution with an empty PATH and check the exit status of the bundled npm CLI.
+  - Test image model migrations against OpenClaw's resolved configuration and schema. Cover an existing model inherited through `$include` and a `null` image setting alongside a valid legacy model.
   - Focused isolated SQLite and migration regression tests.
   - Communication replay and compare for changed Main/Gateway paths.
   - When changing the bundled runtime, exercise a direct 0.6.1 upgrade and a Windows scheduled launcher whose worker outlives its parent. Check natural completion, the original deadline, cancellation and Gateway shutdown, using a temporary local marker for completion.

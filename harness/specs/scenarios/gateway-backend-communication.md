@@ -125,7 +125,10 @@ Native Windows upgrade evidence for the independent official 0.6.1 and main
 inputs is recorded in `harness/reference/windows-sqlite-upgrade-validation-20261109.md`,
 including SQLite snapshot cleanup diagnostics and the limits of isolated probes.
 Startup migrates the legacy image model setting before Doctor validates the
-upgraded profile. On Windows, Doctor can run its npm package checks when the
+upgraded profile. An image model supplied by `$include` remains in its source
+file, including when a local `null` must be removed to reveal it. If the image
+setting is still missing or `null`, the complete legacy model is restored.
+On Windows, Doctor can run its npm package checks when the
 user has no system npm. See [Windows upgrade repair](../tasks/windows-upgrade-doctor-npm.md).
 
 The chat composer reads and updates session model selections through Main.

@@ -3701,3 +3701,21 @@ diff --git a/dist/npm-install-env-B-C07WJc.mjs b/dist/npm-install-env-B-C07WJc.m
 -	return process.versions.bun ? resolveBundledNpmCommand(args) : ["npm", ...args];
 +	return process.platform === "win32" || process.versions.bun ? resolveBundledNpmCommand(args) : ["npm", ...args];
  }
+diff --git a/dist/plugin-sdk/config-contracts.js b/dist/plugin-sdk/config-contracts.js
+--- a/dist/plugin-sdk/config-contracts.js
++++ b/dist/plugin-sdk/config-contracts.js
+@@ -1,3 +1,8 @@
+ import { t as resolveGatewayPublicOrigin } from "../gateway-public-origin-BcHLka2A.mjs";
++import { o as normalizeConfigIoDeps, d as resolveConfigIncludesForRead } from "../io.read-helpers-Bf4Vt_cJ.mjs";
+ import "../config-contracts-la_KkjCS.mjs";
++
++export function resolveClawXConfigIncludes(config, configPath) {
++	return resolveConfigIncludesForRead(config, configPath, normalizeConfigIoDeps());
++}
+ export { resolveGatewayPublicOrigin };
+diff --git a/dist/plugin-sdk/config-contracts.d.ts b/dist/plugin-sdk/config-contracts.d.ts
+--- a/dist/plugin-sdk/config-contracts.d.ts
++++ b/dist/plugin-sdk/config-contracts.d.ts
+@@ -3,1 +3,2 @@
+ import { EA as resolveGatewayPublicOrigin, Uy as SessionResetMode, _A as ChannelGroupPolicy } from "../config-contracts-CaROPwlH.js";
++export declare function resolveClawXConfigIncludes(config: unknown, configPath: string): unknown;

@@ -55,6 +55,7 @@ import {
   CLAWX_OPENAI_IMAGE_PROVIDER_KEY,
 } from './openclaw-image-relay-constants';
 import {
+  migrateLegacyImageGenerationModel,
   readImageGenerationModelValue,
   writeImageGenerationModelValue,
 } from './openclaw-media-models';
@@ -3395,11 +3396,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     const agentDefaults = isPlainRecord(config.agents) && isPlainRecord(config.agents.defaults)
       ? config.agents.defaults
       : null;
-    // Migrate the old image setting before Doctor validates the config.
-    // Leave malformed mediaModels containers intact for Doctor to diagnose.
-    if (agentDefaults && Object.hasOwn(agentDefaults, 'imageGenerationModel')
-      && (agentDefaults.mediaModels === undefined || isPlainRecord(agentDefaults.mediaModels))) {
-      writeImageGenerationModelValue(agentDefaults, readImageGenerationModelValue(agentDefaults));
+    if (await migrateLegacyImageGenerationModel(config)) {
       modified = true;
       console.log('[sanitize] Migrated legacy image generation setting to "agents.defaults.mediaModels.image"');
     }

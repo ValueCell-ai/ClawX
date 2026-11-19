@@ -145,7 +145,7 @@ ClawXを初めて起動すると、**セットアップウィザード**が次�
 Windows のアップグレード修復では同梱の npm を使い、旧形式の画像モデル設定を `agents.defaults.mediaModels.image` に移行します。すでに 0.7.0 にアップグレードし、起動時に `spawn npm.cmd ENOENT` が表示される場合や、`imageGenerationModel` が未認識の項目として報告される場合は、次の手順で修復できます。
 
 1. システムトレイから ClawX を終了します。既存のデータベースと移行時のバックアップを含め、OpenClaw の状態ディレクトリ（既定では `%USERPROFILE%\.openclaw`）全体をバックアップしてください。
-2. 状態ディレクトリの `openclaw.json` を開きます。`agents.defaults` に旧項目の `imageGenerationModel` がある場合は、同じ場所の `mediaModels` 内に `image` があるかを確認します。あればその値を保持します。なければ作成し、`primary`、`fallbacks`、`timeoutMs` などを含む旧項目の値全体を移します。ほかのメディア設定を残して旧項目を削除し、保存します。
+2. 状態ディレクトリの `openclaw.json` を開きます。`agents.defaults` に旧項目の `imageGenerationModel` がある場合は、メインファイルと `$include` の参照先で `mediaModels.image` を確認します。モデルが設定されていれば、その設定を元のファイルに残します。メインファイルの `image: null` が参照先のモデルを上書きしている場合は、その空の項目を削除して参照先のモデルとオプションを有効にします。それでも値が未設定または `null` なら、`primary`、`fallbacks`、`timeoutMs` などを含む旧モデルの値全体を `mediaModels.image` に設定します。`imageGenerationModel` を定義元のファイルから削除し、ほかのメディア設定を残して保存します。
 3. 普段 ClawX を使う Windows アカウントで、`ClawX.exe` のあるフォルダーから PowerShell を開き、`npm.cmd --version` を実行します。コマンドが見つからない場合は、npm を含む Node.js のインストール先を PATH に追加し、同じフォルダーで PowerShell を開き直してバージョンを確認します。DeepSeek などのプロバイダーを設定している場合、Doctor がプラグインを取得するために npm レジストリへの接続が必要になることがあります。
 4. npm のバージョンを確認した PowerShell で `.\ClawX.exe` を実行します。Doctor の自動修復が終わったら、Gateway の準備が完了したことを確認します。起動に失敗する場合は **設定 → 詳細設定 → 開発者 → Doctor 修復を実行** を選びます。修復が成功したら Gateway を再起動し、準備が完了したことを確認してください。
 

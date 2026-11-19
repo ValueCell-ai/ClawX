@@ -33,7 +33,9 @@ requiredTests:
 acceptance:
   - Exercise the real npm CLI with an empty search path and preserve arguments and the exit status.
   - Retain OpenClaw's normal backup, migration, and admission checks.
-  - Preserve existing canonical image settings and sibling media settings during the prelaunch rename.
+  - Preserve an effective mediaModels.image supplied by $include. Remove the obsolete local imageGenerationModel without introducing a local image override.
+  - Remove a local null image override when the included file supplies a valid model, retaining the included fallbacks and other options exactly once.
+  - If the effective image setting remains missing or null, restore the full valid legacy model and its options. Validate the resolved configuration and preserve sibling media settings.
 docs:
   required: true
 ---
