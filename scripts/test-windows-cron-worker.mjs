@@ -10,8 +10,9 @@ import { pathToFileURL } from 'node:url';
 
 assert.equal(process.platform, 'win32', 'This check requires the native Windows Job implementation');
 const require = createRequire(import.meta.url);
-const dist = join(dirname(require.resolve('openclaw/package.json')), 'dist');
-const runtime = createRequire(join(dist, 'index.js'));
+const runtimeEntry = require.resolve('openclaw');
+const dist = dirname(runtimeEntry);
+const runtime = createRequire(runtimeEntry);
 assert.ok(runtime('@openclaw/proc-safe/windows-job').isSupported(), 'The Windows native Job binding is required');
 const supervisors = (await readdir(dist)).filter(file => /^supervisor-[\w-]+\.mjs$/.test(file));
 const entrypoints = [];
