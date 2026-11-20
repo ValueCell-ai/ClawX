@@ -8,6 +8,7 @@ touchedAreas:
   - electron/gateway/supervisor.ts
   - electron/utils/openclaw-cli.ts
   - electron/utils/openclaw-command.ts
+  - tests/e2e/agent-creation-upgrade.spec.ts
   - tests/unit/gateway-supervisor.test.ts
   - tests/unit/openclaw-cli.test.ts
   - tests/unit/openclaw-command.test.ts
@@ -28,6 +29,7 @@ requiredRules:
   - openclaw-runtime-child-processes
   - openclaw-upgrade-persistence
 requiredTests:
+  - tests/e2e/agent-creation-upgrade.spec.ts
   - tests/unit/openclaw-cli.test.ts
   - tests/unit/openclaw-command.test.ts
   - tests/unit/openclaw-doctor.test.ts
@@ -35,6 +37,7 @@ requiredTests:
   - tests/unit/openclaw-snapshot-admission-cleanup.test.ts
   - tests/unit/gateway-supervisor.test.ts
 acceptance:
+  - Observe the complete cleanup output and the expected exit code from the Electron utility process for both migration refusal and Doctor success.
   - Exercise the failing cleanup through the real Windows runtime.
   - Upgrade state generated with the official 0.6.1 runtime through the Windows Electron Gateway manager, including its own Doctor, then read the old conversation and send an ACP prompt to the same session with a loopback provider.
   - Preserve SQLite integrity checks, private staging, junction handling and error propagation.
