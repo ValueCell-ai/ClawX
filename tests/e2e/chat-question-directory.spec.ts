@@ -145,6 +145,7 @@ test.describe('ClawX chat question directory', () => {
       }
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
+      await page.getByTestId(`sidebar-session-${SESSION_KEY}`).click();
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
       await emitAcpSessionUpdates(app, messagesToAcpUpdates(seededHistory));
       await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
@@ -214,6 +215,7 @@ test.describe('ClawX chat question directory', () => {
       }
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
+      await page.getByTestId(`sidebar-session-${SESSION_KEY}`).click();
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
       await emitAcpSessionUpdates(app, messagesToAcpUpdates(longQuestionDirectoryHistory));
       await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });

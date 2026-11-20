@@ -1,3 +1,6 @@
+import { setComposerCaret } from './fixtures/composer-editor';
+import { settleFloatingSurface } from './fixtures/floating-ui';
+import { expectMenuSelection } from './fixtures/menu-selection';
 import type { ElectronApplication } from '@playwright/test';
 import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
 
@@ -24,7 +27,7 @@ async function openChatWithInstalledMocks(app: ElectronApplication) {
 }
 
 test.describe('ClawX chat skill trigger', () => {
-  test('renders the localized Chinese skill label after the @ trigger', async ({ launchElectronApp }) => {
+  test('renders the localized Chinese skill label after the execution-agent selector', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -68,7 +71,7 @@ test.describe('ClawX chat skill trigger', () => {
                 success: true,
                 agents: [
                   { id: 'main', name: 'main' },
-                  { id: 'research', name: 'research' },
+                  { id: 'research', name: 'research', modelDisplay: 'Research Model' },
                 ],
               },
             },
@@ -113,21 +116,46 @@ test.describe('ClawX chat skill trigger', () => {
       });
 
       expect(isSkillAfterAgent).toBe(true);
+      await page.getByTestId('chat-composer-agent').click();
+      const agentMenu = page.getByTestId('chat-agent-picker-menu');
+      await expect(agentMenu.getByTestId('chat-agent-option-main')).toHaveAttribute('aria-current', 'true');
+      await agentMenu.getByTestId('chat-agent-option-research').click();
+
+      for (const width of [1280, 900, 700]) {
+        await page.setViewportSize({ width, height: 800 });
+        for (const [trigger, menu] of [
+          ['chat-composer-agent', 'chat-agent-picker-menu'],
+          ['chat-composer-skill', 'chat-skill-picker-menu'],
+        ]) {
+          await page.getByTestId(trigger).click();
+          const popup = page.getByTestId(menu);
+          await expect(popup).toBeVisible();
+          await settleFloatingSurface(popup);
+          if (menu === 'chat-agent-picker-menu') {
+            // Description rows grow with the shared supporting-text line height.
+            expect((await popup.locator('[aria-current="true"]').boundingBox())!.height).toBeGreaterThanOrEqual(44);
+            await expectMenuSelection(popup.locator('[aria-current="true"]'));
+            await expect(popup.locator('button:not([aria-current]) [data-slot="menu-selection-indicator"]')).toHaveCount(0);
+          }
+          const bounds = await popup.boundingBox();
+          if (width >= 900) expect(bounds!.width).toBe(384);
+          expect(bounds!.x).toBeGreaterThanOrEqual(0);
+          expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+          await page.keyboard.press('Escape');
+          await expect(popup).toHaveCount(0);
+        }
+      }
+      await page.setViewportSize({ width: 1280, height: 800 });
 
       await page.getByTestId('chat-composer-input').fill('Draft a new helper');
-      await page.getByTestId('chat-composer-input').evaluate((element) => {
-        if (!(element instanceof HTMLTextAreaElement)) return;
-        const cursorPosition = 'Draft '.length;
-        element.focus();
-        element.setSelectionRange(cursorPosition, cursorPosition);
-      });
+      await setComposerCaret(page.getByTestId('chat-composer-input'), 'Draft '.length);
       await page.getByTestId('chat-composer-skill').click();
       await page.getByText('/create-skill', { exact: true }).click();
-      await expect(page.getByTestId('chat-composer-input')).toHaveValue('Draft /create-skill  a new helper');
+      await expect(page.getByTestId('chat-composer-input')).toHaveText('Draft /create-skill  a new helper');
       await expect(page.getByTestId('chat-composer-skill-token')).toHaveText('/create-skill');
       await expect(page.getByTestId('chat-composer-skill-token')).toHaveJSProperty('tagName', 'SPAN');
       await expect(page.getByTestId('chat-composer-input')).not.toHaveClass(/text-transparent/);
-      await expect(page.getByTestId('chat-composer-highlight')).toHaveClass(/text-transparent/);
+      await expect(page.getByTestId('chat-composer-highlight')).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }

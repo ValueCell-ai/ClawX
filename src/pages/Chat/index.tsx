@@ -47,12 +47,7 @@ import { projectSessionRunState } from '@/stores/chat/session-status';
 import { formatSubagentSessionTitle, getPromptSessionKey, isNativeSubagentSessionKey } from '@/stores/chat/session-key-utils';
 import type { AcpSubagentSession } from './AcpSubagentSessions';
 
-const ArtifactPanelLazy = lazy(() =>
-  import('@/components/file-preview/ArtifactPanel').then((m) => ({ default: m.ArtifactPanel })),
-);
-const PanelResizeDividerLazy = lazy(() =>
-  import('@/components/file-preview/PanelResizeDivider').then((m) => ({ default: m.PanelResizeDivider })),
-);
+const ResponsiveArtifactPanelLazy = lazy(() => import('@/components/file-preview/ResponsiveArtifactPanel'));
 
 const EMPTY_FILE_ACTIVITY: AcpFileActivityProjection = {
   activities: [],
@@ -174,17 +169,6 @@ function AcpLoadingState() {
   );
 }
 
-function AcpEmptyState() {
-  const { t } = useTranslation('chat');
-  return (
-    <div data-testid="acp-chat-empty-state" className="flex h-[60vh] flex-col items-center justify-center text-center">
-      <h1 className="text-4xl font-serif font-normal tracking-tight text-foreground/80 md:text-5xl">
-        {t('welcome.subtitle')}
-      </h1>
-    </div>
-  );
-}
-
 function WorkspaceUnavailableBanner({
   path,
   readOnly,
@@ -234,7 +218,6 @@ export function Chat() {
   const currentAgentId = useChatStore((s) => s.currentAgentId);
   const composerDraft = useComposerDraftStore((s) => s.drafts[currentSessionKey] ?? '');
   const setComposerDraft = useComposerDraftStore((s) => s.setDraft);
-  const loadSessions = useChatStore((s) => s.loadSessions);
   const switchSession = useChatStore((s) => s.switchSession);
   const selectAcpSession = useChatStore((s) => s.selectAcpSession);
   const acknowledgeAcpSessionCreated = useChatStore((s) => s.acknowledgeAcpSessionCreated);
@@ -248,7 +231,6 @@ export function Chat() {
   const removeWorkspace = useSettingsStore((s) => s.removeWorkspace);
   const fetchAgents = useAgentsStore((s) => s.fetchAgents);
   const agents = useAgentsStore((s) => s.agents);
-  const [sessionDiscoveryAttempted, setSessionDiscoveryAttempted] = useState(false);
   const [lastPromptAttemptSessionKey, setLastPromptAttemptSessionKey] = useState<string | null>(null);
   const [questionDirectoryOpenSessionKey, setQuestionDirectoryOpenSessionKey] = useState<string | null>(null);
   const [resolvedWorkspaceContext, setResolvedWorkspaceContext] = useState<{
@@ -383,7 +365,6 @@ export function Chat() {
   const respondAcpPermission = useAcpChatSessionStore((s) => s.respondPermission);
   const clearAcpError = useAcpChatSessionStore((s) => s.clearError);
   const panelOpen = useArtifactPanel((s) => s.open);
-  const panelWidthPct = useArtifactPanel((s) => s.widthPct);
   const closeArtifactPanel = useArtifactPanel((s) => s.close);
   const splitContainerRef = useRef<HTMLDivElement | null>(null);
   const acpLoadInFlightKeyRef = useRef<string | null>(null);
@@ -479,19 +460,6 @@ export function Chat() {
   );
 
   useEffect(() => {
-    if (currentSessionKey !== DEFAULT_SESSION_KEY || sessions.length > 0 || sessionDiscoveryAttempted) return;
-    let cancelled = false;
-    void loadSessions()
-      .finally(() => {
-        if (!cancelled) setSessionDiscoveryAttempted(true);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [currentSessionKey, loadSessions, sessionDiscoveryAttempted, sessions.length]);
-
-  useEffect(() => {
     if (!currentSessionKey || !cwd || !currentSession?.createdLocally || promptOrigin === currentSessionKey) return;
     acpLoadInFlightKeyRef.current = null;
     const hasStaleTimeline = acpTimeline.sessionId !== currentSessionKey || acpTimeline.itemOrder.length > 0;
@@ -500,29 +468,21 @@ export function Chat() {
   }, [acpActiveSessionKey, acpCwd, acpTimeline.itemOrder.length, acpTimeline.sessionId, acpWorkspaceRoot, currentSession, currentSessionKey, cwd, prepareLocalAcpSession, promptOrigin]);
 
   useEffect(() => {
-    if (!currentSessionKey || !cwd || !workspaceContextAvailable || promptOrigin === currentSessionKey) return;
-    if (currentSessionKey === DEFAULT_SESSION_KEY && sessions.length === 0 && acpActiveSessionKey == null && !sessionDiscoveryAttempted) return;
+    if (!currentSession || currentSession.createdLocally || !cwd || !workspaceContextAvailable || promptOrigin === currentSessionKey) return;
     if (acpActiveSessionKey === currentSessionKey && acpWorkspaceRoot === cwd && acpCwd === cwd) return;
     const acpLoadKey = `${currentSessionKey}\0${cwd}`;
     if (acpLoadInFlightKeyRef.current === acpLoadKey) return;
-    const currentSession = sessions.find((session) => session.key === currentSessionKey);
-    if (currentSession?.createdLocally) return;
-    const createIfMissing = !currentSession;
     acpLoadInFlightKeyRef.current = acpLoadKey;
-    // ACP preparation does not persist a Gateway session. Keep its local-draft
-    // marker until first send so a model choice is staged with creation permission.
-    if (createIfMissing) selectAcpSession(currentSessionKey, cwd);
     void loadAcpSession({
       sessionKey: currentSessionKey,
       workspaceRoot: cwd,
       cwd,
-      ...(createIfMissing ? { createIfMissing: true } : {}),
     }).finally(() => {
       if (acpLoadInFlightKeyRef.current === acpLoadKey) {
         acpLoadInFlightKeyRef.current = null;
       }
     });
-  }, [acpActiveSessionKey, acpCwd, acpWorkspaceRoot, currentSessionKey, cwd, loadAcpSession, promptOrigin, selectAcpSession, sessionDiscoveryAttempted, sessions, workspaceContextAvailable]);
+  }, [acpActiveSessionKey, acpCwd, acpWorkspaceRoot, currentSession, currentSessionKey, cwd, loadAcpSession, promptOrigin, workspaceContextAvailable]);
 
   const platform = window.electron?.platform;
   const isMac = platform === 'darwin';
@@ -572,7 +532,13 @@ export function Chat() {
   }, [t, visibleAcpTimeline]);
   const questionDirectoryVisible = questionDirectoryOpenSessionKey === currentSessionKey
     && questionDirectoryItems.length > 1;
-  const composerContextUsage = visibleAcpTimeline.metadata.usage;
+  // A session can report stored usage before it has any conversation to show.
+  const hasConversationMessages = visibleAcpTimeline.itemOrder.some(
+    (itemId) => visibleAcpTimeline.itemsById[itemId]?.kind === 'message-segment',
+  );
+  const composerContextUsage = !acpPresentationPending && hasConversationMessages
+    ? visibleAcpTimeline.metadata.usage
+    : undefined;
   const currentPlan = useMemo(
     () => visibleAcpTimeline.sessionId === currentSessionKey
       ? getCurrentAcpPlan(visibleAcpTimeline)
@@ -714,6 +680,9 @@ export function Chat() {
     setComposerDraft(currentSessionKey, update);
   }, [currentSessionKey, setComposerDraft]);
 
+  const isWelcome = !acpPresentationPending && visibleAcpTimeline.itemOrder.length === 0
+    && !isCurrentSessionSubagent && !acpSending && !acpCancelling;
+
   return (
     <div
       ref={splitContainerRef}
@@ -751,7 +720,7 @@ export function Chat() {
                   <Badge
                     variant="secondary"
                     data-testid="chat-subagent-marker"
-                    className="no-drag shrink-0 gap-1 px-1.5 py-0.5 text-2xs font-medium"
+                    className="no-drag shrink-0 gap-1 px-1.5 py-0.5 text-xs font-medium"
                   >
                     <BotMessageSquare aria-hidden="true" className="h-3 w-3" />
                     {t('acp.subagentSessions.marker')}
@@ -783,219 +752,212 @@ export function Chat() {
           </div>
         </div>
 
-        <div className="relative min-h-0 flex-1 overflow-hidden px-4 py-4">
-          <div className="relative mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col">
-            <div data-testid="chat-scroll-column" className="relative min-h-0 min-w-0 flex-1">
-              <div ref={scrollRef} className="h-full min-h-0 min-w-0 overflow-y-auto" data-testid="chat-scroll-container">
-                <div ref={contentRef} className="mx-auto max-w-4xl space-y-4">
-                  {workspaceUnavailable && (
-                    <WorkspaceUnavailableBanner
-                      path={cwd}
-                      readOnly={effectiveWorkspace.readOnly}
-                      onChooseWorkspace={effectiveWorkspace.readOnly ? undefined : () => void chooseReplacementWorkspace()}
-                    />
-                  )}
-                  {visibleAcpError && (acpPresentationPending || visibleAcpTimeline.itemOrder.length === 0) && (
-                    <AcpErrorBanner
-                      message={visibleAcpError}
-                      kind={hasAttemptedAcpPromptForCurrentSession ? 'prompt' : 'load'}
-                      onDismiss={clearAcpError}
-                    />
-                  )}
-                  {acpPresentationPending ? (
-                    <AcpLoadingState key={currentSessionKey} />
-                  ) : visibleAcpTimeline.itemOrder.length === 0 ? (
-                    <AcpEmptyState />
-                  ) : (
-                    <>
-                      <AcpTimeline
-                        snapshot={visibleAcpTimeline}
-                        isStreaming={acpSending || acpCancelling || currentSubagentBusy}
-                        turnTimingsByUserMessageId={visibleTurnTimings}
-                        fileActivity={fileActivity}
-                        workspaceRoot={resolvedWorkspaceContext?.key === workspaceContextKey
-                          ? resolvedWorkspaceContext.workspaceRoot
-                          : undefined}
-                        onPermissionSelect={(requestId, optionId) => {
-                          void respondAcpPermission(requestId, optionId);
-                        }}
+        <div className={cn('flex min-h-0 flex-1 flex-col', isWelcome && 'overflow-y-auto pt-6 pb-[clamp(1.5rem,12vh,7rem)]')} data-testid="chat-content-layout">
+          <div className={cn('relative min-h-0 px-4 py-4', isWelcome ? (workspaceUnavailable || visibleAcpError ? 'shrink-0' : 'hidden') : 'flex-1 overflow-hidden')}>
+            <div className="relative mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col">
+              <div data-testid="chat-scroll-column" className="relative min-h-0 min-w-0 flex-1">
+                <div ref={scrollRef} className="h-full min-h-0 min-w-0 overflow-y-auto" data-testid="chat-scroll-container">
+                  <div ref={contentRef} className="mx-auto max-w-4xl space-y-4">
+                    {workspaceUnavailable && (
+                      <WorkspaceUnavailableBanner
+                        path={cwd}
+                        readOnly={effectiveWorkspace.readOnly}
+                        onChooseWorkspace={effectiveWorkspace.readOnly ? undefined : () => void chooseReplacementWorkspace()}
                       />
-                      {visibleAcpError && (
-                        <AcpErrorBanner
-                          message={visibleAcpError}
-                          kind={hasAttemptedAcpPromptForCurrentSession ? 'prompt' : 'load'}
-                          onDismiss={clearAcpError}
+                    )}
+                    {visibleAcpError && (acpPresentationPending || visibleAcpTimeline.itemOrder.length === 0) && (
+                      <AcpErrorBanner
+                        message={visibleAcpError}
+                        kind={hasAttemptedAcpPromptForCurrentSession ? 'prompt' : 'load'}
+                        onDismiss={clearAcpError}
+                      />
+                    )}
+                    {acpPresentationPending ? (
+                      <AcpLoadingState key={currentSessionKey} />
+                    ) : visibleAcpTimeline.itemOrder.length === 0 ? (
+                      null
+                    ) : (
+                      <>
+                        <AcpTimeline
+                          snapshot={visibleAcpTimeline}
+                          isStreaming={acpSending || acpCancelling || currentSubagentBusy}
+                          turnTimingsByUserMessageId={visibleTurnTimings}
+                          fileActivity={fileActivity}
+                          workspaceRoot={resolvedWorkspaceContext?.key === workspaceContextKey
+                            ? resolvedWorkspaceContext.workspaceRoot
+                            : undefined}
+                          onPermissionSelect={(requestId, optionId) => {
+                            void respondAcpPermission(requestId, optionId);
+                          }}
                         />
-                      )}
-                    </>
-                  )}
+                        {visibleAcpError && (
+                          <AcpErrorBanner
+                            message={visibleAcpError}
+                            kind={hasAttemptedAcpPromptForCurrentSession ? 'prompt' : 'load'}
+                            onDismiss={clearAcpError}
+                          />
+                        )}
+                      </>
+                    )}
+                  </div>
                 </div>
+
+                {showScrollToLatest && (
+                  <button
+                    type="button"
+                    onClick={() => void scrollToBottom({ animation: 'smooth', ignoreEscapes: true })}
+                    className="absolute bottom-4 right-4 z-20 inline-flex items-center gap-2 rounded-full border border-border bg-background/95 px-3 py-1.5 text-xs font-medium text-foreground shadow-lg shadow-black/10 backdrop-blur transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 dark:hover:bg-white/10 dark:shadow-black/30"
+                    aria-label={t('scrollToLatest')}
+                    title={t('scrollToLatest')}
+                    data-testid="chat-scroll-to-latest"
+                  >
+                    <ArrowDownToLine className="h-3.5 w-3.5" />
+                    <span>{t('scrollToLatest')}</span>
+                  </button>
+                )}
               </div>
 
-              {showScrollToLatest && (
-                <button
-                  type="button"
-                  onClick={() => void scrollToBottom({ animation: 'smooth', ignoreEscapes: true })}
-                  className="absolute bottom-4 right-4 z-20 inline-flex items-center gap-2 rounded-full border border-border bg-background/95 px-3 py-1.5 text-xs font-medium text-foreground shadow-lg shadow-black/10 backdrop-blur transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 dark:hover:bg-white/10 dark:shadow-black/30"
-                  aria-label={t('scrollToLatest')}
-                  title={t('scrollToLatest')}
-                  data-testid="chat-scroll-to-latest"
-                >
-                  <ArrowDownToLine className="h-3.5 w-3.5" />
-                  <span>{t('scrollToLatest')}</span>
-                </button>
-              )}
+              {questionDirectoryVisible && <QuestionDirectory items={questionDirectoryItems} />}
             </div>
-
-            {questionDirectoryVisible && <QuestionDirectory items={questionDirectoryItems} />}
           </div>
-        </div>
 
-        {(!isCurrentSessionSubagent || currentSubagentBusy) && <ChatInput
-          draft={composerDraft}
-          draftKey={currentSessionKey}
-          onDraftChange={handleComposerDraftChange}
-          onSend={async (text: string, attachments?: FileAttachment[], targetAgentId?: string | null) => {
-            if (!currentSessionKey || !cwd || !workspaceContextAvailable) return false;
-            const targetAgent = targetAgentId
-              ? agents.find((agent) => agent.id === targetAgentId) ?? null
-              : null;
-            if (targetAgentId && !targetAgent) return false;
-            const sessionKey = getPromptSessionKey(currentSessionKey, targetAgent);
-            const existingSession = sessions.find((session) => session.key === sessionKey);
-            setLastPromptAttemptSessionKey(sessionKey);
-            const promptCwd = targetAgent?.workspace || cwd;
-            const media = attachments
-              ?.filter((file) => file.status === 'ready')
-              .map((file) => ({
-                filePath: file.stagedPath,
-                stagingId: file.id,
-                sourceKind: file.sourceKind,
-                fileName: file.fileName,
-                mimeType: file.mimeType,
-              }));
-            const originIsSelected = () => useChatStore.getState().currentSessionKey === currentSessionKey;
-            const destinationCanSend = () => {
-              const acp = useAcpChatSessionStore.getState();
-              return originIsSelected() && acp.activeSessionKey === sessionKey
-                && acp.workspaceRoot === promptCwd && acp.cwd === promptCwd
-                && !acp.loading && !acp.sending && !acp.cancelling;
-            };
-            if (!originIsSelected()) return false;
-            if (!targetAgent && !existingSession) {
-              selectAcpSession(sessionKey, promptCwd);
-            }
-            // The source draft stays selected while ACP prepares the destination.
-            // Temporarily suspend automatic loading of that visible source.
-            setPromptOrigin(currentSessionKey);
-            try {
-              if (promptCwd !== cwd) {
-                const promptWorkspace = await hostApi.files.resolveWorkspaceContext({
-                  workspaceRoot: promptCwd,
-                  executionCwd: promptCwd,
-                }).catch(() => ({ ok: false }));
-                if (!promptWorkspace.ok || !originIsSelected()) return false;
+          {(!isCurrentSessionSubagent || currentSubagentBusy) && <ChatInput
+            welcome={isWelcome}
+            onSelectAgent={(agentId) => {
+              const agent = agents.find((candidate) => candidate.id === agentId);
+              if (!agent || agent.id === currentAgentId) return;
+              setChatWorkspacePath(agent.workspace || cwd);
+              useChatStore.getState().newSession({ agentId: agent.id, preserveDraft: true });
+            }}
+            draft={composerDraft}
+            draftKey={currentSessionKey}
+            onDraftChange={handleComposerDraftChange}
+            onSend={async (text: string, attachments?: FileAttachment[], targetAgentId?: string | null) => {
+              if (!currentSessionKey || !cwd || !workspaceContextAvailable) return false;
+              const targetAgent = targetAgentId
+                ? agents.find((agent) => agent.id === targetAgentId) ?? null
+                : null;
+              if (targetAgentId && !targetAgent) return false;
+              const sessionKey = getPromptSessionKey(currentSessionKey, targetAgent);
+              const existingSession = sessions.find((session) => session.key === sessionKey);
+              setLastPromptAttemptSessionKey(sessionKey);
+              const promptCwd = targetAgent
+                ? normalizeWorkspacePath(existingSession?.workspacePath) ?? (targetAgent.workspace || cwd)
+                : cwd;
+              const media = attachments
+                ?.filter((file) => file.status === 'ready')
+                .map((file) => ({
+                  filePath: file.stagedPath,
+                  stagingId: file.id,
+                  sourceKind: file.sourceKind,
+                  fileName: file.fileName,
+                  mimeType: file.mimeType,
+                }));
+              const originIsSelected = () => useChatStore.getState().currentSessionKey === currentSessionKey;
+              const destinationCanSend = () => {
+                const acp = useAcpChatSessionStore.getState();
+                return originIsSelected() && acp.activeSessionKey === sessionKey
+                  && acp.workspaceRoot === promptCwd && acp.cwd === promptCwd
+                  && !acp.loading && !acp.sending && !acp.cancelling;
+              };
+              if (!originIsSelected()) return false;
+              if (!targetAgent && !existingSession) {
+                selectAcpSession(sessionKey, promptCwd);
               }
-              const createIfMissing = !existingSession || !!existingSession.createdLocally;
-              const beforeLoad = useAcpChatSessionStore.getState();
-              if (beforeLoad.activeSessionKey === sessionKey && (beforeLoad.sending || beforeLoad.cancelling)) return false;
-              if (
-                createIfMissing
-                || beforeLoad.activeSessionKey !== sessionKey
-                || beforeLoad.workspaceRoot !== promptCwd
-                || beforeLoad.cwd !== promptCwd
-              ) {
-                const acpLoadKey = `${sessionKey}\0${promptCwd}`;
-                acpLoadInFlightKeyRef.current = acpLoadKey;
-                const loaded = await (async () => {
-                  try {
-                    return await loadAcpSession({
-                      sessionKey,
-                      workspaceRoot: promptCwd,
-                      cwd: promptCwd,
-                      ...(createIfMissing ? { createIfMissing: true } : {}),
-                    });
-                  } finally {
-                    if (acpLoadInFlightKeyRef.current === acpLoadKey) {
-                      acpLoadInFlightKeyRef.current = null;
-                    }
-                  }
-                })();
-                if (!loaded) return false;
-              }
-              if (!destinationCanSend()) return false;
+              // The source draft stays selected while ACP prepares the destination.
+              // Temporarily suspend automatic loading of that visible source.
+              setPromptOrigin(currentSessionKey);
               try {
-                const modelWrite = applyDraftSessionModel(sessionKey, createIfMissing);
-                if (modelWrite) await modelWrite;
-              } catch (error) {
-                toast.error(t('composer.modelSwitchFailed', { error: String(error) }));
-                return false;
+                if (promptCwd !== cwd) {
+                  const promptWorkspace = await hostApi.files.resolveWorkspaceContext({
+                    workspaceRoot: promptCwd,
+                    executionCwd: promptCwd,
+                  }).catch(() => ({ ok: false }));
+                  if (!promptWorkspace.ok || !originIsSelected()) return false;
+                }
+                const createIfMissing = !existingSession || !!existingSession.createdLocally;
+                const beforeLoad = useAcpChatSessionStore.getState();
+                if (beforeLoad.activeSessionKey === sessionKey && (beforeLoad.sending || beforeLoad.cancelling)) return false;
+                if (
+                  createIfMissing
+                  || beforeLoad.activeSessionKey !== sessionKey
+                  || beforeLoad.workspaceRoot !== promptCwd
+                  || beforeLoad.cwd !== promptCwd
+                ) {
+                  const acpLoadKey = `${sessionKey}\0${promptCwd}`;
+                  acpLoadInFlightKeyRef.current = acpLoadKey;
+                  const loaded = await (async () => {
+                    try {
+                      return await loadAcpSession({
+                        sessionKey,
+                        workspaceRoot: promptCwd,
+                        cwd: promptCwd,
+                        ...(createIfMissing ? { createIfMissing: true } : {}),
+                      });
+                    } finally {
+                      if (acpLoadInFlightKeyRef.current === acpLoadKey) {
+                        acpLoadInFlightKeyRef.current = null;
+                      }
+                    }
+                  })();
+                  if (!loaded) return false;
+                }
+                if (!destinationCanSend()) return false;
+                try {
+                  const modelWrite = applyDraftSessionModel(sessionKey, createIfMissing);
+                  if (modelWrite) await modelWrite;
+                } catch (error) {
+                  toast.error(t('composer.modelSwitchFailed', { error: String(error) }));
+                  return false;
+                }
+                if (!destinationCanSend()) return false;
+                void sendAcpPrompt({
+                  sessionKey,
+                  cwd: promptCwd,
+                  message: text,
+                  media,
+                });
+                if (targetAgent) selectAcpSession(sessionKey, promptCwd);
+                if (createIfMissing) acknowledgeAcpSessionCreated(sessionKey, promptCwd, text);
+                requestAnimationFrame(() => {
+                  void scrollToBottom({ animation: 'instant', ignoreEscapes: true });
+                });
+                return true;
+              } finally {
+                setPromptOrigin(null);
               }
-              if (!destinationCanSend()) return false;
-              void sendAcpPrompt({
-                sessionKey,
-                cwd: promptCwd,
-                message: text,
-                media,
-              });
-              if (targetAgent) selectAcpSession(sessionKey, promptCwd);
-              if (createIfMissing) acknowledgeAcpSessionCreated(sessionKey, promptCwd, text);
-              requestAnimationFrame(() => {
-                void scrollToBottom({ animation: 'instant', ignoreEscapes: true });
-              });
-              return true;
-            } finally {
-              setPromptOrigin(null);
-            }
-          }}
-          onStop={() => void cancelAcp()}
-          disabled={acpLoading || acpCancelling || !cwd || !workspaceContextAvailable}
-          sending={isCurrentSessionSubagent ? currentSubagentBusy : acpSending || acpCancelling}
-          statusOnly={isCurrentSessionSubagent}
-          imageGenerating={imageGenerationPending}
-          workspaceLabel={workspaceLabel}
-          workspacePath={cwd}
-          workspaceOptions={workspaceOptions}
-          workspaceReadOnly={effectiveWorkspace.readOnly}
-          onSelectWorkspace={setChatWorkspacePath}
-          contextUsage={composerContextUsage}
-          currentPlan={currentPlan}
-          subagentSessions={subagentSessions}
-          onSelectSubagent={selectSubagentSession}
-        />}
+            }}
+            onStop={() => void cancelAcp()}
+            disabled={acpLoading || acpCancelling || !cwd || !workspaceContextAvailable}
+            sending={isCurrentSessionSubagent ? currentSubagentBusy : acpSending || acpCancelling}
+            statusOnly={isCurrentSessionSubagent}
+            imageGenerating={imageGenerationPending}
+            workspaceLabel={workspaceLabel}
+            workspacePath={cwd}
+            workspaceOptions={workspaceOptions}
+            workspaceReadOnly={effectiveWorkspace.readOnly}
+            onSelectWorkspace={setChatWorkspacePath}
+            contextUsage={composerContextUsage}
+            currentPlan={currentPlan}
+            subagentSessions={subagentSessions}
+            onSelectSubagent={selectSubagentSession}
+          />}
+        </div>
       </div>
 
       {panelOpen && (
-        <>
-          <Suspense fallback={null}>
-            <PanelResizeDividerLazy containerRef={splitContainerRef} />
-          </Suspense>
-          <aside
-            data-testid="artifact-panel-aside"
-            className={cn(
-              'relative z-20 hidden shrink-0 border-l border-black/5 dark:border-white/10 lg:flex lg:flex-col',
-              isMac && 'no-drag',
-            )}
-            style={{ width: `${panelWidthPct}%` }}
-          >
-            <Suspense
-              fallback={(
-                <div className="flex h-full items-center justify-center">
-                  <LoadingSpinner size="md" />
-                </div>
-              )}
-            >
-              <ArtifactPanelLazy
-                fileGroups={fileActivity.fileGroups}
-                uniqueFileCount={fileActivity.uniqueFileCount}
-                agent={currentAgent}
-                workspacePath={cwd}
-                workspaceLabel={workspaceLabel}
-                runStartedAt={null}
-              />
-            </Suspense>
-          </aside>
-        </>
+        <Suspense fallback={null}>
+          <ResponsiveArtifactPanelLazy
+            containerRef={splitContainerRef}
+            fileGroups={fileActivity.fileGroups}
+            uniqueFileCount={fileActivity.uniqueFileCount}
+            agent={currentAgent}
+            workspacePath={cwd}
+            workspaceLabel={workspaceLabel}
+            runStartedAt={null}
+            refreshSignal={fileActivity.activities.length}
+          />
+        </Suspense>
       )}
     </div>
   );

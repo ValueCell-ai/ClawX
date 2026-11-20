@@ -91,7 +91,8 @@ describe('AcpSessionPlan', () => {
     expect(steps[0]).not.toHaveTextContent('Completed');
     expect(steps[1]).not.toHaveTextContent('Running');
     expect(steps[2]).not.toHaveTextContent('Pending');
-    expect(panel).toHaveClass('absolute', 'bottom-full', 'right-0', 'max-h-48', 'overflow-y-auto');
+    expect(panel).toHaveAttribute('data-state', 'open');
+    expect(panel).toHaveClass('clawx-floating-surface', 'max-h-48', 'overflow-y-auto');
     expect(panel.querySelectorAll('button, input[type="checkbox"]')).toHaveLength(0);
     expect(screen.queryByRole('button', { name: /edit|delete/i })).not.toBeInTheDocument();
   });

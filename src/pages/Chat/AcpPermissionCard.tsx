@@ -36,7 +36,7 @@ export function AcpPermissionCard({
           <span className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('acp.permission')}</span>
           <span className="min-w-0 truncate text-sm font-medium text-foreground">{item.title}</span>
         </div>
-        <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-2xs font-medium uppercase tracking-wide', permissionStatusClasses(item.status))}>
+        <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-xs font-medium uppercase tracking-wide', permissionStatusClasses(item.status))}>
           {t(permissionStatusKey(item.status))}
         </span>
       </div>

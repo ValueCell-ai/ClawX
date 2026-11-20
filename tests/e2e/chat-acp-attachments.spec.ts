@@ -92,6 +92,7 @@ async function openChat(app: ElectronApplication): Promise<Page> {
   }
   await expect(page.getByTestId('main-layout')).toBeVisible();
   await expect(page.getByTestId('chat-page')).toBeVisible();
+  await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
   return page;
 }
 
@@ -227,15 +228,12 @@ test.describe('ACP media attachments', () => {
       const expectedUrl = pathToFileURL(htmlPath).href;
       const panel = page.getByTestId('artifact-panel');
       await expect(panel).toBeVisible();
-      await expect(panel.getByTestId('artifact-panel-tab-preview')).toHaveClass(/bg-foreground\/10/);
+      await expect(panel.getByTestId('artifact-panel-tab-preview')).toHaveAttribute('aria-selected', 'true');
       await expect(panel.getByTestId('artifact-panel-tab-web-browser')).toHaveCount(0);
       await expect(page.getByTestId('html-preview-host')).toHaveAttribute('aria-hidden', 'false');
       await expect(panel.getByTestId('html-preview-open-external')).toBeVisible();
-      await panel.getByTestId('file-preview-fullscreen-toggle').click();
-      await expect(page.getByTestId('file-preview-fullscreen-layer')).toBeVisible();
-      await expect(page.getByTestId('html-preview-host')).toHaveCSS('z-index', '110');
+      await expect(panel.getByTestId('file-preview-fullscreen-toggle')).toHaveCount(0);
       await expect(page.getByTestId('html-preview-webview')).toBeVisible();
-      await page.getByTestId('file-preview-fullscreen-toggle').click();
       await expect.poll(async () => (await fixture.getHostInvocations()).some((request) => (
         request.module === 'webBrowser'
         && request.action === 'navigate'
@@ -300,6 +298,7 @@ test.describe('ACP media attachments', () => {
           ? 'Show in File Explorer'
           : 'Show in file manager';
       await expect(page.getByRole('menuitem', { name: revealLabel, exact: true })).toBeVisible();
+      await expect(page.getByRole('menuitem', { name: revealLabel, exact: true })).toHaveCSS('height', '28px');
 
       if (process.platform === 'darwin' || process.platform === 'win32') {
         await expect.poll(async () => filesActionCalls(
@@ -318,6 +317,8 @@ test.describe('ACP media attachments', () => {
         expect(resolvedAttachmentRefs(await fixture.getHostInvocations())).toContainEqual(openWithRef);
         const appRows = page.getByTestId('acp-attachment-open-with-app');
         await expect(appRows).toHaveCount(2);
+        await expect(appRows.nth(0)).toHaveCSS('height', '28px');
+        await expect(appRows.nth(1)).toHaveCSS('height', '28px');
         await expect(appRows.nth(0)).toHaveText('Zulu Sheets');
         await expect(appRows.nth(1)).toHaveText('Alpha Sheets');
         await expect(appRows.nth(0).getByTestId('acp-attachment-open-with-native-icon')).toHaveAttribute('src', nativeIcon);
@@ -600,7 +601,7 @@ test.describe('ACP media attachments', () => {
       await expect(thumbnail).toBeVisible();
       await expect(thumbnail).toHaveAttribute('alt', 'photo.png');
       const [bubbleBox, thumbnailBox] = await Promise.all([
-        userMessage.locator('.bg-brand').first().boundingBox(),
+        userMessage.locator('.bg-message-user').first().boundingBox(),
         thumbnail.locator('..').boundingBox(),
       ]);
       expect(bubbleBox).not.toBeNull();

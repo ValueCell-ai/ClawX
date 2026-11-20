@@ -14,7 +14,6 @@ describe('artifact panel store', () => {
       focusedFile: null,
       focusedChange: null,
       widthPct: ARTIFACT_PANEL_DEFAULT_WIDTH,
-      htmlPreviewAnchor: null,
     });
   });
 
@@ -27,19 +26,9 @@ describe('artifact panel store', () => {
     }
   });
 
-  it('registers and clears the HTML preview anchor', () => {
-    const anchor = document.createElement('div');
-
-    useArtifactPanel.getState().setHtmlPreviewAnchor(anchor);
-    expect(useArtifactPanel.getState().htmlPreviewAnchor).toBe(anchor);
-    useArtifactPanel.getState().setHtmlPreviewAnchor(null);
-    expect(useArtifactPanel.getState().htmlPreviewAnchor).toBeNull();
-  });
-
   it('persists only the panel width', () => {
     useArtifactPanel.getState().setWidthPct(52);
     useArtifactPanel.getState().openPreview();
-    useArtifactPanel.getState().setHtmlPreviewAnchor(document.createElement('div'));
 
     expect(JSON.parse(window.localStorage.getItem('clawx.artifact-panel') ?? '{}')).toEqual({
       state: { widthPct: 52 },

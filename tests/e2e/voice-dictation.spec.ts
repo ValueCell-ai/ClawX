@@ -1,3 +1,5 @@
+import { selectValue } from './fixtures/radix-select';
+import { navigateToSection } from './fixtures/navigation';
 import type { ElectronApplication, Page } from '@playwright/test';
 import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
 
@@ -86,7 +88,7 @@ async function reloadRenderer(page: Page): Promise<void> {
 
 async function enableDeveloperMode(page: Page): Promise<void> {
   await expect(page.getByTestId('main-layout')).toBeVisible();
-  await page.getByTestId('sidebar-nav-settings').click();
+  await navigateToSection(page, 'advanced');
   const devModeSwitch = page.getByTestId('settings-dev-mode-switch');
   await expect(devModeSwitch).toBeVisible();
   if (await devModeSwitch.getAttribute('data-state') !== 'checked') {
@@ -166,7 +168,7 @@ test.describe('ClawX voice dictation', () => {
         await expect(voice).toHaveAttribute('title', 'Stop recording');
         await expect(voice).toContainText('0:01');
         await voice.click();
-        await expect(composer).toHaveValue(`editable ${TRANSCRIBED_TEXT}`);
+        await expect(composer).toHaveText(`editable ${TRANSCRIBED_TEXT}`);
       } finally { await closeElectronApp(app); }
     });
   }
@@ -206,7 +208,7 @@ test.describe('ClawX voice dictation', () => {
       await expect(voiceButton).toContainText('0:01');
 
       await voiceButton.click();
-      await expect(composer).toHaveValue(`hello ${TRANSCRIBED_TEXT}`);
+      await expect(composer).toHaveText(`hello ${TRANSCRIBED_TEXT}`);
       await expect(voiceButton).toHaveAttribute('title', 'Voice input');
     } finally {
       await closeElectronApp(app);
@@ -240,11 +242,13 @@ test.describe('ClawX voice dictation', () => {
       await expect(page).toHaveURL(/\/models/);
       await expect(page).toHaveURL(/tab=voice/);
       await expect(page.getByTestId('asr-settings')).toBeVisible();
+      await page.getByTestId('asr-configure').click();
+      await page.getByTestId('asr-config-dialog').locator('summary').click();
 
-      await expect(page.getByTestId('asr-protocol-select')).toHaveValue('transcriptions');
+      await expect(page.getByTestId('asr-protocol-select')).toHaveAttribute('value', 'transcriptions');
       await expect(page.getByTestId('asr-base-url-suffix')).toBeVisible();
 
-      await page.getByTestId('asr-protocol-select').selectOption('chat');
+      await selectValue(page.getByTestId('asr-protocol-select'), 'chat');
       await expect(page.getByTestId('asr-preset-select')).toContainText('Alibaba Cloud Model Studio');
       await expect(page.getByTestId('asr-base-url-input')).toHaveValue(
         'https://<WorkspaceId>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',

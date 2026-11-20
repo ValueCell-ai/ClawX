@@ -12,6 +12,7 @@ vi.mock('@/stores/gateway', () => ({
 
 vi.mock('@/lib/host-api', () => ({
   hostApi: {
+    settings: { set: vi.fn(async () => ({ success: true })) },
     sessions: {
       summaries: vi.fn(async () => ({ success: true, summaries: [] })),
       delete: sessionDeleteMock,
@@ -495,5 +496,37 @@ describe('chat session management', () => {
     expect(sessionRenameMock).toHaveBeenCalledWith(key, 'New title');
     expect(useChatStore.getState().sessions[0]?.label).toBe('New title');
     expect(useChatStore.getState().sessionLabels[key]).toBe('New title');
+  });
+});
+
+
+describe('pin cleanup follows successful deletion only', () => {
+  it('retains pins on failure and removes only the successful exact session key', async () => {
+    vi.resetModules();
+    window.localStorage.clear();
+    const { useChatStore } = await import('@/stores/chat');
+    const { useSettingsStore } = await import('@/stores/settings');
+    const { hostApi } = await import('@/lib/host-api');
+    const key = 'agent:main:pinned-delete';
+    const kept = 'agent:code:pinned-kept';
+    useSettingsStore.setState({ pinnedSessionKeys: [key, kept] });
+    useChatStore.setState({ sessions: [{ key }, { key: kept }], currentSessionKey: kept });
+    sessionDeleteMock.mockResolvedValueOnce({ success: false, error: 'failed' });
+    await useChatStore.getState().deleteSession(key);
+    expect(useSettingsStore.getState().pinnedSessionKeys).toEqual([key, kept]);
+    sessionDeleteMock.mockResolvedValueOnce({ success: true });
+    await useChatStore.getState().deleteSession(key);
+    expect(useSettingsStore.getState().pinnedSessionKeys).toEqual([kept]);
+    await vi.waitFor(() => expect(hostApi.settings.set).toHaveBeenCalledWith('pinnedSessionKeys', [kept]));
+  });
+  it('cleans all exact keys owned by a successfully removed assistant, including temporarily absent rows', async () => {
+    vi.resetModules();
+    window.localStorage.clear();
+    const { useChatStore } = await import('@/stores/chat');
+    const { useSettingsStore } = await import('@/stores/settings');
+    useSettingsStore.setState({ pinnedSessionKeys: ['agent:code:visible', 'agent:code:absent', 'agent:coder:kept'] });
+    useChatStore.setState({ sessions: [{ key: 'agent:code:visible' }, { key: 'agent:coder:kept' }], currentSessionKey: 'agent:coder:kept' });
+    useChatStore.getState().removeAgentSessions('code');
+    expect(useSettingsStore.getState().pinnedSessionKeys).toEqual(['agent:coder:kept']);
   });
 });

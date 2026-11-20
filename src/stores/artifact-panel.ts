@@ -44,9 +44,10 @@ interface ArtifactPanelState {
   focusedFile: FilePreviewTarget | null;
   focusedChange: ArtifactChangeNavigation | null;
   changeNavigationId: number;
-  htmlPreviewAnchor: HTMLElement | null;
   /** Persisted panel width as a % of the chat container (clamped on read). */
   widthPct: number;
+  previewSlidePositions: Record<string, number>;
+  rememberPreviewSlide: (identity: string, index: number) => void;
   setTab: (tab: ArtifactTab) => void;
   setFocusedFile: (file: FilePreviewTarget | null) => void;
   /** Open the changes tab. Optionally focus a projected change. */
@@ -55,7 +56,6 @@ interface ArtifactPanelState {
   openPreview: (file?: FilePreviewTarget | null) => void;
   /** Open the workspace browser tab. */
   openBrowser: () => void;
-  setHtmlPreviewAnchor: (anchor: HTMLElement | null) => void;
   toggle: () => void;
   close: () => void;
   /** Update the panel width (clamped). */
@@ -77,11 +77,15 @@ export const useArtifactPanel = create<ArtifactPanelState>()(
       focusedFile: null,
       focusedChange: null,
       changeNavigationId: 0,
-      htmlPreviewAnchor: null,
       widthPct: ARTIFACT_PANEL_DEFAULT_WIDTH,
+      previewSlidePositions: {},
+      rememberPreviewSlide: (identity, index) => set(state => {
+        const entries = Object.entries({ ...state.previewSlidePositions, [identity]: index }).slice(-32);
+        return { previewSlidePositions: Object.fromEntries(entries) };
+      }),
       setTab: (tab) => {
-        // The browser tab has its own internal workspace-tree selection, so
-        // keep the chat-side focused file available for preview/changes.
+        // Workspace navigation and Preview share the same focused file;
+        // change-record navigation remains independent.
         set({
           tab,
           focusedFile: get().focusedFile,
@@ -99,9 +103,8 @@ export const useArtifactPanel = create<ArtifactPanelState>()(
       }),
       openPreview: (file = null) => set({ open: true, tab: 'preview', focusedFile: file ?? null }),
       openBrowser: () => set({ open: true, tab: 'browser', focusedFile: get().focusedFile }),
-      setHtmlPreviewAnchor: (htmlPreviewAnchor) => set({ htmlPreviewAnchor }),
       toggle: () => set((s) => ({ open: !s.open })),
-      close: () => set({ open: false, focusedFile: null, focusedChange: null }),
+      close: () => set({ open: false, focusedFile: null, focusedChange: null, previewSlidePositions: {} }),
       setWidthPct: (pct) => set({ widthPct: clampWidth(pct) }),
     }),
     {

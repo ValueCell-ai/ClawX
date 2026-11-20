@@ -189,7 +189,7 @@ export function AcpToolCallCard({ item, grouped = false }: { item: ToolCallItem;
             <span className="min-w-0 truncate text-xs font-medium text-muted-foreground">{title}</span>
           </div>
         )}
-        <span className="inline-flex shrink-0 items-center gap-1 px-2 py-0.5 text-2xs font-medium uppercase tracking-wide text-muted-foreground">
+        <span className="inline-flex shrink-0 items-center gap-1 px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
           <StatusIcon status={item.status} />
           {t(statusLabelKey(item.status))}
         </span>

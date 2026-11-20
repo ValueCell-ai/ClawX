@@ -1,3 +1,5 @@
+import { navigateToSection } from './fixtures/navigation';
+import { expectQuietFieldFocus } from './fixtures/field-focus';
 import type { ElectronApplication } from '@playwright/test';
 import { execFile } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
@@ -13,7 +15,7 @@ async function readNativeMenuLabels(app: ElectronApplication) {
     return {
       topLevel: menu?.items.map((item) => item.label) ?? [],
       file: fileMenu?.label,
-      newChat: fileMenu?.submenu?.items.find((item) => item.id === 'new-chat' || item.label === 'New Chat' || item.label === '新对话')?.label,
+      newChat: fileMenu?.submenu?.items.find((item) => item.id === 'new-chat' || item.label === 'New task' || item.label === '新任务')?.label,
     };
   });
 }
@@ -67,6 +69,104 @@ async function openUsableChat(app: ElectronApplication) {
 }
 
 test.describe('ClawX main navigation without setup flow', () => {
+  test('keeps the brand readable and sidebar controls accessible in both themes', async ({ launchElectronApp }, testInfo) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      const page = await getStableWindow(app);
+      const sidebar = page.getByTestId('sidebar');
+      const brand = page.getByTestId('sidebar-brand');
+      const wordmark = page.getByTestId('sidebar-wordmark');
+      const toggle = page.getByTestId('sidebar-collapse-toggle');
+      const brandColors: string[] = [];
+
+      for (const theme of ['Light', 'Dark']) {
+        await navigateToSection(page, 'general');
+        await page.getByRole('button', { name: theme, exact: true }).click();
+        await page.setViewportSize({ width: theme === 'Light' ? 1280 : 900, height: 800 });
+        await page.getByTestId('sidebar-new-chat').click();
+        await page.mouse.move(400, 400);
+        const newTask = page.getByTestId('sidebar-new-chat');
+        await expect(newTask).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+        const idleNavigation = page.getByTestId('sidebar-nav-models');
+        for (const property of ['border-top-width', 'border-radius', 'padding-top', 'color']) {
+          const expected = await idleNavigation.evaluate((element, name) => getComputedStyle(element).getPropertyValue(name), property);
+          await expect(newTask).toHaveCSS(property, expected);
+        }
+        await page.getByTestId('sidebar-search-toggle').click();
+        const search = page.getByTestId('sidebar-task-search');
+        await expect(search).toBeFocused();
+        await expectQuietFieldFocus(search);
+        const searchBounds = await search.boundingBox();
+        const sidebarBounds = await sidebar.boundingBox();
+        expect(searchBounds!.height).toBeLessThanOrEqual(28);
+        expect(searchBounds!.width).toBeLessThanOrEqual(sidebarBounds!.width - 32);
+        await search.press('Escape');
+
+        // Hidden overflow must not let the resize handle shift the rail content.
+        await sidebar.evaluate(element => { element.scrollLeft = 100; });
+        await expect.poll(() => sidebar.evaluate(element => element.scrollLeft)).toBe(0);
+        for (const item of [newTask, page.getByTestId('sidebar-nav-skills'), page.getByTestId('sidebar-nav-settings')]) {
+          await item.hover();
+          const rail = await sidebar.boundingBox();
+          const bounds = await item.boundingBox();
+          expect(bounds!.x - rail!.x).toBeCloseTo(rail!.x + rail!.width - bounds!.x - bounds!.width, 0);
+        }
+
+        await expect(brand).toHaveAccessibleName('ClawX');
+        await expect(wordmark).toBeVisible();
+        // A visible mask container can still be blank if its shipped asset fails
+        // to load. Check the actual asset in the Electron renderer too.
+        expect(await wordmark.evaluate(async element => {
+          const source = getComputedStyle(element).maskImage.match(/url\(["']?([^"')]+)["']?\)/)?.[1];
+          if (!source) return false;
+          const image = new Image();
+          image.src = source;
+          await image.decode();
+          return image.naturalWidth >= 304 && image.naturalHeight > 0;
+        })).toBe(true);
+        await expect(toggle).toHaveAccessibleName('Collapse sidebar');
+        const brandBox = await brand.boundingBox();
+        const toggleBox = await toggle.boundingBox();
+        expect(brandBox!.x + brandBox!.width).toBeLessThanOrEqual(toggleBox!.x);
+        brandColors.push(await wordmark.evaluate(element => getComputedStyle(element).color));
+        await page.getByTestId('sidebar-brand-header').screenshot({ path: testInfo.outputPath(`brand-${theme.toLowerCase()}.png`) });
+
+        // Keyboard users can still find the expansion control when the logo
+        // visually replaces the icon in the collapsed rail.
+        await toggle.focus();
+        await page.keyboard.press('Enter');
+        await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+        await expect(toggle).toHaveAccessibleName('Expand sidebar');
+        await expect(brand).toHaveCount(0);
+        await expect(page.getByTestId('sidebar-collapsed-logo')).toBeAttached();
+        await expect(sidebar).toHaveCSS('width', '68px');
+        await page.keyboard.press('Tab');
+        await page.mouse.move(400, 400);
+        await expect(page.getByTestId('sidebar-collapsed-logo')).toHaveCSS('opacity', '1');
+        await sidebar.screenshot({ path: testInfo.outputPath(`brand-${theme.toLowerCase()}-collapsed.png`), animations: 'disabled' });
+
+        await toggle.focus();
+        await page.keyboard.press('Enter');
+        await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+        await expect(wordmark).toBeVisible();
+        await expect(page).toHaveURL(/#\/$/);
+      }
+      expect(brandColors[0]).not.toBe(brandColors[1]);
+      await expect.poll(async () => (await sidebar.boundingBox())!.width).toBeGreaterThanOrEqual(220);
+      const railBefore = await sidebar.boundingBox();
+      const handle = await page.getByTestId('sidebar-resize-handle').boundingBox();
+      await page.mouse.move(handle!.x + handle!.width / 2, handle!.y + 100);
+      await page.mouse.down();
+      await page.mouse.move(railBefore!.x + railBefore!.width + 40, handle!.y + 100);
+      await page.mouse.up();
+      await expect.poll(async () => (await sidebar.boundingBox())!.width).toBeCloseTo(railBefore!.width + 40, 0);
+      await expect.poll(() => sidebar.evaluate(element => element.scrollLeft)).toBe(0);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
   test('keeps reload menu commands without application accelerators', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
@@ -108,14 +208,14 @@ test.describe('ClawX main navigation without setup flow', () => {
       await expect(page.getByTestId('sidebar-resize-handle')).toBeVisible();
       await expect(page.getByTestId('main-content')).toHaveCSS('border-top-left-radius', '16px');
 
-      await page.getByTestId('sidebar-nav-models').click();
+      await navigateToSection(page, 'models');
       await expect(page.getByTestId('models-page')).toBeVisible();
       await expect(page.getByTestId('models-page-title')).toBeVisible();
 
-      await page.getByTestId('sidebar-nav-agents').click();
+      await navigateToSection(page, 'agents');
       await expect(page.getByTestId('agents-page')).toBeVisible();
 
-      await page.getByTestId('sidebar-nav-channels').click();
+      await navigateToSection(page, 'channels');
       await expect(page.getByTestId('channels-page')).toBeVisible();
     } finally {
       await closeElectronApp(app);
@@ -129,7 +229,7 @@ test.describe('ClawX main navigation without setup flow', () => {
       const page = await getStableWindow(app);
       await expect(page.getByTestId('chat-page')).toBeVisible();
 
-      await page.getByTestId('sidebar-nav-models').click();
+      await navigateToSection(page, 'models');
       await expect(page.getByTestId('models-page')).toBeVisible();
 
       await app.evaluate(({ BrowserWindow, Menu }) => {
@@ -169,7 +269,7 @@ test.describe('ClawX main navigation without setup flow', () => {
 
       await expect(page.getByTestId('chat-page')).toBeVisible();
       await expect(page).toHaveURL(/#\/$/);
-      await expect(composer).toHaveValue('');
+      await expect(composer).toHaveText('');
       expect(await page.evaluate(() => window.open('about:blank') === null)).toBe(true);
       expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((win) => win.id))).toEqual([mainWindowId]);
 
@@ -180,10 +280,10 @@ test.describe('ClawX main navigation without setup flow', () => {
       });
       await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((win) => win.id))).toEqual([mainWindowId]);
       await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getFocusedWindow()?.id)).toBe(mainWindowId);
-      await expect(composer).toHaveValue('Draft before recovering a blank window');
+      await expect(composer).toHaveText('Draft before recovering a blank window');
       await composer.click();
       await pressNativeNewChatShortcut(app);
-      await expect(composer).toHaveValue('');
+      await expect(composer).toHaveText('');
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();
       expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((win) => win.id))).toEqual([mainWindowId]);
       await page.getByTestId('sidebar-nav-models').click();
@@ -212,7 +312,7 @@ test.describe('ClawX main navigation without setup flow', () => {
 
       await expect(page.getByTestId('chat-page')).toBeVisible();
       await expect(page).toHaveURL(/#\/$/);
-      await expect(composer).toHaveValue('');
+      await expect(composer).toHaveText('');
       expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1);
     } finally {
       await closeElectronApp(app);
@@ -232,7 +332,7 @@ test.describe('ClawX main navigation without setup flow', () => {
       await expect(page.getByText('菜单语言已更新')).toBeVisible();
       await expect.poll(() => readNativeMenuLabels(app)).toMatchObject({
         file: '文件',
-        newChat: '新对话',
+        newChat: '新任务',
       });
     } finally {
       await closeElectronApp(app);

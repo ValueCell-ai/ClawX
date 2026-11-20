@@ -21,10 +21,10 @@ touchedAreas:
   - tests/unit/chat-input.test.tsx
   - tests/e2e/chat-acp-inline-timeline.spec.ts
 expectedUserBehavior:
-  - When ACP supplies finite positive usage_update used and size values for the active session, the composer footer shows a compact context-usage meter with a ring and visible localized percentage immediately to the left of the gateway connection status, not inside the input box.
+  - Once the active conversation has messages and ACP supplies finite positive usage_update used and size values, the composer shows a context-usage ring and localized percentage beside the model selector.
   - When the selected model changes, the meter replaces a stale ACP total with the effective context window returned in the updated agent snapshot.
   - Hovering or focusing the meter exposes the percentage and used-token/total-token counts.
-  - Missing, malformed, or non-positive usage data renders no indicator.
+  - The meter stays hidden until the active conversation has messages and when usage data is missing, malformed, or non-positive.
   - Used-token data remains derived from the active ACP timeline metadata; model-limit corrections arrive through the existing typed agent snapshot and never through direct Renderer transport.
 requiredProfiles:
   - fast

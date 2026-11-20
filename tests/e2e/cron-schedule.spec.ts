@@ -1,3 +1,5 @@
+import { selectValue } from './fixtures/radix-select';
+import { expectMenuSelection } from './fixtures/menu-selection';
 import { completeSetup, expect, installIpcMocks, test } from './fixtures/electron';
 
 function stableStringify(value: unknown): string {
@@ -62,8 +64,16 @@ test.describe('cron schedule builder', () => {
     await completeSetup(page);
 
     await page.getByTestId('sidebar-nav-cron').click();
-    await page.getByTestId('cron-new-task-button').click();
-    await expect(page.getByTestId('cron-task-dialog')).toBeVisible();
+    await expect(page.getByText('No scheduled tasks', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Create Your First Task' })).toBeVisible();
+    const opener = page.getByTestId('cron-new-task-button');
+    await opener.click();
+    const dialog = page.getByTestId('cron-task-dialog');
+    const footer = dialog.locator('footer');
+    const submit = footer.getByRole('button', { name: 'Create Task' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('textbox', { name: 'Task Name' })).toBeFocused();
+    await expect(submit).toBeInViewport();
 
     // The old preset template grid is gone.
     await expect(page.getByRole('button', { name: 'Every 5 minutes' })).toHaveCount(0);
@@ -71,14 +81,16 @@ test.describe('cron schedule builder', () => {
     // Recurring is the default tab and exposes the frequency dropdown.
     const recurrenceSelect = page.getByTestId('cron-recurrence-select');
     await expect(recurrenceSelect).toBeVisible();
+    await expect(recurrenceSelect).toHaveAccessibleName('Frequency');
 
     // Weekly recurrence reveals the weekday selector.
-    await recurrenceSelect.selectOption('weekly');
+    await selectValue(recurrenceSelect, 'weekly');
     await expect(page.getByTestId('cron-weekday-select')).toBeVisible();
 
     // Custom recurrence reveals the cron expression field.
-    await recurrenceSelect.selectOption('custom');
+    await selectValue(recurrenceSelect, 'custom');
     await expect(page.getByTestId('cron-custom-input')).toBeVisible();
+    await expect(page.getByTestId('cron-custom-input')).toHaveAccessibleName('Cron expression');
 
     // Switching to the Once tab reveals date + time inputs.
     await page.getByTestId('cron-schedule-tab-once').click();
@@ -88,8 +100,31 @@ test.describe('cron schedule builder', () => {
 
     // The custom 24h time picker exposes hours 0-23 and no AM/PM controls.
     await page.locator('#cron-once-time').click();
+    const timePicker = page.getByTestId('cron-once-time-menu');
+    const selectedTimeCells = timePicker.locator('[aria-current="true"]');
+    await expect(selectedTimeCells).toHaveCount(2);
+    await expect(selectedTimeCells.nth(0)).toHaveCSS('height', '28px');
+    await expect(selectedTimeCells.nth(1)).toHaveCSS('height', '28px');
+    const selectedBackground = await expectMenuSelection(selectedTimeCells.nth(0));
+    expect(await expectMenuSelection(selectedTimeCells.nth(1))).toBe(selectedBackground);
+    await page.getByRole('button', { name: '23', exact: true }).first().click();
+    await expect(page.locator('#cron-once-time')).toHaveText(/^23:/);
+    await expectMenuSelection(timePicker.getByRole('button', { name: '23', exact: true }).first());
+    await expect(timePicker.locator('button[data-selected="false"] [data-slot="menu-selection-indicator"]')).toHaveCount(0);
     await expect(page.getByRole('button', { name: '23', exact: true }).first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'AM' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'PM' })).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await expect(timePicker).toHaveCount(0);
+    await expect(dialog).toBeVisible();
+
+    const messaging = dialog.getByRole('button', { name: 'Messaging app' });
+    await messaging.click();
+    await expect(messaging).toHaveAttribute('aria-pressed', 'true');
+    await expect(dialog.getByText('Connect an app in Messaging remote first.')).toBeVisible();
+    await expect(submit).toBeInViewport();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(opener).toBeFocused();
   });
 });

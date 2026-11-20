@@ -1,3 +1,4 @@
+import { navigateToSection } from './fixtures/navigation';
 import type { Locator } from '@playwright/test';
 import { closeElectronApp, completeSetup, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
 
@@ -123,7 +124,7 @@ test.describe('dialog transitions', () => {
 
     await completeSetup(page);
 
-    await page.getByTestId('sidebar-nav-models').click();
+    await navigateToSection(page, 'models');
     await page.getByTestId('providers-add-button').click();
     const providerDialog = page.getByTestId('add-provider-dialog');
     await expectSubtleDialogAnimation(providerDialog);
@@ -132,7 +133,7 @@ test.describe('dialog transitions', () => {
     await expect(providerDialog).toHaveAttribute('data-state', 'closed');
     await expect(providerDialog).toHaveCount(0);
 
-    await page.getByTestId('sidebar-nav-agents').click();
+    await navigateToSection(page, 'agents');
     await page.getByTestId('agents-add-button').click();
     const agentDialog = page.getByTestId('add-agent-dialog');
     await expectSubtleDialogAnimation(agentDialog);
@@ -192,6 +193,7 @@ test.describe('dialog transitions', () => {
       const sessionRow = page.getByTestId(defaultWorkspaceSessionGroupTestId()).getByText('Preserved session');
       await expect(sessionRow).toBeVisible();
       await sessionRow.hover();
+      await page.getByTestId(`sidebar-session-menu-${MAIN_SESSION_KEY}`).click();
       await page.getByTestId(`sidebar-session-delete-${MAIN_SESSION_KEY}`).click();
 
       const confirmDialog = page.getByRole('dialog');
@@ -204,6 +206,7 @@ test.describe('dialog transitions', () => {
 
       await expect(sessionRow).toBeVisible();
       await sessionRow.hover();
+      await page.getByTestId(`sidebar-session-menu-${MAIN_SESSION_KEY}`).click();
       await page.getByTestId(`sidebar-session-delete-${MAIN_SESSION_KEY}`).click();
 
       await expect(confirmDialog).toContainText('Preserved session');

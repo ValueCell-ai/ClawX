@@ -75,6 +75,23 @@ afterEach(() => {
 });
 
 describe('sidebar session helpers', () => {
+  it('hides only the configured default agent badge and keeps ownership in hover titles', () => {
+    seedSidebarState();
+    const coderKey = 'agent:coder:session-sidebar-test';
+    useChatStore.setState({ sessions: [
+      { key: sidebarSessionKey, displayName: 'Main task', updatedAt: 1 },
+      { key: coderKey, displayName: 'Coder task', updatedAt: 2 },
+    ] });
+    useAgentsStore.setState({ defaultAgentId: 'main' });
+    renderSidebar();
+    expect(screen.queryByTestId(`sidebar-session-agent-${sidebarSessionKey}`)).not.toBeInTheDocument();
+    expect(screen.getByTestId(`sidebar-session-agent-${coderKey}`)).toHaveTextContent('coder');
+    expect(screen.getByTestId(`sidebar-session-${sidebarSessionKey}`)).toHaveAttribute('title', expect.stringContaining('main'));
+    act(() => useAgentsStore.setState({ defaultAgentId: 'coder' }));
+    expect(screen.queryByTestId(`sidebar-session-agent-${coderKey}`)).not.toBeInTheDocument();
+    expect(screen.getByTestId(`sidebar-session-agent-${sidebarSessionKey}`)).toHaveTextContent('main');
+  });
+
   it('hides locally-created empty sessions until they have content', () => {
     const pendingKey = 'agent:main:session-pending';
     seedSidebarState();
@@ -329,7 +346,7 @@ describe('sidebar session helpers', () => {
     const renameSession = vi.fn().mockResolvedValue(undefined);
     seedSidebarState(renameSession);
     renderSidebar();
-    fireEvent.click(screen.getByLabelText('Rename'));
+    fireEvent.doubleClick(screen.getByTestId(`sidebar-session-${sidebarSessionKey}`));
     const input = screen.getByLabelText('Session title');
     const saveButton = screen.getByLabelText('Save session title');
 
@@ -353,7 +370,7 @@ describe('sidebar session helpers', () => {
     seedSidebarState(renameSession);
     renderSidebar();
 
-    fireEvent.click(screen.getByLabelText('Rename'));
+    fireEvent.doubleClick(screen.getByTestId(`sidebar-session-${sidebarSessionKey}`));
     fireEvent.click(screen.getByLabelText('Save session title'));
 
     await waitFor(() => {
@@ -368,7 +385,8 @@ describe('sidebar session helpers', () => {
     useChatStore.setState({ deleteSession });
     renderSidebar();
 
-    fireEvent.click(screen.getByTestId(`sidebar-session-delete-${sidebarSessionKey}`));
+    fireEvent.keyDown(screen.getByTestId(`sidebar-session-menu-${sidebarSessionKey}`), { key: 'ArrowDown' });
+    fireEvent.click(await screen.findByTestId(`sidebar-session-delete-${sidebarSessionKey}`));
     fireEvent.click(screen.getByTestId('confirm-dialog-confirm-button'));
 
     await waitFor(() => expect(deleteSession).toHaveBeenCalledWith(sidebarSessionKey));
@@ -381,7 +399,8 @@ describe('sidebar session helpers', () => {
     useChatStore.setState({ deleteSession });
     renderSidebar();
 
-    fireEvent.click(screen.getByTestId(`sidebar-session-delete-${sidebarSessionKey}`));
+    fireEvent.keyDown(screen.getByTestId(`sidebar-session-menu-${sidebarSessionKey}`), { key: 'ArrowDown' });
+    fireEvent.click(await screen.findByTestId(`sidebar-session-delete-${sidebarSessionKey}`));
     fireEvent.click(screen.getByTestId('confirm-dialog-confirm-button'));
 
     await waitFor(() => {
@@ -393,7 +412,7 @@ describe('sidebar session helpers', () => {
     const renameSession = vi.fn().mockResolvedValue(undefined);
     seedSidebarState(renameSession);
     renderSidebar();
-    fireEvent.click(screen.getByLabelText('Rename'));
+    fireEvent.doubleClick(screen.getByTestId(`sidebar-session-${sidebarSessionKey}`));
     const input = screen.getByLabelText('Session title');
     const cancelButton = screen.getByLabelText('Cancel renaming');
 

@@ -1,22 +1,22 @@
 {
-    "title": "メッセージングチャンネル",
-    "subtitle": "メッセージングチャンネル、アカウント、Agent への紐付け、チャンネルのデフォルトアカウントを一元管理します",
+    "title": "メッセージ遠隔操作",
+    "subtitle": "メッセージアプリで ClawX に依頼し、結果を受け取れます。",
     "refresh": "更新",
-    "addChannel": "チャンネルを追加",
+    "addChannel": "メッセージアプリを接続",
     "stats": {
         "total": "全チャンネル",
         "connected": "接続済み",
         "disconnected": "未接続"
     },
-    "gatewayWarning": "ゲートウェイサービスが実行されていないため、チャンネルに接続できません。",
+    "gatewayWarning": "メッセージアプリに接続するにはローカルサービスを起動してください。",
     "availableChannels": "利用可能なチャンネル",
-    "supportedChannels": "サポートされているチャンネル",
+    "supportedChannels": "メッセージアプリを追加",
     "available": "利用可能なチャンネル",
     "availableDesc": "新しいチャンネルを接続",
-    "configured": "設定済みチャンネル",
+    "configured": "接続済みアプリ",
     "configuredDesc": "すでに設定済みのチャンネルを管理",
     "configuredBadge": "設定済み",
-    "deleteConfirm": "このチャンネルを削除してもよろしいですか？",
+    "deleteConfirm": "このメッセージアプリと、そのすべてのアカウントを ClawX から削除しますか？",
     "showAll": "すべて表示",
     "pluginBadge": "プラグイン",
     "toast": {
@@ -38,17 +38,20 @@
     },
     "account": {
         "add": "アカウントを追加",
-        "edit": "編集",
+        "linkedAccount": "連携済みアカウント",
+        "accountActions": "アカウントの操作",
+        "appActions": "アプリの操作",
+        "edit": "設定を編集",
         "authorizeWorkspace": "ワークスペースを認可",
         "resetWorkspaceAuth": "ワークスペース認可を解除",
         "resetWorkspaceAuthConfirm": "この端末に保存された DingTalk ワークスペース認可を解除しますか？設定済みの DingTalk アカウントはこの認可を共有しています。解除後もチャットは利用できますが、カレンダー、ドキュメント、タスクなどは再認可が必要です。",
         "resetWorkspaceAuthConfirmAction": "認可を解除",
         "delete": "アカウントを削除",
-        "deleteChannel": "チャンネルを削除",
+        "deleteChannel": "アプリを削除",
         "deleteConfirm": "このアカウントを削除してもよろしいですか？",
         "default": "現在の既定",
         "setDefault": "チャンネル既定に設定",
-        "bindAgentLabel": "紐付け Agent",
+        "bindAgentLabel": "担当アシスタント",
         "unassigned": "未割り当て",
         "mainAccount": "メインアカウント",
         "customIdLabel": "アカウント ID",
@@ -78,12 +81,15 @@
     "dialog": {
         "updateTitle": "{{name}} を更新",
         "configureTitle": "{{name}} を設定",
-        "addTitle": "チャンネルを追加",
+        "addTitle": "メッセージアプリを接続",
         "existingDesc": "既存の設定を更新します",
         "selectDesc": "設定するチャンネルタイプを選択してください",
         "qrCode": "QRコード",
         "token": "トークン",
         "scanQR": "{{name}} でこのQRコードをスキャンしてください",
+        "feishuSetupHint": "Feishu または Lark の開発者コンソールでアプリを作成し、ボットを有効にしてから App ID と App Secret を入力してください。",
+        "whatsappSetupHint": "QR コードを生成し、スマートフォンの WhatsApp と ClawX を連携します。",
+        "whatsappScanHint": "スマートフォンの WhatsApp で「リンク済みデバイス」→「デバイスをリンク」を開き、このコードをスキャンしてください。",
         "refreshCode": "コードを更新",
         "loadingConfig": "設定を読み込み中...",
         "existingHint": "このチャンネルの設定はすでに存在します",
@@ -223,7 +229,7 @@
             ]
         },
         "whatsapp": {
-            "description": "QRコードをスキャンして WhatsApp に接続します（電話番号は不要です）",
+            "description": "WhatsApp から ClawX にタスクを依頼し、結果を受け取れます。",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/ES7fwUfH8iGl8FkHYfFcyWB3n4d#doxcnUElomBZLi0NnKLUzn6zLbd",
             "instructions": [
                 "携帯電話で WhatsApp を開きます",
@@ -243,7 +249,7 @@
             ]
         },
         "dingtalk": {
-            "description": "公式 OpenClaw コネクタで DingTalk に接続します（Stream チャット）。カレンダーやドキュメントなどのオフィススキルは同梱の dws CLI を使います。",
+            "description": "DingTalk ボットを接続して、チャットや業務を進めます。",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/Y5eNwiSiZidkLskrwtJc1rUln0b#doxcnDgA78n43DbkiQjI1OqUA7b",
             "fields": {
                 "clientId": {
@@ -263,7 +269,7 @@
             ]
         },
         "feishu": {
-            "description": "WebSocket 経由で Feishu/Lark ボットに接続します",
+            "description": "Feishu または Lark のボットに接続します。",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/GKn8wOvHnibpPNkNkPzcAvGlnzK#GdHUdp9t9oqyegxwV8ScLvVGn1c",
             "fields": {
                 "appId": {
@@ -283,7 +289,7 @@
             ]
         },
         "wecom": {
-            "description": "プラグイン経由で WeCom Bot (企業微信) に接続します",
+            "description": "WeCom のボットに接続します。",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/JTGnwoV0RixKPtkr4w7c7gpAnDc",
             "fields": {
                 "botId": {

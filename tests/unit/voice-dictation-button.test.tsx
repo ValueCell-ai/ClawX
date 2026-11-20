@@ -1,3 +1,5 @@
+import { fillComposer, composerText, selectComposer } from './composer-test-utils';
+import { getNearestEditorFromDOMNode, $getSelection, $isRangeSelection } from 'lexical';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ChatInput } from '@/pages/Chat/ChatInput';
@@ -421,10 +423,10 @@ describe('ChatInput voice dictation wiring', () => {
   it('inserts transcribed text at the cursor and restores focus and caret', async () => {
     renderChatInput();
 
-    const textarea = screen.getByTestId('chat-composer-input') as HTMLTextAreaElement;
-    fireEvent.change(textarea, { target: { value: 'Draft a helper' } });
+    const textarea = screen.getByTestId('chat-composer-input') as HTMLDivElement;
+    fillComposer(textarea, 'Draft a helper');
     textarea.focus();
-    textarea.setSelectionRange('Draft '.length, 'Draft '.length);
+    selectComposer(textarea, 'Draft '.length);
 
     fireEvent.click(screen.getByTestId('chat-composer-voice'));
     act(() => {
@@ -432,21 +434,21 @@ describe('ChatInput voice dictation wiring', () => {
     });
 
     await waitFor(() => {
-      expect(textarea).toHaveValue('Draft hello worlda helper');
+      expect(composerText(textarea)).toBe('Draft hello worlda helper');
     });
     await waitFor(() => {
       expect(textarea).toHaveFocus();
     });
     await waitFor(() => {
-      expect(textarea.selectionStart).toBe('Draft hello world'.length);
-      expect(textarea.selectionEnd).toBe('Draft hello world'.length);
+      const offset = getNearestEditorFromDOMNode(textarea).getEditorState().read(() => { const selection = $getSelection(); return $isRangeSelection(selection) ? selection.anchor.offset : -1; });
+      expect(offset).toBe('Draft hello world'.length);
     });
   });
 
   it('locks the composer textarea while voice status is active', () => {
     const { rerender } = renderChatInput();
 
-    expect(screen.getByTestId('chat-composer-input')).not.toBeDisabled();
+    expect(screen.getByTestId('chat-composer-input')).toHaveAttribute('contenteditable', 'true');
 
     voiceMock.state.status = 'recording';
     rerender(
@@ -454,7 +456,7 @@ describe('ChatInput voice dictation wiring', () => {
         <ChatInput onSend={vi.fn()} />
       </TooltipProvider>,
     );
-    expect(screen.getByTestId('chat-composer-input')).toBeDisabled();
+    expect(screen.getByTestId('chat-composer-input')).toHaveAttribute('contenteditable', 'false');
 
     voiceMock.state.status = 'transcribing';
     rerender(
@@ -462,7 +464,7 @@ describe('ChatInput voice dictation wiring', () => {
         <ChatInput onSend={vi.fn()} />
       </TooltipProvider>,
     );
-    expect(screen.getByTestId('chat-composer-input')).toBeDisabled();
+    expect(screen.getByTestId('chat-composer-input')).toHaveAttribute('contenteditable', 'false');
     expect(screen.getByTestId('chat-composer-voice')).toBeDisabled();
 
     voiceMock.state.status = 'idle';
@@ -471,7 +473,7 @@ describe('ChatInput voice dictation wiring', () => {
         <ChatInput onSend={vi.fn()} />
       </TooltipProvider>,
     );
-    expect(screen.getByTestId('chat-composer-input')).not.toBeDisabled();
+    expect(screen.getByTestId('chat-composer-input')).toHaveAttribute('contenteditable', 'true');
   });
 
   it('passes the composer disabled state into the dictation options', () => {

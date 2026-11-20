@@ -10,7 +10,6 @@ import {
   test,
   type AttachmentHostFixture,
 } from './fixtures/electron';
-import { MAC_TRAFFIC_LIGHT_SAFE_INSET } from '../../shared/sidebar-layout';
 
 const MAIN_SESSION_KEY = 'agent:main:main';
 const OFFICE_FIXTURE_DIR = resolve(process.cwd(), 'tests/e2e/fixtures/office');
@@ -64,6 +63,7 @@ async function openChat(app: ElectronApplication): Promise<Page> {
   }
   await expect(page.getByTestId('main-layout')).toBeVisible();
   await expect(page.getByTestId('chat-page')).toBeVisible();
+  await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
   return page;
 }
 
@@ -173,6 +173,7 @@ test.describe('real Office document previews', () => {
       await fixture.setTranscriptResponses(MAIN_SESSION_KEY, [[]]);
 
       const page = await openChat(app);
+      await page.setViewportSize({ width: 1600, height: 1000 });
       await page.evaluate(() => {
         const trackedWindow = window as typeof window & {
           __officePptxChartCompletions?: number;
@@ -247,13 +248,14 @@ test.describe('real Office document previews', () => {
       const deckBActivity = page.getByTestId('acp-file-button').filter({ hasText: 'slides-b.pptx' });
       await expect(deckBActivity).toHaveAccessibleName('Created slides-b.pptx');
       await deckBActivity.click();
-      await expect(panel.getByTestId('artifact-panel-tab-preview')).toHaveAttribute('class', /bg-foreground\/10/);
+      await expect(panel.getByTestId('artifact-panel-tab-preview')).toHaveAttribute('aria-selected', 'true');
       await expect(panel.getByText('1 / 2', { exact: true })).toBeVisible({ timeout: 30_000 });
       await assertSinglePptxViewer(page);
       await waitForStableCanvas(canvas);
 
       await panel.getByTestId('artifact-panel-tab-browser').click();
-      await expect(panel.getByText('2 / 2', { exact: true })).toBeVisible({ timeout: 30_000 });
+      await expect(panel.getByTestId('file-preview-header').getByRole('heading', { name: 'slides-b.pptx' })).toBeVisible();
+      await expect(panel.getByText('1 / 2', { exact: true })).toBeVisible({ timeout: 30_000 });
       await assertSinglePptxViewer(page);
       await waitForStableCanvas(canvas);
 
@@ -276,7 +278,7 @@ test.describe('real Office document previews', () => {
 
       const beforeResize = await canvasFingerprint(canvas);
       const beforeResizeBacking = { width: beforeResize.width, height: beforeResize.height };
-      const divider = page.getByRole('separator', { name: 'Drag to resize width' });
+      const divider = page.getByRole('separator', { name: 'Resize workspace panel' });
       const [dividerBounds, panelBounds] = await Promise.all([
         divider.boundingBox(),
         page.getByTestId('artifact-panel-aside').boundingBox(),
@@ -301,23 +303,7 @@ test.describe('real Office document previews', () => {
       expect(panelWidthPct).toBeLessThanOrEqual(28.5);
       await assertSinglePptxViewer(page);
 
-      const constrainedCanvas = await waitForStableCanvas(canvas);
-      await page.getByTestId('file-preview-fullscreen-toggle').click();
-      const fullscreenLayer = page.getByTestId('file-preview-fullscreen-layer');
-      await expect(fullscreenLayer).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Exit fullscreen' })).toBeVisible();
-      await expect(page.getByTestId('file-preview-header')).toHaveCSS(
-        'padding-left',
-        process.platform === 'darwin' ? `${MAC_TRAFFIC_LIGHT_SAFE_INSET}px` : '20px',
-      );
-      const fullscreenCanvas = await waitForStableCanvas(canvas);
-      expect(fullscreenCanvas.clientWidth).toBeGreaterThan(constrainedCanvas.clientWidth);
-      expect(fullscreenCanvas.clientHeight).toBeGreaterThan(constrainedCanvas.clientHeight);
-      await assertSinglePptxViewer(page);
-
-      await page.getByRole('button', { name: 'Exit fullscreen' }).click();
-      await expect(fullscreenLayer).not.toBeAttached();
-      await expect(page.getByRole('button', { name: 'Enter fullscreen' })).toBeVisible();
+      await expect(page.getByTestId('file-preview-fullscreen-toggle')).toHaveCount(0);
       await waitForStableCanvas(canvas);
       await assertSinglePptxViewer(page);
 
@@ -325,13 +311,13 @@ test.describe('real Office document previews', () => {
       expect(hostCalls).toEqual(expect.arrayContaining([
         expect.objectContaining({
           module: 'files',
-          action: 'readBinary',
-          payload: expect.objectContaining({ path: paths.docxPath }),
+          action: 'readWorkspaceBinary',
+          payload: expect.objectContaining({ workspaceRoot: fixture.workspaceDir, relativePath: 'sample.docx' }),
         }),
         expect.objectContaining({
           module: 'files',
-          action: 'readBinary',
-          payload: expect.objectContaining({ path: paths.deckAPath }),
+          action: 'readWorkspaceBinary',
+          payload: expect.objectContaining({ workspaceRoot: fixture.workspaceDir, relativePath: 'slides-a.pptx' }),
         }),
         expect.objectContaining({
           module: 'files',

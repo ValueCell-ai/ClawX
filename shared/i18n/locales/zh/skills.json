@@ -1,13 +1,13 @@
 {
     "title": "技能",
-    "subtitle": "浏览和管理 AI 能力",
+    "subtitle": "浏览和管理 AI 的能力",
     "refresh": "刷新",
     "openFolder": "打开技能文件夹",
     "gatewayWarning": "网关未运行。你仍可查看本地技能，但运行时状态暂不可用。",
     "gatewayStarting": "网关正在启动。本地技能已可用，运行时状态会在就绪后自动补充。",
     "tabs": {
-        "installed": "已安装",
-        "marketplace": "市场"
+        "installed": "我的技能",
+        "marketplace": "发现技能"
     },
     "filter": {
         "all": "全部 ({{count}})",
@@ -22,12 +22,21 @@
     "actions": {
         "enableVisible": "批量启用可见项",
         "disableVisible": "批量禁用可见项",
-        "installSkill": "安装技能"
+        "installSkill": "添加技能",
+        "more": "更多",
+        "toggle": "启用 {{name}}",
+        "clearSearch": "清空搜索"
     },
     "noSkills": "未找到技能",
     "noSkillsSearch": "尝试不同的搜索词",
     "noSkillsAvailable": "暂无可用技能",
+    "noEnabledSkills": "暂无已开启技能",
+    "noDisabledSkills": "暂无已禁用技能",
     "detail": {
+        "title": "技能详情",
+        "skillSource": "技能来源",
+        "sourceDirectory": "来源目录",
+        "files": "技能文件",
         "info": "信息",
         "config": "配置",
         "description": "描述",
@@ -60,6 +69,8 @@
         "enable": "启用",
         "disable": "禁用",
         "sections": {
+            "otherDocs": "其他文档",
+            "other": "其他",
             "title": "内容",
             "docs": "文档",
             "docsDesc": "SKILL.md 与说明文档",
@@ -71,9 +82,18 @@
             "assetsDesc": "模板、参考资料与静态资源",
             "empty": "此技能未包含可预览的文件。",
             "scanFailed": "扫描技能目录失败"
-        }
+        },
+        "technical": "技能文件与技术信息",
+        "close": "关闭详情",
+        "open": "查看 {{name}} 详情"
     },
     "source": {
+        "quickAccess": {
+            "workspace": "工作区",
+            "openclaw": "OpenClaw",
+            "agents": ".agents 目录",
+            "legacy": "内置与扩展"
+        },
         "badge": {
             "bundled": "内置目录",
             "managed": "托管目录",
@@ -123,6 +143,7 @@
         "searching": "正在搜索 ClawHub...",
         "noResults": "未找到匹配的技能。",
         "emptyPrompt": "搜索新技能以扩展您的能力。",
-        "searchError": "ClawHub 搜索失败。请检查您的连接或安装。"
+        "searchError": "ClawHub 搜索失败。请检查您的连接或安装。",
+        "unavailable": "当前环境暂不支持技能市场。你仍可管理本地技能，或打开技能文件夹。"
     }
 }

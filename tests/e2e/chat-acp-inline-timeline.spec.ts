@@ -599,7 +599,7 @@ async function emitAcpSessionUpdates(
   );
 }
 
-async function openChat(app: ElectronApplication) {
+async function openChat(app: ElectronApplication, sessionKey?: string) {
   const page = await getStableWindow(app);
   try {
     await page.reload();
@@ -610,6 +610,7 @@ async function openChat(app: ElectronApplication) {
   }
   await expect(page.getByTestId('main-layout')).toBeVisible();
   await expect(page.getByTestId('chat-page')).toBeVisible();
+  if (sessionKey) await page.getByTestId(`sidebar-session-${sessionKey}`).click();
   return page;
 }
 
@@ -685,7 +686,7 @@ test.describe('ClawX ACP inline timeline', () => {
         { key: awayKey, displayName: 'Other conversation', workspacePath: MAIN_WORKSPACE },
       ]);
       await installAcpLoadReplayBySessionMock(app, { [MAIN_SESSION_KEY]: [baseline, repaired, repaired, repaired, repaired], [awayKey]: [[], [], []] });
-      const page = await openChat(app);
+      const page = await openChat(app, MAIN_SESSION_KEY);
       await expect(page.getByTestId('acp-assistant-message')).toContainText('Background task started.');
       await expect(page.getByTestId('acp-chat-timeline')).not.toContainText('The task completed while');
 
@@ -700,7 +701,7 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();
       await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
       await expect(completion).toHaveCount(1);
-      await page.reload();
+      await openChat(app, MAIN_SESSION_KEY);
       await expect(completion).toHaveCount(1);
       await expect(completion).toBeVisible();
     } finally { await closeElectronApp(app); }
@@ -712,7 +713,7 @@ test.describe('ClawX ACP inline timeline', () => {
     try {
       await installAcpChatMocks(app);
       await installAcpPromptDeferredMock(app);
-      const page = await openChat(app);
+      const page = await openChat(app, MAIN_SESSION_KEY);
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();
       await page.getByTestId('chat-composer-input').fill('Continue through Gateway restart');
       await page.getByTestId('chat-composer-send').click();
@@ -801,35 +802,83 @@ test.describe('ClawX ACP inline timeline', () => {
     }
   });
 
-  test('shows active ACP context usage from usage updates', async ({ launchElectronApp }) => {
+  test('keeps the startup draft separate from an existing main conversation', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
       await installAcpChatMocks(app);
+      await installAcpLoadReplayBySessionMock(app, {
+        [MAIN_SESSION_KEY]: [[
+          { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'Previous task' } },
+          { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Previous answer' } },
+          { sessionUpdate: 'usage_update', used: 18_554, size: 1_048_576 },
+        ]],
+      });
+      await installAcpPromptSuccessMock(app);
       const page = await openChat(app);
+      const oldConversation = page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`);
+      await expect(oldConversation).toBeVisible();
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();
+      await expect(page.getByTestId('chat-composer-context-usage')).toHaveCount(0);
+      await expect(page.getByTestId('chat-composer-input')).toBeEnabled();
+      expect(await getRecordedAcpLoadSessionKeys(app)).toEqual([]);
+
+      await page.getByTestId('chat-composer-input').fill('Start an independent task');
+      await page.getByTestId('chat-composer-send').click();
+      const newConversation = page.getByTestId(/^sidebar-session-agent:main:session-\d+$/);
+      await expect(newConversation).toContainText('Start an independent task');
+      const newSessionKey = (await newConversation.getAttribute('data-testid'))!.slice('sidebar-session-'.length);
+      expect((await getRecordedAcpLoadSessionKeys(app))[0]).toBe(newSessionKey);
+      expect(await getRecordedAcpLoadSessionKeys(app)).not.toContain(MAIN_SESSION_KEY);
+
+      await oldConversation.click();
+      await expect(page.getByTestId('acp-assistant-message')).toContainText('Previous answer');
+      await expect(page.getByRole('progressbar', { name: '2% context used: 18,554 / 1,048,576 tokens' })).toBeVisible();
+      await expect(page.getByTestId('acp-chat-timeline')).not.toContainText('Start an independent task');
+      expect((await getRecordedAcpLoadSessionKeys(app)).at(-1)).toBe(MAIN_SESSION_KEY);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('shows active ACP context usage only after the conversation has messages', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installAcpChatMocks(app);
+      await installAcpLoadReplayMock(app, [{
+        sessionUpdate: 'usage_update',
+        used: 18_554,
+        size: 1_048_576,
+      }]);
+      const page = await openChat(app, MAIN_SESSION_KEY);
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId('chat-composer-context-usage')).toHaveCount(0);
 
-      await emitAcpSessionUpdates(app, [{
-        sessionUpdate: 'usage_update',
-        used: 25_000,
-        size: 100_000,
-      }]);
+      await emitAcpSessionUpdates(app, [
+        { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'Hello' } },
+        { sessionUpdate: 'usage_update', used: 25_000, size: 100_000 },
+      ]);
 
       const indicator = page.getByRole('progressbar', { name: '25% context used: 25,000 / 100,000 tokens' });
       await expect(indicator).toBeVisible({ timeout: 30_000 });
       await expect(indicator).toHaveAttribute('data-testid', 'chat-composer-context-usage');
       await expect(indicator).toHaveAttribute('aria-valuenow', '25');
       await expect(indicator).toContainText('25%');
-      await expect(page.getByTestId('chat-composer-footer').getByTestId('chat-composer-context-usage')).toBeVisible();
-      await expect(page.getByTestId('chat-composer-box').getByTestId('chat-composer-context-usage')).toHaveCount(0);
+      await expect(page.getByTestId('chat-composer-footer').getByTestId('chat-composer-context-usage')).toHaveCount(0);
+      await expect(page.getByTestId('chat-composer-model-controls').getByTestId('chat-composer-context-usage')).toBeVisible();
+      await expect(page.getByTestId('chat-composer-model-controls').locator(':scope > *').first()).toHaveAttribute('data-testid', 'chat-composer-context-usage');
       const indicatorBox = await indicator.boundingBox();
-      const gatewayBox = await page.getByTestId('chat-composer-gateway-status').boundingBox();
+      const sendBox = await page.getByTestId('chat-composer-send').boundingBox();
       expect(indicatorBox).toBeTruthy();
-      expect(gatewayBox).toBeTruthy();
-      expect(indicatorBox!.x).toBeLessThan(gatewayBox!.x);
+      expect(sendBox).toBeTruthy();
+      expect(indicatorBox!.x).toBeLessThan(sendBox!.x);
+      expect(Math.abs(indicatorBox!.y + indicatorBox!.height / 2 - sendBox!.y - sendBox!.height / 2)).toBeLessThan(2);
       await indicator.focus();
       await expect(page.getByRole('tooltip')).toHaveText('25% context used: 25,000 / 100,000 tokens');
+      await page.setViewportSize({ width: 900, height: 650 });
+      await expect(indicator).toBeInViewport();
+      await expect(page.getByTestId('chat-composer-send')).toBeInViewport();
     } finally {
       await closeElectronApp(app);
     }
@@ -840,7 +889,7 @@ test.describe('ClawX ACP inline timeline', () => {
 
     try {
       await installAcpChatMocks(app);
-      const page = await openChat(app);
+      const page = await openChat(app, MAIN_SESSION_KEY);
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
 
       await emitAcpSessionUpdates(app, [{
@@ -875,6 +924,18 @@ test.describe('ClawX ACP inline timeline', () => {
       await toggle.click();
       await expect(toggle).toHaveAttribute('aria-expanded', 'true');
       const panel = page.getByTestId('acp-session-plan-panel');
+      await expect(panel).toHaveAttribute('data-state', 'open');
+      await expect(panel).toHaveCSS('animation-name', 'clawx-floating-in');
+      await page.keyboard.press('Escape');
+      await expect(panel).toHaveCount(0);
+      await expect(toggle).toBeFocused();
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await toggle.click();
+      await expect(panel).toHaveCSS('animation-name', 'none');
+      await page.getByTestId('chat-composer-input').click();
+      await expect(panel).toHaveCount(0);
+      await page.emulateMedia({ reducedMotion: 'no-preference' });
+      await toggle.click();
       const steps = panel.getByTestId('acp-session-plan-step');
       await expect(steps).toHaveCount(3);
       await expect(steps.nth(0)).toHaveText('Inspect the current implementation');
@@ -950,7 +1011,7 @@ test.describe('ClawX ACP inline timeline', () => {
         }]],
       });
 
-      const page = await openChat(app);
+      const page = await openChat(app, MAIN_SESSION_KEY);
       const toggle = page.getByTestId('acp-session-plan-toggle');
       await expect(toggle).toBeVisible({ timeout: 30_000 });
        await expect(toggle).toHaveText('Todo items: 1 / 2');
@@ -1035,15 +1096,14 @@ test.describe('ClawX ACP inline timeline', () => {
         ],
       });
 
-      const page = await openChat(app);
+      const page = await openChat(app, MAIN_SESSION_KEY);
       const toggle = page.getByTestId('acp-session-plan-toggle');
       await expect(toggle).toBeVisible({ timeout: 30_000 });
       expect(await getRecordedAcpLoadSessionKeys(app)).toEqual([MAIN_SESSION_KEY]);
       await toggle.click();
       await expect(page.getByTestId('acp-session-plan-panel')).toBeVisible();
 
-      await page.reload();
-      await expect(page.getByTestId('main-layout')).toBeVisible({ timeout: 30_000 });
+      await openChat(app, MAIN_SESSION_KEY);
       await expect(toggle).toBeVisible({ timeout: 30_000 });
        await expect(toggle).toHaveText('Todo items: 0 / 2');
       await expect(toggle).toHaveAttribute('aria-expanded', 'false');
@@ -1082,7 +1142,7 @@ test.describe('ClawX ACP inline timeline', () => {
         durationMs: 6_400,
       }]);
 
-      const page = await openChat(app);
+      const page = await openChat(app, MAIN_SESSION_KEY);
       await expect(page.getByText('Historical turn measured')).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId('acp-turn-duration')).toHaveText('Took 6 sec');
     } finally {
@@ -1112,7 +1172,7 @@ test.describe('ClawX ACP inline timeline', () => {
         durationMs: 280_564,
       }]);
 
-      const page = await openChat(app);
+      const page = await openChat(app, MAIN_SESSION_KEY);
       await expect(page.getByText('Recovered turn completed')).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId('acp-turn-duration')).toHaveText('Took 280 sec');
     } finally {
@@ -1130,7 +1190,7 @@ test.describe('ClawX ACP inline timeline', () => {
         normalizedUserText: prompt,
         durationMs: 6_400,
       });
-      const page = await openChat(app);
+      const page = await openChat(app, MAIN_SESSION_KEY);
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
 
       await page.getByTestId('chat-composer-input').fill(prompt);
@@ -1201,7 +1261,7 @@ test.describe('ClawX ACP inline timeline', () => {
         else window.addEventListener('DOMContentLoaded', observe, { once: true });
       });
 
-      const page = await openChat(app);
+      const page = await openChat(app, MAIN_SESSION_KEY);
       const assistant = page.getByTestId('acp-assistant-message');
       await expect(assistant).toContainText('Paragraph 1.', { timeout: 30_000 });
       await expect(assistant).toContainText('Paragraph 12.');
@@ -1220,7 +1280,7 @@ test.describe('ClawX ACP inline timeline', () => {
 
     try {
       await installAcpChatMocks(app);
-      const page = await openChat(app);
+      const page = await openChat(app, MAIN_SESSION_KEY);
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
 
       await emitAcpSessionUpdates(app, [
@@ -1264,7 +1324,7 @@ test.describe('ClawX ACP inline timeline', () => {
     try {
       await installAcpChatMocks(app);
       await installAcpPromptSuccessMock(app);
-      const page = await openChat(app);
+      const page = await openChat(app, MAIN_SESSION_KEY);
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
 
       await page.getByTestId('chat-composer-input').fill('Plan the migration');
@@ -1272,6 +1332,11 @@ test.describe('ClawX ACP inline timeline', () => {
 
       await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
       await expect(page.getByText('Plan the migration')).toBeVisible();
+      const bubble = page.getByTestId('acp-user-message').getByText('Plan the migration').locator('..');
+      await expect(bubble).toHaveCSS('background-color', 'rgb(37, 99, 235)');
+      await page.evaluate(() => document.documentElement.classList.add('dark'));
+      await expect(bubble).toHaveCSS('background-color', 'rgb(37, 99, 235)');
+      await page.evaluate(() => document.documentElement.classList.remove('dark'));
 
       await emitAcpSessionUpdates(app, [
         {
@@ -1298,7 +1363,7 @@ test.describe('ClawX ACP inline timeline', () => {
     try {
       await installAcpChatMocks(app);
       await installAcpPromptDeferredMock(app);
-      const page = await openChat(app);
+      const page = await openChat(app, MAIN_SESSION_KEY);
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
 
       await page.getByTestId('chat-composer-input').fill('Keep working while I navigate');
@@ -1378,7 +1443,7 @@ test.describe('ClawX ACP inline timeline', () => {
       });
       await installAcpPromptDeferredMock(app);
       await installAcpReactivationWithPartialTimingMock(app, prompt);
-      const page = await openChat(app);
+      const page = await openChat(app, MAIN_SESSION_KEY);
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
 
       await page.getByTestId('chat-composer-input').fill(prompt);
@@ -1421,7 +1486,7 @@ test.describe('ClawX ACP inline timeline', () => {
 
     try {
       await installAcpChatMocks(app);
-      const page = await openChat(app);
+      const page = await openChat(app, MAIN_SESSION_KEY);
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
 
       await page.evaluate(() => {
@@ -1471,7 +1536,7 @@ test.describe('ClawX ACP inline timeline', () => {
 
     try {
       await installAcpChatMocks(app);
-      const page = await openChat(app);
+      const page = await openChat(app, MAIN_SESSION_KEY);
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
 
       const output = 'line one\n  indented line\ncolumn_a\tcolumn_b';
@@ -1500,7 +1565,7 @@ test.describe('ClawX ACP inline timeline', () => {
 
     try {
       await installAcpChatMocks(app);
-      const page = await openChat(app);
+      const page = await openChat(app, MAIN_SESSION_KEY);
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
 
       await emitAcpSessionUpdates(app, [
@@ -1562,7 +1627,7 @@ test.describe('ClawX ACP inline timeline', () => {
     try {
       await installAcpChatMocks(app);
       await installSettledAcpHydrationMock(app, { prompt, streamedText, replayedText });
-      const page = await openChat(app);
+      const page = await openChat(app, MAIN_SESSION_KEY);
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
 
       await page.getByTestId('chat-composer-input').fill(prompt);
@@ -1583,7 +1648,7 @@ test.describe('ClawX ACP inline timeline', () => {
 
     try {
       await installAcpChatMocks(app);
-      const page = await openChat(app);
+      const page = await openChat(app, MAIN_SESSION_KEY);
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
 
       await emitAcpSessionUpdates(app, [
@@ -1666,7 +1731,7 @@ test.describe('ClawX ACP inline timeline', () => {
         },
       ]);
 
-      const page = await openChat(app);
+      const page = await openChat(app, MAIN_SESSION_KEY);
 
       await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
       const card = page.getByTestId('acp-tool-call-card');
@@ -1803,7 +1868,7 @@ test.describe('ClawX ACP inline timeline', () => {
         durationMs: 12_000,
       }]);
 
-      const page = await openChat(app);
+      const page = await openChat(app, MAIN_SESSION_KEY);
 
       await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
       const group = page.getByTestId('acp-tool-calls-group');
@@ -1946,7 +2011,7 @@ test.describe('ClawX ACP inline timeline', () => {
         },
       ]);
 
-      const page = await openChat(app);
+      const page = await openChat(app, MAIN_SESSION_KEY);
       await page.evaluate(() => {
         class TestClipboardItem {
           readonly items: Record<string, Blob>;
@@ -2007,7 +2072,7 @@ test.describe('ClawX ACP inline timeline', () => {
         },
       ]);
 
-      const page = await openChat(app);
+      const page = await openChat(app, MAIN_SESSION_KEY);
 
       await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
       await expect(page.getByText('Transcript text mentions tool_call')).toBeVisible();
@@ -2068,7 +2133,7 @@ test.describe('ClawX ACP inline timeline', () => {
     try {
       await installAcpChatMocks(app);
       await installAcpPromptDeferredMock(app);
-      const page = await openChat(app);
+      const page = await openChat(app, MAIN_SESSION_KEY);
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId('chat-composer-working-indicator')).toHaveCount(0);
       await expect(page.getByTestId('chat-composer-dot-pulse')).toHaveCount(0);
@@ -2089,7 +2154,7 @@ test.describe('ClawX ACP inline timeline', () => {
     }
   });
 
-  test('keeps a blank new chat interactive after a recoverable initial ACP load failure', async ({ launchElectronApp }) => {
+  test('keeps an empty conversation interactive after a recoverable ACP load failure', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -2109,7 +2174,7 @@ test.describe('ClawX ACP inline timeline', () => {
         }),
       });
 
-      const page = await openChat(app);
+      const page = await openChat(app, MAIN_SESSION_KEY);
 
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId('acp-error-banner')).toHaveCount(0);
@@ -2170,7 +2235,7 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
 
       await page.getByTestId('chat-composer-agent').click();
-      await page.getByRole('button', { name: 'reviewer mock-model' }).click();
+      await page.getByTestId('chat-agent-target-reviewer').click();
       await page.getByTestId('chat-composer-input').fill('Hello reviewer');
       await page.getByTestId('chat-composer-send').click();
 
@@ -2287,7 +2352,7 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(page.getByTestId('workspace-session-group-%2Fworkspace%2Freviewer')).toBeVisible({ timeout: 30_000 });
 
       await page.getByTestId('chat-composer-agent').click();
-      await page.getByRole('button', { name: 'reviewer mock-model' }).click();
+      await page.getByTestId('chat-agent-target-reviewer').click();
       await page.getByTestId('chat-composer-input').fill('Trigger target send failure');
       await page.getByTestId('chat-composer-send').click();
 
@@ -2309,7 +2374,7 @@ test.describe('ClawX ACP inline timeline', () => {
     try {
       await installAcpChatMocks(app);
       await installAcpPromptFailureMock(app, detail, undefined, 'ACP_GATEWAY_RECONNECT_TIMEOUT');
-      const page = await openChat(app);
+      const page = await openChat(app, MAIN_SESSION_KEY);
       await page.getByTestId('chat-composer-input').fill('Send immediately after Gateway restart');
       await page.getByTestId('chat-composer-send').click();
       const error = page.getByTestId('acp-error-banner');

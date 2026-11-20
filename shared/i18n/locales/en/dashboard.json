@@ -10,12 +10,13 @@
     "sinceRestart": "Since last restart",
     "gatewayNotRunning": "Gateway not running",
     "models": {
-        "title": "Models",
-        "subtitle": "Manage your AI providers and monitor token usage.",
+        "title": "AI models",
+        "subtitle": "Manage chat, voice, and image models and review usage.",
         "tabs": {
             "chat": "Chat models",
             "imageGeneration": "Image generation",
-            "voice": "Speech-to-text"
+            "voice": "Speech-to-text",
+            "usage": "Usage"
         }
     },
     "quickActions": {
@@ -65,7 +66,19 @@
         "contentDialogTitle": "Usage detail content",
         "close": "Close",
         "noUsage": "No usage",
-        "usageParseError": "Usage parse error"
+        "usageParseError": "Usage parse error",
+        "columns": {
+            "model": "Model / provider",
+            "time": "Time",
+            "input": "Input",
+            "output": "Output",
+            "cacheRead": "Cache read",
+            "cacheWrite": "Cache write",
+            "total": "Total",
+            "cost": "Cost (USD)",
+            "actions": "Details"
+        },
+        "sourceHint": "Usage and costs come from local runtime records. Recorded costs may differ from the provider’s bill."
     },
     "imageGeneration": {
         "title": "Image Generation",

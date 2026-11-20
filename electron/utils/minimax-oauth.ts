@@ -11,6 +11,7 @@
  *   4. Return { access, refresh, expires, resourceUrl }
  */
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 import { proxyAwareFetch } from './proxy-fetch';
 
 // ── Constants ────────────────────────────────────────────────
@@ -69,6 +70,7 @@ export interface MiniMaxOAuthOptions {
     note: (message: string, title?: string) => Promise<void>;
     progress: { update: (message: string) => void; stop: (message?: string) => void };
     region?: MiniMaxRegion;
+    signal?: AbortSignal;
 }
 
 // ── PKCE helpers (self-contained, no openclaw dependency) ────
@@ -90,10 +92,12 @@ async function requestOAuthCode(params: {
     challenge: string;
     state: string;
     region: MiniMaxRegion;
+    signal?: AbortSignal;
 }): Promise<MiniMaxOAuthAuthorization> {
     const endpoints = getOAuthEndpoints(params.region);
     const response = await proxyAwareFetch(endpoints.codeEndpoint, {
         method: 'POST',
+        signal: params.signal,
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
             Accept: 'application/json',
@@ -131,10 +135,12 @@ async function pollOAuthToken(params: {
     userCode: string;
     verifier: string;
     region: MiniMaxRegion;
+    signal?: AbortSignal;
 }): Promise<TokenResult> {
     const endpoints = getOAuthEndpoints(params.region);
     const response = await proxyAwareFetch(endpoints.tokenEndpoint, {
         method: 'POST',
+        signal: params.signal,
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
             Accept: 'application/json',
@@ -212,8 +218,10 @@ async function pollOAuthToken(params: {
 
 export async function loginMiniMaxPortalOAuth(params: MiniMaxOAuthOptions): Promise<MiniMaxOAuthToken> {
     const region = params.region ?? 'global';
+    const { signal } = params;
     const { verifier, challenge, state } = generatePkce();
-    const oauth = await requestOAuthCode({ challenge, state, region });
+    const oauth = await requestOAuthCode({ challenge, state, region, signal });
+    signal?.throwIfAborted();
     const verificationUrl = oauth.verification_uri;
 
     const noteLines = [
@@ -238,6 +246,7 @@ export async function loginMiniMaxPortalOAuth(params: MiniMaxOAuthOptions): Prom
             userCode: oauth.user_code,
             verifier,
             region,
+            signal,
         });
 
         if (result.status === 'success') {
@@ -248,7 +257,7 @@ export async function loginMiniMaxPortalOAuth(params: MiniMaxOAuthOptions): Prom
             throw new Error(result.message);
         }
 
-        await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+        await delay(pollIntervalMs, undefined, { signal });
         pollIntervalMs = Math.max(pollIntervalMs, 2000);
     }
 

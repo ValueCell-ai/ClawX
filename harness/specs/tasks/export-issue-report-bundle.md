@@ -31,7 +31,7 @@ touchedAreas:
   - README.ja-JP.md
 expectedUserBehavior:
   - The sidebar contains an always-visible issue-report shortcut immediately below Settings, using a bug icon and an accessible icon-only form when collapsed.
-  - Settings retains an always-visible Support section with an issue-report export button.
+  - Settings retains an issue-report export button under About and help.
   - Activating either entry opens the same localized dialog that lists transcripts, sanitized OpenClaw configuration, diagnostic logs, and the manifest as bundle contents.
   - The user can select individual conversations or select all available conversations, but conversation selection is optional.
   - Export remains available when no conversations exist or none are selected.

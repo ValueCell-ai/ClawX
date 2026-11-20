@@ -4,13 +4,11 @@
  */
 import {
   useEffect,
-  useLayoutEffect,
   useState,
   useCallback,
   useMemo,
   useRef,
   type ReactNode,
-  type SelectHTMLAttributes,
 } from 'react';
 import {
   Plus,
@@ -18,7 +16,6 @@ import {
   Play,
   Trash2,
   RefreshCw,
-  X,
   Calendar,
   AlertCircle,
   CheckCircle2,
@@ -27,20 +24,23 @@ import {
   Loader2,
   Timer,
   History,
-  Pause,
   ChevronDown,
   Bot,
   Search,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
+import { hasFloatingSurface } from '@/components/ui/floating-ui';
+import { MenuSelectionIndicator } from '@/components/ui/menu-selection';
+import { menuOptionStateClass } from '@/components/ui/menu-selection-styles';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectItem, type SelectProps } from '@/components/ui/select';
+import { ComposerEditor, type ComposerEditorHandle } from '@/components/composer/ComposerEditor';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { Dialog } from '@/components/ui/dialog';
+import { ConfigDialogContent } from '@/components/ui/config-dialog-content';
 import {
   hostApi,
   type ChannelTargetOption,
@@ -52,8 +52,11 @@ import { useGatewayStore } from '@/stores/gateway';
 import { useAgentsStore } from '@/stores/agents';
 import { useChatStore } from '@/stores/chat';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
+import { FeedbackState } from '@/components/common/FeedbackState';
 import { formatRelativeTime, cn } from '@/lib/utils';
 import { fetchQuickAccessSkills } from '@/lib/quick-access-skills';
+import { getQuickSkillSourceLabel } from '@/lib/skill-source-label';
+import { QuickSkillOption } from '@/components/skills/QuickSkillOption';
 import { toast } from 'sonner';
 import type { CronJob, CronJobCreateInput, CronSchedule, ScheduleType } from '@/types/cron';
 import type { QuickAccessSkill } from '@/types/skill';
@@ -73,82 +76,6 @@ const schedulePresets: { key: string; value: string; type: ScheduleType }[] = [
   { key: 'weeklyMon', value: '0 9 * * 1', type: 'weekly' },
   { key: 'monthly1st', value: '0 9 1 * *', type: 'monthly' },
 ];
-
-// ── Inline skill token helpers ───────────────────────────────────
-// Mirrors the chat composer skill-token logic in src/pages/Chat/ChatInput.tsx:
-// skills are inserted as `/skillName  ` tokens (trailing double space) and the
-// textarea renders a transparent caret on top of a highlighted overlay. Unlike
-// the chat composer, the cron dialog intentionally does NOT expose a preview
-// affordance — the tokens are rendered as non-interactive spans.
-
-type SkillTokenRange = { start: number; end: number };
-
-// The message textarea grows with its content up to this height, after which it
-// scrolls internally and the highlight overlay is scroll-synced to match it.
-const CRON_MESSAGE_MAX_HEIGHT = 200;
-
-function getSkillPrefix(skillName: string): string {
-  return `/${skillName}  `;
-}
-
-function needsLeadingSkillSpace(value: string, position: number): boolean {
-  return position > 0 && !/\s/.test(value[position - 1] ?? '');
-}
-
-function findSkillTokenRanges(value: string): SkillTokenRange[] {
-  const ranges: SkillTokenRange[] = [];
-  const skillTokenPattern = /\/[^\s]+ {2}/g;
-  let match: RegExpExecArray | null;
-  while ((match = skillTokenPattern.exec(value)) !== null) {
-    ranges.push({ start: match.index, end: match.index + match[0].length });
-  }
-  return ranges;
-}
-
-const SKILL_TOKEN_HIGHLIGHT_CLASS =
-  'rounded-md bg-skill-bg/14 text-skill-fg [-webkit-box-decoration-break:clone] [box-decoration-break:clone] [text-shadow:0_0_10px_rgba(47,107,255,0.38)] dark:bg-skill-bg/18 dark:text-skill-fg-dark dark:[text-shadow:0_0_12px_rgba(37,99,235,0.42)]';
-
-function renderHighlightedCronMessage(value: string, tokenRanges: SkillTokenRange[]) {
-  if (tokenRanges.length === 0) {
-    return (
-      <>
-        {value}
-        {value.endsWith('\n') ? '\n' : '\u200b'}
-      </>
-    );
-  }
-
-  const chunks: ReactNode[] = [];
-  let cursor = 0;
-
-  for (const tokenRange of tokenRanges) {
-    const token = value.slice(tokenRange.start, tokenRange.end);
-    const tokenLabel = token.trimEnd();
-    const tokenTrailingSpace = token.slice(tokenLabel.length);
-
-    if (tokenRange.start > cursor) {
-      chunks.push(value.slice(cursor, tokenRange.start));
-    }
-    chunks.push(
-      <span
-        key={`skill-token-${tokenRange.start}`}
-        data-testid="cron-skill-token"
-        className={cn('align-baseline', SKILL_TOKEN_HIGHLIGHT_CLASS)}
-      >
-        {tokenLabel}
-      </span>,
-      tokenTrailingSpace,
-    );
-    cursor = tokenRange.end;
-  }
-
-  if (cursor < value.length) {
-    chunks.push(value.slice(cursor));
-  }
-  chunks.push(value.endsWith('\n') ? '\n' : '\u200b');
-
-  return <>{chunks}</>;
-}
 
 // Parse cron schedule to human-readable format
 // Handles both plain cron strings and Gateway CronSchedule objects:
@@ -301,25 +228,15 @@ function isSupportedCronDeliveryChannel(channelType: string): boolean {
   return TESTED_CRON_DELIVERY_CHANNELS.has(channelType);
 }
 
-interface SelectFieldProps extends SelectHTMLAttributes<HTMLSelectElement> {
+interface SelectFieldProps extends SelectProps {
   children: ReactNode;
 }
 
+const cronFieldClass = 'h-9 rounded-lg bg-surface-modal text-sm shadow-none';
+const cronSegmentClass = 'flex-1 rounded-md px-2 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground aria-pressed:bg-surface-modal aria-pressed:text-foreground aria-pressed:shadow-sm';
+
 function SelectField({ className, children, ...props }: SelectFieldProps) {
-  return (
-    <div className="relative">
-      <Select
-        className={cn(
-          'h-[44px] rounded-xl border-black/10 dark:border-white/10 bg-background text-meta pr-10 [background-image:none] appearance-none',
-          className,
-        )}
-        {...props}
-      >
-        {children}
-      </Select>
-      <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-    </div>
-  );
+  return <Select className={cn(cronFieldClass, className)} {...props}>{children}</Select>;
 }
 
 // Create/Edit Task Dialog
@@ -327,6 +244,7 @@ interface TaskDialogProps {
   open: boolean;
   job?: CronJob;
   configuredChannels: DeliveryChannelGroup[];
+  returnFocusTo: HTMLElement | null;
   onClose: () => void;
   onSave: (input: CronJobCreateInput) => Promise<void>;
 }
@@ -505,24 +423,12 @@ interface ScheduleTimePickerProps {
 function ScheduleTimePicker({ id, value, onChange, 'data-testid': testId }: ScheduleTimePickerProps) {
   const { t } = useTranslation('cron');
   const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
   const hourListRef = useRef<HTMLDivElement>(null);
   const minuteListRef = useRef<HTMLDivElement>(null);
 
   const [hourRaw, minuteRaw] = (value || '09:00').split(':');
   const selectedHour = Math.min(23, Math.max(0, Math.floor(Number(hourRaw) || 0)));
   const selectedMinute = Math.min(59, Math.max(0, Math.floor(Number(minuteRaw) || 0)));
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const handlePointerDown = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => document.removeEventListener('mousedown', handlePointerDown);
-  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -532,28 +438,29 @@ function ScheduleTimePicker({ id, value, onChange, 'data-testid': testId }: Sche
 
   const cellClass = (active: boolean) =>
     cn(
-      'block w-full rounded-md py-1.5 text-center font-mono text-meta transition-colors',
-      active
-        ? 'bg-black/5 dark:bg-white/10 text-foreground font-semibold'
-        : 'text-foreground/70 hover:bg-black/5 dark:hover:bg-white/5',
+      'clawx-menu-item relative block w-full px-6 text-center font-mono text-meta transition-colors',
+      menuOptionStateClass(active),
+      active ? 'font-semibold' : 'text-foreground/70',
     );
 
   return (
-    <div ref={containerRef} className="relative">
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
       <button
         id={id}
         type="button"
         data-testid={testId}
-        onClick={() => setOpen((prev) => !prev)}
-        className="flex h-[44px] w-full items-center justify-between rounded-xl border border-black/10 dark:border-white/10 bg-transparent px-3 font-mono text-meta text-foreground shadow-sm transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+        className={cn(cronFieldClass, 'flex w-full items-center justify-between border border-input px-3 tabular-nums transition-colors hover:bg-black/5 dark:hover:bg-white/5')}
       >
         <span>
           {pad2(selectedHour)}:{pad2(selectedMinute)}
         </span>
         <Clock className="h-4 w-4 opacity-50" />
       </button>
-      {open && (
-        <div className="absolute left-0 top-full z-30 mt-1.5 w-full overflow-hidden rounded-xl border border-black/10 dark:border-white/10 bg-surface-modal shadow-lg">
+      </PopoverTrigger>
+      <PopoverContent data-testid={`${id}-menu`} align="start" side="bottom"
+        onOpenAutoFocus={event => { event.preventDefault(); (hourListRef.current?.querySelector('[data-selected="true"]') as HTMLElement | null)?.focus({ preventScroll: true }); }}
+        className="w-[var(--radix-popover-trigger-width)] overflow-hidden rounded-xl border border-black/10 bg-surface-modal shadow-lg dark:border-white/10">
           <div className="grid grid-cols-2 text-center text-meta font-medium text-muted-foreground">
             <div className="border-r border-black/5 dark:border-white/5 py-1.5">{t('dialog.hourColumn')}</div>
             <div className="py-1.5">{t('dialog.minuteColumn')}</div>
@@ -561,42 +468,45 @@ function ScheduleTimePicker({ id, value, onChange, 'data-testid': testId }: Sche
           <div className="grid grid-cols-2">
             <div
               ref={hourListRef}
-              className="max-h-[200px] overflow-y-auto border-r border-black/5 dark:border-white/5 px-1 pb-1"
+              className="clawx-menu-list max-h-[200px] overflow-y-auto border-r border-black/5 dark:border-white/5 px-1 pb-1"
             >
               {Array.from({ length: 24 }, (_, hour) => (
                 <button
                   key={hour}
                   type="button"
                   data-selected={hour === selectedHour}
+                  aria-current={hour === selectedHour ? 'true' : undefined}
                   onClick={() => onChange(`${pad2(hour)}:${pad2(selectedMinute)}`)}
                   className={cellClass(hour === selectedHour)}
                 >
                   {pad2(hour)}
+                  <MenuSelectionIndicator selected={hour === selectedHour} className="absolute right-3 top-1/2 -translate-y-1/2" />
                 </button>
               ))}
             </div>
-            <div ref={minuteListRef} className="max-h-[200px] overflow-y-auto px-1 pb-1">
+            <div ref={minuteListRef} className="clawx-menu-list max-h-[200px] overflow-y-auto px-1 pb-1">
               {Array.from({ length: 60 }, (_, minute) => (
                 <button
                   key={minute}
                   type="button"
                   data-selected={minute === selectedMinute}
+                  aria-current={minute === selectedMinute ? 'true' : undefined}
                   onClick={() => onChange(`${pad2(selectedHour)}:${pad2(minute)}`)}
                   className={cellClass(minute === selectedMinute)}
                 >
                   {pad2(minute)}
+                  <MenuSelectionIndicator selected={minute === selectedMinute} className="absolute right-3 top-1/2 -translate-y-1/2" />
                 </button>
               ))}
             </div>
           </div>
-        </div>
-      )}
-    </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
-function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDialogProps) {
-  const { t } = useTranslation('cron');
+function TaskDialog({ open, job, configuredChannels, returnFocusTo, onClose, onSave }: TaskDialogProps) {
+  const { t } = useTranslation(['cron', 'skills']);
   const [saving, setSaving] = useState(false);
   const agents = useAgentsStore((s) => s.agents);
 
@@ -618,9 +528,8 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
   const [quickSkills, setQuickSkills] = useState<QuickAccessSkill[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(false);
   const [skillsError, setSkillsError] = useState<string | null>(null);
-  const messageRef = useRef<HTMLTextAreaElement>(null);
-  const messageOverlayRef = useRef<HTMLDivElement>(null);
-  const skillPickerRef = useRef<HTMLDivElement>(null);
+  const messageRef = useRef<ComposerEditorHandle>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
   const [prevOpen, setPrevOpen] = useState(open);
 
   if (prevOpen !== open) {
@@ -650,7 +559,6 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
     () => agents.find((agent) => agent.id === selectedAgentId) ?? null,
     [agents, selectedAgentId],
   );
-  const skillTokenRanges = useMemo(() => findSkillTokenRanges(message), [message]);
   const filteredQuickSkills = useMemo(() => {
     const query = skillQuery.trim().toLowerCase();
     if (!query) return quickSkills;
@@ -658,9 +566,10 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
       (skill) =>
         skill.name.toLowerCase().includes(query) ||
         skill.description.toLowerCase().includes(query) ||
+        getQuickSkillSourceLabel(skill.source, t).toLowerCase().includes(query) ||
         skill.sourceLabel.toLowerCase().includes(query),
     );
-  }, [quickSkills, skillQuery]);
+  }, [quickSkills, skillQuery, t]);
 
   const loadQuickSkills = useCallback(async () => {
     if (!selectedAgent) {
@@ -701,147 +610,11 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
     void loadQuickSkills();
   }, [skillPickerOpen, loadQuickSkills]);
 
-  useEffect(() => {
-    if (!skillPickerOpen) return;
-    const handlePointerDown = (event: MouseEvent) => {
-      if (!skillPickerRef.current?.contains(event.target as Node)) {
-        setSkillPickerOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-    };
-  }, [skillPickerOpen]);
-
-  // The highlight overlay is absolutely positioned on top of the textarea and is
-  // the only visible copy of the text once a skill token exists, so it has to
-  // follow the textarea's scroll offset or edits below the fold become invisible.
-  const syncMessageOverlayScroll = useCallback(() => {
-    const textarea = messageRef.current;
-    const overlay = messageOverlayRef.current;
-    if (!textarea || !overlay) return;
-    overlay.scrollTop = textarea.scrollTop;
-    overlay.scrollLeft = textarea.scrollLeft;
+  const handleInsertSkill = useCallback((skill: QuickAccessSkill) => {
+    messageRef.current?.insertSkill(skill);
+    setSkillPickerOpen(false);
+    setSkillQuery('');
   }, []);
-
-  useLayoutEffect(() => {
-    const textarea = messageRef.current;
-    if (!textarea) return;
-    const previousScrollTop = textarea.scrollTop;
-    textarea.style.height = 'auto';
-    textarea.style.height = `${Math.min(textarea.scrollHeight, CRON_MESSAGE_MAX_HEIGHT)}px`;
-    textarea.scrollTop = previousScrollTop;
-    // On platforms with classic scrollbars the textarea's scrollbar gutter eats
-    // into its content width; the overlay has to lose the same width or the two
-    // copies of the text wrap at different columns.
-    const overlay = messageOverlayRef.current;
-    if (overlay) {
-      overlay.style.paddingRight = `${Math.max(0, textarea.offsetWidth - textarea.clientWidth)}px`;
-    }
-    syncMessageOverlayScroll();
-  }, [message, open, syncMessageOverlayScroll]);
-
-  const moveMessageCaretTo = useCallback(
-    (position: number) => {
-      const textarea = messageRef.current;
-      if (!textarea) return;
-      textarea.focus();
-      textarea.setSelectionRange(position, position);
-      syncMessageOverlayScroll();
-      requestAnimationFrame(() => {
-        messageRef.current?.focus();
-        messageRef.current?.setSelectionRange(position, position);
-        syncMessageOverlayScroll();
-      });
-    },
-    [syncMessageOverlayScroll],
-  );
-
-  const normalizeMessageSelection = useCallback(() => {
-    if (skillTokenRanges.length === 0) return;
-    const textarea = messageRef.current;
-    if (!textarea) return;
-    const selectionStart = textarea.selectionStart ?? 0;
-    const selectionEnd = textarea.selectionEnd ?? 0;
-    if (selectionStart !== selectionEnd) return;
-    const tokenRange = skillTokenRanges.find((range) => selectionStart > range.start && selectionStart < range.end);
-    if (tokenRange) {
-      moveMessageCaretTo(tokenRange.end);
-    }
-  }, [moveMessageCaretTo, skillTokenRanges]);
-
-  const handleMessageKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === 'Backspace') {
-        const textarea = messageRef.current;
-        const selectionStart = textarea?.selectionStart ?? 0;
-        const selectionEnd = textarea?.selectionEnd ?? 0;
-        const tokenRange = skillTokenRanges.find(
-          (range) => selectionStart === selectionEnd && selectionStart > range.start && selectionStart <= range.end,
-        );
-        if (tokenRange) {
-          e.preventDefault();
-          const nextValue = `${message.slice(0, tokenRange.start)}${message.slice(tokenRange.end)}`;
-          setMessage(nextValue);
-          moveMessageCaretTo(tokenRange.start);
-          return;
-        }
-      }
-      if (e.key === 'ArrowLeft' && skillTokenRanges.length > 0) {
-        const textarea = messageRef.current;
-        const selectionStart = textarea?.selectionStart ?? 0;
-        const selectionEnd = textarea?.selectionEnd ?? 0;
-        const tokenRange = skillTokenRanges.find(
-          (range) => selectionStart === selectionEnd && selectionStart === range.end,
-        );
-        if (tokenRange) {
-          e.preventDefault();
-          moveMessageCaretTo(tokenRange.start);
-          return;
-        }
-      }
-      if (e.key === 'ArrowRight' && skillTokenRanges.length > 0) {
-        const textarea = messageRef.current;
-        const selectionStart = textarea?.selectionStart ?? 0;
-        const selectionEnd = textarea?.selectionEnd ?? 0;
-        const tokenRange = skillTokenRanges.find(
-          (range) => selectionStart === selectionEnd && selectionStart === range.start,
-        );
-        if (tokenRange) {
-          e.preventDefault();
-          moveMessageCaretTo(tokenRange.end);
-          return;
-        }
-      }
-      if (e.key === 'Escape' && skillPickerOpen) {
-        e.preventDefault();
-        setSkillPickerOpen(false);
-      }
-    },
-    [message, moveMessageCaretTo, skillPickerOpen, skillTokenRanges],
-  );
-
-  const handleInsertSkill = useCallback(
-    (skill: QuickAccessSkill) => {
-      const textarea = messageRef.current;
-      const nextToken = getSkillPrefix(skill.name);
-      const selectionStart = textarea?.selectionStart ?? message.length;
-      const selectionEnd = textarea?.selectionEnd ?? message.length;
-      const leadingSpace = needsLeadingSkillSpace(message, selectionStart) ? ' ' : '';
-      const nextValue = `${message.slice(0, selectionStart)}${leadingSpace}${nextToken}${message.slice(selectionEnd)}`;
-      setMessage(nextValue);
-      setSkillPickerOpen(false);
-      setSkillQuery('');
-      requestAnimationFrame(() => {
-        messageRef.current?.focus();
-        const cursorPosition = selectionStart + leadingSpace.length + nextToken.length;
-        messageRef.current?.setSelectionRange(cursorPosition, cursorPosition);
-        syncMessageOverlayScroll();
-      });
-    },
-    [message, syncMessageOverlayScroll],
-  );
   const updateSchedule = useCallback(
     (patch: Partial<ScheduleFormState>) => setScheduleForm((prev) => ({ ...prev, ...patch })),
     [],
@@ -1021,504 +794,416 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
     }
   };
 
+  const showRecurringTime = scheduleForm.recurrence === 'daily' || scheduleForm.recurrence === 'weekdays';
+
   return (
-    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <DialogContent
-        asChild
-        className="w-[calc(100%-2rem)] max-w-lg max-h-[90vh] flex flex-col rounded-3xl border-0 shadow-2xl bg-surface-modal overflow-hidden"
-      >
-        <Card data-testid="cron-task-dialog">
-          <CardHeader className="flex flex-row items-start justify-between pb-2 shrink-0">
-            <div>
-              <DialogTitle asChild>
-                <CardTitle className="text-2xl font-serif font-normal">
-                  {job ? t('dialog.editTitle') : t('dialog.createTitle')}
-                </CardTitle>
-              </DialogTitle>
-              <DialogDescription asChild>
-                <CardDescription className="text-sm mt-1 text-foreground/70">{t('dialog.description')}</CardDescription>
-              </DialogDescription>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onClose}
-              className="rounded-full h-8 w-8 -mr-2 -mt-2 text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
-            >
-              <X className="h-4 w-4" />
+    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && !saving && onClose()}>
+      <ConfigDialogContent
+        data-testid="cron-task-dialog"
+        title={job ? t('dialog.editTitle') : t('dialog.createTitle')}
+        description={t('dialog.description')}
+        closeLabel={t('common:actions.close')}
+        closeDisabled={saving}
+        onClose={onClose}
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          nameRef.current?.focus();
+        }}
+        onCloseAutoFocus={(event) => {
+          if (returnFocusTo?.isConnected) {
+            event.preventDefault();
+            returnFocusTo.focus();
+          }
+        }}
+        footer={
+          <>
+            <Button variant="outline" size="sm" onClick={onClose} disabled={saving}>
+              {t('common:actions.cancel')}
             </Button>
-          </CardHeader>
-          <CardContent className="space-y-6 pt-4 overflow-y-auto flex-1 p-6">
-            {/* Name */}
-            <div className="space-y-2.5">
-              <Label htmlFor="name" className="text-sm text-foreground/80 font-bold">
-                {t('dialog.taskName')}
-              </Label>
-              <Input
-                id="name"
-                placeholder={t('dialog.taskNamePlaceholder')}
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40"
+            <Button size="sm" onClick={handleSubmit} disabled={saving}>
+              {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {saving ? t('common:status.saving', 'Saving...') : job ? t('dialog.saveChanges') : t('dialog.createTitle')}
+            </Button>
+          </>
+        }
+      >
+        <div className="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2">
+          {/* Name */}
+          <div className="space-y-2.5">
+            <Label htmlFor="name" className="text-sm font-medium">
+              {t('dialog.taskName')}
+            </Label>
+            <Input
+              id="name"
+              ref={nameRef}
+              placeholder={t('dialog.taskNamePlaceholder')}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className={cronFieldClass}
+            />
+          </div>
+
+          {/* Agent */}
+          <div className="space-y-2.5">
+            <Label htmlFor="agent" className="text-sm font-medium">
+              {t('dialog.agent')}
+            </Label>
+            <SelectField
+              id="agent"
+              value={selectedAgentId}
+              onValueChange={(value) => {
+                setSelectedAgentId(value);
+              }}
+            >
+              {agents.map((agent) => (
+                <SelectItem key={agent.id} value={agent.id}>
+                  {agent.name}
+                </SelectItem>
+              ))}
+            </SelectField>
+          </div>
+
+          {/* Message */}
+          <div className="space-y-2.5 sm:col-span-2">
+            <Label htmlFor="message" className="text-sm font-medium">
+              {t('dialog.message')}
+            </Label>
+            <div className="relative rounded-lg border border-input bg-surface-modal px-3 pt-2 pb-1 transition-all focus-within:ring-1 focus-within:ring-foreground/10 focus-within:border-foreground/30">
+              <ComposerEditor
+                ref={messageRef} id="message" value={message} onChange={setMessage}
+                skills={quickSkills} skillsLoading={skillsLoading} skillsError={skillsError}
+                onRequestSkills={loadQuickSkills} disabled={saving} suspendSuggestions={skillPickerOpen}
+                placeholder={t('dialog.messagePlaceholder')} tokenTestId="cron-skill-token"
+                testId="cron-message-input" className="min-h-[60px] max-h-[200px] text-sm leading-5"
               />
-            </div>
 
-            {/* Message */}
-            <div className="space-y-2.5">
-              <Label htmlFor="message" className="text-sm text-foreground/80 font-bold">
-                {t('dialog.message')}
-              </Label>
-              <div className="relative rounded-xl border border-black/10 dark:border-white/10 bg-transparent px-3 pt-2.5 pb-1.5 shadow-sm transition-all focus-within:ring-2 focus-within:ring-primary/50 focus-within:border-primary">
-                {/* Text Row */}
-                <div className="relative">
-                  {skillTokenRanges.length > 0 && (
-                    <div
-                      aria-hidden="true"
-                      ref={messageOverlayRef}
-                      data-testid="cron-message-highlight"
-                      className="pointer-events-none absolute inset-0 z-20 overflow-hidden whitespace-pre-wrap break-words font-mono text-meta md:text-sm leading-[18px] text-foreground"
-                    >
-                      {renderHighlightedCronMessage(message, skillTokenRanges)}
-                    </div>
-                  )}
-                  <Textarea
-                    id="message"
-                    ref={messageRef}
-                    placeholder={t('dialog.messagePlaceholder')}
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    onKeyDown={handleMessageKeyDown}
-                    onSelect={normalizeMessageSelection}
-                    onClick={normalizeMessageSelection}
-                    onScroll={syncMessageOverlayScroll}
-                    rows={3}
-                    style={{ maxHeight: CRON_MESSAGE_MAX_HEIGHT }}
-                    className={cn(
-                      'relative min-h-[60px] w-full resize-none border-0 bg-transparent p-0 font-mono text-meta md:text-sm leading-[18px] text-foreground placeholder:text-foreground/40 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 [scrollbar-gutter:stable]',
-                      skillTokenRanges.length > 0
-                        ? 'z-0 text-transparent caret-foreground selection:bg-primary/20'
-                        : 'z-10',
-                    )}
-                  />
-                </div>
-
-                {/* Action Row */}
-                <div className="mt-1.5 flex items-center gap-1">
-                  <div ref={skillPickerRef} className="relative shrink-0">
-                    <button
-                      type="button"
-                      data-testid="cron-skill-button"
-                      onClick={() => setSkillPickerOpen((isOpen) => !isOpen)}
-                      title={t('dialog.pickSkill')}
-                      className={cn(
-                        'inline-flex h-8 items-center gap-1 rounded-lg px-1.5 text-meta font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-0',
-                        skillPickerOpen && 'text-foreground',
-                      )}
-                    >
-                      <span>{t('dialog.skillButton')}</span>
-                      <ChevronDown
-                        className={cn('h-3.5 w-3.5 transition-transform', skillPickerOpen && 'rotate-180')}
-                      />
-                    </button>
-                    {skillPickerOpen && (
-                      <div className="absolute left-0 top-full z-30 mt-2 w-80 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10">
-                        <div className="flex items-center gap-2 rounded-xl border border-black/10 bg-black/[0.03] px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]">
-                          <Search className="h-3.5 w-3.5 text-muted-foreground" />
-                          <input
-                            value={skillQuery}
-                            onChange={(event) => setSkillQuery(event.target.value)}
-                            placeholder={t('dialog.skillSearchPlaceholder')}
-                            className="w-full bg-transparent text-meta outline-none placeholder:text-muted-foreground/70"
-                            autoFocus
-                          />
-                        </div>
-                        <div className="px-3 py-2 text-tiny font-medium text-muted-foreground/80">
-                          {t('dialog.skillPickerTitle', { agent: selectedAgent?.name ?? '' })}
-                        </div>
-                        <div className="max-h-64 overflow-y-auto">
-                          {skillsLoading ? (
-                            <div className="px-3 py-4 text-xs text-muted-foreground">{t('dialog.skillLoading')}</div>
-                          ) : skillsError ? (
-                            <div className="px-3 py-4 text-xs text-destructive">{skillsError}</div>
-                          ) : filteredQuickSkills.length === 0 ? (
-                            <div className="px-3 py-4 text-xs text-muted-foreground">{t('dialog.skillEmpty')}</div>
-                          ) : (
-                            filteredQuickSkills.map((skill) => (
-                              <button
-                                key={`${skill.source}:${skill.name}`}
-                                type="button"
-                                data-testid={`cron-skill-option-${skill.name}`}
-                                onClick={() => handleInsertSkill(skill)}
-                                title={skill.description}
-                                className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                              >
-                                <div className="min-w-0">
-                                  <div className="truncate text-meta font-semibold text-foreground">
-                                    <span className="font-mono">/{skill.name}</span>
-                                  </div>
-                                  <div className="truncate text-tiny text-muted-foreground">{skill.sourceLabel}</div>
-                                </div>
-                                <span className="rounded-full border border-black/10 bg-black/[0.03] px-2 py-0.5 text-2xs font-medium text-muted-foreground dark:border-white/10 dark:bg-white/[0.04]">
-                                  {skill.sourceLabel}
-                                </span>
-                              </button>
-                            ))
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Agent */}
-            <div className="space-y-2.5">
-              <Label htmlFor="agent" className="text-sm text-foreground/80 font-bold">
-                {t('dialog.agent')}
-              </Label>
-              <SelectField
-                id="agent"
-                value={selectedAgentId}
-                onChange={(e) => {
-                  setSelectedAgentId(e.target.value);
-                }}
-                className="h-[44px] rounded-xl border-black/10 dark:border-white/10 bg-transparent text-meta"
-              >
-                {agents.map((agent) => (
-                  <option key={agent.id} value={agent.id}>
-                    {agent.name}
-                  </option>
-                ))}
-              </SelectField>
-            </div>
-
-            {/* Schedule */}
-            <div className="space-y-2.5">
-              <Label className="text-sm text-foreground/80 font-bold">{t('dialog.schedule')}</Label>
-
-              {/* Mode tabs */}
-              <div className="inline-flex w-full gap-1 rounded-xl bg-black/5 p-1 dark:bg-white/10">
-                {(['recurring', 'once'] as ScheduleMode[]).map((mode) => (
+              {/* Action Row */}
+              <div className="mt-1.5 flex items-center gap-1">
+                <div className="shrink-0">
+                  <Popover open={skillPickerOpen} onOpenChange={setSkillPickerOpen}>
+                  <PopoverTrigger asChild>
                   <button
-                    key={mode}
                     type="button"
-                    data-testid={`cron-schedule-tab-${mode}`}
-                    onClick={() => updateSchedule({ mode })}
+                    data-testid="cron-skill-button"
+                    title={t('dialog.pickSkill')}
                     className={cn(
-                      'flex-1 h-8 rounded-lg text-meta font-medium transition-colors',
-                      scheduleForm.mode === mode
-                        ? 'bg-surface-modal text-foreground shadow-sm'
-                        : 'text-muted-foreground hover:text-foreground',
+                      'inline-flex h-8 items-center gap-1 rounded-lg px-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-0',
+                      skillPickerOpen && 'text-foreground',
                     )}
                   >
-                    {t(`dialog.scheduleMode.${mode}` as const)}
+                    <span>{t('dialog.skillButton')}</span>
+                    <ChevronDown
+                      className={cn('h-3.5 w-3.5 transition-transform', skillPickerOpen && 'rotate-180')}
+                    />
                   </button>
-                ))}
+                  </PopoverTrigger>
+                    <PopoverContent side="bottom" align="start" data-testid="cron-skill-picker-menu"
+                      onCloseAutoFocus={event => { event.preventDefault(); if (hasFloatingSurface('open')) return; const active = document.activeElement; if (!active || active === document.body || active.closest('[data-slot="popover-content"]')) messageRef.current?.focus(); }}
+                      className="w-96 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10">
+                      <div className="flex items-center gap-2 rounded-xl border border-black/10 bg-black/[0.03] px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]">
+                        <Search className="h-3.5 w-3.5 text-muted-foreground" />
+                        <input
+                          value={skillQuery}
+                          onChange={(event) => setSkillQuery(event.target.value)}
+                          placeholder={t('dialog.skillSearchPlaceholder')}
+                          className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground/70"
+                          autoFocus
+                        />
+                      </div>
+                      <div className="px-3 py-1.5 text-sm font-normal text-muted-foreground">
+                        {t('dialog.skillPickerTitle', { agent: selectedAgent?.name ?? '' })}
+                      </div>
+                      <div className="clawx-menu-list max-h-64 overflow-y-auto">
+                        {skillsLoading ? (
+                          <div className="px-3 py-4 text-sm text-muted-foreground">{t('dialog.skillLoading')}</div>
+                        ) : skillsError ? (
+                          <div className="px-3 py-4 text-sm text-destructive">{skillsError}</div>
+                        ) : filteredQuickSkills.length === 0 ? (
+                          <div className="px-3 py-4 text-sm text-muted-foreground">{t('dialog.skillEmpty')}</div>
+                        ) : (
+                          filteredQuickSkills.map((skill) => (
+                            <QuickSkillOption
+                              key={`${skill.source}:${skill.name}`}
+                              skill={skill}
+                              testId={`cron-skill-option-${skill.name}`}
+                              onSelect={() => handleInsertSkill(skill)}
+                            />
+                          ))
+                        )}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
               </div>
+            </div>
+          </div>
 
-              {scheduleForm.mode === 'recurring' ? (
-                <div className="space-y-2.5">
+          {/* Schedule */}
+          <div className="space-y-2.5 sm:col-span-2">
+            <Label className="text-sm font-medium">{t('dialog.schedule')}</Label>
+
+            {/* Mode tabs */}
+            <div className="flex w-full gap-1 rounded-lg bg-surface-input p-1">
+              {(['recurring', 'once'] as ScheduleMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  data-testid={`cron-schedule-tab-${mode}`}
+                  aria-pressed={scheduleForm.mode === mode}
+                  onClick={() => updateSchedule({ mode })}
+                  className={cronSegmentClass}
+                >
+                  {t(`dialog.scheduleMode.${mode}` as const)}
+                </button>
+              ))}
+            </div>
+
+            {scheduleForm.mode === 'recurring' ? (
+              <div className={cn('grid gap-2.5', showRecurringTime && 'sm:grid-cols-2')}>
+                <div className="space-y-1.5">
+                  <Label htmlFor="cron-recurrence" className="text-meta font-medium text-foreground/70">
+                    {t('dialog.frequency')}
+                  </Label>
                   <SelectField
+                    id="cron-recurrence"
                     data-testid="cron-recurrence-select"
                     value={scheduleForm.recurrence}
-                    onChange={(e) => updateSchedule({ recurrence: e.target.value as RecurrenceKind })}
+                    onValueChange={(value) => updateSchedule({ recurrence: value as RecurrenceKind })}
                   >
                     {RECURRENCE_KINDS.map((kind) => (
-                      <option key={kind} value={kind}>
+                      <SelectItem key={kind} value={kind}>
                         {t(`dialog.recurrence.${kind}` as const)}
-                      </option>
+                      </SelectItem>
                     ))}
                   </SelectField>
+                </div>
 
-                  {scheduleForm.recurrence === 'hourly' && (
+                {scheduleForm.recurrence === 'hourly' && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cron-hourly-minute" className="text-meta text-foreground/70 font-medium">
+                      {t('dialog.minuteLabel')}
+                    </Label>
+                    <Input
+                      id="cron-hourly-minute"
+                      type="number"
+                      min={0}
+                      max={59}
+                      value={scheduleForm.hourlyMinute}
+                      onChange={(e) =>
+                        updateSchedule({
+                          hourlyMinute: Math.min(59, Math.max(0, Math.floor(Number(e.target.value) || 0))),
+                        })
+                      }
+                      className={cronFieldClass}
+                    />
+                  </div>
+                )}
+
+                {showRecurringTime && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cron-time" className="text-meta text-foreground/70 font-medium">
+                      {t('dialog.timeLabel')}
+                    </Label>
+                    <ScheduleTimePicker
+                      id="cron-time"
+                      value={scheduleForm.timeOfDay}
+                      onChange={(next) => updateSchedule({ timeOfDay: next })}
+                    />
+                  </div>
+                )}
+
+                {scheduleForm.recurrence === 'weekly' && (
+                  <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1.5">
-                      <Label htmlFor="cron-hourly-minute" className="text-meta text-foreground/70 font-medium">
-                        {t('dialog.minuteLabel')}
+                      <Label htmlFor="cron-weekday" className="text-meta text-foreground/70 font-medium">
+                        {t('dialog.weekdayLabel')}
                       </Label>
-                      <Input
-                        id="cron-hourly-minute"
-                        type="number"
-                        min={0}
-                        max={59}
-                        value={scheduleForm.hourlyMinute}
-                        onChange={(e) =>
-                          updateSchedule({
-                            hourlyMinute: Math.min(59, Math.max(0, Math.floor(Number(e.target.value) || 0))),
-                          })
-                        }
-                        className="h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40"
-                      />
+                      <SelectField
+                        id="cron-weekday"
+                        data-testid="cron-weekday-select"
+                        value={String(scheduleForm.weekday)}
+                        onValueChange={(value) => updateSchedule({ weekday: Number(value) })}
+                      >
+                        {WEEKDAY_KEYS.map((key, index) => (
+                          <SelectItem key={key} value={String(index)}>
+                            {t(`weekdays.${key}` as const)}
+                          </SelectItem>
+                        ))}
+                      </SelectField>
                     </div>
-                  )}
-
-                  {(scheduleForm.recurrence === 'daily' || scheduleForm.recurrence === 'weekdays') && (
                     <div className="space-y-1.5">
-                      <Label htmlFor="cron-time" className="text-meta text-foreground/70 font-medium">
+                      <Label htmlFor="cron-weekly-time" className="text-meta text-foreground/70 font-medium">
                         {t('dialog.timeLabel')}
                       </Label>
                       <ScheduleTimePicker
-                        id="cron-time"
+                        id="cron-weekly-time"
                         value={scheduleForm.timeOfDay}
                         onChange={(next) => updateSchedule({ timeOfDay: next })}
                       />
                     </div>
-                  )}
+                  </div>
+                )}
 
-                  {scheduleForm.recurrence === 'weekly' && (
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="space-y-1.5">
-                        <Label htmlFor="cron-weekday" className="text-meta text-foreground/70 font-medium">
-                          {t('dialog.weekdayLabel')}
-                        </Label>
-                        <SelectField
-                          id="cron-weekday"
-                          data-testid="cron-weekday-select"
-                          value={scheduleForm.weekday}
-                          onChange={(e) => updateSchedule({ weekday: Number(e.target.value) })}
-                        >
-                          {WEEKDAY_KEYS.map((key, index) => (
-                            <option key={key} value={index}>
-                              {t(`weekdays.${key}` as const)}
-                            </option>
-                          ))}
-                        </SelectField>
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="cron-weekly-time" className="text-meta text-foreground/70 font-medium">
-                          {t('dialog.timeLabel')}
-                        </Label>
-                        <ScheduleTimePicker
-                          id="cron-weekly-time"
-                          value={scheduleForm.timeOfDay}
-                          onChange={(next) => updateSchedule({ timeOfDay: next })}
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {scheduleForm.recurrence === 'custom' && (
+                {scheduleForm.recurrence === 'custom' && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cron-custom-expression" className="text-meta text-foreground/70 font-medium">{t('dialog.cronExpressionLabel')}</Label>
                     <Input
+                      id="cron-custom-expression"
                       data-testid="cron-custom-input"
                       placeholder={t('dialog.cronPlaceholder')}
                       value={scheduleForm.customCron}
                       onChange={(e) => updateSchedule({ customCron: e.target.value })}
-                      className="h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40"
-                    />
-                  )}
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="cron-once-time" className="text-meta text-foreground/70 font-medium">
-                      {t('dialog.timeLabel')}
-                    </Label>
-                    <ScheduleTimePicker
-                      id="cron-once-time"
-                      value={scheduleForm.onceTime}
-                      onChange={(next) => updateSchedule({ onceTime: next })}
+                      className={cronFieldClass}
                     />
                   </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="cron-once-date" className="text-meta text-foreground/70 font-medium">
-                      {t('dialog.dateLabel')}
-                      {onceWeekdayLabel ? ` · ${onceWeekdayLabel}` : ''}
-                    </Label>
-                    <Input
-                      id="cron-once-date"
-                      type="date"
-                      min={toDateInputValue(new Date())}
-                      value={scheduleForm.onceDate}
-                      onChange={(e) => updateSchedule({ onceDate: e.target.value })}
-                      className="h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40"
-                    />
-                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="cron-once-time" className="text-meta text-foreground/70 font-medium">
+                    {t('dialog.timeLabel')}
+                  </Label>
+                  <ScheduleTimePicker
+                    id="cron-once-time"
+                    value={scheduleForm.onceTime}
+                    onChange={(next) => updateSchedule({ onceTime: next })}
+                  />
                 </div>
-              )}
+                <div className="space-y-1.5">
+                  <Label htmlFor="cron-once-date" className="text-meta text-foreground/70 font-medium">
+                    {t('dialog.dateLabel')}
+                    {onceWeekdayLabel ? ` · ${onceWeekdayLabel}` : ''}
+                  </Label>
+                  <Input
+                    id="cron-once-date"
+                    type="date"
+                    min={toDateInputValue(new Date())}
+                    value={scheduleForm.onceDate}
+                    onChange={(e) => updateSchedule({ onceDate: e.target.value })}
+                    className={cronFieldClass}
+                  />
+                </div>
+              </div>
+            )}
 
-              <p className="mt-2 text-xs text-muted-foreground/80 font-medium">
-                {schedulePreview ? `${t('card.next')}: ${schedulePreview}` : t('dialog.cronPlaceholder')}
-              </p>
+            <p className="mt-2 text-xs text-muted-foreground/80 font-medium">
+              {schedulePreview ? `${t('card.next')}: ${schedulePreview}` : t('dialog.cronPlaceholder')}
+            </p>
+          </div>
+
+          {/* Delivery */}
+          <div className="space-y-3 sm:col-span-2">
+            <p className="text-sm font-medium">{t('dialog.deliveryTitle')}</p>
+            <div className="flex w-full gap-1 rounded-lg bg-surface-input p-1">
+              {(['none', 'announce'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  aria-pressed={deliveryMode === mode}
+                  onClick={() => setDeliveryMode(mode)}
+                  className={cronSegmentClass}
+                >
+                  {t(mode === 'none' ? 'dialog.deliveryModeNone' : 'dialog.deliveryModeAnnounce')}
+                </button>
+              ))}
             </div>
 
-            {/* Delivery */}
-            <div className="space-y-3">
-              <div className="space-y-1">
-                <Label className="text-sm text-foreground/80 font-bold">{t('dialog.deliveryTitle')}</Label>
-                <p className="text-xs text-muted-foreground">{t('dialog.deliveryDescription')}</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  type="button"
-                  variant={deliveryMode === 'none' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setDeliveryMode('none')}
-                  className={cn(
-                    'justify-start h-auto min-h-12 rounded-xl px-4 py-3 text-left whitespace-normal',
-                    deliveryMode === 'none'
-                      ? 'bg-primary hover:bg-primary/90 text-primary-foreground border-transparent'
-                      : 'bg-transparent border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80 hover:text-foreground',
+            {deliveryMode === 'announce' && (
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <Label htmlFor="delivery-channel" className="text-sm font-medium">
+                    {t('dialog.deliveryChannel')}
+                  </Label>
+                  <SelectField
+                    id="delivery-channel"
+                    value={effectiveDeliveryChannel}
+                    onValueChange={(value) => {
+                      setDeliveryChannel(value);
+                      setSelectedDeliveryAccountId('');
+                      setDeliveryTarget('');
+                    }}
+                  >
+                    <SelectItem value="">{t('dialog.selectChannel')}</SelectItem>
+                    {availableChannels.map((group) => (
+                      <SelectItem key={group.channelType} value={group.channelType}>
+                        {!isSupportedCronDeliveryChannel(group.channelType)
+                          ? `${getChannelDisplayName(group.channelType)} (${t('dialog.channelUnsupportedTag')})`
+                          : getChannelDisplayName(group.channelType)}
+                      </SelectItem>
+                    ))}
+                  </SelectField>
+                  {availableChannels.length === 0 && (
+                    <p className="text-xs text-muted-foreground">{t('dialog.noChannels')}</p>
                   )}
-                >
-                  <div>
-                    <div className="text-meta font-semibold">{t('dialog.deliveryModeNone')}</div>
-                    <div className="text-tiny opacity-80">{t('dialog.deliveryModeNoneDesc')}</div>
-                  </div>
-                </Button>
-                <Button
-                  type="button"
-                  variant={deliveryMode === 'announce' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setDeliveryMode('announce')}
-                  className={cn(
-                    'justify-start h-auto min-h-12 rounded-xl px-4 py-3 text-left whitespace-normal',
-                    deliveryMode === 'announce'
-                      ? 'bg-primary hover:bg-primary/90 text-primary-foreground border-transparent'
-                      : 'bg-transparent border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80 hover:text-foreground',
+                  {unsupportedDeliveryChannel && (
+                    <p className="text-xs text-destructive">
+                      {t('dialog.deliveryChannelUnsupported', {
+                        channel: getChannelDisplayName(effectiveDeliveryChannel),
+                      })}
+                    </p>
                   )}
-                >
-                  <div>
-                    <div className="text-meta font-semibold">{t('dialog.deliveryModeAnnounce')}</div>
-                    <div className="text-tiny opacity-80">{t('dialog.deliveryModeAnnounceDesc')}</div>
-                  </div>
-                </Button>
-              </div>
+                </div>
 
-              {deliveryMode === 'announce' && (
-                <div className="space-y-3 rounded-2xl border border-black/5 dark:border-white/5 bg-transparent p-4 shadow-sm">
+                {showsAccountSelector && (
                   <div className="space-y-2">
-                    <Label htmlFor="delivery-channel" className="text-meta text-foreground/80 font-bold">
-                      {t('dialog.deliveryChannel')}
+                    <Label htmlFor="delivery-account" className="text-sm font-medium">
+                      {t('dialog.deliveryAccount')}
                     </Label>
                     <SelectField
-                      id="delivery-channel"
-                      value={effectiveDeliveryChannel}
-                      onChange={(event) => {
-                        setDeliveryChannel(event.target.value);
-                        setSelectedDeliveryAccountId('');
+                      id="delivery-account"
+                      value={effectiveDeliveryAccountId}
+                      onValueChange={(value) => {
+                        setSelectedDeliveryAccountId(value);
                         setDeliveryTarget('');
                       }}
+                      disabled={deliveryAccountOptions.length === 0}
                     >
-                      <option value="">{t('dialog.selectChannel')}</option>
-                      {availableChannels.map((group) => (
-                        <option key={group.channelType} value={group.channelType}>
-                          {!isSupportedCronDeliveryChannel(group.channelType)
-                            ? `${getChannelDisplayName(group.channelType)} (${t('dialog.channelUnsupportedTag')})`
-                            : getChannelDisplayName(group.channelType)}
-                        </option>
+                      <SelectItem value="">{t('dialog.selectDeliveryAccount')}</SelectItem>
+                      {deliveryAccountOptions.map((option) => (
+                        <SelectItem key={option.accountId} value={option.accountId}>
+                          {option.displayName}
+                        </SelectItem>
                       ))}
                     </SelectField>
-                    {availableChannels.length === 0 && (
-                      <p className="text-xs text-muted-foreground">{t('dialog.noChannels')}</p>
-                    )}
-                    {unsupportedDeliveryChannel && (
-                      <p className="text-xs text-destructive">
-                        {t('dialog.deliveryChannelUnsupported', {
-                          channel: getChannelDisplayName(effectiveDeliveryChannel),
-                        })}
-                      </p>
-                    )}
-                    {selectedChannel && (
-                      <p className="text-xs text-muted-foreground">
-                        {t('dialog.deliveryDefaultAccountHint', { account: selectedChannel.defaultAccountId })}
-                      </p>
-                    )}
                   </div>
-
-                  {showsAccountSelector && (
-                    <div className="space-y-2">
-                      <Label htmlFor="delivery-account" className="text-meta text-foreground/80 font-bold">
-                        {t('dialog.deliveryAccount')}
-                      </Label>
-                      <SelectField
-                        id="delivery-account"
-                        value={effectiveDeliveryAccountId}
-                        onChange={(event) => {
-                          setSelectedDeliveryAccountId(event.target.value);
-                          setDeliveryTarget('');
-                        }}
-                        disabled={deliveryAccountOptions.length === 0}
-                      >
-                        <option value="">{t('dialog.selectDeliveryAccount')}</option>
-                        {deliveryAccountOptions.map((option) => (
-                          <option key={option.accountId} value={option.accountId}>
-                            {option.displayName}
-                          </option>
-                        ))}
-                      </SelectField>
-                      <p className="text-xs text-muted-foreground">{t('dialog.deliveryAccountDesc')}</p>
-                    </div>
-                  )}
-
-                  <div className="space-y-2">
-                    <Label htmlFor="delivery-target-select" className="text-meta text-foreground/80 font-bold">
-                      {t('dialog.deliveryTarget')}
-                    </Label>
-                    <SelectField
-                      id="delivery-target-select"
-                      value={deliveryTarget}
-                      onChange={(event) => setDeliveryTarget(event.target.value)}
-                      disabled={loadingChannelTargets || availableTargetOptions.length === 0}
-                    >
-                      <option value="">
-                        {loadingChannelTargets ? t('dialog.loadingTargets') : t('dialog.selectDeliveryTarget')}
-                      </option>
-                      {availableTargetOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </SelectField>
-                    <p className="text-xs text-muted-foreground">
-                      {availableTargetOptions.length > 0
-                        ? t('dialog.deliveryTargetDescAuto')
-                        : t('dialog.noDeliveryTargets', { channel: getChannelDisplayName(effectiveDeliveryChannel) })}
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Enabled */}
-            <div className="flex items-center justify-between bg-transparent p-4 rounded-2xl shadow-sm border border-black/5 dark:border-white/5">
-              <div>
-                <Label className="text-sm text-foreground/80 font-bold">{t('dialog.enableImmediately')}</Label>
-                <p className="text-meta text-muted-foreground mt-0.5">{t('dialog.enableImmediatelyDesc')}</p>
-              </div>
-              <Switch checked={enabled} onCheckedChange={setEnabled} />
-            </div>
-
-            {/* Actions */}
-            <div className="flex justify-end gap-3 pt-4">
-              <Button
-                variant="outline"
-                onClick={onClose}
-                className="rounded-full px-6 h-[42px] text-meta font-semibold border-black/20 dark:border-white/20 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80 hover:text-foreground shadow-sm"
-              >
-                {t('common:actions.cancel', 'Cancel')}
-              </Button>
-              <Button
-                onClick={handleSubmit}
-                disabled={saving}
-                className="rounded-full px-6 h-[42px] text-meta font-semibold shadow-sm border border-transparent transition-all"
-              >
-                {saving ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    {t('common:status.saving', 'Saving...')}
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="h-4 w-4 mr-2" />
-                    {job ? t('dialog.saveChanges') : t('dialog.createTitle')}
-                  </>
                 )}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </DialogContent>
+
+                <div className="space-y-2">
+                  <Label htmlFor="delivery-target-select" className="text-sm font-medium">
+                    {t('dialog.deliveryTarget')}
+                  </Label>
+                  <SelectField
+                    id="delivery-target-select"
+                    value={deliveryTarget}
+                    onValueChange={(value) => setDeliveryTarget(value)}
+                    disabled={loadingChannelTargets || availableTargetOptions.length === 0}
+                  >
+                    <SelectItem value="">
+                      {loadingChannelTargets ? t('dialog.loadingTargets') : t('dialog.selectDeliveryTarget')}
+                    </SelectItem>
+                    {availableTargetOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectField>
+                  {!loadingChannelTargets && availableTargetOptions.length === 0 && effectiveDeliveryChannel && (
+                    <p className="text-xs text-muted-foreground">
+                      {t('dialog.noDeliveryTargets', { channel: getChannelDisplayName(effectiveDeliveryChannel) })}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between gap-3 sm:col-span-2">
+            <Label htmlFor="cron-enable-task" className="text-sm font-medium">{t('dialog.enableImmediately')}</Label>
+            <Switch id="cron-enable-task" checked={enabled} onCheckedChange={setEnabled} />
+          </div>
+        </div>
+      </ConfigDialogContent>
     </Dialog>
   );
 }
@@ -1528,14 +1213,15 @@ interface CronJobCardProps {
   job: CronJob;
   deliveryAccountName?: string;
   onToggle: (enabled: boolean) => void;
-  onEdit: () => void;
-  onDelete: () => void;
+  onEdit: (opener: HTMLButtonElement) => void;
+  onDelete: (opener: HTMLButtonElement) => void;
   onTrigger: () => Promise<void>;
 }
 
 function CronJobCard({ job, deliveryAccountName, onToggle, onEdit, onDelete, onTrigger }: CronJobCardProps) {
   const { t } = useTranslation('cron');
   const [triggering, setTriggering] = useState(false);
+  const editRef = useRef<HTMLButtonElement>(null);
   const agents = useAgentsStore((s) => s.agents);
   const agentName = agents.find((a) => a.id === job.agentId)?.name ?? job.agentId;
 
@@ -1553,9 +1239,12 @@ function CronJobCard({ job, deliveryAccountName, onToggle, onEdit, onDelete, onT
     }
   };
 
-  const handleDelete = (e: React.MouseEvent) => {
+  const handleDelete = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
-    onDelete();
+    onDelete(e.currentTarget);
+  };
+  const edit = () => {
+    if (editRef.current) onEdit(editRef.current);
   };
 
   const deliveryChannel = typeof job.delivery?.channel === 'string' ? job.delivery.channel : '';
@@ -1565,13 +1254,13 @@ function CronJobCard({ job, deliveryAccountName, onToggle, onEdit, onDelete, onT
   return (
     <div
       data-testid={`cron-job-card-${job.id}`}
-      className="group flex flex-col p-5 rounded-2xl bg-transparent border border-transparent hover:bg-black/5 dark:hover:bg-white/5 transition-all relative overflow-hidden cursor-pointer"
-      onClick={onEdit}
+      className="flex cursor-pointer flex-col rounded-xl border border-border bg-surface-modal p-4 transition-colors hover:border-foreground/20"
+      onClick={edit}
     >
-      <div className="flex items-start justify-between gap-3 mb-4">
-        <div className="flex items-center gap-4 min-w-0 flex-1">
-          <div className="h-[46px] w-[46px] shrink-0 flex items-center justify-center text-foreground bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-full shadow-sm group-hover:scale-105 transition-transform">
-            <Clock className={cn('h-5 w-5', job.enabled ? 'text-foreground' : 'text-muted-foreground')} />
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <Clock className="h-4 w-4" />
           </div>
           <div className="flex flex-col min-w-0 flex-1">
             <div className="flex items-center gap-2 mb-1 min-w-0">
@@ -1579,12 +1268,14 @@ function CronJobCard({ job, deliveryAccountName, onToggle, onEdit, onDelete, onT
                 data-testid={`cron-job-card-title-${job.id}`}
                 className="text-base font-semibold text-foreground truncate min-w-0"
               >
-                {job.name}
+                <button ref={editRef} type="button" className="block w-full truncate text-left underline-offset-4 hover:underline focus-visible:underline"
+                  title={job.name} aria-label={t('card.editTask', { name: job.name })} onClick={(event) => {
+                    event.stopPropagation();
+                    edit();
+                  }}>
+                  {job.name}
+                </button>
               </h3>
-              <div
-                className={cn('w-2 h-2 rounded-full shrink-0', job.enabled ? 'bg-green-500' : 'bg-muted-foreground')}
-                title={job.enabled ? t('stats.active') : t('stats.paused')}
-              />
             </div>
             <p className="text-meta text-muted-foreground flex items-center gap-1.5 min-w-0">
               <Timer className="h-3.5 w-3.5 shrink-0" />
@@ -1598,12 +1289,12 @@ function CronJobCard({ job, deliveryAccountName, onToggle, onEdit, onDelete, onT
           className="flex items-center gap-2 shrink-0"
           onClick={(e) => e.stopPropagation()}
         >
-          <Switch checked={job.enabled} onCheckedChange={onToggle} />
+          <Switch aria-label={job.name} checked={job.enabled} onCheckedChange={onToggle} />
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col justify-end mt-2 pl-[62px] min-w-0">
-        <div className="flex items-start gap-2 mb-3 min-w-0">
+      <div className="flex min-w-0 flex-1 flex-col pl-12">
+        <div className="mb-2 flex min-w-0 items-start gap-2">
           <MessageSquare className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" />
           <p className="text-sm text-muted-foreground line-clamp-2 leading-[1.5] min-w-0 flex-1 break-all">
             {job.message}
@@ -1611,7 +1302,7 @@ function CronJobCard({ job, deliveryAccountName, onToggle, onEdit, onDelete, onT
         </div>
 
         {/* Metadata */}
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground/80 font-medium mb-3">
+        <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted-foreground">
           {job.delivery?.mode === 'announce' && deliveryChannel && (
             <span className="flex items-center gap-1.5">
               {deliveryIcon}
@@ -1658,13 +1349,13 @@ function CronJobCard({ job, deliveryAccountName, onToggle, onEdit, onDelete, onT
         )}
 
         {/* Actions */}
-        <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity mt-auto">
+        <div className="mt-auto flex justify-end gap-1">
           <Button
             variant="ghost"
             size="sm"
             onClick={handleTrigger}
             disabled={triggering}
-            className="h-8 px-3 text-foreground/70 hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-lg text-meta font-medium transition-colors"
+            className="h-8 px-2 text-muted-foreground"
           >
             {triggering ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
@@ -1675,12 +1366,13 @@ function CronJobCard({ job, deliveryAccountName, onToggle, onEdit, onDelete, onT
           </Button>
           <Button
             variant="ghost"
-            size="sm"
+            size="icon"
             onClick={handleDelete}
-            className="h-8 px-3 text-destructive/70 hover:text-destructive hover:bg-destructive/10 rounded-lg text-meta font-medium transition-colors"
+            aria-label={t('common:actions.delete')}
+            title={t('common:actions.delete')}
+            className="h-8 w-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
           >
-            <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-            {t('common:actions.delete', 'Delete')}
+            <Trash2 className="h-3.5 w-3.5" />
           </Button>
         </div>
       </div>
@@ -1693,8 +1385,10 @@ export function Cron() {
   const { jobs, loading, error, fetchJobs, createJob, updateJob, toggleJob, deleteJob, triggerJob } = useCronStore();
   const gatewayStatus = useGatewayStore((state) => state.status);
   const [showDialog, setShowDialog] = useState(false);
+  const dialogOpenerRef = useRef<HTMLElement | null>(null);
   const [editingJob, setEditingJob] = useState<CronJob | undefined>();
   const [jobToDelete, setJobToDelete] = useState<{ id: string } | null>(null);
+  const deleteOpenerRef = useRef<HTMLButtonElement | null>(null);
   const [configuredChannels, setConfiguredChannels] = useState<DeliveryChannelGroup[]>([]);
 
   const isGatewayRunning = gatewayStatus.state === 'running';
@@ -1757,7 +1451,7 @@ export function Cron() {
     return (
       <div
         data-testid="cron-page"
-        className="flex flex-col -m-6 dark:bg-background min-h-[calc(100vh-2.5rem)] items-center justify-center"
+        className="flex flex-col -m-6 dark:bg-background h-[calc(100%+3rem)] items-center justify-center"
       >
         <LoadingSpinner size="lg" />
       </div>
@@ -1767,16 +1461,16 @@ export function Cron() {
   return (
     <div
       data-testid="cron-page"
-      className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden"
+      className="flex flex-col -m-6 dark:bg-background h-[calc(100%+3rem)] overflow-hidden"
     >
-      <div className="w-full max-w-5xl mx-auto flex flex-col h-full p-10 pt-16 pb-0">
+      <div className="w-full max-w-6xl mx-auto flex flex-col h-full p-6 md:p-8">
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-start justify-between mb-12 shrink-0 gap-4">
+        <div className="flex flex-col md:flex-row md:items-start justify-between mb-6 shrink-0 gap-4">
           <div>
-            <h1 className="text-5xl md:text-6xl font-serif text-foreground mb-3 font-normal tracking-tight">
+            <h1 className="text-2xl font-sans text-foreground mb-1 font-medium tracking-normal">
               {t('title')}
             </h1>
-            <p className="text-subtitle text-foreground/70 font-medium">{t('subtitle')}</p>
+            <p className="text-sm text-muted-foreground">{t('subtitle')}</p>
           </div>
           <div className="flex items-center gap-3 md:mt-2">
             <Button
@@ -1786,19 +1480,20 @@ export function Cron() {
                 void fetchConfiguredChannels();
               }}
               disabled={!isGatewayRunning}
-              className="h-9 text-meta font-medium rounded-full px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground transition-colors"
+              className="h-9 text-sm font-medium rounded-md px-3 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground transition-colors"
             >
               <RefreshCw className="h-3.5 w-3.5 mr-2" />
               {t('refresh')}
             </Button>
             <Button
               data-testid="cron-new-task-button"
-              onClick={() => {
+              onClick={(event) => {
+                dialogOpenerRef.current = event.currentTarget;
                 setEditingJob(undefined);
                 setShowDialog(true);
               }}
               disabled={!isGatewayRunning}
-              className="h-9 text-meta font-medium rounded-full px-4 shadow-none"
+              className="h-9 text-sm font-medium rounded-md px-3 shadow-none"
             >
               <Plus className="h-3.5 w-3.5 mr-2" />
               {t('newTask')}
@@ -1807,7 +1502,7 @@ export function Cron() {
         </div>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto pr-2 pb-10 min-h-0 -mr-2">
+        <div className="flex-1 overflow-y-auto pr-2 min-h-0 -mr-2">
           {/* Gateway Warning */}
           {showGatewayUnavailableWarning && (
             <div className="mb-8 p-4 rounded-xl border border-yellow-500/50 bg-yellow-500/10 flex items-center gap-3">
@@ -1824,77 +1519,47 @@ export function Cron() {
             </div>
           )}
 
-          {/* Statistics */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-            <div className="p-5 rounded-[24px] bg-black/5 dark:bg-white/5 border border-transparent flex flex-col justify-between min-h-[130px] relative overflow-hidden group hover:bg-black/10 dark:hover:bg-white/10 transition-colors">
-              <div className="flex items-center justify-between">
-                <div className="h-11 w-11 rounded-full bg-primary/10 flex items-center justify-center">
-                  <Clock className="h-5 w-5 text-primary" />
+          {safeJobs.length > 0 && (
+            <dl className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-border pb-3 text-sm text-muted-foreground" data-testid="cron-task-summary">
+              <div className="flex items-center gap-1.5">
+                <dt>{t('stats.total')}</dt>
+                <dd className="font-medium tabular-nums text-foreground">{safeJobs.length}</dd>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <dt>{t('stats.active')}</dt>
+                <dd className="font-medium tabular-nums text-foreground">{activeJobs.length}</dd>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <dt>{t('stats.paused')}</dt>
+                <dd className="font-medium tabular-nums text-foreground">{pausedJobs.length}</dd>
+              </div>
+              {failedJobs.length > 0 && (
+                <div className="flex items-center gap-1.5 text-destructive">
+                  <dt>{t('stats.failed')}</dt>
+                  <dd className="font-medium tabular-nums">{failedJobs.length}</dd>
                 </div>
-              </div>
-              <div className="mt-4 flex items-baseline gap-3">
-                <p className="text-stat font-serif text-foreground">{safeJobs.length}</p>
-                <p className="text-sm font-medium text-muted-foreground">{t('stats.total')}</p>
-              </div>
-            </div>
-
-            <div className="p-5 rounded-[24px] bg-black/5 dark:bg-white/5 border border-transparent flex flex-col justify-between min-h-[130px] relative overflow-hidden group hover:bg-black/10 dark:hover:bg-white/10 transition-colors">
-              <div className="flex items-center justify-between">
-                <div className="h-11 w-11 rounded-full bg-green-500/10 flex items-center justify-center">
-                  <Play className="h-5 w-5 text-green-600 dark:text-green-500 ml-0.5" />
-                </div>
-              </div>
-              <div className="mt-4 flex items-baseline gap-3">
-                <p className="text-stat font-serif text-foreground">{activeJobs.length}</p>
-                <p className="text-sm font-medium text-muted-foreground">{t('stats.active')}</p>
-              </div>
-            </div>
-
-            <div className="p-5 rounded-[24px] bg-black/5 dark:bg-white/5 border border-transparent flex flex-col justify-between min-h-[130px] relative overflow-hidden group hover:bg-black/10 dark:hover:bg-white/10 transition-colors">
-              <div className="flex items-center justify-between">
-                <div className="h-11 w-11 rounded-full bg-yellow-500/10 flex items-center justify-center">
-                  <Pause className="h-5 w-5 text-yellow-600 dark:text-yellow-500" />
-                </div>
-              </div>
-              <div className="mt-4 flex items-baseline gap-3">
-                <p className="text-stat font-serif text-foreground">{pausedJobs.length}</p>
-                <p className="text-sm font-medium text-muted-foreground">{t('stats.paused')}</p>
-              </div>
-            </div>
-
-            <div className="p-5 rounded-[24px] bg-black/5 dark:bg-white/5 border border-transparent flex flex-col justify-between min-h-[130px] relative overflow-hidden group hover:bg-black/10 dark:hover:bg-white/10 transition-colors">
-              <div className="flex items-center justify-between">
-                <div className="h-11 w-11 rounded-full bg-destructive/10 flex items-center justify-center">
-                  <XCircle className="h-5 w-5 text-destructive" />
-                </div>
-              </div>
-              <div className="mt-4 flex items-baseline gap-3">
-                <p className="text-stat font-serif text-foreground">{failedJobs.length}</p>
-                <p className="text-sm font-medium text-muted-foreground">{t('stats.failed')}</p>
-              </div>
-            </div>
-          </div>
+              )}
+            </dl>
+          )}
 
           {/* Jobs List */}
           {safeJobs.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-muted-foreground bg-black/5 dark:bg-white/5 rounded-3xl border border-transparent border-dashed">
-              <Clock className="h-10 w-10 mb-4 opacity-50" />
-              <h3 className="text-lg font-medium mb-2 text-foreground">{t('empty.title')}</h3>
-              <p className="text-sm text-center mb-6 max-w-md">{t('empty.description')}</p>
+            <FeedbackState state="empty" title={t('empty.title')} description={t('empty.description')} action={
               <Button
-                onClick={() => {
+                onClick={(event) => {
+                  dialogOpenerRef.current = event.currentTarget;
                   setEditingJob(undefined);
                   setShowDialog(true);
                 }}
                 disabled={!isGatewayRunning}
-                className="rounded-full px-6 h-10"
+                size="sm"
               >
                 <Plus className="h-4 w-4 mr-2" />
                 {t('empty.create')}
               </Button>
-            </div>
+            } />
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {safeJobs.map((job) => {
                 const channelGroup = configuredChannels.find((group) => group.channelType === job.delivery?.channel);
                 const account = channelGroup?.accounts.find((item) => item.accountId === job.delivery?.accountId);
@@ -1905,11 +1570,15 @@ export function Cron() {
                     job={job}
                     deliveryAccountName={deliveryAccountName}
                     onToggle={(enabled) => handleToggle(job.id, enabled)}
-                    onEdit={() => {
+                    onEdit={(opener) => {
+                      dialogOpenerRef.current = opener;
                       setEditingJob(job);
                       setShowDialog(true);
                     }}
-                    onDelete={() => setJobToDelete({ id: job.id })}
+                    onDelete={(opener) => {
+                      deleteOpenerRef.current = opener;
+                      setJobToDelete({ id: job.id });
+                    }}
                     onTrigger={() => triggerJob(job.id)}
                   />
                 );
@@ -1924,6 +1593,7 @@ export function Cron() {
         open={showDialog}
         job={editingJob}
         configuredChannels={configuredChannels}
+        returnFocusTo={dialogOpenerRef.current}
         onClose={() => {
           setShowDialog(false);
         }}
@@ -1937,6 +1607,7 @@ export function Cron() {
         confirmLabel={t('common:actions.delete', 'Delete')}
         cancelLabel={t('common:actions.cancel', 'Cancel')}
         variant="destructive"
+        returnFocusTo={deleteOpenerRef.current}
         onConfirm={async () => {
           if (jobToDelete) {
             await deleteJob(jobToDelete.id);

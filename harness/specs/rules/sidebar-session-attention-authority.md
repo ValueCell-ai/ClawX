@@ -11,7 +11,7 @@ Sidebar attention MUST derive only from normalized OpenClaw Gateway session rows
 
 List rows and event patches MUST use the shared allowlisted normalizer. Event merge MUST preserve explicit `false`, clear optional fields only for explicit `null`, leave omitted fields unchanged, reject conflicting envelope/nested keys, and insert unknown rows only from reliable nested snapshots.
 
-Run projection MUST apply terminal status before boolean `hasActiveRun`, then the `running` fallback, then unknown. Unknown MUST preserve attention. Unread MUST arise only from an observed exact-key busy-to-idle transition, never from `updatedAt`; entering busy MUST retain any older unread bit, with presentation ordered `busy > unread > timeago`.
+Run projection MUST apply terminal status before boolean `hasActiveRun`, then the `running` fallback, then unknown. Unknown MUST preserve attention. Unread MUST arise only from an observed exact-key busy-to-idle transition, never from `updatedAt`; entering busy MUST retain any older unread bit, with presentation ordered `busy > unread > timeago`. An idle row without unread may substitute an unpersisted failure marker for timeago when the canonical Gateway status is failed, error, or timeout; this MUST NOT create unread or mutate attention.
 
 Only exact-key observed-busy and unread presentation state MAY persist. Visibility MUST remain memory-only. A conversation is read only while its Chat view is visibly mounted or when its sidebar row is activated; retaining `currentSessionKey` on another route is not read authority.
 

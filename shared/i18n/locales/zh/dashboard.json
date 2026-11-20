@@ -10,12 +10,13 @@
     "sinceRestart": "自上次重启",
     "gatewayNotRunning": "网关未运行",
     "models": {
-        "title": "模型",
-        "subtitle": "管理您的 AI 提供商并监控 Token 用量",
+        "title": "AI 模型",
+        "subtitle": "管理对话、语音和图像模型，查看使用情况。",
         "tabs": {
             "chat": "对话模型",
             "imageGeneration": "图像生成",
-            "voice": "语音转写"
+            "voice": "语音转写",
+            "usage": "用量"
         }
     },
     "quickActions": {
@@ -65,7 +66,19 @@
         "contentDialogTitle": "用量明细内容",
         "close": "关闭",
         "noUsage": "无用量数据",
-        "usageParseError": "用量解析失败"
+        "usageParseError": "用量解析失败",
+        "columns": {
+            "model": "模型 / 提供商",
+            "time": "时间",
+            "input": "输入",
+            "output": "输出",
+            "cacheRead": "缓存读取",
+            "cacheWrite": "缓存写入",
+            "total": "总量",
+            "cost": "费用（USD）",
+            "actions": "详情"
+        },
+        "sourceHint": "用量与费用来自本地运行记录，记录费用可能与服务商实际账单不同。"
     },
     "imageGeneration": {
         "title": "图像生成",

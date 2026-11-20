@@ -1,8 +1,9 @@
+import { Select, SelectItem } from '@/components/ui/select';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { RefreshCw, Trash2, AlertCircle, Plus, Copy, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
+import { RefreshCw, Trash2, AlertCircle, Plus, Copy, RotateCcw, ChevronDown, ChevronUp, MoreHorizontal, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import * as Menu from '@/components/ui/dropdown-menu';
 import { useGatewayStore } from '@/stores/gateway';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import {
@@ -17,7 +18,6 @@ import { ChannelConfigModal } from '@/components/channels/ChannelConfigModal';
 import { isGatewayStopped } from '@/lib/gateway-status';
 import { cn } from '@/lib/utils';
 import {
-  CHANNEL_ICONS,
   CHANNEL_NAMES,
   CHANNEL_META,
   getPrimaryChannels,
@@ -28,14 +28,7 @@ import { usesPluginManagedQrAccounts } from '@/lib/channel-alias';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
-import telegramIcon from '@/assets/channels/telegram.svg';
-import discordIcon from '@/assets/channels/discord.svg';
-import whatsappIcon from '@/assets/channels/whatsapp.svg';
-import wechatIcon from '@/assets/channels/wechat.svg';
-import dingtalkIcon from '@/assets/channels/dingtalk.svg';
-import feishuIcon from '@/assets/channels/feishu.svg';
-import wecomIcon from '@/assets/channels/wecom.svg';
-import qqIcon from '@/assets/channels/qq.svg';
+import { ChannelLogo } from '@/components/channels/ChannelLogo';
 
 type GatewayDiagnosticSnapshot = DiagnosticsGatewaySnapshotResult;
 
@@ -103,7 +96,7 @@ function isStaleNotRunningHealthForRunningGateway(gatewayHealth: GatewayHealthSu
   );
 }
 
-export function Channels() {
+export function Channels({ embedded = false }: { embedded?: boolean }) {
   const { t } = useTranslation('channels');
   const gatewayStatus = useGatewayStore((state) => state.status);
   const lastGatewayStateRef = useRef(gatewayStatus.state);
@@ -117,6 +110,7 @@ export function Channels() {
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
+  const configOpenerRef = useRef<HTMLElement | null>(null);
   const [selectedChannelType, setSelectedChannelType] = useState<ChannelType | null>(null);
   const [selectedAccountId, setSelectedAccountId] = useState<string | undefined>(undefined);
   const [allowExistingConfigInModal, setAllowExistingConfigInModal] = useState(true);
@@ -128,6 +122,7 @@ export function Channels() {
   const [openDingTalkWorkspaceAuth, setOpenDingTalkWorkspaceAuth] = useState(false);
   const [resetDingTalkWorkspaceAccountId, setResetDingTalkWorkspaceAccountId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  const deleteOpenerRef = useRef<HTMLButtonElement | null>(null);
   const convergenceRefreshTimersRef = useRef<number[]>([]);
   const fetchInFlightRef = useRef(false);
   const queuedFetchOptionsRef = useRef<FetchPageDataOptions | null>(null);
@@ -509,7 +504,7 @@ export function Channels() {
 
   if (loading && !hasStableValue) {
     return (
-      <div className="flex flex-col -m-6 dark:bg-background min-h-[calc(100vh-2.5rem)] items-center justify-center">
+      <div className={embedded ? "flex h-full min-h-0 flex-col items-center justify-center" : "flex flex-col -m-6 dark:bg-background h-[calc(100%+3rem)] items-center justify-center"}>
         <LoadingSpinner size="lg" />
       </div>
     );
@@ -518,15 +513,15 @@ export function Channels() {
   return (
     <div
       data-testid="channels-page"
-      className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden"
+      className={embedded ? "flex h-full min-h-0 flex-col overflow-hidden" : "flex flex-col -m-6 dark:bg-background h-[calc(100%+3rem)] overflow-hidden"}
     >
-      <div className="w-full max-w-5xl mx-auto flex flex-col h-full p-10 pt-16 pb-0">
-        <div className="flex flex-col md:flex-row md:items-start justify-between mb-12 shrink-0 gap-4">
+      <div className="w-full max-w-6xl mx-auto flex flex-col h-full p-6 md:p-8">
+        <div className="flex flex-col md:flex-row md:items-start justify-between mb-6 shrink-0 gap-4">
           <div>
-            <h1 className="text-5xl md:text-6xl font-serif text-foreground mb-3 font-normal tracking-tight">
+            <h1 className="text-2xl font-sans text-foreground mb-1 font-medium tracking-normal">
               {t('title')}
             </h1>
-            <p className="text-subtitle text-foreground/70 font-medium">{t('subtitle')}</p>
+            <p className="text-sm text-muted-foreground">{t('subtitle')}</p>
           </div>
 
           <div className="flex items-center gap-3 md:mt-2">
@@ -534,7 +529,7 @@ export function Channels() {
               variant="outline"
               onClick={handleRefresh}
               disabled={gatewayStatus.state !== 'running'}
-              className="h-9 text-meta font-medium rounded-full px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground transition-colors"
+              className="h-9 text-sm font-medium rounded-md px-3 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground transition-colors"
             >
               <RefreshCw className={cn('h-3.5 w-3.5 mr-2', isUsingStableValue && 'animate-spin')} />
               {t('refresh')}
@@ -542,7 +537,7 @@ export function Channels() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto pr-2 pb-10 min-h-0 -mr-2">
+        <div className="flex-1 overflow-y-auto pr-2 min-h-0 -mr-2">
           {isGatewayStopped(gatewayStatus) && (
             <div className="mb-8 p-4 rounded-xl border border-yellow-500/50 bg-yellow-500/10 flex items-center gap-3">
               <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
@@ -587,7 +582,7 @@ export function Channels() {
                     data-testid="channels-restart-gateway"
                     size="sm"
                     variant="outline"
-                    className="h-8 rounded-full text-xs"
+                    className="h-8 text-sm"
                     onClick={() => {
                       void handleRestartGateway();
                     }}
@@ -599,7 +594,7 @@ export function Channels() {
                     data-testid="channels-copy-diagnostics"
                     size="sm"
                     variant="outline"
-                    className="h-8 rounded-full text-xs"
+                    className="h-8 text-sm"
                     disabled={diagnosticsLoading}
                     onClick={() => {
                       void handleCopyDiagnostics();
@@ -612,7 +607,7 @@ export function Channels() {
                     data-testid="channels-toggle-diagnostics"
                     size="sm"
                     variant="outline"
-                    className="h-8 rounded-full text-xs"
+                    className="h-8 text-sm"
                     disabled={diagnosticsLoading}
                     onClick={() => {
                       void handleToggleDiagnostics();
@@ -633,7 +628,7 @@ export function Channels() {
                   <p className="mb-2 text-xs font-medium text-muted-foreground">{t('health.diagnosticsTitle')}</p>
                   <pre
                     data-testid="channels-diagnostics"
-                    className="max-h-[320px] overflow-auto whitespace-pre-wrap break-all text-tiny text-foreground/85"
+                    className="max-h-[320px] overflow-auto whitespace-pre-wrap break-all text-meta text-foreground/85"
                   >
                     {diagnosticsText}
                   </pre>
@@ -650,26 +645,25 @@ export function Channels() {
           )}
 
           {configuredGroups.length > 0 && (
-            <div className="mb-12">
-              <h2 className="text-3xl font-serif text-foreground mb-6 font-normal tracking-tight">{t('configured')}</h2>
+            <div className="mb-8">
+              <h2 className="text-lg font-sans text-foreground mb-4 font-medium tracking-normal">{t('configured')}</h2>
               <div className="space-y-4">
                 {configuredGroups.map((group) => (
                   <div
                     key={group.channelType}
-                    className="rounded-2xl border border-black/10 dark:border-white/10 p-4 bg-transparent"
+                    data-testid={`channel-group-${group.channelType}`}
+                    className="rounded-xl border border-border bg-surface-modal p-4"
                   >
-                    <div className="flex items-center justify-between gap-2 mb-3">
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="h-[40px] w-[40px] shrink-0 flex items-center justify-center text-foreground bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-full shadow-sm">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-black/5 text-foreground dark:bg-white/5">
                           <ChannelLogo type={group.channelType as ChannelType} />
                         </div>
                         <div className="min-w-0">
-                          <h3 className="text-base font-semibold text-foreground truncate">
+                          <h3 className="truncate text-base font-medium text-foreground">
                             {CHANNEL_NAMES[group.channelType as ChannelType] || group.channelType}
                           </h3>
                           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            <span>{group.channelType}</span>
-                            <span className="w-1 h-1 rounded-full bg-black/20 dark:bg-white/20" />
                             <span
                               className="flex items-center gap-1"
                               data-testid={`channel-status-${group.channelType}`}
@@ -699,9 +693,10 @@ export function Channels() {
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  className="h-7 rounded-full px-3 text-xs"
+                                  className="h-8 px-3 text-sm"
                                   data-testid="dingtalk-workspace-authorize"
-                                  onClick={() => {
+                                  onClick={(event) => {
+                                    configOpenerRef.current = event.currentTarget;
                                     setSelectedChannelType('dingtalk');
                                     setSelectedAccountId(group.defaultAccountId);
                                     setAllowExistingConfigInModal(false);
@@ -725,7 +720,7 @@ export function Channels() {
                           <Button
                             size="sm"
                             variant="outline"
-                            className="h-8 text-xs rounded-full"
+                            className="h-8 text-sm"
                             data-testid="dingtalk-workspace-reset"
                             onClick={() => setResetDingTalkWorkspaceAccountId(group.defaultAccountId)}
                           >
@@ -735,8 +730,9 @@ export function Channels() {
                         <Button
                           size="sm"
                           variant="outline"
-                          className="h-8 text-xs rounded-full"
-                          onClick={() => {
+                          className="h-8 text-sm"
+                          onClick={(event) => {
+                            configOpenerRef.current = event.currentTarget;
                             const shouldUseGeneratedAccountId = !usesPluginManagedQrAccounts(group.channelType);
                             const nextAccountId = shouldUseGeneratedAccountId
                               ? createNewAccountId(
@@ -756,34 +752,36 @@ export function Channels() {
                           <Plus className="h-3.5 w-3.5 mr-1" />
                           {t('account.add')}
                         </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                          onClick={() => setDeleteTarget({ channelType: group.channelType })}
-                          title={t('account.deleteChannel')}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <ChannelActions scope="app" onDelete={(opener) => {
+                          deleteOpenerRef.current = opener;
+                          setDeleteTarget({ channelType: group.channelType });
+                        }} />
                       </div>
                     </div>
 
-                    <div className="space-y-2">
+                    <div className="divide-y divide-border border-t border-border">
                       {group.accounts.map((account) => {
+                        const showAccountId = account.name === account.accountId
+                          && account.accountId !== 'default'
+                          && usesPluginManagedQrAccounts(group.channelType);
                         const displayName =
                           account.accountId === 'default' && account.name === account.accountId
                             ? t('account.mainAccount')
-                            : account.name;
+                            : showAccountId ? t('account.linkedAccount') : account.name;
                         return (
                           <div
                             key={`${group.channelType}-${account.accountId}`}
-                            className="rounded-xl bg-black/5 dark:bg-white/5 px-3 py-2"
+                            data-testid={`channel-account-${group.channelType}-${account.accountId}`}
+                            className="py-3 last:pb-0"
                           >
-                            <div className="flex items-center justify-between gap-3">
+                            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
                               <div className="min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <p className="text-meta font-medium text-foreground truncate">{displayName}</p>
-                                </div>
+                                <p className="text-meta font-medium text-foreground truncate">{displayName}</p>
+                                {showAccountId && (
+                                  <p className="truncate text-xs text-muted-foreground" title={account.accountId}>
+                                    {t('account.idLabel', { id: account.accountId })}
+                                  </p>
+                                )}
                                 {account.lastError && (
                                   <div className="text-xs text-destructive mt-1">{account.lastError}</div>
                                 )}
@@ -796,25 +794,24 @@ export function Channels() {
 
                               <div className="flex items-center gap-2">
                                 <span className="text-xs text-muted-foreground">{t('account.bindAgentLabel')}</span>
-                                <select
-                                  className="h-8 rounded-lg border border-black/10 dark:border-white/10 bg-background px-2 text-xs"
+                                <Select
+                                  aria-label={t('account.bindAgentLabel')}
+                                  className="h-8 w-auto min-w-28 max-w-48 rounded-lg border border-input bg-background px-2 text-sm"
                                   value={account.agentId || ''}
-                                  onChange={(event) => {
-                                    void handleBindAgent(group.channelType, account.accountId, event.target.value);
+                                  onValueChange={(value) => {
+                                    void handleBindAgent(group.channelType, account.accountId, value);
                                   }}
                                 >
-                                  <option value="">{t('account.unassigned')}</option>
+                                  <SelectItem value="">{t('account.unassigned')}</SelectItem>
                                   {visibleAgents.map((agent) => (
-                                    <option key={agent.id} value={agent.id}>
+                                    <SelectItem key={agent.id} value={agent.id}>
                                       {agent.name}
-                                    </option>
+                                    </SelectItem>
                                   ))}
-                                </select>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-8 text-xs rounded-full"
-                                  onClick={() => {
+                                </Select>
+                                <ChannelActions
+                                  scope="account"
+                                  onEdit={(opener) => {
                                     void (async () => {
                                       try {
                                         const result = await hostApi.channels.formValues(
@@ -828,6 +825,7 @@ export function Channels() {
                                         // Fall back to modal-side loading when prefetch fails.
                                         setInitialConfigValuesForModal(undefined);
                                       }
+                                      configOpenerRef.current = opener;
                                       setSelectedChannelType(group.channelType as ChannelType);
                                       setSelectedAccountId(account.accountId);
                                       setAllowExistingConfigInModal(true);
@@ -836,20 +834,11 @@ export function Channels() {
                                       setShowConfigModal(true);
                                     })();
                                   }}
-                                >
-                                  {t('account.edit')}
-                                </Button>
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                                  onClick={() =>
-                                    setDeleteTarget({ channelType: group.channelType, accountId: account.accountId })
-                                  }
-                                  title={t('account.delete')}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
+                                  onDelete={(opener) => {
+                                    deleteOpenerRef.current = opener;
+                                    setDeleteTarget({ channelType: group.channelType, accountId: account.accountId });
+                                  }}
+                                />
                               </div>
                             </div>
                           </div>
@@ -863,17 +852,18 @@ export function Channels() {
           )}
 
           <div className="mb-8">
-            <h2 className="text-3xl font-serif text-foreground mb-6 font-normal tracking-tight">
+            <h2 className="text-lg font-sans text-foreground mb-4 font-medium tracking-normal">
               {t('supportedChannels')}
             </h2>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               {unsupportedGroups.map((type) => {
                 const meta = CHANNEL_META[type];
                 return (
                   <button
                     key={type}
-                    onClick={() => {
+                    onClick={(event) => {
+                      configOpenerRef.current = event.currentTarget;
                       setSelectedChannelType(type);
                       setSelectedAccountId(undefined);
                       setAllowExistingConfigInModal(true);
@@ -883,23 +873,15 @@ export function Channels() {
                       setShowConfigModal(true);
                     }}
                     className={cn(
-                      'group flex items-start gap-4 p-4 rounded-2xl transition-all text-left border relative overflow-hidden bg-transparent border-transparent hover:bg-black/5 dark:hover:bg-white/5',
+                      'group relative flex items-start gap-3 overflow-hidden rounded-xl border border-border bg-surface-modal p-4 text-left transition-colors hover:border-foreground/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                     )}
                   >
-                    <div className="h-[46px] w-[46px] shrink-0 flex items-center justify-center text-foreground bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-full shadow-sm mb-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-black/5 text-foreground dark:bg-white/5">
                       <ChannelLogo type={type} />
                     </div>
-                    <div className="flex flex-col flex-1 min-w-0 py-0.5 mt-1">
+                    <div className="flex min-w-0 flex-1 flex-col py-0.5">
                       <div className="flex items-center gap-2 mb-1">
-                        <h3 className="text-base font-semibold text-foreground truncate">{meta.name}</h3>
-                        {meta.isPlugin && (
-                          <Badge
-                            variant="secondary"
-                            className="font-mono text-2xs font-medium px-2 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] border-0 shadow-none text-foreground/70"
-                          >
-                            {t('pluginBadge')}
-                          </Badge>
-                        )}
+                        <h3 className="truncate text-base font-medium text-foreground">{meta.name}</h3>
                       </div>
                       <p className="text-sm text-muted-foreground line-clamp-2 leading-[1.5]">
                         {t(meta.description.replace('channels:', ''))}
@@ -924,6 +906,7 @@ export function Channels() {
           initialConfigValues={initialConfigValuesForModal}
           openDingTalkWorkspaceAuth={openDingTalkWorkspaceAuth}
           showChannelName={false}
+          returnFocusTo={configOpenerRef.current}
           onClose={() => {
             setShowConfigModal(false);
             setSelectedChannelType(null);
@@ -951,7 +934,7 @@ export function Channels() {
         title={t('account.resetWorkspaceAuth')}
         message={t('account.resetWorkspaceAuthConfirm')}
         confirmLabel={t('account.resetWorkspaceAuthConfirmAction')}
-        cancelLabel={t('common.cancel', 'Cancel')}
+        cancelLabel={t('common:actions.cancel')}
         variant="destructive"
         onConfirm={() => {
           void handleResetDingTalkWorkspaceAuth();
@@ -961,11 +944,12 @@ export function Channels() {
 
       <ConfirmDialog
         open={!!deleteTarget}
-        title={t('common.confirm', 'Confirm')}
+        title={t(deleteTarget?.accountId ? 'account.delete' : 'account.deleteChannel')}
         message={deleteTarget?.accountId ? t('account.deleteConfirm') : t('deleteConfirm')}
-        confirmLabel={t('common.delete', 'Delete')}
-        cancelLabel={t('common.cancel', 'Cancel')}
+        confirmLabel={t('common:actions.delete')}
+        cancelLabel={t('common:actions.cancel')}
         variant="destructive"
+        returnFocusTo={deleteOpenerRef.current}
         onConfirm={() => {
           void handleDelete();
         }}
@@ -975,27 +959,42 @@ export function Channels() {
   );
 }
 
-function ChannelLogo({ type }: { type: ChannelType }) {
-  switch (type) {
-    case 'telegram':
-      return <img src={telegramIcon} alt="Telegram" className="w-[22px] h-[22px] dark:invert" />;
-    case 'discord':
-      return <img src={discordIcon} alt="Discord" className="w-[22px] h-[22px] dark:invert" />;
-    case 'whatsapp':
-      return <img src={whatsappIcon} alt="WhatsApp" className="w-[22px] h-[22px] dark:invert" />;
-    case 'wechat':
-      return <img src={wechatIcon} alt="WeChat" className="w-[22px] h-[22px] dark:invert" />;
-    case 'dingtalk':
-      return <img src={dingtalkIcon} alt="DingTalk" className="w-[22px] h-[22px] dark:invert" />;
-    case 'feishu':
-      return <img src={feishuIcon} alt="Feishu" className="w-[22px] h-[22px] dark:invert" />;
-    case 'wecom':
-      return <img src={wecomIcon} alt="WeCom" className="w-[22px] h-[22px] dark:invert" />;
-    case 'qqbot':
-      return <img src={qqIcon} alt="QQ" className="w-[22px] h-[22px] dark:invert" />;
-    default:
-      return <span className="text-xl">{CHANNEL_ICONS[type] || '💬'}</span>;
-  }
+function ChannelActions({ scope, onDelete, onEdit }: {
+  scope: 'app' | 'account';
+  onDelete: (opener: HTMLButtonElement) => void;
+  onEdit?: (opener: HTMLButtonElement) => void;
+}) {
+  const { t } = useTranslation('channels');
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const label = t(scope === 'app' ? 'account.appActions' : 'account.accountActions');
+
+  return (
+    <Menu.Root modal={false}>
+      <Menu.Trigger asChild>
+        <Button ref={triggerRef} size="icon" variant="ghost" className="h-8 w-8 shrink-0 text-muted-foreground" aria-label={label} title={label}>
+          <MoreHorizontal className="h-4 w-4" />
+        </Button>
+      </Menu.Trigger>
+      <Menu.Portal>
+        <Menu.Content align="end" sideOffset={6} className="clawx-menu-list min-w-40 rounded-xl border border-border bg-surface-modal p-1.5 shadow-xl">
+          {onEdit && (
+            <Menu.Item className="clawx-menu-item flex items-center gap-2 text-sm" onSelect={() => {
+              if (triggerRef.current) onEdit(triggerRef.current);
+            }}>
+              <Pencil className="h-3.5 w-3.5" />
+              {t('account.edit')}
+            </Menu.Item>
+          )}
+          <Menu.Item className="clawx-menu-item flex items-center gap-2 text-sm text-destructive" onSelect={() => {
+            if (triggerRef.current) onDelete(triggerRef.current);
+          }}>
+            <Trash2 className="h-3.5 w-3.5" />
+            {t(scope === 'app' ? 'account.deleteChannel' : 'account.delete')}
+          </Menu.Item>
+        </Menu.Content>
+      </Menu.Portal>
+    </Menu.Root>
+  );
 }
 
 export default Channels;

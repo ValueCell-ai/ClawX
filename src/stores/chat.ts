@@ -10,6 +10,7 @@ import {
   OPENCLAW_HEARTBEAT_POLL_SENTINEL,
 } from '@shared/chat/openclaw-internal';
 import { useGatewayStore } from './gateway';
+import { useSettingsStore } from './settings';
 import { useAcpChatSessionStore } from './acp-chat-session';
 import { pickStartupSessionFallback } from './chat/session-selection';
 import {
@@ -317,6 +318,15 @@ function clearSessionEntryFromMap<T extends Record<string, unknown>>(entries: T,
   return Object.fromEntries(Object.entries(entries).filter(([key]) => key !== sessionKey)) as T;
 }
 
+function nextLocalDraftKey(prefix: string, sessions: ChatSession[]): string {
+  let timestamp = Date.now();
+  let key = `${prefix}:session-${timestamp}`;
+  while (sessions.some((session) => session.key === key)) {
+    key = `${prefix}:session-${++timestamp}`;
+  }
+  return key;
+}
+
 function buildSessionSwitchPatch(
   state: Pick<ChatState, 'currentSessionKey' | 'sessions' | 'sessionLabels' | 'sessionLastActivity'>,
   nextSessionKey: string,
@@ -502,9 +512,12 @@ async function fetchChatSessionsList(): Promise<Record<string, unknown>> {
   });
 }
 
+const startupDraftKey = nextLocalDraftKey(DEFAULT_CANONICAL_PREFIX, []);
+localDraftSessionKeys.add(startupDraftKey);
+
 export const useChatStore = create<ChatState>((set, get) => ({
-  sessions: [],
-  currentSessionKey: DEFAULT_SESSION_KEY,
+  sessions: ensureSessionEntry([], startupDraftKey, { createdLocally: true }),
+  currentSessionKey: startupDraftKey,
   currentAgentId: 'main',
   sessionLabels: {},
   sessionLastActivity: {},
@@ -1247,12 +1260,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((state) => buildSessionSwitchPatch(state, key, { createdLocally: true, workspacePath }));
   },
 
-  newSession: () => {
+  newSession: (options) => {
     const { currentSessionKey, sessions } = get();
-    const prefix = getCanonicalPrefixFromSessionKey(currentSessionKey)
-      ?? getCanonicalPrefixFromSessions(sessions)
-      ?? DEFAULT_CANONICAL_PREFIX;
-    const sessionKey = `${prefix}:session-${Date.now()}`;
+    const draft = options?.preserveDraft ? useComposerDraftStore.getState().drafts[currentSessionKey] : undefined;
+    const editorDraft = options?.preserveDraft ? useComposerDraftStore.getState().editorDrafts[currentSessionKey] : undefined;
+    const attachments = options?.preserveDraft ? useComposerDraftStore.getState().attachments[currentSessionKey] : undefined;
+    const prefix = options?.agentId
+      ? `agent:${options.agentId}`
+      : getCanonicalPrefixFromSessionKey(currentSessionKey)
+        ?? getCanonicalPrefixFromSessions(sessions)
+        ?? DEFAULT_CANONICAL_PREFIX;
+    const sessionKey = nextLocalDraftKey(prefix, sessions);
     if (sessions.some((session) => session.key === currentSessionKey && session.createdLocally)) {
       localDraftSessionKeys.delete(currentSessionKey);
       useComposerDraftStore.getState().clearDraft(currentSessionKey);
@@ -1264,6 +1282,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       sessionKey,
       { createdLocally: true },
     ));
+    if (draft) useComposerDraftStore.getState().setDraft(sessionKey, draft);
+    if (editorDraft) useComposerDraftStore.getState().setEditorDraft(sessionKey, editorDraft);
+    if (attachments?.length) useComposerDraftStore.getState().setAttachments(sessionKey, attachments);
   },
 
   acknowledgeAcpSessionCreated: (key, workspacePath, initialPrompt) => {
@@ -1313,6 +1334,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return { success: false, error: String(error) };
     }
 
+    void useSettingsStore.getState().removePinnedSessions([key]).catch((error) => console.warn('[pins] Cleanup failed:', error));
     clearSessionLabelHydrationTracking(key);
     localDraftSessionKeys.delete(key);
     useComposerDraftStore.getState().clearDraft(key);
@@ -1357,6 +1379,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
     if (deletedKeys.length === 0) return { deletedKeys, failedKeys };
 
+    void useSettingsStore.getState().removePinnedSessions(deletedKeys).catch((error) => console.warn('[pins] Cleanup failed:', error));
     const deletedSet = new Set(deletedKeys);
     for (const key of deletedKeys) {
       clearSessionLabelHydrationTracking(key);
@@ -1405,12 +1428,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
       ...Object.keys(state.sessionLabels),
       ...Object.keys(state.sessionLastActivity),
       ...Object.keys(composerDrafts),
+      ...Object.keys(useComposerDraftStore.getState().attachments),
       ...attentionKeys,
+      ...useSettingsStore.getState().pinnedSessionKeys,
       ...localDraftSessionKeys,
       ...pendingCatalogConfirmationSessionKeys,
       state.currentSessionKey,
     ].filter(belongsToAgent));
 
+    void useSettingsStore.getState().removePinnedSessions([...removedKeys]).catch((error) => console.warn('[pins] Cleanup failed:', error));
     for (const key of removedKeys) {
       clearSessionLabelHydrationTracking(key);
       localDraftSessionKeys.delete(key);

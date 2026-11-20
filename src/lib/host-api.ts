@@ -341,6 +341,9 @@ export const hostApi = {
     setDefaultAccount: (accountId: string) => (
       invokeHost('providers', 'setDefaultAccount', { accountId })
     ),
+    setDefaultModel: (accountId: string, modelId: string) => (
+      invokeHost('providers', 'setDefaultModel', { accountId, modelId })
+    ),
     requestOAuth: (input: ProviderOAuthRequestPayload) => invokeHost('providers', 'requestOAuth', input),
     cancelOAuth: () => invokeHost('providers', 'cancelOAuth'),
     submitOAuth: (input: { code: string }) => invokeHost('providers', 'submitOAuth', input),

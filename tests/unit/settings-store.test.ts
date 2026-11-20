@@ -99,3 +99,33 @@ describe('settings workspace cleanup', () => {
     });
   });
 });
+
+describe('durable task pins', () => {
+  it('serializes rapid pin changes and removes only explicitly deleted keys', async () => {
+    const { hostApi } = await import('@/lib/host-api');
+    const save = vi.mocked(hostApi.settings.set).mockResolvedValue({ success: true });
+    save.mockClear();
+    useSettingsStore.setState({ pinnedSessionKeys: [] });
+    await Promise.all([
+      useSettingsStore.getState().toggleSessionPin('agent:main:a'),
+      useSettingsStore.getState().toggleSessionPin('agent:code:b'),
+      useSettingsStore.getState().toggleSessionPin('agent:main:a'),
+    ]);
+    expect(save.mock.calls).toEqual([
+      ['pinnedSessionKeys', ['agent:main:a']],
+      ['pinnedSessionKeys', ['agent:code:b', 'agent:main:a']],
+      ['pinnedSessionKeys', ['agent:code:b']],
+    ]);
+    await useSettingsStore.getState().removePinnedSessions(['agent:main:a']);
+    expect(useSettingsStore.getState().pinnedSessionKeys).toEqual(['agent:code:b']);
+    await useSettingsStore.getState().removePinnedSessions(['agent:code:b']);
+    expect(useSettingsStore.getState().pinnedSessionKeys).toEqual([]);
+  });
+  it('restores the last state when a pin cannot be saved', async () => {
+    const { hostApi } = await import('@/lib/host-api');
+    vi.mocked(hostApi.settings.set).mockRejectedValueOnce(new Error('disk unavailable'));
+    useSettingsStore.setState({ pinnedSessionKeys: ['agent:main:kept'] });
+    await expect(useSettingsStore.getState().toggleSessionPin('agent:main:new')).rejects.toThrow('disk unavailable');
+    expect(useSettingsStore.getState().pinnedSessionKeys).toEqual(['agent:main:kept']);
+  });
+});

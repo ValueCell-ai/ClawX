@@ -1,3 +1,4 @@
+import { expectMenuSelection } from './fixtures/menu-selection';
 import type { ElectronApplication } from '@playwright/test';
 import {
   closeElectronApp,
@@ -246,6 +247,7 @@ test.describe('ClawX chat workspace context', () => {
       } catch (error) {
         if (!String(error).includes('ERR_FILE_NOT_FOUND')) throw error;
       }
+      await page.getByTestId(`sidebar-session-${DEFAULT_SESSION_KEY}`).click();
 
       const defaultGroup = page.getByTestId(workspaceSessionGroupTestId(DEFAULT_WORKSPACE));
       await expect(defaultGroup).toBeVisible({ timeout: 30_000 });
@@ -284,6 +286,7 @@ test.describe('ClawX chat workspace context', () => {
           throw error;
         }
       }
+      await page.getByTestId(`sidebar-session-${SESSION_KEY}`).click();
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
 
@@ -325,14 +328,11 @@ test.describe('ClawX chat workspace context', () => {
       await sidePanel.getByTestId('artifact-panel-tab-browser').click();
 
       const workspaceHeader = sidePanel.getByTestId('workspace-header-title');
-      const expectedWorkspaceHeader = 'Agent: Main Agent · Directory: Renamed workspace';
-      await expect(workspaceHeader).toHaveAttribute('title', expectedWorkspaceHeader);
-      await expect(workspaceHeader).toHaveAttribute('aria-label', expectedWorkspaceHeader);
-      await expect(sidePanel.getByTestId('workspace-agent-tag')).toHaveText('Main Agent');
-      await expect(sidePanel.getByTestId('workspace-agent-tag')).toHaveAttribute('title', 'Main Agent');
+      await expect(workspaceHeader).toHaveAccessibleName('Renamed workspace');
+      await expect(sidePanel.getByTestId('workspace-agent-tag')).toHaveCount(0);
       await expect(sidePanel.getByTestId('workspace-path-tag')).toHaveText('Renamed workspace');
       await expect(sidePanel.getByTestId('workspace-path-tag')).toHaveAttribute('title', SESSION_WORKSPACE);
-      await expect(sidePanel.getByTestId('workspace-path-final-segment')).toHaveText('Renamed workspace');
+      await expect(sidePanel.getByTestId('workspace-header-title')).toHaveText('Renamed workspace');
       await expect(sidePanel.getByTestId('workspace-tree')).toBeVisible({ timeout: 30_000 });
       await expect(sidePanel.getByText('README.md')).toBeVisible();
 
@@ -359,6 +359,7 @@ test.describe('ClawX chat workspace context', () => {
           throw error;
         }
       }
+      await page.getByTestId(`sidebar-session-${SESSION_KEY}`).click();
 
       const workspaceSelector = page.getByTestId('chat-workspace-selector');
       const composerInput = page.getByTestId('chat-composer-input');
@@ -367,15 +368,15 @@ test.describe('ClawX chat workspace context', () => {
       await expect(composerInput).toBeEnabled();
 
       await composerInput.evaluate((element) => {
-        const input = element as HTMLTextAreaElement;
+        const input = element as HTMLElement;
         const state = { showedGatewayDisconnected: false };
         const observe = () => {
-          if (input.placeholder === 'Gateway not connected...') {
+          if (input.getAttribute('aria-label') === 'Gateway not connected...') {
             state.showedGatewayDisconnected = true;
           }
         };
         const observer = new MutationObserver(observe);
-        observer.observe(input, { attributes: true, attributeFilter: ['placeholder'] });
+        observer.observe(input, { attributes: true, attributeFilter: ['aria-label'] });
         observe();
         (globalThis as unknown as {
           __newChatComposerPlaceholderObservation?: { observer: MutationObserver; state: typeof state };
@@ -429,13 +430,15 @@ test.describe('ClawX chat workspace context', () => {
       } catch (error) {
         if (!String(error).includes('ERR_FILE_NOT_FOUND')) throw error;
       }
+      await page.getByTestId(`sidebar-session-${SESSION_KEY}`).click();
 
       const chatTitle = page.getByTestId('chat-session-title');
       await expect(chatTitle).toHaveText('Workspace chat', { timeout: 30_000 });
 
       const sidebarSession = page.getByTestId(`sidebar-session-${SESSION_KEY}`);
       await sidebarSession.hover();
-      await page.getByRole('button', { name: 'Rename' }).click();
+      await page.getByTestId(`sidebar-session-menu-${SESSION_KEY}`).click();
+      await page.getByRole('menuitem', { name: 'Rename', exact: true }).click();
       await page.getByRole('textbox', { name: 'Session title' }).fill('Renamed conversation');
       await page.getByRole('button', { name: 'Save session title' }).click();
 
@@ -462,6 +465,7 @@ test.describe('ClawX chat workspace context', () => {
           throw error;
         }
       }
+      await page.getByTestId(`sidebar-session-${SESSION_KEY}`).click();
 
       const workspaceSelector = page.getByTestId('chat-workspace-selector');
       await expect(workspaceSelector).toHaveText(SESSION_WORKSPACE_LABEL, { timeout: 30_000 });
@@ -479,11 +483,17 @@ test.describe('ClawX chat workspace context', () => {
         `chat-workspace-option-${encodeURIComponent(GLOBAL_WORKSPACE)}`,
       );
       await expect(globalWorkspaceOption).toHaveText('Global project');
+      await expectMenuSelection(workspaceMenu.locator('[aria-current="true"]'));
+      await expect(globalWorkspaceOption.locator('[data-slot="menu-selection-indicator"]')).toHaveCount(0);
       await expect(workspaceMenu.getByTestId('chat-workspace-choose-other')).toBeVisible();
 
       await globalWorkspaceOption.click();
       await expect(workspaceSelector).toHaveText('Global project');
       await expect(workspaceSelector).toHaveAttribute('title', GLOBAL_WORKSPACE);
+      await workspaceSelector.click();
+      await expectMenuSelection(globalWorkspaceOption);
+      await expect(workspaceMenu.locator('[aria-current="true"]')).toHaveCount(1);
+      await page.keyboard.press('Escape');
       await expect.poll(async () => {
         const invocations = await getRecordedHostInvocations(app);
         return invocations.some((entry) => (
@@ -639,6 +649,7 @@ test.describe('ClawX chat workspace context', () => {
           throw error;
         }
       }
+      await page.getByTestId(`sidebar-session-${SESSION_KEY}`).click();
 
       const workspaceSelector = page.getByTestId('chat-workspace-selector');
       await expect(workspaceSelector).toHaveText(SESSION_WORKSPACE_LABEL, { timeout: 30_000 });
@@ -681,6 +692,7 @@ test.describe('ClawX chat workspace context', () => {
       } catch (error) {
         if (!String(error).includes('ERR_FILE_NOT_FOUND')) throw error;
       }
+      await page.getByTestId(`sidebar-session-${SESSION_KEY}`).click();
 
       await expect(page.getByTestId('chat-workspace-selector')).toHaveText(SESSION_WORKSPACE_LABEL, {
         timeout: 30_000,

@@ -7,6 +7,11 @@ type SessionModel = Awaited<ReturnType<typeof hostApi.sessions.getModel>>;
 
 // A newly mounted composer can revisit a session while its previous write is in flight.
 const writes = new Map<string, Promise<SessionModel>>();
+const selectionErrors = new Map<string, string>();
+
+export function getSessionModelSelectionError(sessionKey: string) {
+  return selectionErrors.get(sessionKey);
+}
 
 export async function readSessionModel(sessionKey: string) {
   await writes.get(sessionKey)?.catch(() => {});
@@ -55,7 +60,7 @@ export function useSessionModel(
   useEffect(() => {
     const request = ++revision.current;
     let cancelled = false;
-    if (!local && canRead) {
+    if (sessionKey && !local && canRead) {
       void readSessionModel(sessionKey).then((value) => {
         if (!cancelled && revision.current === request) setSnapshot({ key: sessionKey, value });
       }).catch(() => {
@@ -67,6 +72,7 @@ export function useSessionModel(
 
   const select = async (modelRef: string | null) => {
     if (local) {
+      selectionErrors.delete(sessionKey);
       useComposerDraftStore.getState().setModelRef(sessionKey, modelRef);
       return;
     }
@@ -78,15 +84,20 @@ export function useSessionModel(
       if (!session) {
         const observed = snapshot?.key === sessionKey ? snapshot.value : await readSessionModel(sessionKey);
         if (observed.exists === false) {
+          selectionErrors.delete(sessionKey);
           useComposerDraftStore.getState().setModelRef(sessionKey, modelRef);
           if (revision.current === request) setSnapshot({ key: sessionKey, value: observed });
           return;
         }
       }
       const value = await writeSessionModel(sessionKey, modelRef);
+      selectionErrors.delete(sessionKey);
       // A previous failed first send may still have a pending model on this session.
       useComposerDraftStore.getState().setModelRef(sessionKey, null);
       if (revision.current === request) setSnapshot({ key: sessionKey, value });
+    } catch (error) {
+      selectionErrors.set(sessionKey, String(error));
+      throw error;
     } finally {
       setWritingKey((key) => key === sessionKey ? null : key);
     }
@@ -94,5 +105,5 @@ export function useSessionModel(
   let value: SessionModel | undefined;
   if (draft || local) value = { modelRef: draft ?? null };
   else if (snapshot?.key === sessionKey) value = snapshot.value;
-  return { value, select, writing: writingKey === sessionKey, refresh: () => setReadAttempt((n) => n + 1) };
+  return { value, select, failed: selectionErrors.has(sessionKey), writing: writingKey === sessionKey, refresh: () => setReadAttempt((n) => n + 1) };
 }

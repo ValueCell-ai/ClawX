@@ -1,3 +1,4 @@
+import { navigateToSection } from './fixtures/navigation';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Page } from '@playwright/test';
@@ -150,7 +151,7 @@ test.describe('ClawX token usage history', () => {
     await completeSetup(page);
     await validateUsageHistory(page);
 
-    await page.getByTestId('sidebar-nav-models').click();
+    await navigateToSection(page, 'models');
     await expect(page.getByTestId('models-page')).toBeVisible();
 
     const usageEntryRows = page.getByTestId('token-usage-entry');

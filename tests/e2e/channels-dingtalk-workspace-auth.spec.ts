@@ -1,3 +1,4 @@
+import { navigateToSection } from './fixtures/navigation';
 import { completeSetup, expect, test } from './fixtures/electron';
 
 const responses = {
@@ -80,7 +81,7 @@ test.describe('DingTalk workspace authorization', () => {
       });
     }, responses);
 
-    await page.getByTestId('sidebar-nav-channels').click();
+    await navigateToSection(page, 'channels');
     await page.getByTestId('channels-page').getByRole('button', { name: /DingTalk/ }).click();
 
     await page.locator('#clientId').fill('ding-client-id');

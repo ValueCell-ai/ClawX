@@ -2,7 +2,7 @@
   "title": "Settings",
   "subtitle": "Configure your ClawX experience",
   "appearance": {
-    "title": "General",
+    "title": "Appearance & startup",
     "description": "Customize the look and feel",
     "theme": "Theme",
     "light": "Light",
@@ -10,12 +10,12 @@
     "system": "System",
     "language": "Language",
     "menuLanguageUpdated": "Menu language updated",
-    "launchAtStartup": "Launch at system startup",
+    "launchAtStartup": "Launch ClawX at login",
     "launchAtStartupDesc": "Automatically launch ClawX when you log in"
   },
   "aiProviders": {
-    "title": "AI Providers",
-    "description": "Configure your AI model providers and API keys",
+    "title": "Model services",
+    "description": "Manage providers and available models for text conversations.",
     "overview": {
       "title": "Provider Accounts",
       "description": "A summary of the provider accounts and models currently configured.",
@@ -33,7 +33,7 @@
       "model": "Model Settings",
       "fallback": "Fallback Settings"
     },
-    "add": "Add Provider",
+    "add": "Add service",
     "custom": "Custom",
     "notRequired": "Not required",
     "empty": {
@@ -42,22 +42,25 @@
       "cta": "Add Your First Provider"
     },
     "dialog": {
-      "title": "Add AI Provider",
-      "desc": "Configure a new AI model provider",
+      "title": "Add model service",
       "displayName": "Display Name",
       "apiKey": "API Key",
-      "apiKeyConfigured": "An API key is already stored for this provider.",
-      "apiKeyMissing": "No API key is stored for this provider yet.",
+      "apiKeyRequired": "Enter an API key.",
+      "baseUrlRequired": "Enter a base URL.",
+      "baseUrlInvalid": "Enter a valid URL starting with http:// or https://.",
+      "modelIdSingle": "Enter a single model ID.",
+      "apiKeyMissing": "No API key has been saved yet.",
       "apiKeyStored": "Your API key is stored locally on your machine.",
-      "replaceApiKey": "Replace API Key",
-      "replaceApiKeyHelp": "Leave this field empty if you want to keep the currently stored API key.",
+      "replaceApiKey": "Replace API key",
+      "replaceApiKeyHelp": "Leave blank to keep the saved API key.",
       "baseUrl": "Base URL",
       "modelId": "Model ID",
+      "configuredModels": "Configured models",
+      "singleModelHint": "Enter one model ID.",
       "modelIdEditDisabled": "The model ID cannot be changed after creation. Delete this provider and add it again to use a different model ID.",
-      "codePlanPreset": "Code Plan Preset",
+      "connectionPreset": "Connection preset",
+      "generalApiPreset": "General API",
       "codePlanMode": "Code Plan",
-      "useCodePlanPreset": "Use Ark Code Plan Preset",
-      "codePlanPresetDesc": "Code Plan uses {{baseUrl}} and model {{modelId}}. Do not use the general API endpoint for Code Plan traffic.",
       "codePlanDoc": "Code Plan docs",
       "protocol": "Protocol",
       "advancedConfig": "Advanced configuration",
@@ -70,12 +73,18 @@
       "fallbackModelIdsHelp": "One model ID per line. These models use the current provider config before falling back to other providers.",
       "noFallbackOptions": "Add another provider first to use it as a fallback target.",
       "cancel": "Cancel",
-      "change": "Change provider",
-      "add": "Add Provider",
+      "add": "Add service",
       "save": "Save",
+      "serviceList": "Model services",
+      "customService": "Custom service",
       "customDoc": "Documentation",
       "validate": "Validate",
-      "failed": "Failed"
+      "failed": "Failed",
+      "search": "Search providers…",
+      "close": "Close",
+      "showKey": "Show API key",
+      "hideKey": "Hide API key",
+      "noResults": "No matching providers"
     },
     "card": {
       "default": "Default",
@@ -85,12 +94,13 @@
       "fallbacks_one": "Fallback: {{names}}",
       "fallbacks_other": "Fallbacks ({{count}}): {{names}}",
       "setDefault": "Set as default",
-      "editKey": "Edit API key",
-      "delete": "Delete provider"
+      "editKey": "Edit configuration",
+      "delete": "Delete provider",
+      "more": "More actions"
     },
     "protocols": {
       "openai": "OpenAI Compatible",
-      "openaiCompletions": "OpenAI Completions",
+      "openaiCompletions": "OpenAI Chat Completions",
       "openaiResponses": "OpenAI Responses",
       "anthropic": "Anthropic Compatible"
     },
@@ -109,26 +119,20 @@
       "zaiConflict": "Cannot add both Z.AI (Global) and Z.AI (CN) providers."
     },
     "oauth": {
+      "method": "Authentication method",
       "loginMode": "OAuth Login",
       "apikeyMode": "API Key",
-      "loginPrompt": "This provider requires signing in via your browser.",
       "loginButton": "Login with Browser",
       "getApiKey": "Get API Key",
-      "waiting": "Waiting...",
       "openLoginPage": "Open Login Page",
-      "waitingApproval": "Waiting for approval in browser...",
+      "waitingApproval": "Waiting for approval…",
       "cancel": "Cancel",
       "codeCopied": "Code copied to clipboard",
       "authFailed": "Authentication Failed",
       "browserFlowUnavailable": "Browser OAuth is not wired for this provider yet.",
       "tryAgain": "Try Again",
-      "approveLogin": "Approve Login",
-      "step1": "Copy the authorization code below.",
-      "step2": "Open the login page in your browser.",
-      "step3": "Paste the code to approve access.",
-      "requestingCode": "Requesting secure login code...",
-      "completeBrowserLogin": "Complete browser login",
-      "manualCallbackHelp": "Open the authorization page, complete login, then paste the callback URL or code below.",
+      "enterDeviceCode": "Enter this code on the sign-in page.",
+      "requestingCode": "Requesting authorization code…",
       "openAuthorizationPage": "Open authorization page",
       "callbackPlaceholder": "Paste callback URL or code",
       "submitCode": "Submit code",
@@ -145,17 +149,17 @@
     }
   },
   "gateway": {
-    "title": "Gateway",
+    "title": "Local service",
     "description": "OpenClaw Gateway settings",
     "status": "Status",
     "port": "Port",
     "logs": "Logs",
     "appLogs": "Application Logs",
     "openFolder": "Open Folder",
-    "autoStart": "Auto-start Gateway",
-    "autoStartDesc": "Start Gateway when ClawX launches",
-    "proxyTitle": "Proxy",
-    "proxyDesc": "Route Electron and Gateway traffic through your local proxy client.",
+    "autoStart": "Start local service automatically",
+    "autoStartDesc": "Start the local service when ClawX launches",
+    "proxyTitle": "Network proxy",
+    "proxyDesc": "Configure the network proxy for ClawX and its local service.",
     "proxyServer": "Proxy Server",
     "proxyServerHelp": "The default proxy for all requests. Bare host:port values default to HTTP.",
     "proxyHttpServer": "HTTP Proxy",
@@ -168,14 +172,14 @@
     "hideAdvancedProxy": "Hide advanced proxy fields",
     "proxyBypass": "Bypass Rules",
     "proxyBypassHelp": "Semicolon, comma, or newline separated hosts that should connect directly.",
-    "proxyRestartNote": "Saving reapplies Electron networking and restarts the Gateway immediately. Regular Gateway restarts keep existing Telegram channel proxy values when proxy is disabled; save while disabled to clear them.",
+    "proxyRestartNote": "Saving applies the proxy and restarts the local service. To clear Telegram’s existing proxy, turn this off and save.",
     "proxySaved": "Proxy settings saved",
     "proxySaveFailed": "Failed to save proxy settings"
   },
   "updates": {
     "title": "Updates",
     "description": "Keep ClawX up to date",
-    "autoCheck": "Auto-check for updates",
+    "autoCheck": "Check for updates at launch",
     "autoCheckDesc": "Check for updates on startup",
     "autoDownload": "Update prompts",
     "autoDownloadDesc": "Show a notification when a new version is available; download only after you choose to update",
@@ -187,7 +191,9 @@
       "autoInstalling": "Restarting to install update in {{seconds}}s...",
       "failed": "Update check failed",
       "latest": "You have the latest version",
-      "check": "Check for updates to get the latest features"
+      "check": "Check for updates to get the latest features",
+      "devUnavailable": "In-app updates are unavailable in development builds.",
+      "progress": "{{percent}}% downloaded"
     },
     "action": {
       "checking": "Checking...",
@@ -215,14 +221,15 @@
     "title": "Advanced",
     "description": "Power-user options",
     "devMode": "Developer Mode",
-    "devModeDesc": "Show developer tools and shortcuts",
+    "devModeDesc": "Show debugging tools and experimental features.",
     "telemetry": "Anonymous Usage Data",
-    "telemetryDesc": "Allow providing anonymous basic usage data to improve ClawX"
+    "telemetryDesc": "Allow providing anonymous basic usage data to improve ClawX",
+    "privacy": "Privacy"
   },
   "developer": {
     "title": "Developer",
     "description": "Advanced options for developers",
-    "console": "OpenClaw Console",
+    "console": "OpenClaw console",
     "consoleDesc": "Access the native OpenClaw management interface",
     "openConsole": "Open Developer Console",
     "consoleNote": "Opens the Control UI with gateway token injected",
@@ -274,14 +281,15 @@
     "installCmdDesc": "Installs ~/.local/bin/openclaw (no admin required)",
     "installTitle": "Install OpenClaw Command",
     "installMessage": "Install the \"openclaw\" command?",
-    "installDetail": "This will create ~/.local/bin/openclaw. Ensure ~/.local/bin is on your PATH if you want to run it globally."
+    "installDetail": "This will create ~/.local/bin/openclaw. Ensure ~/.local/bin is on your PATH if you want to run it globally.",
+    "consoleUnavailable": "Unable to open the OpenClaw console"
   },
   "support": {
-    "title": "Support"
+    "title": "Help & feedback"
   },
   "issueReport": {
     "actionTitle": "Export issue report",
-    "actionDescription": "Create a diagnostic ZIP on your desktop for troubleshooting and support.",
+    "actionDescription": "Save a diagnostic ZIP to your desktop.",
     "open": "Review and export",
     "dialogTitle": "Export issue report",
     "dialogDescription": "Review what will be included and optionally choose conversations. The ZIP will be saved to your desktop.",
@@ -368,5 +376,46 @@
       "modelRequired": "Enter a model name.",
       "request": "Saving failed. Please try again."
     }
+  },
+  "navigation": {
+    "label": "Settings categories",
+    "openAdvanced": "Open advanced settings",
+    "general": {
+      "title": "General",
+      "description": "Personalize appearance, language, and startup preferences."
+    },
+    "models": {
+      "title": "AI models",
+      "description": "Manage chat, voice, and image models and review usage."
+    },
+    "channels": {
+      "title": "Messaging remote",
+      "description": "Talk to ClawX through messaging apps to assign tasks and receive results."
+    },
+    "computer-use": {
+      "title": "Computer operation",
+      "description": "Let assistants view the screen and operate this computer. Manage the required system permissions.",
+      "developerHint": "Computer operation is experimental. Enable developer mode in Advanced, then return here to configure it. System permissions require separate authorization."
+    },
+    "advanced": {
+      "title": "Advanced",
+      "description": "Manage local services, network connections, and developer tools."
+    },
+    "about": {
+      "title": "About & help",
+      "description": "Check your version and updates, get help, or report a problem."
+    }
+  },
+  "modelManagement": {
+    "loading": "Loading configuration…",
+    "editService": "Edit model service",
+    "editServiceHint": "Update the service connection and credentials.",
+    "configure": "Configure",
+    "editConfiguration": "Edit configuration",
+    "notConfigured": "No model configured",
+    "configured": "Configuration saved",
+    "needsConfiguration": "Configuration required",
+    "voiceDescription": "Configure the service and model that transcribe speech into the input box.",
+    "imageDescription": "Configure the service and model for image generation."
   }
 }

@@ -107,8 +107,11 @@ function configResult(overrides: Partial<AsrConfigResult> = {}): AsrConfigResult
   };
 }
 
-function renderAsrSettings() {
-  return render(<AsrSettings />);
+async function renderAsrSettings() {
+  const result = render(<AsrSettings />);
+  fireEvent.click(await screen.findByTestId('asr-configure'));
+  fireEvent.click(result.baseElement.querySelector('summary')!);
+  return result;
 }
 
 describe('AsrSettings', () => {
@@ -121,10 +124,22 @@ describe('AsrSettings', () => {
     saveConfigMock.mockResolvedValue(configResult());
   });
 
+
+  it('shows saved state before opening configuration and choosing Bailian selects its protocol', async () => {
+    getConfigMock.mockResolvedValue(configResult());
+    render(<AsrSettings />);
+    expect(await screen.findByTestId('asr-summary')).toHaveTextContent('whisper-large-v3');
+    expect(screen.queryByTestId('asr-config-dialog')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('asr-configure'));
+    await selectChoice(screen.getByTestId('asr-preset-select'), 'bailian');
+    expect(screen.getByTestId('asr-protocol-select')).toHaveValue('chat');
+    expect(screen.getByTestId('asr-model-input')).toHaveValue('qwen3-asr-flash');
+  });
+
   it('loads the existing config into the inputs and masks the stored key', async () => {
     getConfigMock.mockResolvedValue(configResult());
 
-    renderAsrSettings();
+    await renderAsrSettings();
 
     expect(await screen.findByTestId('asr-base-url-input')).toHaveValue('https://api.groq.com/openai/v1');
     expect(screen.getByText('Provider')).toHaveAttribute('for', 'asr-preset');
@@ -141,7 +156,7 @@ describe('AsrSettings', () => {
   it('prefills openai defaults when no config exists', async () => {
     getConfigMock.mockResolvedValue({ configured: false, config: null, hasApiKey: false });
 
-    renderAsrSettings();
+    await renderAsrSettings();
 
     expect(await screen.findByTestId('asr-base-url-input')).toHaveValue(ASR_PRESET_DEFAULTS.openai.baseUrl);
     expect(screen.getByTestId('asr-model-input')).toHaveValue(ASR_PRESET_DEFAULTS.openai.model);
@@ -151,17 +166,17 @@ describe('AsrSettings', () => {
   it('shows the provider console link for siliconflow and bailian and opens it externally', async () => {
     getConfigMock.mockResolvedValue(configResult({ config: { preset: 'siliconflow', baseUrl: 'https://api.siliconflow.cn/v1', model: 'Qwen/Qwen3-ASR-1.7B' } }));
 
-    renderAsrSettings();
+    await renderAsrSettings();
 
     const link = await screen.findByTestId('asr-api-key-link');
     expect(link).toHaveTextContent('Get API key');
     fireEvent.click(link);
     expect(openExternalMock).toHaveBeenCalledWith('https://cloud.siliconflow.cn/me/account/ak');
 
-    fireEvent.change(screen.getByTestId('asr-preset-select'), { target: { value: 'openai' } });
+    await selectChoice(screen.getByTestId('asr-preset-select'), 'openai');
     expect(screen.queryByTestId('asr-api-key-link')).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByTestId('asr-protocol-select'), { target: { value: 'chat' } });
+    await selectChoice(screen.getByTestId('asr-protocol-select'), 'chat');
     fireEvent.click(screen.getByTestId('asr-api-key-link'));
     expect(openExternalMock).toHaveBeenCalledWith('https://bailian.console.aliyun.com/?apiKey=1');
   });
@@ -169,28 +184,27 @@ describe('AsrSettings', () => {
   it('renders the language select with auto-detect plus zh and en options', async () => {
     getConfigMock.mockResolvedValue({ configured: false, config: null, hasApiKey: false });
 
-    renderAsrSettings();
+    await renderAsrSettings();
 
     const languageSelect = await screen.findByTestId('asr-language-input');
     expect(languageSelect).toHaveValue('');
-    expect(languageSelect.children).toHaveLength(3);
-    expect(languageSelect.children[0]).toHaveTextContent('Auto-detect (recommended)');
-    expect(languageSelect.children[1]).toHaveTextContent('zh');
-    expect(languageSelect.children[2]).toHaveTextContent('en');
+    fireEvent.keyDown(languageSelect, { key: 'ArrowDown' });
+    expect((await screen.findAllByRole('option')).map(option => option.textContent)).toEqual(['Auto-detect (recommended)', 'zh', 'en']);
+    fireEvent.keyDown(document.body, { key: 'Escape' });
   });
 
   it('overwrites base URL and model with the preset defaults when switching presets', async () => {
     getConfigMock.mockResolvedValue(configResult());
 
-    renderAsrSettings();
+    await renderAsrSettings();
     await screen.findByTestId('asr-base-url-input');
 
-    fireEvent.change(screen.getByTestId('asr-preset-select'), { target: { value: 'siliconflow' } });
+    await selectChoice(screen.getByTestId('asr-preset-select'), 'siliconflow');
 
     expect(screen.getByTestId('asr-base-url-input')).toHaveValue(ASR_PRESET_DEFAULTS.siliconflow.baseUrl);
     expect(screen.getByTestId('asr-model-input')).toHaveValue(ASR_PRESET_DEFAULTS.siliconflow.model);
 
-    fireEvent.change(screen.getByTestId('asr-preset-select'), { target: { value: 'groq' } });
+    await selectChoice(screen.getByTestId('asr-preset-select'), 'groq');
 
     expect(screen.getByTestId('asr-base-url-input')).toHaveValue(ASR_PRESET_DEFAULTS.groq.baseUrl);
     expect(screen.getByTestId('asr-model-input')).toHaveValue(ASR_PRESET_DEFAULTS.groq.model);
@@ -199,12 +213,12 @@ describe('AsrSettings', () => {
   it('shows the appended transcriptions suffix for standard presets but not for custom', async () => {
     getConfigMock.mockResolvedValue(configResult());
 
-    renderAsrSettings();
+    await renderAsrSettings();
     await screen.findByTestId('asr-base-url-input');
 
     expect(screen.getByTestId('asr-base-url-suffix')).toHaveTextContent('/audio/transcriptions');
 
-    fireEvent.change(screen.getByTestId('asr-preset-select'), { target: { value: 'custom' } });
+    await selectChoice(screen.getByTestId('asr-preset-select'), 'custom');
 
     expect(screen.queryByTestId('asr-base-url-suffix')).not.toBeInTheDocument();
     expect(screen.getByTestId('asr-base-url-input')).toHaveAttribute(
@@ -212,25 +226,26 @@ describe('AsrSettings', () => {
       'https://api.example.com/v1/audio/transcriptions',
     );
 
-    fireEvent.change(screen.getByTestId('asr-preset-select'), { target: { value: 'openai' } });
+    await selectChoice(screen.getByTestId('asr-preset-select'), 'openai');
 
     expect(screen.getByTestId('asr-base-url-suffix')).toBeInTheDocument();
   });
 
-  it('switching to the chat protocol offers bailian and custom and prefills the bailian defaults', async () => {
+  it('switching protocols selects a matching preset while all provider presets remain discoverable', async () => {
     getConfigMock.mockResolvedValue(configResult());
 
-    renderAsrSettings();
+    await renderAsrSettings();
     await screen.findByTestId('asr-base-url-input');
 
     expect(screen.getByTestId('asr-protocol-select')).toHaveValue('transcriptions');
 
-    fireEvent.change(screen.getByTestId('asr-protocol-select'), { target: { value: 'chat' } });
+    await selectChoice(screen.getByTestId('asr-protocol-select'), 'chat');
 
     const presetSelect = screen.getByTestId('asr-preset-select');
     expect(presetSelect).toHaveValue('bailian');
-    expect(Array.from(presetSelect.children).map((option) => option.getAttribute('value')))
-      .toEqual(['bailian', 'custom']);
+    fireEvent.keyDown(presetSelect, { key: 'ArrowDown' });
+    expect((await screen.findAllByRole('option')).map(option => option.getAttribute('data-value'))).toEqual(['openai', 'groq', 'siliconflow', 'bailian', 'custom']);
+    fireEvent.keyDown(document.body, { key: 'Escape' });
     expect(screen.getByTestId('asr-base-url-input')).toHaveValue(
       'https://<WorkspaceId>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
     );
@@ -241,7 +256,7 @@ describe('AsrSettings', () => {
     expect(screen.getByTestId('asr-bailian-workspace-hint')).toBeInTheDocument();
     expect(screen.getByTestId('asr-api-key-link')).toHaveAttribute('title', 'Open the provider console to get an API key');
 
-    fireEvent.change(presetSelect, { target: { value: 'custom' } });
+    await selectChoice(presetSelect, 'custom');
 
     expect(screen.queryByTestId('asr-bailian-dialect-hint')).not.toBeInTheDocument();
     expect(screen.queryByTestId('asr-bailian-workspace-hint')).not.toBeInTheDocument();
@@ -259,7 +274,7 @@ describe('AsrSettings', () => {
       hasApiKey: true,
     });
 
-    renderAsrSettings();
+    await renderAsrSettings();
     await screen.findByTestId('asr-base-url-input');
 
     expect(screen.getByTestId('asr-protocol-select')).toHaveValue('chat');
@@ -283,7 +298,7 @@ describe('AsrSettings', () => {
   it('blocks saving when the model is empty and shows an error toast', async () => {
     getConfigMock.mockResolvedValue(configResult());
 
-    renderAsrSettings();
+    await renderAsrSettings();
     await screen.findByTestId('asr-model-input');
 
     fireEvent.change(screen.getByTestId('asr-model-input'), { target: { value: '  ' } });
@@ -297,7 +312,7 @@ describe('AsrSettings', () => {
   it('blocks saving when the base URL is not http(s) and shows an error toast', async () => {
     getConfigMock.mockResolvedValue({ configured: false, config: null, hasApiKey: false });
 
-    renderAsrSettings();
+    await renderAsrSettings();
     await screen.findByTestId('asr-base-url-input');
 
     fireEvent.change(screen.getByTestId('asr-base-url-input'), { target: { value: 'ftp://example.com' } });
@@ -310,12 +325,12 @@ describe('AsrSettings', () => {
   it('saves the entered values and shows the success toast', async () => {
     getConfigMock.mockResolvedValue(configResult());
 
-    renderAsrSettings();
+    await renderAsrSettings();
     await screen.findByTestId('asr-base-url-input');
 
     fireEvent.change(screen.getByTestId('asr-base-url-input'), { target: { value: 'https://example.com/v1' } });
     fireEvent.change(screen.getByTestId('asr-model-input'), { target: { value: 'whisper-1' } });
-    fireEvent.change(screen.getByTestId('asr-language-input'), { target: { value: 'zh' } });
+    await selectChoice(screen.getByTestId('asr-language-input'), 'zh');
     fireEvent.click(screen.getByTestId('asr-save-button'));
 
     await waitFor(() => {
@@ -331,7 +346,7 @@ describe('AsrSettings', () => {
   it('passes undefined as the api key when the field stays untouched', async () => {
     getConfigMock.mockResolvedValue(configResult());
 
-    renderAsrSettings();
+    await renderAsrSettings();
     await screen.findByTestId('asr-base-url-input');
 
     fireEvent.click(screen.getByTestId('asr-save-button'));
@@ -348,7 +363,7 @@ describe('AsrSettings', () => {
   it('passes the typed api key through to saveConfig', async () => {
     getConfigMock.mockResolvedValue(configResult());
 
-    renderAsrSettings();
+    await renderAsrSettings();
     await screen.findByTestId('asr-base-url-input');
 
     fireEvent.change(screen.getByTestId('asr-api-key-input'), { target: { value: ' sk-new-key ' } });
@@ -367,7 +382,7 @@ describe('AsrSettings', () => {
   it('maps a serialized ASR save rejection to the generic failure toast', async () => {
     getConfigMock.mockResolvedValue(configResult());
 
-    renderAsrSettings();
+    await renderAsrSettings();
     await screen.findByTestId('asr-base-url-input');
 
     saveConfigMock.mockRejectedValue(new Error('ASR:INVALID_INPUT:Invalid URL'));
@@ -379,3 +394,11 @@ describe('AsrSettings', () => {
     expect(toastSuccessMock).not.toHaveBeenCalled();
   });
 });
+
+async function selectChoice(trigger: HTMLElement, value: string) {
+  fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+  const options = await screen.findAllByRole('option');
+  const option = options.find(item => item.getAttribute('data-value') === value);
+  if (!option) throw new Error(`Missing option ${value}`);
+  fireEvent.keyDown(option, { key: 'Enter' });
+}

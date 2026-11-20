@@ -140,6 +140,7 @@ test.describe('ClawX chat Markdown styling', () => {
       }
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
+      await page.getByTestId(`sidebar-session-${SESSION_KEY}`).click();
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
       await emitAcpSessionUpdates(app, seededUpdates);
 
@@ -153,7 +154,7 @@ test.describe('ClawX chat Markdown styling', () => {
         root.classList.add('light');
       });
 
-      const userBubble = page.getByTestId('acp-user-message').filter({ hasText: 'Please' }).locator('div.rounded-2xl.bg-brand').first();
+      const userBubble = page.getByTestId('acp-user-message').filter({ hasText: 'Please' }).locator('div.rounded-2xl.bg-message-user').first();
       await expect(userBubble).toBeVisible({ timeout: 30_000 });
       await expect(userBubble.locator('p')).toHaveText('**Please** render `this input` literally.\n# Not a heading');
       await expect(userBubble.locator('strong, code, h1')).toHaveCount(0);

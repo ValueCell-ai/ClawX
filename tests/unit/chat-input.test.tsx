@@ -1,3 +1,5 @@
+import { getNearestEditorFromDOMNode, KEY_BACKSPACE_COMMAND } from 'lexical';
+import { fillComposer, composerText, selectComposer } from './composer-test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ChatInput } from '@/pages/Chat/ChatInput';
@@ -117,8 +119,8 @@ function translate(key: string, vars?: Record<string, unknown>): string {
       return 'Loading skills...';
     case 'composer.skillEmpty':
       return 'No matching skills found';
-    case 'composer.pickAgent':
-      return 'Choose agent';
+    case 'composer.executionAgent':
+      return `Execution agent: ${String(vars?.agent ?? '')}`;
     case 'composer.clearTarget':
       return 'Clear target agent';
     case 'composer.targetChip':
@@ -198,10 +200,10 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-function renderChatInput(onSend = vi.fn(), contextUsage?: unknown) {
+function renderChatInput(onSend = vi.fn(), contextUsage?: unknown, onSelectAgent = vi.fn()) {
   return render(
     <TooltipProvider delayDuration={0}>
-      <ChatInput onSend={onSend} contextUsage={contextUsage} />
+      <ChatInput onSend={onSend} contextUsage={contextUsage} onSelectAgent={onSelectAgent} />
     </TooltipProvider>,
   );
 }
@@ -270,14 +272,14 @@ function configureAgentAndModelPickers() {
   vi.mocked(hostApiFetchMock).mockResolvedValue({ success: true, skills: [] });
 }
 
-describe('ChatInput agent targeting', () => {
+describe('ChatInput execution agent and composer', () => {
   beforeEach(() => {
     agentsState.agents = [];
     agentsState.defaultModelRef = null;
     agentsState.updateAgentModel.mockReset();
     modelApi.getModel.mockReset().mockResolvedValue({ modelRef: null });
     modelApi.setModel.mockReset().mockImplementation(async (_key, modelRef) => ({ modelRef }));
-    useComposerDraftStore.setState({ drafts: {}, modelRefs: {} });
+    useComposerDraftStore.setState({ drafts: {}, editorDrafts: {}, attachments: {}, modelRefs: {} });
     chatState.currentAgentId = 'main';
     chatState.currentSessionKey = 'agent:main:session-1';
     chatState.sessions = [{ key: 'agent:main:session-1' }];
@@ -307,34 +309,33 @@ describe('ChatInput agent targeting', () => {
     expect(await screen.findByRole('tooltip')).toHaveTextContent('25% context used: 25,000 / 100,000 tokens');
   });
 
-  it('recomputes the context total and percentage after switching models', async () => {
+  it('switches the task model without changing the Agent and accepts refreshed native usage', async () => {
     configureAgentAndModelPickers();
-    modelApi.setModel.mockResolvedValue({ modelRef: 'custom-bbbbbbbb/gpt-b', contextWindow: 272_000 });
+    modelApi.setModel.mockImplementation(async (_key, modelRef) => {
+      const value = { modelRef, contextWindow: 272_000 };
+      modelApi.getModel.mockResolvedValue(value);
+      return value;
+    });
     const contextUsage = { used: 68_000, size: 400_000 };
-    const { rerender } = renderChatInput(vi.fn(), contextUsage);
+    const { rerender } = render(<TooltipProvider delayDuration={0}><ChatInput draftKey={chatState.currentSessionKey} onSend={vi.fn()} contextUsage={contextUsage} /></TooltipProvider>);
 
     expect(screen.getByRole('progressbar', {
       name: '17% context used: 68,000 / 400,000 tokens',
     })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId('chat-model-picker-button'));
-    fireEvent.click(screen.getByRole('button', { name: 'gpt-b Beta' }));
+    fireEvent.keyDown(screen.getByTestId('chat-model-picker-button'), { key: 'ArrowDown' });
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'gpt-b', exact: true }));
     await waitFor(() => {
       expect(modelApi.setModel).toHaveBeenCalledWith('agent:main:session-1', 'custom-bbbbbbbb/gpt-b');
     });
-    rerender(
-      <TooltipProvider delayDuration={0}>
-        <ChatInput onSend={vi.fn()} contextUsage={contextUsage} />
-      </TooltipProvider>,
-    );
-
-    expect(screen.getByRole('progressbar', {
+    expect(agentsState.updateAgentModel).not.toHaveBeenCalled();
+    expect(await screen.findByRole('progressbar', {
       name: '25% context used: 68,000 / 272,000 tokens',
     })).toBeInTheDocument();
 
     rerender(
       <TooltipProvider delayDuration={0}>
-        <ChatInput onSend={vi.fn()} contextUsage={{ used: 68_000, size: 260_000 }} />
+        <ChatInput draftKey={chatState.currentSessionKey} onSend={vi.fn()} contextUsage={{ used: 68_000, size: 260_000 }} />
       </TooltipProvider>,
     );
     expect(screen.getByRole('progressbar', {
@@ -352,8 +353,8 @@ describe('ChatInput agent targeting', () => {
     const { rerender } = renderChatInput();
     const picker = screen.getByTestId('chat-model-picker-button');
     await waitFor(() => expect(picker).toHaveTextContent('gpt-a'));
-    fireEvent.click(picker);
-    fireEvent.click(screen.getByRole('button', { name: 'gpt-b Beta' }));
+    fireEvent.keyDown(picker, { key: 'ArrowDown' });
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'gpt-b', exact: true }));
     expect(modelApi.setModel).toHaveBeenCalledWith(first, 'custom-bbbbbbbb/gpt-b');
     chatState.currentSessionKey = sibling;
     rerender(<TooltipProvider><ChatInput onSend={vi.fn()} /></TooltipProvider>);
@@ -365,24 +366,24 @@ describe('ChatInput agent targeting', () => {
   });
 
   it.each([
-    { effectiveModelRef: undefined, label: 'gpt-a', option: 'gpt-a Alpha', modelRef: 'custom-aaaaaaaa/gpt-a' },
-    { effectiveModelRef: 'custom-bbbbbbbb/gpt-b', label: 'gpt-b', option: 'gpt-b Beta', modelRef: 'custom-bbbbbbbb/gpt-b' },
-  ])('shows and pins the concrete inherited model ($label)', async ({ effectiveModelRef, label, option, modelRef }) => {
+    { effectiveModelRef: undefined, label: 'gpt-a', modelRef: 'custom-aaaaaaaa/gpt-a' },
+    { effectiveModelRef: 'custom-bbbbbbbb/gpt-b', label: 'gpt-b', modelRef: 'custom-bbbbbbbb/gpt-b' },
+  ])('shows and pins the concrete inherited model ($label)', async ({ effectiveModelRef, label, modelRef }) => {
     configureAgentAndModelPickers();
     modelApi.getModel.mockResolvedValue({ modelRef: null, effectiveModelRef });
     renderChatInput();
     const picker = screen.getByTestId('chat-model-picker-button');
     await waitFor(() => expect(picker).toHaveTextContent(label));
-    fireEvent.click(picker);
+    fireEvent.keyDown(picker, { key: 'ArrowDown' });
     expect(screen.queryByTestId('chat-model-picker-follow-agent')).not.toBeInTheDocument();
-    const selected = screen.getByRole('button', { name: option });
-    expect(selected).toHaveAttribute('aria-pressed', 'true');
+    const selected = screen.getByRole('menuitemradio', { name: label, exact: true });
+    expect(selected).toHaveAttribute('aria-checked', 'true');
     expect(modelApi.setModel).not.toHaveBeenCalled();
     fireEvent.click(selected);
     await waitFor(() => expect(modelApi.setModel).toHaveBeenCalledWith(chatState.currentSessionKey, modelRef));
     await waitFor(() => expect(picker).toBeEnabled());
-    fireEvent.click(picker);
-    expect(screen.getByRole('button', { name: option })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.keyDown(picker, { key: 'ArrowDown' });
+    expect(screen.getByRole('menuitemradio', { name: label, exact: true })).toHaveAttribute('aria-checked', 'true');
     expect(agentsState.updateAgentModel).not.toHaveBeenCalled();
   });
 
@@ -394,9 +395,9 @@ describe('ChatInput agent targeting', () => {
     const picker = screen.getByTestId('chat-model-picker-button');
     await waitFor(() => expect(modelApi.getModel).toHaveBeenCalled());
     expect(picker).toHaveTextContent('Choose model');
-    fireEvent.click(picker);
+    fireEvent.keyDown(picker, { key: 'ArrowDown' });
     expect(screen.queryByTestId('chat-model-picker-follow-agent')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { pressed: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole('menuitemradio', { checked: true })).not.toBeInTheDocument();
     expect(modelApi.setModel).not.toHaveBeenCalled();
   });
 
@@ -406,13 +407,14 @@ describe('ChatInput agent targeting', () => {
     const { rerender } = renderChatInput();
     const picker = await screen.findByTestId('chat-model-picker-button');
     await waitFor(() => expect(picker).toHaveTextContent('old-model'));
-    fireEvent.click(picker);
+    fireEvent.keyDown(picker, { key: 'ArrowDown' });
     expect(screen.getByTestId('chat-model-picker-menu')).toBeInTheDocument();
     providersState.accounts = [];
     providersState.statuses = [];
     rerender(<TooltipProvider><ChatInput onSend={vi.fn()} /></TooltipProvider>);
     expect(picker).toHaveTextContent('old-model');
     expect(picker).toBeDisabled();
+    expect(screen.queryByTestId('chat-model-picker-menu')).not.toBeInTheDocument();
     fireEvent.click(picker);
     expect(screen.queryByTestId('chat-model-picker-menu')).not.toBeInTheDocument();
     expect(modelApi.setModel).not.toHaveBeenCalled();
@@ -422,16 +424,21 @@ describe('ChatInput agent targeting', () => {
     configureAgentAndModelPickers();
     modelApi.getModel.mockResolvedValue({ modelRef: 'custom-bbbbbbbb/gpt-b' });
     modelApi.setModel.mockRejectedValueOnce(new Error('unavailable'));
-    renderChatInput();
+    const send = vi.fn();
+    renderChatInput(send);
     const picker = screen.getByTestId('chat-model-picker-button');
     await waitFor(() => expect(picker).toHaveTextContent('gpt-b'));
-    fireEvent.click(picker);
-    fireEvent.click(screen.getByRole('button', { name: 'gpt-a Alpha' }));
+    fireEvent.keyDown(picker, { key: 'ArrowDown' });
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'gpt-a', exact: true }));
     await waitFor(() => expect(toastErrorMock).toHaveBeenCalled());
     expect(picker).toHaveTextContent('gpt-b');
-    fireEvent.click(picker);
-    expect(screen.getByRole('button', { name: 'gpt-b Beta' })).toHaveAttribute('aria-pressed', 'true');
-    fireEvent.click(screen.getByRole('button', { name: 'gpt-a Alpha' }));
+    fillComposer(screen.getByRole('textbox'), 'Keep this draft');
+    fireEvent.click(screen.getByTitle('Send'));
+    expect(send).not.toHaveBeenCalled();
+    expect(composerText(screen.getByRole('textbox'))).toBe('Keep this draft');
+    fireEvent.keyDown(picker, { key: 'ArrowDown' });
+    expect(screen.getByRole('menuitemradio', { name: 'gpt-b', exact: true })).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'gpt-a', exact: true }));
     await waitFor(() => expect(picker).toHaveTextContent('gpt-a'));
     expect(modelApi.setModel).toHaveBeenLastCalledWith(chatState.currentSessionKey, 'custom-aaaaaaaa/gpt-a');
   });
@@ -440,10 +447,12 @@ describe('ChatInput agent targeting', () => {
     configureAgentAndModelPickers();
     modelApi.getModel.mockResolvedValue({ modelRef: null, exists: false });
     modelApi.setModel.mockRejectedValue(new Error('Session no longer exists'));
+    chatState.currentSessionKey = 'agent:main:deleted-session';
+    chatState.sessions = [{ key: chatState.currentSessionKey }];
     renderChatInput();
     await waitFor(() => expect(modelApi.getModel).toHaveBeenCalledWith(chatState.currentSessionKey));
-    fireEvent.click(screen.getByTestId('chat-model-picker-button'));
-    fireEvent.click(screen.getByRole('button', { name: 'gpt-b Beta' }));
+    fireEvent.keyDown(screen.getByTestId('chat-model-picker-button'), { key: 'ArrowDown' });
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'gpt-b', exact: true }));
     await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith('composer.modelSwitchFailed'));
     expect(modelApi.setModel.mock.calls).toEqual([[chatState.currentSessionKey, 'custom-bbbbbbbb/gpt-b']]);
     expect(useComposerDraftStore.getState().modelRefs).toEqual({});
@@ -455,8 +464,8 @@ describe('ChatInput agent targeting', () => {
     chatState.sessions[0].createdLocally = true;
     renderChatInput();
     const picker = screen.getByTestId('chat-model-picker-button');
-    fireEvent.click(picker);
-    fireEvent.click(screen.getByRole('button', { name: 'gpt-b Beta' }));
+    fireEvent.keyDown(picker, { key: 'ArrowDown' });
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'gpt-b', exact: true }));
     await waitFor(() => expect(picker).toHaveTextContent('gpt-b'));
     expect(useComposerDraftStore.getState().modelRefs[chatState.currentSessionKey]).toBe('custom-bbbbbbbb/gpt-b');
     expect(modelApi.getModel).not.toHaveBeenCalled();
@@ -482,16 +491,16 @@ describe('ChatInput agent targeting', () => {
       renderChatInput(send);
       const picker = screen.getByTestId('chat-model-picker-button');
       expect(picker).toHaveTextContent('gpt-a');
-      fireEvent.click(screen.getByTitle('Choose agent'));
-      fireEvent.click(screen.getByText('Research'));
+      fireEvent.keyDown(screen.getByTestId('chat-composer-agent'), { key: 'ArrowDown' });
+      fireEvent.click(screen.getByTestId('chat-agent-target-research'));
       await waitFor(() => expect(picker).toHaveTextContent('gpt-b'));
-      fireEvent.click(picker);
-      fireEvent.click(screen.getByRole('button', { name: 'gpt-a Alpha' }));
+      fireEvent.keyDown(picker, { key: 'ArrowDown' });
+      fireEvent.click(screen.getByRole('menuitemradio', { name: 'gpt-a', exact: true }));
       await waitFor(() => expect(picker).toHaveTextContent('gpt-a'));
       expect(modelApi.setModel.mock.calls).toEqual([[target, pickedModel]]);
       expect(useComposerDraftStore.getState().modelRefs).toEqual({});
 
-      fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Check this' } });
+      fillComposer(screen.getByRole('textbox'), 'Check this');
       fireEvent.click(screen.getByTitle('Send'));
       await waitFor(() => expect(send).toHaveBeenCalledWith('Check this', undefined, 'research'));
       expect(guard).toHaveBeenCalledWith(expect.objectContaining({ sessionKey: target, sessionModelRef: pickedModel }));
@@ -517,13 +526,13 @@ describe('ChatInput agent targeting', () => {
     renderChatInput();
     const picker = screen.getByTestId('chat-model-picker-button');
     await waitFor(() => expect(picker).toHaveTextContent('gpt-b'));
-    fireEvent.click(screen.getByTitle('Choose agent'));
-    fireEvent.click(screen.getByText('Research'));
+    fireEvent.keyDown(screen.getByTestId('chat-composer-agent'), { key: 'ArrowDown' });
+    fireEvent.click(screen.getByTestId('chat-agent-target-research'));
     if (!listed) await waitFor(() => expect(modelApi.getModel).toHaveBeenCalledWith(target));
-    fireEvent.click(picker);
-    await waitFor(() => expect(screen.getByRole('button', { name: 'gpt-b Beta' })).toHaveAttribute('aria-pressed', 'true'));
+    fireEvent.keyDown(picker, { key: 'ArrowDown' });
+    await waitFor(() => expect(screen.getByRole('menuitemradio', { name: 'gpt-b', exact: true })).toHaveAttribute('aria-checked', 'true'));
     expect(screen.queryByTestId('chat-model-picker-follow-agent')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'gpt-a Alpha' }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'gpt-a', exact: true }));
     await waitFor(() => expect(picker).toHaveTextContent('gpt-a'));
     expect(useComposerDraftStore.getState().modelRefs).toEqual({ [target]: 'custom-aaaaaaaa/gpt-a' });
     expect(modelApi.setModel).not.toHaveBeenCalled();
@@ -531,8 +540,8 @@ describe('ChatInput agent targeting', () => {
 
     fireEvent.click(screen.getByTitle('Clear target agent'));
     await waitFor(() => expect(picker).toHaveTextContent('gpt-b'));
-    fireEvent.click(screen.getByTitle('Choose agent'));
-    fireEvent.click(screen.getByText('Research'));
+    fireEvent.keyDown(screen.getByTestId('chat-composer-agent'), { key: 'ArrowDown' });
+    fireEvent.click(screen.getByTestId('chat-agent-target-research'));
     await waitFor(() => expect(picker).toHaveTextContent('gpt-a'));
   });
 
@@ -549,16 +558,16 @@ describe('ChatInput agent targeting', () => {
     try {
       const send = vi.fn();
       renderChatInput(send);
-      fireEvent.click(screen.getByTitle('Choose agent'));
-      fireEvent.click(screen.getByText('Research'));
-      fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Check this' } });
+      fireEvent.keyDown(screen.getByTestId('chat-composer-agent'), { key: 'ArrowDown' });
+      fireEvent.click(screen.getByTestId('chat-agent-target-research'));
+      fillComposer(screen.getByRole('textbox'), 'Check this');
       fireEvent.click(screen.getByTitle('Send'));
       await waitFor(() => expect(guard).toHaveBeenCalledWith(expect.objectContaining({
         sessionKey: target, targetAgentId: 'research', sessionModelRef: pin, sessionEffectiveModelRef: pin,
       })));
       expect(modelApi.getModel).toHaveBeenCalledWith(target);
       expect(send).not.toHaveBeenCalled();
-      expect(screen.getByRole('textbox')).toHaveValue('Check this');
+      expect(composerText(screen.getByRole('textbox'))).toBe('Check this');
     } finally {
       hasGuard.mockRestore();
       guard.mockRestore();
@@ -738,7 +747,7 @@ describe('ChatInput agent targeting', () => {
     expect(screen.queryByTestId('chat-composer-working-indicator')).not.toBeInTheDocument();
     const input = screen.getByTestId('chat-composer-input');
     expect(input).not.toBeDisabled();
-    fireEvent.change(input, { target: { value: 'Queue this after the image' } });
+    fillComposer(input, 'Queue this after the image');
     expect(screen.getByTestId('chat-composer-send')).toBeDisabled();
     const voice = screen.getByTestId('chat-composer-voice');
     const send = screen.getByTestId('chat-composer-send');
@@ -761,8 +770,8 @@ describe('ChatInput agent targeting', () => {
     expect(screen.queryByTestId('microphone-permission-dialog')).not.toBeInTheDocument();
     const input = screen.getByTestId('chat-composer-input');
     expect(input).not.toBeDisabled();
-    fireEvent.change(input, { target: { value: 'still editable' } });
-    expect(input).toHaveValue('still editable');
+    fillComposer(input, 'still editable');
+    expect(composerText(input)).toBe('still editable');
   });
 
   it('keeps the existing thinking indicator while sending even when image generation has started', () => {
@@ -779,7 +788,7 @@ describe('ChatInput agent targeting', () => {
     expect(screen.queryByTestId('chat-composer-image-generation-indicator')).not.toBeInTheDocument();
   });
 
-  it('never clears an Agent override when the provider list changes', async () => {
+  it('preserves an unavailable Agent override after the provider snapshot resolves', async () => {
     let resolveSnapshot!: () => void;
     agentsState.updateAgentModel.mockResolvedValue(undefined);
     providersState.refreshProviderSnapshot.mockReturnValue(new Promise<void>((resolve) => {
@@ -847,16 +856,17 @@ describe('ChatInput agent targeting', () => {
     expect(workspaceSelector.compareDocumentPosition(gatewayStatus) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('places context usage before the gateway status in the composer footer', () => {
+  it('keeps context usage in model controls and workspace status in the compact footer', () => {
     renderChatInput(vi.fn(), { used: 25_000, size: 100_000 });
 
     const indicator = screen.getByTestId('chat-composer-context-usage');
     const footer = screen.getByTestId('chat-composer-footer');
     const gatewayStatus = screen.getByTestId('chat-composer-gateway-status');
 
-    expect(footer).toContainElement(indicator);
+    expect(screen.getByTestId('chat-composer-model-controls')).toContainElement(indicator);
+    expect(footer).not.toContainElement(indicator);
     expect(footer).toContainElement(gatewayStatus);
-    expect(screen.getByTestId('chat-composer-box')).not.toContainElement(indicator);
+    expect(screen.getByTestId('chat-composer-box')).toContainElement(indicator);
     expect(indicator.compareDocumentPosition(gatewayStatus) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
@@ -879,7 +889,7 @@ describe('ChatInput agent targeting', () => {
     expect(button).toHaveClass('border-transparent');
     expect(button).not.toHaveClass('border-black/10');
 
-    fireEvent.click(button);
+    fireEvent.keyDown(button, { key: 'ArrowDown' });
 
     expect(screen.queryByTestId('chat-workspace-menu')).not.toBeInTheDocument();
   });
@@ -903,7 +913,7 @@ describe('ChatInput agent targeting', () => {
       </TooltipProvider>,
     );
 
-    fireEvent.click(screen.getByTestId('chat-workspace-selector'));
+    fireEvent.keyDown(screen.getByTestId('chat-workspace-selector'), { key: 'ArrowDown' });
     expect(screen.getByTestId('chat-workspace-menu')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('chat-workspace-choose-other'));
 
@@ -918,7 +928,7 @@ describe('ChatInput agent targeting', () => {
     expect(onSelectWorkspace).toHaveBeenCalledWith('/Users/alex/next-project');
   });
 
-  it('uses disclosure semantics for workspace options instead of menu roles', () => {
+  it('uses Radix menu and radio semantics for workspace options', () => {
     render(
       <TooltipProvider>
         <ChatInput
@@ -932,13 +942,13 @@ describe('ChatInput agent targeting', () => {
     );
 
     const button = screen.getByTestId('chat-workspace-selector');
-    fireEvent.click(button);
+    fireEvent.keyDown(button, { key: 'ArrowDown' });
 
     expect(button).toHaveAttribute('aria-expanded', 'true');
-    expect(button).not.toHaveAttribute('aria-haspopup', 'menu');
-    expect(screen.getByTestId('chat-workspace-menu')).not.toHaveAttribute('role', 'menu');
-    expect(screen.getByTestId('chat-workspace-default')).not.toHaveAttribute('role', 'menuitem');
-    expect(screen.getByTestId('chat-workspace-choose-other')).not.toHaveAttribute('role', 'menuitem');
+    expect(button).toHaveAttribute('aria-haspopup', 'menu');
+    expect(screen.getByTestId('chat-workspace-menu')).toHaveAttribute('role', 'menu');
+    expect(screen.getByTestId('chat-workspace-default')).toHaveAttribute('role', 'menuitemradio');
+    expect(screen.getByTestId('chat-workspace-choose-other')).toHaveAttribute('role', 'menuitem');
   });
 
   it('closes the workspace menu with Escape', () => {
@@ -955,7 +965,7 @@ describe('ChatInput agent targeting', () => {
     );
 
     const button = screen.getByTestId('chat-workspace-selector');
-    fireEvent.click(button);
+    fireEvent.keyDown(button, { key: 'ArrowDown' });
     expect(screen.getByTestId('chat-workspace-menu')).toBeInTheDocument();
 
     fireEvent.keyDown(button, { key: 'Escape' });
@@ -978,7 +988,7 @@ describe('ChatInput agent targeting', () => {
     );
 
     const button = screen.getByTestId('chat-workspace-selector');
-    fireEvent.click(button);
+    fireEvent.keyDown(button, { key: 'ArrowDown' });
     expect(screen.getByTestId('chat-workspace-menu')).toBeInTheDocument();
 
     fireEvent.keyDown(document, { key: 'Escape' });
@@ -1000,7 +1010,7 @@ describe('ChatInput agent targeting', () => {
       </TooltipProvider>,
     );
 
-    fireEvent.click(screen.getByTestId('chat-workspace-selector'));
+    fireEvent.keyDown(screen.getByTestId('chat-workspace-selector'), { key: 'ArrowDown' });
 
     const ancestorClasses: string[] = [];
     let element = screen.getByTestId('chat-workspace-menu').parentElement;
@@ -1026,7 +1036,7 @@ describe('ChatInput agent targeting', () => {
       </TooltipProvider>,
     );
 
-    fireEvent.click(screen.getByTestId('chat-workspace-selector'));
+    fireEvent.keyDown(screen.getByTestId('chat-workspace-selector'), { key: 'ArrowDown' });
     expect(screen.getByTestId('chat-workspace-menu')).toBeInTheDocument();
 
     rerender(
@@ -1074,7 +1084,7 @@ describe('ChatInput agent targeting', () => {
       </TooltipProvider>,
     );
 
-    fireEvent.click(screen.getByTestId('chat-workspace-selector'));
+    fireEvent.keyDown(screen.getByTestId('chat-workspace-selector'), { key: 'ArrowDown' });
     fireEvent.click(screen.getByTestId('chat-workspace-default'));
 
     expect(onSelectWorkspace).toHaveBeenCalledWith('~/.openclaw/workspace');
@@ -1082,7 +1092,7 @@ describe('ChatInput agent targeting', () => {
     expect(screen.queryByTestId('chat-workspace-menu')).not.toBeInTheDocument();
   });
 
-  it('closes the workspace menu on outside click', () => {
+  it('closes the workspace menu on outside click', async () => {
     render(
       <TooltipProvider>
         <ChatInput
@@ -1095,12 +1105,13 @@ describe('ChatInput agent targeting', () => {
       </TooltipProvider>,
     );
 
-    fireEvent.click(screen.getByTestId('chat-workspace-selector'));
+    fireEvent.keyDown(screen.getByTestId('chat-workspace-selector'), { key: 'ArrowDown' });
     expect(screen.getByTestId('chat-workspace-menu')).toBeInTheDocument();
 
-    fireEvent.mouseDown(document.body);
-
-    expect(screen.queryByTestId('chat-workspace-menu')).not.toBeInTheDocument();
+    await waitFor(() => {
+      fireEvent.pointerDown(document.body);
+      expect(screen.queryByTestId('chat-workspace-menu')).not.toBeInTheDocument();
+    });
   });
 
   it('keeps composer popovers from overlapping the workspace menu', async () => {
@@ -1142,15 +1153,15 @@ describe('ChatInput agent targeting', () => {
       </TooltipProvider>,
     );
 
-    fireEvent.click(screen.getByTestId('chat-workspace-selector'));
+    fireEvent.keyDown(screen.getByTestId('chat-workspace-selector'), { key: 'ArrowDown' });
     expect(screen.getByTestId('chat-workspace-menu')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId('chat-composer-agent'));
+    fireEvent.keyDown(screen.getByTestId('chat-composer-agent'), { key: 'ArrowDown' });
     expect(screen.queryByTestId('chat-workspace-menu')).not.toBeInTheDocument();
-    expect(screen.getByText('Research')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-agent-option-research')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId('chat-workspace-selector'));
-    expect(screen.queryByText('Research')).not.toBeInTheDocument();
+    fireEvent.keyDown(screen.getByTestId('chat-workspace-selector'), { key: 'ArrowDown' });
+    expect(screen.queryByTestId('chat-agent-option-research')).not.toBeInTheDocument();
     expect(screen.getByTestId('chat-workspace-menu')).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('chat-composer-skill'));
@@ -1159,7 +1170,7 @@ describe('ChatInput agent targeting', () => {
     expect(await screen.findByText('No matching skills found')).toBeInTheDocument();
   });
 
-  it('shows only the model id on the composer and a muted provider name in the menu', async () => {
+  it('shows provider headings once and only model ids in their rows', async () => {
     configureAgentAndModelPickers();
 
     renderChatInput();
@@ -1169,12 +1180,13 @@ describe('ChatInput agent targeting', () => {
     expect(pickerButton).not.toHaveTextContent('Alpha');
     expect(pickerButton).not.toHaveTextContent('(');
 
-    fireEvent.click(pickerButton);
-    const option = screen.getByRole('button', { name: 'gpt-b Beta' });
+    fireEvent.keyDown(pickerButton, { key: 'ArrowDown' });
+    const option = screen.getByRole('menuitemradio', { name: 'gpt-b', exact: true });
     expect(option).toHaveTextContent('gpt-b');
-    expect(option).toHaveTextContent('Beta');
+    expect(option).not.toHaveTextContent('Beta');
+    expect(screen.getByRole('group', { name: 'Beta' })).toContainElement(option);
     expect(option).not.toHaveTextContent('(');
-    expect(option.querySelector('.text-muted-foreground')).toHaveTextContent('Beta');
+    expect(screen.getByRole('group', { name: 'Beta' }).querySelector('.text-muted-foreground')).toHaveTextContent('Beta');
   });
 
   it('closes an open model picker when opening the agent picker', () => {
@@ -1182,13 +1194,13 @@ describe('ChatInput agent targeting', () => {
 
     renderChatInput();
 
-    fireEvent.click(screen.getByTestId('chat-model-picker-button'));
+    fireEvent.keyDown(screen.getByTestId('chat-model-picker-button'), { key: 'ArrowDown' });
     expect(screen.getByTestId('chat-model-picker-menu')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId('chat-composer-agent'));
+    fireEvent.keyDown(screen.getByTestId('chat-composer-agent'), { key: 'ArrowDown' });
 
     expect(screen.queryByTestId('chat-model-picker-menu')).not.toBeInTheDocument();
-    expect(screen.getByText('Research')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-agent-option-research')).toBeInTheDocument();
   });
 
   it('closes an open model picker when opening the skill picker', async () => {
@@ -1196,7 +1208,7 @@ describe('ChatInput agent targeting', () => {
 
     renderChatInput();
 
-    fireEvent.click(screen.getByTestId('chat-model-picker-button'));
+    fireEvent.keyDown(screen.getByTestId('chat-model-picker-button'), { key: 'ArrowDown' });
     expect(screen.getByTestId('chat-model-picker-menu')).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('chat-composer-skill'));
@@ -1237,7 +1249,7 @@ describe('ChatInput agent targeting', () => {
       </TooltipProvider>,
     );
 
-    fireEvent.click(screen.getByTestId('chat-workspace-selector'));
+    fireEvent.keyDown(screen.getByTestId('chat-workspace-selector'), { key: 'ArrowDown' });
 
     expect(screen.queryByTestId('chat-workspace-menu')).not.toBeInTheDocument();
     expect(hostApiDialogOpenMock).not.toHaveBeenCalled();
@@ -1263,7 +1275,7 @@ describe('ChatInput agent targeting', () => {
     const button = screen.getByTestId('chat-workspace-selector');
     expect(button).toHaveAttribute('aria-disabled', 'true');
 
-    fireEvent.click(button);
+    fireEvent.keyDown(button, { key: 'ArrowDown' });
 
     expect(screen.queryByTestId('chat-workspace-menu')).not.toBeInTheDocument();
     expect(hostApiDialogOpenMock).not.toHaveBeenCalled();
@@ -1289,7 +1301,7 @@ describe('ChatInput agent targeting', () => {
     const button = screen.getByTestId('chat-workspace-selector');
     expect(button).toHaveAttribute('aria-disabled', 'true');
 
-    fireEvent.click(button);
+    fireEvent.keyDown(button, { key: 'ArrowDown' });
 
     expect(screen.queryByTestId('chat-workspace-menu')).not.toBeInTheDocument();
     expect(hostApiDialogOpenMock).not.toHaveBeenCalled();
@@ -1311,7 +1323,7 @@ describe('ChatInput agent targeting', () => {
     const button = screen.getByTestId('chat-workspace-selector');
     expect(button).toHaveAttribute('aria-disabled', 'true');
 
-    fireEvent.click(button);
+    fireEvent.keyDown(button, { key: 'ArrowDown' });
 
     expect(screen.queryByTestId('chat-workspace-menu')).not.toBeInTheDocument();
     expect(hostApiDialogOpenMock).not.toHaveBeenCalled();
@@ -1333,7 +1345,7 @@ describe('ChatInput agent targeting', () => {
       </TooltipProvider>,
     );
 
-    fireEvent.click(screen.getByTestId('chat-workspace-selector'));
+    fireEvent.keyDown(screen.getByTestId('chat-workspace-selector'), { key: 'ArrowDown' });
     fireEvent.click(screen.getByTestId('chat-workspace-choose-other'));
 
     await waitFor(() => {
@@ -1342,7 +1354,7 @@ describe('ChatInput agent targeting', () => {
     expect(onSelectWorkspace).not.toHaveBeenCalled();
   });
 
-  it('hides the @agent picker when only one agent is configured', () => {
+  it('names the execution agent even when only one agent is configured', () => {
     agentsState.agents = [
       {
         id: 'main',
@@ -1359,10 +1371,21 @@ describe('ChatInput agent targeting', () => {
 
     renderChatInput();
 
-    expect(screen.queryByTitle('Choose agent')).not.toBeInTheDocument();
+    expect(screen.getByTestId('chat-composer-agent')).toHaveTextContent('Main');
   });
 
-  it('uses native textarea rendering when no skill token is present', () => {
+  it('retains the draft when send admission is rejected', async () => {
+    const onSend = vi.fn().mockResolvedValue(false);
+    renderChatInput(onSend);
+    const input = screen.getByTestId('chat-composer-input');
+    fillComposer(input, 'Keep this rejected draft');
+    fireEvent.click(screen.getByTitle('Send'));
+    await waitFor(() => expect(onSend).toHaveBeenCalledWith('Keep this rejected draft', undefined));
+    await waitFor(() => expect(input).toHaveAttribute('contenteditable', 'true'));
+    expect(composerText(input)).toBe('Keep this rejected draft');
+  });
+
+  it('uses a single Lexical contenteditable for ordinary text', () => {
     agentsState.agents = [
       {
         id: 'main',
@@ -1379,15 +1402,15 @@ describe('ChatInput agent targeting', () => {
 
     renderChatInput();
 
-    const textbox = screen.getByRole('textbox') as HTMLTextAreaElement;
-    fireEvent.change(textbox, { target: { value: '我没有填写Skill' } });
+    const textbox = screen.getByRole('textbox') as HTMLDivElement;
+    fillComposer(textbox, '我没有填写Skill');
 
-    expect(textbox).toHaveValue('我没有填写Skill');
+    expect(composerText(textbox)).toBe('我没有填写Skill');
     expect(screen.queryByTestId('chat-composer-skill-token')).not.toBeInTheDocument();
     expect(textbox.className).not.toContain('text-transparent');
   });
 
-  it('lets the user select an agent target and sends it with the message', () => {
+  it('selects an execution agent before sending instead of adding a next-message target', () => {
     const onSend = vi.fn();
     agentsState.agents = [
       {
@@ -1414,17 +1437,20 @@ describe('ChatInput agent targeting', () => {
       },
     ];
 
-    renderChatInput(onSend);
+    const onSelectAgent = vi.fn();
+    renderChatInput(onSend, undefined, onSelectAgent);
 
-    fireEvent.click(screen.getByTitle('Choose agent'));
-    fireEvent.click(screen.getByText('Research'));
+    fireEvent.keyDown(screen.getByTestId('chat-composer-agent'), { key: 'ArrowDown' });
+    fireEvent.click(screen.getByTestId('chat-agent-option-research'));
 
-    expect(screen.getByText('@Research')).toBeInTheDocument();
+    expect(onSelectAgent).toHaveBeenCalledWith('research');
+    expect(onSend).not.toHaveBeenCalled();
+    expect(screen.queryByText('@Research')).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Hello direct agent' } });
+    fillComposer(screen.getByRole('textbox'), 'Hello direct agent');
     fireEvent.click(screen.getByTitle('Send'));
 
-    expect(onSend).toHaveBeenCalledWith('Hello direct agent', undefined, 'research');
+    expect(onSend).toHaveBeenCalledWith('Hello direct agent', undefined);
   });
 
   it('keeps the ACP composer enabled while gateway is running but not yet ready', () => {
@@ -1484,10 +1510,10 @@ describe('ChatInput agent targeting', () => {
     expect(screen.getByTestId('chat-composer-skill')).not.toBeDisabled();
     expect(screen.getByTestId('chat-model-picker-button')).not.toBeDisabled();
 
-    fireEvent.change(input, { target: { value: 'Send through ACP' } });
+    fillComposer(input, 'Send through ACP');
     fireEvent.click(screen.getByTitle('Send'));
 
-    expect(onSend).toHaveBeenCalledWith('Send through ACP', undefined, null);
+    expect(onSend).toHaveBeenCalledWith('Send through ACP', undefined);
   });
 
   it('shows starting status while gateway is running but not yet ready', () => {
@@ -1577,24 +1603,24 @@ describe('ChatInput agent targeting', () => {
 
     renderChatInput(onSend);
 
-    const textbox = screen.getByRole('textbox') as HTMLTextAreaElement;
-    fireEvent.change(textbox, { target: { value: 'Draft a new helper' } });
+    const textbox = screen.getByRole('textbox') as HTMLDivElement;
+    fillComposer(textbox, 'Draft a new helper');
     textbox.focus();
-    textbox.setSelectionRange('Draft '.length, 'Draft '.length);
+    selectComposer(textbox, 'Draft '.length, 'Draft '.length);
 
     fireEvent.click(screen.getByTitle('Choose skill'));
     expect(await screen.findByText('/create-skill')).toBeInTheDocument();
 
     fireEvent.click(screen.getByText('/create-skill'));
     expect(screen.getByTestId('chat-composer-skill')).toHaveTextContent('Skill');
-    expect(textbox).toHaveValue('Draft /create-skill  a new helper');
+    expect(composerText(textbox)).toBe('Draft /create-skill  a new helper');
     expect(screen.getByTestId('chat-composer-skill-token')).toHaveTextContent('/create-skill');
     expect(textbox.className).not.toContain('text-transparent');
-    expect(screen.getByTestId('chat-composer-highlight').className).toContain('text-transparent');
+    expect(screen.queryByTestId('chat-composer-highlight')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTitle('Send'));
 
-    expect(onSend).toHaveBeenCalledWith('Draft /create-skill  a new helper', undefined, null);
+    expect(onSend).toHaveBeenCalledWith('Draft /create-skill  a new helper', undefined);
     expect(hostApiFetchMock).toHaveBeenCalledWith(
       '/api/skills/quick-access',
       expect.objectContaining({
@@ -1634,67 +1660,20 @@ describe('ChatInput agent targeting', () => {
 
     renderChatInput();
 
-    const textbox = screen.getByRole('textbox') as HTMLTextAreaElement;
-    fireEvent.change(textbox, { target: { value: 'Draft a new helper' } });
+    const textbox = screen.getByRole('textbox') as HTMLDivElement;
+    fillComposer(textbox, 'Draft a new helper');
     textbox.focus();
-    textbox.setSelectionRange('Draft '.length, 'Draft '.length);
+    selectComposer(textbox, 'Draft '.length, 'Draft '.length);
 
     fireEvent.click(screen.getByTitle('Choose skill'));
     fireEvent.click(await screen.findByText('/create-skill'));
 
-    expect(textbox).toHaveValue('Draft /create-skill  a new helper');
-    textbox.setSelectionRange('Draft /create-skill  '.length, 'Draft /create-skill  '.length);
-    fireEvent.keyDown(textbox, { key: 'Backspace' });
-
-    expect(textbox).toHaveValue('Draft a new helper');
-  });
-
-  it('skips across the inline skill block with arrow keys', async () => {
-    agentsState.agents = [
-      {
-        id: 'main',
-        name: 'Main',
-        isDefault: true,
-        modelDisplay: 'MiniMax',
-        inheritedModel: true,
-        workspace: '~/.openclaw/workspace',
-        agentDir: '~/.openclaw/agents/main/agent',
-        mainSessionKey: 'agent:main:main',
-        channelTypes: [],
-      },
-    ];
-    vi.mocked(hostApiFetchMock).mockResolvedValue({
-      success: true,
-      skills: [
-        {
-          name: 'create-skill',
-          description: 'Create and refine reusable skills.',
-          source: 'workspace',
-          sourceLabel: 'Workspace',
-          manifestPath: '/tmp/workspace/skill/create-skill/SKILL.md',
-          baseDir: '/tmp/workspace/skill/create-skill',
-        },
-      ],
+    expect(composerText(textbox)).toBe('Draft /create-skill  a new helper');
+    selectComposer(textbox, 'Draft /create-skill  '.length, 'Draft /create-skill  '.length, () => {
+      getNearestEditorFromDOMNode(textbox).dispatchCommand(KEY_BACKSPACE_COMMAND, new KeyboardEvent('keydown', { key: 'Backspace' }));
     });
 
-    renderChatInput();
-
-    const textbox = screen.getByRole('textbox') as HTMLTextAreaElement;
-    fireEvent.change(textbox, { target: { value: 'Draft a new helper' } });
-    textbox.focus();
-    textbox.setSelectionRange('Draft '.length, 'Draft '.length);
-
-    fireEvent.click(screen.getByTitle('Choose skill'));
-    fireEvent.click(await screen.findByText('/create-skill'));
-
-    textbox.setSelectionRange('Draft '.length, 'Draft '.length);
-    fireEvent.keyDown(textbox, { key: 'ArrowRight' });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(textbox.selectionStart).toBe('Draft /create-skill  '.length);
-
-    fireEvent.keyDown(textbox, { key: 'ArrowLeft' });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(textbox.selectionStart).toBe('Draft '.length);
+    await waitFor(() => expect(composerText(textbox)).toBe('Draft a new helper'));
   });
 
   it('adds left spacing when inserting a skill after adjacent text', async () => {
@@ -1727,15 +1706,15 @@ describe('ChatInput agent targeting', () => {
 
     renderChatInput();
 
-    const textbox = screen.getByRole('textbox') as HTMLTextAreaElement;
-    fireEvent.change(textbox, { target: { value: '哈哈哈哈你好' } });
+    const textbox = screen.getByRole('textbox') as HTMLDivElement;
+    fillComposer(textbox, '哈哈哈哈你好');
     textbox.focus();
-    textbox.setSelectionRange('哈哈哈哈'.length, '哈哈哈哈'.length);
+    selectComposer(textbox, '哈哈哈哈'.length, '哈哈哈哈'.length);
 
     fireEvent.click(screen.getByTitle('Choose skill'));
     fireEvent.click(await screen.findByText('/docx'));
 
-    expect(textbox).toHaveValue('哈哈哈哈 /docx  你好');
+    expect(composerText(textbox)).toBe('哈哈哈哈 /docx  你好');
   });
 
   it('allows inserting the same skill multiple times as separate blocks', async () => {
@@ -1768,15 +1747,16 @@ describe('ChatInput agent targeting', () => {
 
     renderChatInput();
 
-    const textbox = screen.getByRole('textbox') as HTMLTextAreaElement;
+    const textbox = screen.getByRole('textbox') as HTMLDivElement;
     fireEvent.click(screen.getByTitle('Choose skill'));
     fireEvent.click(await screen.findByTestId('chat-composer-skill-option-create-rule'));
 
-    textbox.setSelectionRange(textbox.value.length, textbox.value.length);
+    await waitFor(() => expect(screen.queryByTestId('chat-skill-picker-menu')).not.toBeInTheDocument());
+    selectComposer(textbox, composerText(textbox).length, composerText(textbox).length);
     fireEvent.click(screen.getByTitle('Choose skill'));
     fireEvent.click(await screen.findByTestId('chat-composer-skill-option-create-rule'));
 
-    expect(textbox).toHaveValue('/create-rule  /create-rule  ');
+    expect(composerText(textbox)).toBe('/create-rule  /create-rule  ');
     expect(screen.getAllByTestId('chat-composer-skill-token')).toHaveLength(2);
   });
 
@@ -1810,10 +1790,10 @@ describe('ChatInput agent targeting', () => {
 
     renderChatInput();
 
-    const textbox = screen.getByRole('textbox') as HTMLTextAreaElement;
-    fireEvent.change(textbox, { target: { value: 'Draft a new helper' } });
+    const textbox = screen.getByRole('textbox') as HTMLDivElement;
+    fillComposer(textbox, 'Draft a new helper');
     textbox.focus();
-    textbox.setSelectionRange('Draft '.length, 'Draft '.length);
+    selectComposer(textbox, 'Draft '.length, 'Draft '.length);
 
     fireEvent.click(screen.getByTitle('Choose skill'));
     fireEvent.click(await screen.findByText('/create-skill'));

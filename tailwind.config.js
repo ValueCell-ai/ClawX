@@ -6,20 +6,17 @@
  *
  * This config layers ClawX's own visual language on top of shadcn/ui:
  *
- *   1. fontFamily — All three stacks (sans / serif / mono) are pinned
+ *   1. fontFamily — Both stacks (sans / mono) are pinned
  *      explicitly so we never silently inherit Tailwind's evolving defaults.
- *      This locks the rendering on macOS, Windows, and Linux to the same
- *      glyph sources we ship to designers.
+ *      Each platform resolves the stack through its installed system fonts.
  *
- *   2. fontSize — We only *add* missing rungs to Tailwind's default scale.
- *      All new tokens come from the orphan pixel values (10/11/13/17/40px)
- *      that occurred most often in the codebase. Naming is semantic
- *      (`meta`, `tiny`, `subtitle`, `2xs`, `stat`) so a future density
- *      change only touches this file.
+ *   2. fontSize — Implements extra tokens alongside Tailwind's default
+ *      scale. DESIGN.md owns text roles and their permitted usage; token
+ *      availability does not make every size appropriate for ordinary UI.
  *
  *   3. colors — On top of shadcn's semantic tokens (primary / destructive /
  *      ...) we add three ClawX-private groups:
- *        - brand        : Apple-system blue used for primary CTAs
+ *        - brand        : Apple-system blue for rare branded surfaces, not default CTAs
  *        - skill        : highlight blue for inline /skill chips in chat
  *        - surface.{modal,input,sidebar}: a 3-layer neutral background
  *                          system in light mode. In dark mode each layer
@@ -33,6 +30,7 @@
  *      from shadcn semantic tokens.
  *
  * Usage references:
+ *     - Design roles : DESIGN.md (canonical project-wide contract)
  *     - Sizes        : see fontSize block below
  *     - Colors       : see colors block below
  *     - CSS variables: src/styles/globals.css
@@ -62,7 +60,7 @@ module.exports = {
        * fontFamily
        * ──────────────────────────────────────────────────────────────
        *
-       * All three stacks are pinned explicitly to remove dependency on
+       * Both stacks are pinned explicitly to remove dependency on
        * Tailwind's default fontFamily values. The intent:
        *
        *   - sans  : the everyday UI body / control font. Apple-first
@@ -71,14 +69,6 @@ module.exports = {
        *             Segoe UI for Windows, Roboto for Linux/Android,
        *             and finally the four Apple/Segoe/Noto color emoji
        *             fonts so emoji never fall back to a serif.
-       *
-       *   - serif : Georgia-first display stack used by all page H1/H2.
-       *             Previously written as inline `style={{ fontFamily }}`
-       *             in 17 places — that's been collapsed to this token,
-       *             so `font-serif` alone now reproduces the original
-       *             rendering exactly. (NOTE: deliberately omits
-       *             `ui-serif` — on macOS that resolves to "New York"
-       *             which we explicitly do not want.)
        *
        *   - mono  : standard developer-font stack. Used for IDs, paths,
        *             tokens, timestamps, code blocks, CLI output etc.
@@ -100,13 +90,6 @@ module.exports = {
           '"Segoe UI Symbol"',
           '"Noto Color Emoji"',
         ],
-        serif: [
-          'Georgia',
-          'Cambria',
-          '"Times New Roman"',
-          'Times',
-          'serif',
-        ],
         mono: [
           'ui-monospace',
           'SFMono-Regular',
@@ -124,41 +107,20 @@ module.exports = {
        * fontSize
        * ──────────────────────────────────────────────────────────────
        *
-       * Naming is by visual *role*, not pixel count, so a future density
-       * change only edits the values here. ClawX's full size ladder
-       * (combining Tailwind defaults + ClawX additions, smallest first):
+       * Use DESIGN.md's Typography table to select the role before the
+       * token. Keep the underlying Tailwind scale and legacy additions
+       * available for incremental convergence and content renderers.
+       * Do not add a second role/size table here.
        *
-       *   ┌──────────────┬──────────┬─────────────┬──────────────────────────────┐
-       *   │ Token        │ FontSize │ LineHeight  │ Primary use                  │
-       *   ├──────────────┼──────────┼─────────────┼──────────────────────────────┤
-       *   │ 2xs   (new)  │ 10px     │ 14px        │ micro labels, chip suffixes  │
-       *   │ tiny  (new)  │ 11px     │ 16px        │ ultra-small captions, tips   │
-       *   │ xs    (TW)   │ 12px     │ 16px        │ secondary helpers, badges    │
-       *   │ meta  (new)  │ 13px     │ 18px        │ form/button/modal description│
-       *   │ sm    (TW)   │ 14px     │ 20px        │ body (Label / CardDescription│
-       *   │ base  (TW)   │ 16px     │ 24px        │ rare; Textarea fallback only │
-       *   │ subtitle(new)│ 17px     │ 24px        │ subtitle right under page H1 │
-       *   │ lg    (TW)   │ 18px     │ 28px        │ Sheet / Confirm titles       │
-       *   │ xl    (TW)   │ 20px     │ 28px        │ Setup steps, large emoji     │
-       *   │ 2xl   (TW)   │ 24px     │ 32px        │ CardTitle                    │
-       *   │ 3xl   (TW)   │ 30px     │ 36px        │ section H2 (serif)           │
-       *   │ 4xl   (TW)   │ 36px     │ 40px        │ Chat empty-state H1          │
-       *   │ stat  (new)  │ 40px     │ 1           │ dashboard hero numbers       │
-       *   │ 5xl   (TW)   │ 48px     │ 1           │ page H1 (narrow viewport)    │
-       *   │ 6xl   (TW)   │ 60px     │ 1           │ page H1 (md and up)          │
-       *   └──────────────┴──────────┴─────────────┴──────────────────────────────┘
-       *
-       * Tailwind defaults marked (TW) are intentionally untouched so
-       * shadcn components keep their original rendering.
+       * Keep custom names in sync with src/lib/utils.ts so cn() can
+       * distinguish font-size utilities from text-color utilities.
        * ────────────────────────────────────────────────────────────── */
       fontSize: {
         '2xs':      ['10px', { lineHeight: '14px' }],
         tiny:       ['11px', { lineHeight: '16px' }],
         meta:       ['13px', { lineHeight: '18px' }],
         subtitle:   ['17px', { lineHeight: '24px' }],
-        // Display-size token used only by the Cron dashboard hero counters.
-        // line-height: 1 (unitless) keeps the number tightly aligned with
-        // the icon next to it, which is why we don't reuse 4xl/5xl here.
+        // Legacy display token; new application text follows DESIGN.md.
         stat:       ['40px', { lineHeight: '1' }],
       },
 
@@ -180,8 +142,8 @@ module.exports = {
        *      `dark:bg-card` etc. on every surface element.
        *
        * Examples:
-       *   - bg-brand                → primary CTA
-       *   - hover:bg-brand-hover    → CTA hover
+       *   - bg-primary-action       → primary CTA background
+       *   - bg-brand                → rare branded surfaces
        *   - bg-skill-bg/14          → skill-chip backdrop in chat input
        *   - text-skill-fg           → skill-chip text in light mode
        *   - dark:text-skill-fg-dark → skill-chip text in dark mode
@@ -200,6 +162,11 @@ module.exports = {
         primary: {
           DEFAULT: 'hsl(var(--primary))',
           foreground: 'hsl(var(--primary-foreground))',
+        },
+        'message-user': 'hsl(var(--message-user) / <alpha-value>)',
+        'primary-action': {
+          DEFAULT: 'hsl(var(--primary-action) / <alpha-value>)',
+          hover: 'hsl(var(--primary-action-hover) / <alpha-value>)',
         },
         secondary: {
           DEFAULT: 'hsl(var(--secondary))',
@@ -227,10 +194,7 @@ module.exports = {
         },
 
         // ── B. ClawX brand tokens ────────────────────────────────────
-        // Apple-system blue used for primary CTAs. The same pixel value
-        // works in both themes (sufficient WCAG-AA contrast in light
-        // mode and stays vivid in dark mode), so no CSS variable needed.
-        // Pair with `brand-hover` for the hover state.
+        // Apple-system blue for occasional branded surfaces, not primary CTAs.
         brand: {
           DEFAULT: '#0a84ff',
           hover: '#007aff',

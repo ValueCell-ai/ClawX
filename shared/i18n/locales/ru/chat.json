@@ -1,14 +1,24 @@
 {
-    "gatewayNotRunning": "Шлюз не запущен",
-    "gatewayRequired": "Для использования чата требуется запущенный шлюз OpenClaw. Он запустится автоматически, или вы можете запустить его в Настройках.",
+    "gatewayNotRunning": "Локальная служба не запущена",
+    "gatewayRequired": "Для этой функции нужна локальная служба. Она запускается автоматически; настройки доступны в разделе Настройки → Дополнительно.",
     "welcome": {
         "title": "Чат ClawX",
-        "subtitle": "Чем могу помочь?",
+        "subtitle": "Что хотите сделать сегодня?",
         "askQuestions": "Задачи",
         "askQuestionsDesc": "Работа над задачами",
         "creativeTasks": "Непрерывное выполнение",
         "creativeTasksDesc": "Выполнение многошаговых задач",
-        "brainstorming": "Параллельные агенты"
+        "brainstorming": "Параллельные агенты",
+        "skills": {
+            "docx": "Документы",
+            "xlsx": "Таблицы",
+            "pptx": "Презентации",
+            "pdf": "PDF",
+            "computer-use": "Управление ПК",
+            "skill-creator": "Создание навыков"
+        },
+        "skillUnavailable": "Включите или установите этот навык в разделе «Навыки».",
+        "skillsFailed": "Не удалось загрузить навыки. Откройте меню навыков для повторной попытки."
     },
     "noLogs": "(Журналы ещё недоступны)",
     "scrollToLatest": "Вернуться вниз",
@@ -130,7 +140,7 @@
     },
     "artifactPanel": {
         "tabs": {
-            "changes": "Изменения",
+            "changes": "Правки чата",
             "preview": "Просмотр",
             "browser": "Рабочая область"
         },
@@ -138,16 +148,16 @@
             "back": "Назад к списку"
         },
         "changes": {
-            "heading": "Изменения файлов ({{count}})",
-            "empty": "В этом сеансе пока нет изменений файлов.",
+            "heading": "Изменения в чате ({{count}})",
+            "empty": "В этом чате пока нет изменений",
             "selectFileHint": "Нажмите на карточку файла в чате или «Просмотр изменений», чтобы открыть diff.",
             "changeRecord": "Изменение {{number}}",
-            "diffUnavailable": "Diff для этого изменения недоступен."
+            "diffUnavailable": "Diff для этого изменения недоступен.",
+            "emptyHint": "Здесь появятся файлы, созданные, изменённые или удалённые в этом чате."
         },
         "preview": {
             "emptyTitle": "Файл не выбран",
-            "emptyHint": "Сначала откройте файл через карточку в чате — выбранный файл появится в этом предпросмотре.",
-            "fullscreenLabel": "Полноэкранный предпросмотр файла"
+            "emptyHint": "Выберите файл в рабочей области или карточку файла в чате для просмотра."
         }
     },
     "filePreview": {
@@ -162,8 +172,6 @@
             "openInFinder": "Показать в файловом менеджере",
             "openDirectly": "Открыть напрямую",
             "close": "Закрыть",
-            "enterFullscreen": "Полноэкранный просмотр",
-            "exitFullscreen": "Выйти из полноэкранного режима",
             "openHtmlExternally": "Открыть HTML в системном браузере",
             "retry": "Повторить"
         },
@@ -181,8 +189,8 @@
             "notFound": "Файл не найден",
             "loadFailed": "Ошибка загрузки: {{error}}",
             "noPreview": "Для этого файла предпросмотр недоступен",
-            "unsupportedFormatTitle": "Этот формат файла не поддерживает встроенный предпросмотр",
-            "unsupportedFormatHint": "Встроенный предпросмотр сейчас поддерживает только напрямую читаемые текстовые/Markdown-файлы. Откройте файл через файловый менеджер.",
+            "unsupportedFormatTitle": "Предпросмотр недоступен",
+            "unsupportedFormatHint": "Откройте файл в файловом менеджере.",
             "largeBinaryOpenTitle": "Этот файл слишком большой для встроенного предпросмотра",
             "largeBinaryOpenHint": "Размер файла — {{size}}. ClawX не может показать его встроенно, но вы можете подтвердить открытие в системном приложении по умолчанию.",
             "openInFinderFailed": "Не удалось показать файл",
@@ -246,7 +254,22 @@
         "actions": {
             "refresh": "Обновить",
             "openRootInFinder": "Показать корень в файловом менеджере"
-        }
+        },
+        "search": "Поиск файлов",
+        "clearSearch": "Очистить поиск файлов",
+        "showHidden": "Показать скрытые файлы",
+        "collapseAll": "Свернуть все папки",
+        "browseFiles": "Обзор файлов",
+        "fileActions": "Действия с файлом",
+        "copyPath": "Копировать путь",
+        "pathCopied": "Путь скопирован",
+        "copyFailed": "Не удалось скопировать путь",
+        "resizeFiles": "Изменить ширину списка файлов",
+        "resizePanel": "Изменить ширину панели",
+        "noResults": "Совпадений нет",
+        "noFiles": "В этой папке нет видимых файлов.",
+        "searchLimited": "Часть файлов не загружена. Поиск охватывает только загруженные папки.",
+        "searchScope": "Поиск: загруженные папки"
     },
     "imageGeneration": {
         "generating": "Изображение генерируется, подождите…",
@@ -257,27 +280,27 @@
     "composer": {
         "attachFiles": "Прикрепить файлы",
         "pickSkill": "Выбрать Skill",
-        "skillButton": "Skills",
+        "skillButton": "Навыки",
         "skillPickerTitle": "Быстрый доступ к Skill для {{agent}}",
         "skillSearchPlaceholder": "Поиск Skill",
         "skillLoading": "Загрузка Skill...",
         "skillEmpty": "Подходящие Skill не найдены",
-        "pickAgent": "Выбрать агента",
+        "pickAgent": "Выбрать помощника",
         "pickModel": "Выбрать модель",
-        "modelPickerTitle": "Выбрать модель для этого чата",
+        "modelPickerTitle": "Выбрать модель для этой задачи",
         "modelReadFailed": "Не удалось получить модель этого чата: {{error}}",
         "modelSwitchFailed": "Не удалось переключить модель: {{error}}",
-        "clearTarget": "Очистить целевого агента",
+        "clearTarget": "Сбросить выбранного помощника",
         "targetChip": "@{{agent}}",
-        "agentPickerTitle": "Направить следующее сообщение другому агенту",
-        "gatewayDisconnectedPlaceholder": "Шлюз не подключён...",
+        "agentPickerTitle": "Отправить следующее сообщение другому помощнику",
+        "gatewayDisconnectedPlaceholder": "Подключение к локальной службе…",
         "send": "Отправить",
         "stop": "Остановить",
         "thinking": "Думаю…",
         "subagentsWorking": "Субагенты работают",
         "gatewayConnected": "подключён",
         "gatewayStarting": "запуск",
-        "gatewayStatus": "шлюз {{state}}",
+        "gatewayStatus": "{{state}}",
         "retryFailedAttachments": "Повторить неудавшиеся вложения",
         "workspacePrefix": "{{workspace}}",
         "workspacePickerTitle": "Выберите папку рабочей области",
@@ -312,10 +335,14 @@
             "NETWORK": "Не удаётся подключиться к сервису распознавания речи. Проверьте сеть или Base URL.",
             "EMPTY_RESULT": "Речь не распознана.",
             "INVALID_INPUT": "Недопустимая аудиозапись."
-        }
+        },
+        "placeholder": "Опишите задачу или добавьте файлы…",
+        "executionAgent": "Выбрать агента: {{agent}}",
+        "executionAgentTitle": "Выбрать агента",
+        "agentDefaultModel": "Модель по умолчанию: {{model}}"
     },
     "sessionList": {
-        "title": "Список сессий",
+        "title": "Недавние задачи",
         "collapseAll": "Свернуть все",
         "expandAll": "Развернуть все",
         "loadMore": "Загрузить еще",
@@ -334,7 +361,19 @@
         "deleteWorkspaceCleanupFailed": "Сессии удалены, но не удалось очистить сохранённую запись рабочей области.",
         "workspaceName": "Название рабочей области",
         "saveWorkspaceRename": "Сохранить название рабочей области",
-        "cancelWorkspaceRename": "Отменить переименование рабочей области"
+        "cancelWorkspaceRename": "Отменить переименование рабочей области",
+        "search": "Поиск по всем задачам",
+        "searchPlaceholder": "Название, помощник или рабочая область",
+        "closeSearch": "Закрыть поиск",
+        "results": "Результатов: {{count}}",
+        "noResults": "Подходящих задач нет",
+        "emptyHint": "Начните задачу — она появится здесь.",
+        "pinned": "Закреплённые",
+        "pin": "Закрепить задачу",
+        "unpin": "Открепить задачу",
+        "pinFailed": "Не удалось сохранить закрепления. Повторите попытку.",
+        "taskActions": "Действия для {{title}}",
+        "lastRunFailed": "Последний запуск не завершён"
     },
     "historyBuckets": {
         "today": "Сегодня",

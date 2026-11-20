@@ -98,5 +98,18 @@ test.describe('Cron job card layout', () => {
     // overlap the switch container.
     const titleRight = titleBox.x + titleBox.width;
     expect(titleRight).toBeLessThanOrEqual(switchBox.x + 0.5);
+
+    const summary = page.getByTestId('cron-task-summary');
+    await expect(summary.locator('div').filter({ hasText: 'Enabled' }).locator('dd')).toHaveText('1');
+    await expect(summary).not.toContainText('Last run failed');
+    const runNow = card.getByRole('button', { name: 'Run Now' });
+    await expect(runNow).toBeVisible();
+    await expect(runNow).toHaveCSS('opacity', '1');
+    const edit = title.getByRole('button', { name: `Edit ${cronJobs[0].name}` });
+    await edit.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('dialog', { name: 'Edit Task' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(edit).toBeFocused();
   });
 });

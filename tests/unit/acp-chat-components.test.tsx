@@ -219,7 +219,6 @@ describe('ACP chat timeline components', () => {
       open: false,
       tab: 'changes',
       focusedFile: null,
-      htmlPreviewAnchor: null,
     });
   });
 

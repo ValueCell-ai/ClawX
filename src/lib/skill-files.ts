@@ -11,7 +11,7 @@ import {
   basenameOf,
   classifyFileExt,
   extnameOf,
-  getMimeTypeForExt,
+  getMimeTypeForFile,
   type FileContentType,
 } from './generated-files';
 
@@ -70,16 +70,13 @@ const ASSET_EXTS = new Set([
   '.pdf', '.zip', '.tar', '.gz',
 ]);
 
-const DOC_NAME_HINTS = ['readme', 'changelog', 'license', 'contributing', 'authors'];
-
 const ASSET_PATH_HINTS = ['/assets/', '/references/', '/templates/', '/static/', '/public/'];
 
 const MAX_SCAN_DEPTH = 3;
 const MAX_SCAN_FILES = 400;
 
-function categorizeSkillFile(relativePath: string, fileName: string, ext: string): SkillFileCategory {
+function categorizeSkillFile(relativePath: string, ext: string): SkillFileCategory {
   const lowerExt = ext.toLowerCase();
-  const lowerName = fileName.toLowerCase();
   const lowerRel = relativePath.replace(/\\/g, '/').toLowerCase();
   const lowerRelWithSlash = `/${lowerRel}`;
 
@@ -96,10 +93,6 @@ function categorizeSkillFile(relativePath: string, fileName: string, ext: string
   }
 
   if (lowerExt === '.md' || lowerExt === '.markdown' || lowerExt === '.rst' || lowerExt === '.txt') {
-    return 'doc';
-  }
-
-  if (DOC_NAME_HINTS.some((hint) => lowerName.startsWith(hint))) {
     return 'doc';
   }
 
@@ -122,21 +115,11 @@ function buildSkillFile(absPath: string, relPath: string, size: number): SkillFi
     relativePath: relPath,
     fileName,
     ext,
-    mimeType: getMimeTypeForExt(ext),
+    mimeType: getMimeTypeForFile(fileName, ext),
     contentType: classifyFileExt(ext),
-    category: categorizeSkillFile(relPath, fileName, ext),
+    category: categorizeSkillFile(relPath, ext),
     size,
   };
-}
-
-function relPathFromBase(absPath: string, baseDir: string): string {
-  const baseNorm = baseDir.replace(/\\/g, '/').replace(/\/+$/, '');
-  const norm = absPath.replace(/\\/g, '/');
-  if (norm === baseNorm) return '';
-  if (norm.startsWith(baseNorm + '/')) {
-    return norm.slice(baseNorm.length + 1);
-  }
-  return norm;
 }
 
 /**
@@ -156,7 +139,7 @@ export async function loadSkillFiles(baseDir: string): Promise<SkillFileGroups> 
 
   const files: SkillFile[] = [];
 
-  const walk = async (dir: string, depth: number): Promise<void> => {
+  const walk = async (dir: string, depth: number, relativeDir: string): Promise<void> => {
     if (depth > MAX_SCAN_DEPTH) return;
     if (files.length >= MAX_SCAN_FILES) return;
     const result = await listDir(dir);
@@ -164,20 +147,20 @@ export async function loadSkillFiles(baseDir: string): Promise<SkillFileGroups> 
 
     for (const entry of result.entries) {
       if (files.length >= MAX_SCAN_FILES) break;
+      const rel = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
       if (entry.isDir) {
         if (SCAN_BLACKLIST.has(entry.name)) continue;
         if (entry.name.startsWith('.')) continue;
-        await walk(entry.path, depth + 1);
+        await walk(entry.path, depth + 1, rel);
       } else {
         if (entry.name.startsWith('.')) continue;
-        const rel = relPathFromBase(entry.path, baseDir);
         files.push(buildSkillFile(entry.path, rel, entry.size));
       }
     }
   };
 
   try {
-    await walk(baseDir, 1);
+    await walk(baseDir, 1, '');
   } catch {
     return groups;
   }

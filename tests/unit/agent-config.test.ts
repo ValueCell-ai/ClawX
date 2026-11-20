@@ -1092,6 +1092,37 @@ describe('agent config lifecycle', () => {
     expect(agentIds).not.toContain('1');
   });
 
+  it('creates an explicit-model assistant without materializing or changing existing model settings', async () => {
+    const defaults = { model: { primary: 'openai/old-model', fallbacks: ['openai/backup'] } };
+    const oldEntries = [
+      { id: 'main', name: 'Main', default: true },
+      { id: 'specialist', name: 'Specialist', model: { primary: 'openai/special', fallbacks: [], customField: 'keep' } },
+    ];
+    await writeOpenClawJson({ agents: { defaults, list: oldEntries } });
+    const { createAgent, listAgentsSnapshot } = await import('@electron/utils/agent-config');
+    await createAgent('Research', { modelRef: 'openai/new-model' });
+    const config = await readOpenClawJson();
+    const saved = config.agents as { defaults: { model: unknown }; entries: Record<string, { model?: unknown }> };
+    expect(saved.defaults.model).toEqual(defaults.model);
+    expect(saved.entries.main).toMatchObject({ name: 'Main' });
+    expect(saved.entries.main).not.toHaveProperty('model');
+    expect(saved.entries.specialist).toMatchObject({ name: 'Specialist', model: oldEntries[1].model });
+    expect(saved.entries.research.model).toEqual({ primary: 'openai/new-model', fallbacks: ['openai/backup'] });
+    const before = await readFile(join(testHome, '.openclaw', 'openclaw.json'), 'utf8');
+    await listAgentsSnapshot();
+    expect(await readFile(join(testHome, '.openclaw', 'openclaw.json'), 'utf8')).toBe(before);
+  });
+
+  it('rejects an invalid creation model before writing config or provisioning files', async () => {
+    await writeOpenClawJson({ agents: { defaults: { model: 'openai/old-model' } } });
+    const before = await readFile(join(testHome, '.openclaw', 'openclaw.json'), 'utf8');
+    const { createAgent } = await import('@electron/utils/agent-config');
+    await expect(createAgent('Research', { modelRef: 'invalid' })).rejects.toThrow('provider/model');
+    await expect(createAgent('Research', { modelRef: '' })).rejects.toThrow('provider/model');
+    expect(await readFile(join(testHome, '.openclaw', 'openclaw.json'), 'utf8')).toBe(before);
+    await expect(access(join(testHome, '.openclaw', 'workspace-research'))).rejects.toThrow();
+  });
+
   it('seeds a default ClawX IDENTITY.md for newly created agent workspaces', async () => {
     await writeOpenClawJson({
       agents: {
@@ -1104,6 +1135,36 @@ describe('agent config lifecycle', () => {
     await createAgent('Research');
 
     await expect(readFile(join(testHome, '.openclaw', 'workspace-research', 'IDENTITY.md'), 'utf8')).resolves.toContain('ClawX');
+  });
+
+  it('seeds native work style while copying other initial rules without copying memory', async () => {
+    await writeOpenClawJson({ agents: { list: [{ id: 'main', name: 'Main', default: true }] } });
+    const mainWorkspace = join(testHome, '.openclaw', 'workspace');
+    await mkdir(mainWorkspace, { recursive: true });
+    await writeFile(join(mainWorkspace, 'SOUL.md'), 'Original personality');
+    await writeFile(join(mainWorkspace, 'AGENTS.md'), 'Shared operating rules');
+    await writeFile(join(mainWorkspace, 'MEMORY.md'), 'Private accumulated memories');
+    const { createAgent } = await import('@electron/utils/agent-config');
+
+    await createAgent('Research', { inheritWorkspace: true, instructions: 'Use primary sources.\n\nKeep uncertainty explicit.' });
+    const workspace = join(testHome, '.openclaw', 'workspace-research');
+    await expect(readFile(join(workspace, 'SOUL.md'), 'utf8')).resolves.toBe('Use primary sources.\n\nKeep uncertainty explicit.\n');
+    await expect(readFile(join(workspace, 'AGENTS.md'), 'utf8')).resolves.toBe('Shared operating rules');
+    await expect(access(join(workspace, 'MEMORY.md'))).rejects.toThrow();
+    await expect(readFile(join(mainWorkspace, 'SOUL.md'), 'utf8')).resolves.toBe('Original personality');
+  });
+
+  it('does not overwrite existing instructions and rolls back a failed creation', async () => {
+    await writeOpenClawJson({ agents: { list: [{ id: 'main', name: 'Main', default: true }] } });
+    const workspace = join(testHome, '.openclaw', 'workspace-research');
+    await mkdir(workspace, { recursive: true });
+    await writeFile(join(workspace, 'SOUL.md'), 'Preserve existing file');
+    const { createAgent } = await import('@electron/utils/agent-config');
+    await expect(createAgent('Research', { instructions: 'Replacement' })).rejects.toThrow();
+    await expect(readFile(join(workspace, 'SOUL.md'), 'utf8')).resolves.toBe('Preserve existing file');
+    const config = await readOpenClawJson();
+    expect(Object.keys((config.agents as { entries: Record<string, unknown> }).entries)).toEqual(['main']);
+    await expect(access(join(testHome, '.openclaw', 'agents', 'research'))).rejects.toThrow();
   });
 
   it('rolls back a committed agent entry when filesystem provisioning fails', async () => {

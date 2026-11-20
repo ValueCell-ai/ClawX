@@ -13,7 +13,7 @@ test.describe('ClawX chat model picker', () => {
 
         const reviewerKey = 'agent:reviewer:primary';
         const sessionModels = new Map<string, string>([[reviewerKey, refs.betaModelRef]]);
-        let freshMainSession: 'missing' | 'created' | null = null;
+        let catalogUnavailable = false;
         const hostRequests: Array<{ path: string; method: string; body: unknown }> = [];
         const now = new Date().toISOString();
         let releaseProviderAccounts: (() => void) | undefined;
@@ -34,7 +34,7 @@ test.describe('ClawX chat model picker', () => {
           { key: 'agent:main:main', displayName: 'First chat', workspacePath },
           { key: 'agent:main:sibling', displayName: 'Sibling chat', workspacePath },
           { key: 'agent:main:other', displayName: 'Other workspace chat', workspacePath: `${workspacePath}-other` },
-          { key: reviewerKey, displayName: 'Reviewer chat', workspacePath },
+          { key: reviewerKey, displayName: 'Reviewer chat', workspacePath: `${workspacePath}-review` },
         ];
         const agentsSnapshot = () => ({
           success: true,
@@ -72,7 +72,7 @@ test.describe('ClawX chat model picker', () => {
         ipcMain.handle('gateway:rpc', async (_event: unknown, method: string, params: unknown) => {
           hostRequests.push({ path: `gateway:${method}`, method: 'RPC', body: params ?? null });
           if (method === 'sessions.list') {
-            if (freshMainSession === 'missing') return { success: false, error: 'Session catalog not ready' };
+            if (catalogUnavailable) return { success: false, error: 'Session catalog not ready' };
             return { success: true, result: { sessions } };
           }
           return { success: true, result: {} };
@@ -122,7 +122,7 @@ test.describe('ClawX chat model picker', () => {
             const params = body?.params ?? null;
             hostRequests.push({ path: `gateway:${method}`, method: 'RPC', body: params });
             if (method === 'sessions.list') {
-              if (freshMainSession === 'missing') return {
+              if (catalogUnavailable) return {
                 id: request.id, ok: false, error: { code: 'INTERNAL', message: 'Session catalog not ready' },
               };
               return makeResponse(request.id, { sessions });
@@ -133,9 +133,6 @@ test.describe('ClawX chat model picker', () => {
             return makeResponse(request.id, agentsSnapshot());
           }
           if (request?.module === 'sessions' && request.action === 'getModel') {
-            if (freshMainSession === 'missing' && body?.sessionKey === 'agent:main:main') {
-              return makeResponse(request.id, { modelRef: null, exists: false });
-            }
             return makeResponse(request.id, { modelRef: sessionModels.get(String(body?.sessionKey)) ?? null });
           }
           if (request?.module === 'sessions' && request.action === 'setModel') {
@@ -145,11 +142,12 @@ test.describe('ClawX chat model picker', () => {
               } };
             }
             const key = String(body?.sessionKey);
-            if (freshMainSession === 'missing' && key === 'agent:main:main') {
+            if (catalogUnavailable) {
               if (!body?.createIfMissing) return {
                 id: request.id, ok: false, error: { code: 'INTERNAL', message: 'Session no longer exists' },
               };
-              freshMainSession = 'created';
+              catalogUnavailable = false;
+              sessions.push({ key, displayName: 'Use my selection for this first turn.', workspacePath });
             }
             if (typeof body?.modelRef === 'string') sessionModels.set(key, body.modelRef);
             else sessionModels.delete(key);
@@ -177,6 +175,7 @@ test.describe('ClawX chat model picker', () => {
                 authMode: 'api_key',
                 baseUrl: 'http://127.0.0.1:2222/v1',
                 model: refs.betaModelRef,
+                metadata: { customModels: [refs.betaModelRef, 'model-beta-lite', 'model-alpha'] },
                 enabled: true,
                 isDefault: false,
                 createdAt: now,
@@ -239,10 +238,9 @@ test.describe('ClawX chat model picker', () => {
           __releaseChatModelProviders?: () => void;
         }).__releaseChatModelProviders = releaseProviderAccounts;
         (globalThis as typeof globalThis & {
-          __prepareFreshMainSession?: () => void;
-        }).__prepareFreshMainSession = () => {
-          freshMainSession = 'missing';
-          sessionModels.delete('agent:main:main');
+          __makeSessionCatalogUnavailable?: () => void;
+        }).__makeSessionCatalogUnavailable = () => {
+          catalogUnavailable = true;
           hostRequests.length = 0;
         };
       }, { alphaModelRef, betaModelRef });
@@ -278,10 +276,44 @@ test.describe('ClawX chat model picker', () => {
       await expect(page.getByTestId('chat-model-picker-menu')).toBeVisible();
       await expect(page.getByTestId('chat-model-picker-follow-agent')).toHaveCount(0);
       await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('Follow Agent');
-      const alphaOption = page.getByTestId('chat-model-picker-menu').getByRole('button', { name: 'model-alpha Alpha' });
-      await expect(alphaOption).toHaveAttribute('aria-pressed', 'true');
       await expect(page.getByTestId('chat-model-picker-menu')).toContainText('provider/model-beta');
-      await expect(page.getByTestId('chat-model-picker-menu')).toContainText('Beta');
+      const modelMenu = page.getByTestId('chat-model-picker-menu');
+      const triggerId = await page.getByTestId('chat-model-picker-button').getAttribute('id');
+      expect(triggerId).toBeTruthy();
+      await expect(modelMenu).toHaveAttribute('aria-labelledby', triggerId!);
+      const modelScroll = modelMenu.locator('.overflow-y-auto');
+      const scrollGeometry = await modelScroll.evaluate(element => ({
+        gutter: element.offsetWidth - element.clientWidth,
+        overflows: element.scrollHeight > element.clientHeight,
+        clientWidth: element.clientWidth,
+      }));
+      expect(scrollGeometry.overflows).toBe(true);
+      expect(scrollGeometry.gutter).toBeLessThanOrEqual(6);
+      await modelScroll.hover();
+      expect(await modelScroll.evaluate(element => element.clientWidth)).toBe(scrollGeometry.clientWidth);
+      await page.mouse.wheel(0, 160);
+      await expect.poll(() => modelScroll.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+      await modelScroll.evaluate(element => { element.scrollTop = 0; });
+      const alphaGroup = modelMenu.getByRole('group', { name: 'Alpha', exact: true });
+      const betaGroup = modelMenu.getByRole('group', { name: 'Beta', exact: true });
+      const alphaOption = alphaGroup.getByRole('menuitemradio', { name: 'model-alpha', exact: true });
+      const betaOption = betaGroup.getByRole('menuitemradio', { name: 'provider/model-beta', exact: true });
+      await expect(alphaOption).toHaveAttribute('aria-checked', 'true');
+      await expect(modelMenu.locator('[role="group"][aria-label]')).toHaveCount(4);
+      await expect(modelMenu.getByText('Beta', { exact: true })).toHaveCount(1);
+      await expect(betaGroup.getByRole('menuitemradio')).toHaveText(['provider/model-beta', 'model-beta-lite', 'model-alpha']);
+      await expect(alphaGroup.getByRole('menuitemradio', { name: 'model-alpha', exact: true })).toBeVisible();
+      await expect(betaGroup.getByRole('menuitemradio', { name: 'model-alpha', exact: true })).toBeVisible();
+      await expect(betaGroup.getByRole('menuitemradio')).not.toContainText(['Beta', 'Beta', 'Beta']);
+      const betaOptions = betaGroup.getByRole('menuitemradio');
+      const firstBeta = await betaOptions.nth(0).boundingBox();
+      const secondBeta = await betaOptions.nth(1).boundingBox();
+      expect(firstBeta!.height).toBe(28);
+      expect(secondBeta!.height).toBe(28);
+      expect(secondBeta!.y - firstBeta!.y - firstBeta!.height).toBeCloseTo(4, 0);
+      const alphaBounds = await alphaGroup.boundingBox();
+      const betaBounds = await betaGroup.boundingBox();
+      expect(betaBounds!.y - alphaBounds!.y - alphaBounds!.height).toBeCloseTo(8, 0);
       await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('provider/model-beta (Beta)');
       await expect(page.getByTestId('chat-model-picker-menu')).toContainText('gpt-5.6');
       await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('gpt-5.5');
@@ -289,9 +321,9 @@ test.describe('ClawX chat model picker', () => {
       await expect(page.getByTestId('chat-model-picker-menu')).toContainText('kimi-k2.7');
       await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('kimi-k2.6');
       await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('moonshot/kimi-k2.7');
-      const gptOption = page.getByTestId('chat-model-picker-menu').getByRole('button', { name: 'gpt-5.6 OpenAI' });
+      const gptOption = page.getByTestId('chat-model-picker-menu').getByRole('menuitemradio', { name: 'gpt-5.6', exact: true });
       await expect(gptOption.getByTestId('chat-model-picker-option-icon')).toHaveAttribute('data-model-icon', 'openai');
-      const kimiOption = page.getByTestId('chat-model-picker-menu').getByRole('button', { name: 'kimi-k2.7 Moonshot' });
+      const kimiOption = page.getByTestId('chat-model-picker-menu').getByRole('menuitemradio', { name: 'kimi-k2.7', exact: true });
       await expect(kimiOption.getByTestId('chat-model-picker-option-icon')).toHaveAttribute('data-model-icon', 'kimi');
       // Selecting the effective default pins that concrete model to this session.
       await alphaOption.click();
@@ -304,7 +336,7 @@ test.describe('ClawX chat model picker', () => {
       ), alphaModelRef)).toBe(true);
       await expect(page.getByTestId('chat-model-picker-button')).toHaveText(/model-alpha/);
       await page.getByTestId('chat-model-picker-button').click();
-      await expect(alphaOption).toHaveAttribute('aria-pressed', 'true');
+      await expect(alphaOption).toHaveAttribute('aria-checked', 'true');
       await app.evaluate(() => {
         (globalThis as typeof globalThis & { __modelAdmissionPending?: boolean }).__modelAdmissionPending = true;
       });
@@ -320,13 +352,18 @@ test.describe('ClawX chat model picker', () => {
         (globalThis as typeof globalThis & { __modelAdmissionPending?: boolean }).__modelAdmissionPending = false;
       });
       await page.getByTestId('chat-model-picker-button').click();
-      await expect(alphaOption).toHaveAttribute('aria-pressed', 'true');
-      await expect(gptOption).toHaveAttribute('aria-pressed', 'false');
+      await expect(alphaOption).toHaveAttribute('aria-checked', 'true');
+      await expect(gptOption).toHaveAttribute('aria-checked', 'false');
       await gptOption.click();
       await expect(page.getByTestId('chat-model-picker-button')).toHaveText(/gpt-5.6/);
       await expect(page.getByTestId('chat-model-picker-current-icon')).toHaveAttribute('data-model-icon', 'openai');
       await page.getByTestId('chat-model-picker-button').click();
-      await page.getByTestId('chat-model-picker-menu').getByRole('button', { name: 'provider/model-beta Beta' }).click();
+      await betaGroup.getByRole('menuitemradio', { name: 'model-alpha', exact: true }).click();
+      await expect(page.getByTestId('chat-model-picker-button')).toHaveText('model-alpha');
+      await page.getByTestId('chat-model-picker-button').click();
+      await expect(betaGroup.getByRole('menuitemradio', { name: 'model-alpha', exact: true })).toHaveAttribute('aria-current', 'true');
+      await expect(alphaGroup.getByRole('menuitemradio', { name: 'model-alpha', exact: true })).not.toHaveAttribute('aria-current', 'true');
+      await betaOption.click();
       await expect(page.getByTestId('chat-model-picker-button')).toHaveText(/provider\/model-beta/);
       await expect(page.getByTestId('chat-model-picker-button')).not.toContainText('Beta');
       await expect(page.getByTestId('chat-model-picker-current-icon')).toHaveAttribute('data-model-icon', 'fallback');
@@ -336,7 +373,7 @@ test.describe('ClawX chat model picker', () => {
         await page.getByTestId(`sidebar-session-agent:main:${sibling}`).click();
         await expect(picker).toHaveText(/model-alpha/);
         await picker.click();
-        await expect(alphaOption).toHaveAttribute('aria-pressed', 'true');
+        await expect(alphaOption).toHaveAttribute('aria-checked', 'true');
         await expect(page.getByTestId('chat-model-picker-follow-agent')).toHaveCount(0);
         await picker.click();
       }
@@ -344,13 +381,13 @@ test.describe('ClawX chat model picker', () => {
       await page.getByTestId('sidebar-session-agent:main:main').click();
       await expect(picker).toHaveText(/provider\/model-beta/);
       await picker.click();
-      await expect(page.getByRole('button', { name: 'provider/model-beta Beta' })).toHaveAttribute('aria-pressed', 'true');
+      await expect(betaOption).toHaveAttribute('aria-checked', 'true');
       await alphaOption.click();
       await expect(picker).toHaveText(/model-alpha/);
 
       await page.getByTestId('sidebar-new-chat').click();
       await picker.click();
-      await expect(alphaOption).toHaveAttribute('aria-pressed', 'true');
+      await expect(alphaOption).toHaveAttribute('aria-checked', 'true');
       await expect(page.getByTestId('chat-model-picker-follow-agent')).toHaveCount(0);
       await gptOption.click();
       await expect(picker).toHaveText(/gpt-5.6/);
@@ -360,7 +397,7 @@ test.describe('ClawX chat model picker', () => {
           __chatModelPickerRequests?: Array<{ path: string; body: { createIfMissing?: boolean } | null }>;
         }).__chatModelPickerRequests?.some((r) => r.path === 'sessions:setModel' && r.body?.createIfMissing)
       ))).toBe(false);
-      await page.locator('textarea').fill('Which model handles this first turn?');
+      await page.getByTestId('chat-composer-input').fill('Which model handles this first turn?');
       await page.getByTestId('chat-composer-send').click();
       await expect.poll(() => app.evaluate(() => (
         (globalThis as typeof globalThis & { __chatModelPickerRequests?: Array<{ path: string }> })
@@ -387,6 +424,10 @@ test.describe('ClawX chat model picker', () => {
         method: 'HOST',
         body: { sessionKey: 'agent:main:main', modelRef: alphaModelRef },
       });
+      expect(requests).toContainEqual({
+        path: 'sessions:setModel', method: 'HOST',
+        body: { sessionKey: 'agent:main:main', modelRef: 'custom-beta5678/model-alpha' },
+      });
       expect(requests.some((request) => request.path === 'sessions:setModel' && request.body?.modelRef === null)).toBe(false);
       expect(requests.some((request) =>
         request.path === 'agents:updateModel'
@@ -405,13 +446,13 @@ test.describe('ClawX chat model picker', () => {
 
         const selectReviewer = async () => {
           await page.getByTestId('chat-composer-agent').click();
-          await page.getByRole('button', { name: 'Reviewer gpt-5.6' }).click();
+          await page.getByTestId('chat-agent-target-reviewer').click();
         };
         await selectReviewer();
         await expect(picker).toHaveText(/provider\/model-beta/);
         await picker.click();
-        await expect(page.getByRole('button', { name: 'provider/model-beta Beta' })).toHaveAttribute('aria-pressed', 'true');
-        await expect(gptOption).toHaveAttribute('aria-pressed', 'false');
+        await expect(betaOption).toHaveAttribute('aria-checked', 'true');
+        await expect(gptOption).toHaveAttribute('aria-checked', 'false');
         await expect(page.getByTestId('chat-model-picker-follow-agent')).toHaveCount(0);
         await gptOption.click();
         await expect(picker).toHaveText(/gpt-5.6/);
@@ -432,15 +473,16 @@ test.describe('ClawX chat model picker', () => {
           .map((r) => r.body?.sessionKey)).toEqual(['agent:reviewer:primary']);
         const routed = await routedRequests();
         const promptIndex = routed.findIndex((r) => r.path === 'chat:sendAcpPrompt');
+        expect(routed[promptIndex].body?.cwd).toBe('/tmp/clawx-model-picker-workspace-review');
         expect(routed.filter((r) => r.path === 'sessions:setModel').map((r) => r.body)).toEqual([
           { sessionKey: 'agent:reviewer:primary', modelRef: 'openai/gpt-5.6' },
         ]);
         expect(routed.findIndex((r) => r.path === 'sessions:setModel')).toBeLessThan(promptIndex);
       });
 
-      await test.step('keeps an automatically prepared first conversation as a draft until prompt dispatch', async () => {
+      await test.step('keeps the startup task local and stages its model while the catalog is unavailable', async () => {
         await app.evaluate(() => {
-          (globalThis as typeof globalThis & { __prepareFreshMainSession?: () => void }).__prepareFreshMainSession?.();
+          (globalThis as typeof globalThis & { __makeSessionCatalogUnavailable?: () => void }).__makeSessionCatalogUnavailable?.();
         });
         await page.reload();
         const startupRequests = () => app.evaluate(() => (
@@ -449,10 +491,9 @@ test.describe('ClawX chat model picker', () => {
           }).__chatModelPickerRequests ?? []
         ));
         await expect.poll(async () => (await startupRequests()).some((request) => (
-          request.path === 'chat:loadAcpSession'
-          && request.body?.sessionKey === 'agent:main:main'
-          && request.body?.createIfMissing === true
+          request.path === 'gateway:sessions.list'
         ))).toBe(true);
+        expect((await startupRequests()).filter((request) => request.path === 'chat:loadAcpSession')).toEqual([]);
         // Unsent local drafts stay out of the persisted conversation list.
         await expect(page.getByTestId('sidebar-session-agent:main:main')).toHaveCount(0);
         await expect(picker).toHaveText(/model-alpha/);
@@ -467,12 +508,15 @@ test.describe('ClawX chat model picker', () => {
         const startup = await startupRequests();
         const firstPrompt = startup.findIndex((request) => request.path === 'chat:sendAcpPrompt');
         const modelWrite = startup.findIndex((request) => request.path === 'sessions:setModel');
+        const startupDraftKey = startup[firstPrompt].body?.sessionKey;
+        expect(startupDraftKey).toMatch(/^agent:main:session-\d+$/);
         expect(modelWrite).toBeGreaterThanOrEqual(0);
         expect(modelWrite).toBeLessThan(firstPrompt);
         expect(startup[modelWrite].body).toEqual({
-          sessionKey: 'agent:main:main', modelRef: 'openai/gpt-5.6', createIfMissing: true,
+          sessionKey: startupDraftKey, modelRef: 'openai/gpt-5.6', createIfMissing: true,
         });
         await page.reload();
+        await page.getByTestId(`sidebar-session-${startupDraftKey}`).click();
         await expect(picker).toHaveText(/gpt-5.6/);
       });
 

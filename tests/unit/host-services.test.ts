@@ -644,6 +644,15 @@ describe('host services', () => {
     expect(syncDefaultProviderToRuntimeMock).toHaveBeenCalledWith('custom-local', gatewayManager);
   });
 
+  it('repairs runtime defaults even when the credential account is already selected', async () => {
+    providerServiceMock.getDefaultAccountId.mockResolvedValue('custom-local');
+    const { createProvidersApi } = await import('@electron/services/providers-api');
+    const api = createProvidersApi({ gatewayManager: {} as never, mainWindow: {} as never });
+    await expect(api.setDefaultAccount({ accountId: 'custom-local' })).resolves.toEqual({ success: true });
+    expect(syncDefaultProviderToRuntimeMock).toHaveBeenCalledTimes(1);
+    expect(syncDefaultProviderToRuntimeMock.mock.invocationCallOrder[0]).toBeLessThan(providerServiceMock.setDefaultAccount.mock.invocationCallOrder[0]);
+  });
+
   it('promotes the newest enabled account before removing the deleted default from runtime', async () => {
     const deletedAccount = {
       id: 'default-account',
@@ -1735,6 +1744,9 @@ describe('host services', () => {
     const agentsApi = createAgentsApi({ gatewayManager: gatewayManager as never });
 
     await expect(agentsApi.create({ name: 'Writer' })).resolves.toEqual({ success: true, ...snapshot });
+    await expect(agentsApi.create({ name: 'Writer', modelRef: 'openai/model-a' })).resolves.toEqual({ success: true, ...snapshot });
+    expect(createAgentMock).toHaveBeenLastCalledWith('Writer', { inheritWorkspace: false, instructions: undefined, modelRef: 'openai/model-a' });
+    await expect(agentsApi.create({ name: 'Invalid', modelRef: '' })).rejects.toThrow('modelRef');
     await expect(agentsApi.update({ id: 'writer', name: 'Writer' })).resolves.toEqual({ success: true, ...snapshot });
 
     expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
@@ -2216,7 +2228,7 @@ describe('host services', () => {
     );
   });
 
-  it('registers exactly the five ACP chat actions', async () => {
+  it('registers ACP chat and task-local model actions', async () => {
     const { createChatApi } = await import('@electron/services/chat-api');
 
     expect(Object.keys(createChatApi({

@@ -10,12 +10,13 @@
     "sinceRestart": "前回の再起動から",
     "gatewayNotRunning": "ゲートウェイが停止中",
     "models": {
-        "title": "モデル",
-        "subtitle": "AI プロバイダーを管理し、トークン使用量を監視します",
+        "title": "AI モデル",
+        "subtitle": "チャット・音声・画像モデルを管理し、利用状況を確認します。",
         "tabs": {
             "chat": "チャットモデル",
             "imageGeneration": "画像生成",
-            "voice": "音声入力"
+            "voice": "音声入力",
+            "usage": "使用量"
         }
     },
     "quickActions": {
@@ -65,7 +66,19 @@
         "contentDialogTitle": "使用量詳細の内容",
         "close": "閉じる",
         "noUsage": "使用量なし",
-        "usageParseError": "使用量解析エラー"
+        "usageParseError": "使用量解析エラー",
+        "columns": {
+            "model": "モデル / プロバイダー",
+            "time": "日時",
+            "input": "入力",
+            "output": "出力",
+            "cacheRead": "キャッシュ読取",
+            "cacheWrite": "キャッシュ書込",
+            "total": "合計",
+            "cost": "費用（USD）",
+            "actions": "詳細"
+        },
+        "sourceHint": "使用量と費用はローカルの実行記録に基づき、サービス提供元の請求額と異なる場合があります。"
     },
     "imageGeneration": {
         "title": "画像生成",

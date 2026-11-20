@@ -1,6 +1,7 @@
+import { MemoryRouter } from 'react-router-dom';
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { Agents } from '../../src/pages/Agents/index';
 
 const channelsAccountsMock = vi.fn();
@@ -9,6 +10,12 @@ const fetchAgentsMock = vi.fn();
 const updateAgentMock = vi.fn();
 const updateAgentModelMock = vi.fn();
 const refreshProviderSnapshotMock = vi.fn();
+const loadWorkspaceMock = vi.fn();
+const readTextMock = vi.fn();
+const writeTextMock = vi.fn();
+const newSessionMock = vi.fn();
+const createAgentMock = vi.fn();
+const setWorkspaceMock = vi.fn();
 
 const { gatewayState, agentsState, providersState } = vi.hoisted(() => ({
   gatewayState: {
@@ -45,7 +52,7 @@ vi.mock('@/stores/agents', () => ({
       fetchAgents: fetchAgentsMock,
       updateAgent: updateAgentMock,
       updateAgentModel: updateAgentModelMock,
-      createAgent: vi.fn(),
+      createAgent: createAgentMock,
       deleteAgent: vi.fn(),
     };
     return typeof selector === 'function' ? selector(state) : state;
@@ -66,10 +73,27 @@ vi.mock('@/stores/providers', () => ({
 
 vi.mock('@/lib/host-api', () => ({
   hostApi: {
+    files: {
+      readText: (...args: unknown[]) => readTextMock(...args),
+      writeText: (...args: unknown[]) => writeTextMock(...args),
+    },
     channels: {
       accounts: (...args: unknown[]) => channelsAccountsMock(...args),
     },
   },
+}));
+
+vi.mock('@/lib/agent-workspace', async importOriginal => ({
+  ...await importOriginal<typeof import('@/lib/agent-workspace')>(),
+  loadAgentWorkspace: (...args: unknown[]) => loadWorkspaceMock(...args),
+}));
+vi.mock('@/stores/chat', () => ({
+  useChatStore: Object.assign((selector: (state: { sessions: [] }) => unknown) => selector({ sessions: [] }), {
+    getState: () => ({ newSession: newSessionMock }),
+  }),
+}));
+vi.mock('@/stores/settings', () => ({
+  useSettingsStore: { getState: () => ({ setChatWorkspacePath: setWorkspaceMock }) },
 }));
 
 vi.mock('@/lib/host-events', () => ({
@@ -81,6 +105,7 @@ vi.mock('@/lib/host-events', () => ({
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => key,
+    i18n: { language: 'en' },
   }),
 }));
 
@@ -105,7 +130,16 @@ describe('Agents page status refresh', () => {
     fetchAgentsMock.mockResolvedValue(undefined);
     updateAgentMock.mockResolvedValue(undefined);
     updateAgentModelMock.mockResolvedValue(undefined);
+    createAgentMock.mockResolvedValue(undefined);
     refreshProviderSnapshotMock.mockResolvedValue(undefined);
+    loadWorkspaceMock.mockImplementation(async (workspace: string) => ({
+      workspace, instructions: 'Use primary sources.\n\nPreserve all existing rules.', readOnly: false, error: null,
+      files: [
+        { filePath: `${workspace}/SOUL.md`, fileName: 'SOUL.md', ext: '.md', mimeType: 'text/markdown', contentType: 'document' },
+      ],
+    }));
+    readTextMock.mockResolvedValue({ ok: true, content: 'Use primary sources.\n\nPreserve all existing rules.', readOnly: false });
+    writeTextMock.mockResolvedValue({ ok: true });
     channelsAccountsMock.mockResolvedValue({
       success: true,
       channels: [],
@@ -121,7 +155,7 @@ describe('Agents page status refresh', () => {
       return vi.fn();
     });
 
-    render(<Agents />);
+    render(<AgentsWithRouter />);
 
     await waitFor(() => {
       expect(fetchAgentsMock).toHaveBeenCalledTimes(1);
@@ -141,7 +175,7 @@ describe('Agents page status refresh', () => {
   it('refetches channel accounts when the gateway transitions to running after mount', async () => {
     gatewayState.status = { state: 'starting', port: 18789 };
 
-    const { rerender } = render(<Agents />);
+    const { rerender } = render(<AgentsWithRouter />);
 
     await waitFor(() => {
       expect(fetchAgentsMock).toHaveBeenCalledTimes(1);
@@ -150,7 +184,7 @@ describe('Agents page status refresh', () => {
 
     gatewayState.status = { state: 'running', port: 18789 };
     await act(async () => {
-      rerender(<Agents />);
+      rerender(<AgentsWithRouter />);
     });
 
     await waitFor(() => {
@@ -161,7 +195,7 @@ describe('Agents page status refresh', () => {
   it('does not render the legacy gateway warning during transient stopped status', async () => {
     gatewayState.status = { state: 'stopped', port: 18789 };
 
-    render(<Agents />);
+    render(<AgentsWithRouter />);
 
     await waitFor(() => {
       expect(fetchAgentsMock).toHaveBeenCalledTimes(1);
@@ -170,65 +204,218 @@ describe('Agents page status refresh', () => {
     expect(screen.queryByText('gatewayWarning')).not.toBeInTheDocument();
   });
 
-  it('uses "Use default model" as form fill only and disables it when already default', async () => {
-    agentsState.agents = [
-      {
-        id: 'main',
-        name: 'Main',
-        isDefault: true,
-        modelDisplay: 'claude-opus-4.6',
-        modelRef: 'openrouter/anthropic/claude-opus-4.6',
-        overrideModelRef: null,
-        inheritedModel: true,
-        workspace: '~/.openclaw/workspace',
-        agentDir: '~/.openclaw/agents/main/agent',
-        mainSessionKey: 'agent:main:desk',
-        channelTypes: [],
-      },
-    ];
-    agentsState.defaultModelRef = 'openrouter/anthropic/claude-opus-4.6';
-    providersState.accounts = [
-      {
-        id: 'openrouter-default',
-        label: 'OpenRouter',
-        vendorId: 'openrouter',
-        authMode: 'api_key',
-        model: 'openrouter/anthropic/claude-opus-4.6',
-        enabled: true,
-        createdAt: '2026-03-24T00:00:00.000Z',
-        updatedAt: '2026-03-24T00:00:00.000Z',
-      },
-    ];
-    providersState.statuses = [{ id: 'openrouter-default', hasKey: true }];
-    providersState.vendors = [
-      { id: 'openrouter', name: 'OpenRouter', modelIdPlaceholder: 'anthropic/claude-opus-4.6' },
-    ];
-    providersState.defaultAccountId = 'openrouter-default';
+  const mainAgent = {
+    id: 'main', name: 'Main', isDefault: true, modelDisplay: 'model-a',
+    modelRef: 'custom-12345678/model-a', overrideModelRef: null,
+    inheritedModel: true, workspace: '/workspace', agentDir: '/agent',
+    mainSessionKey: 'agent:main:main', channelTypes: [],
+  };
 
-    render(<Agents />);
-
-    await waitFor(() => {
-      expect(fetchAgentsMock).toHaveBeenCalledTimes(1);
-    });
-
-    fireEvent.click(screen.getByTitle('settings'));
-    fireEvent.click(screen.getByText('settingsDialog.modelLabel').closest('button') as HTMLButtonElement);
-
-    const useDefaultButton = await screen.findByRole('button', { name: 'settingsDialog.useDefaultModel' });
-    const modelIdInput = screen.getByLabelText('settingsDialog.modelIdLabel');
-    const saveButton = screen.getByRole('button', { name: 'common:actions.save' });
-
-    expect(useDefaultButton).toBeDisabled();
-
-    fireEvent.change(modelIdInput, { target: { value: 'anthropic/claude-sonnet-4.5' } });
-    expect(useDefaultButton).toBeEnabled();
-    expect(saveButton).toBeEnabled();
-
-    fireEvent.click(useDefaultButton);
-
+  it('stages a configured model until the overview is saved', async () => {
+    agentsState.agents = [mainAgent];
+    agentsState.defaultModelRef = 'custom-12345678/model-a';
+    providersState.accounts = [{ id: 'custom-12345678', label: 'Research Lab', vendorId: 'custom', authMode: 'local', enabled: true, model: 'model-a', metadata: { customModels: ['model-a', 'model-b'] }, updatedAt: '2026-10-31' }];
+    render(<AgentsWithRouter />);
+    fireEvent.click(screen.getByTestId('agent-manage-main'));
+    const trigger = screen.getByTestId('agent-model-picker-button');
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    fireEvent.keyDown(await screen.findByRole('menuitemradio', { name: 'model-b' }), { key: 'Enter' });
     expect(updateAgentModelMock).not.toHaveBeenCalled();
-    expect((modelIdInput as HTMLInputElement).value).toBe('anthropic/claude-opus-4.6');
-    expect(useDefaultButton).toBeDisabled();
+    expect(trigger).toHaveTextContent('model-b');
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    fireEvent.click(screen.getByTestId('agent-overview-save'));
+    await waitFor(() => expect(updateAgentModelMock).toHaveBeenCalledWith('main', 'custom-12345678/model-b'));
+  });
+
+  it('shows the selected provider when two providers offer the same model', async () => {
+    agentsState.agents = [mainAgent];
+    providersState.accounts = [
+      { id: 'custom-12345678', label: 'Research Lab', vendorId: 'custom', authMode: 'local', enabled: true, model: 'model-a', updatedAt: '2026-10-31' },
+      { id: 'custom-87654321', label: 'Studio', vendorId: 'custom', authMode: 'local', enabled: true, model: 'model-a', updatedAt: '2026-10-30' },
+    ];
+    render(<AgentsWithRouter />);
+    fireEvent.click(screen.getByTestId('agent-manage-main'));
+    const picker = screen.getByTestId('agent-model-picker-button');
+    expect(picker).toHaveTextContent('model-a');
+    expect(picker).toHaveTextContent('Research Lab');
+    fireEvent.keyDown(picker, { key: 'ArrowDown' });
+    const studio = await screen.findByRole('group', { name: 'Studio' });
+    fireEvent.keyDown(within(studio).getByRole('menuitemradio', { name: 'model-a' }), { key: 'Enter' });
+    expect(picker).toHaveTextContent('Studio');
+    expect(picker).not.toHaveTextContent('Research Lab');
+    expect(updateAgentModelMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('agent-overview-save'));
+    await waitFor(() => expect(updateAgentModelMock).toHaveBeenCalledWith('main', 'custom-87654321/model-a'));
+  });
+
+  it('keeps an unknown inherited model visible and does not write it while browsing or cancelling', async () => {
+    agentsState.agents = [{ ...mainAgent, modelRef: 'external/exact-model', modelDisplay: 'exact-model' }];
+    render(<AgentsWithRouter />);
+    fireEvent.click(screen.getByTestId('agent-manage-main'));
+    expect(screen.getByTestId('agent-model-picker-button')).toHaveTextContent('external/exact-model');
+    expect(screen.getByTestId('agent-model-picker-button')).toHaveAttribute('title', 'external/exact-model');
+    expect(screen.getByTestId('agent-model-picker-button')).toBeDisabled();
+    expect(screen.getByTestId('agent-model-legacy-hint')).toBeInTheDocument();
+    expect(screen.queryByLabelText('profile.modelRefLabel')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'profile.close' }));
+    expect(updateAgentModelMock).not.toHaveBeenCalled();
+    expect(createAgentMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps an external model until a configured model is explicitly saved', async () => {
+    agentsState.agents = [{ ...mainAgent, modelRef: 'external/exact-model', modelDisplay: 'exact-model' }];
+    providersState.accounts = [{ id: 'custom-12345678', label: 'Lab', vendorId: 'custom', authMode: 'local', enabled: true, model: 'model-a', updatedAt: '2026-10-31' }];
+    render(<AgentsWithRouter />);
+    fireEvent.click(screen.getByTestId('agent-manage-main'));
+    const picker = screen.getByTestId('agent-model-picker-button');
+    expect(picker).toHaveTextContent('external/exact-model');
+    fireEvent.keyDown(picker, { key: 'ArrowDown' });
+    const configuredModel = await screen.findByRole('menuitemradio', { name: 'model-a' });
+    expect(updateAgentModelMock).not.toHaveBeenCalled();
+    fireEvent.keyDown(configuredModel, { key: 'Enter' });
+    expect(updateAgentModelMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('agent-overview-save'));
+    await waitFor(() => expect(updateAgentModelMock).toHaveBeenCalledWith('main', 'custom-12345678/model-a'));
+  });
+
+  it('saves the name and model together only from the overview footer', async () => {
+    agentsState.agents = [mainAgent];
+    providersState.accounts = [{ id: 'custom-12345678', label: 'Lab', vendorId: 'custom', authMode: 'local', enabled: true, model: 'model-a', metadata: { customModels: ['model-a', 'model-b'] }, updatedAt: '2026-10-31' }];
+    render(<AgentsWithRouter />);
+    fireEvent.click(screen.getByTestId('agent-manage-main'));
+    fireEvent.change(screen.getByLabelText('settingsDialog.nameLabel'), { target: { value: 'New name' } });
+    fireEvent.keyDown(screen.getByTestId('agent-model-picker-button'), { key: 'ArrowDown' });
+    fireEvent.keyDown(await screen.findByRole('menuitemradio', { name: 'model-b' }), { key: 'Enter' });
+    expect(updateAgentMock).not.toHaveBeenCalled();
+    expect(updateAgentModelMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('agent-overview-save'));
+    await waitFor(() => expect(updateAgentModelMock).toHaveBeenCalledWith('main', 'custom-12345678/model-b'));
+    expect(updateAgentMock).toHaveBeenCalledWith('main', 'New name');
+  });
+
+  it('keeps the model draft in the dialog if its save fails after saving the name', async () => {
+    agentsState.agents = [mainAgent];
+    providersState.accounts = [{ id: 'custom-12345678', label: 'Lab', vendorId: 'custom', authMode: 'local', enabled: true, model: 'model-a', metadata: { customModels: ['model-a', 'model-b'] }, updatedAt: '2026-10-31' }];
+    updateAgentModelMock.mockRejectedValueOnce(new Error('save failed'));
+    render(<AgentsWithRouter />);
+    fireEvent.click(screen.getByTestId('agent-manage-main'));
+    fireEvent.change(screen.getByLabelText('settingsDialog.nameLabel'), { target: { value: 'New name' } });
+    fireEvent.keyDown(screen.getByTestId('agent-model-picker-button'), { key: 'ArrowDown' });
+    fireEvent.keyDown(await screen.findByRole('menuitemradio', { name: 'model-b' }), { key: 'Enter' });
+    fireEvent.click(screen.getByTestId('agent-overview-save'));
+    await waitFor(() => expect(updateAgentModelMock).toHaveBeenCalled());
+    expect(updateAgentMock).toHaveBeenCalledWith('main', 'New name');
+    expect(screen.getByTestId('agent-detail-dialog')).toBeVisible();
+    expect(screen.getByTestId('agent-model-picker-button')).toHaveTextContent('model-b');
+  });
+
+  it('confirms before discarding an unsaved model choice', async () => {
+    agentsState.agents = [mainAgent];
+    providersState.accounts = [{ id: 'custom-12345678', label: 'Lab', vendorId: 'custom', authMode: 'local', enabled: true, model: 'model-a', metadata: { customModels: ['model-a', 'model-b'] }, updatedAt: '2026-10-31' }];
+    render(<AgentsWithRouter />);
+    fireEvent.click(screen.getByTestId('agent-manage-main'));
+    fireEvent.keyDown(screen.getByTestId('agent-model-picker-button'), { key: 'ArrowDown' });
+    fireEvent.keyDown(await screen.findByRole('menuitemradio', { name: 'model-b' }), { key: 'Enter' });
+    fireEvent.click(screen.getByRole('button', { name: 'common:actions.cancel' }));
+    expect(screen.getByText('settingsDialog.unsavedChangesTitle')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'settingsDialog.closeWithoutSaving' }));
+    expect(updateAgentModelMock).not.toHaveBeenCalled();
+  });
+
+  it('treats returning to the inherited model as no change', async () => {
+    agentsState.agents = [mainAgent];
+    providersState.accounts = [{ id: 'custom-12345678', label: 'Lab', vendorId: 'custom', authMode: 'local', enabled: true, model: 'model-a', metadata: { customModels: ['model-a', 'model-b'] }, updatedAt: '2026-10-31' }];
+    render(<AgentsWithRouter />);
+    fireEvent.click(screen.getByTestId('agent-manage-main'));
+    const picker = screen.getByTestId('agent-model-picker-button');
+    fireEvent.keyDown(picker, { key: 'ArrowDown' });
+    fireEvent.keyDown(await screen.findByRole('menuitemradio', { name: 'model-b' }), { key: 'Enter' });
+    expect(screen.getByTestId('agent-overview-save')).toBeEnabled();
+    fireEvent.keyDown(picker, { key: 'ArrowDown' });
+    fireEvent.keyDown(await screen.findByRole('menuitemradio', { name: 'model-a' }), { key: 'Enter' });
+    expect(screen.getByTestId('agent-overview-save')).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'common:actions.cancel' }));
+    expect(updateAgentModelMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps a separate SOUL.md draft open after saving overview settings', async () => {
+    agentsState.agents = [mainAgent];
+    render(<AgentsWithRouter />);
+    fireEvent.click(screen.getByTestId('agent-manage-main'));
+    fireEvent.change(screen.getByLabelText('settingsDialog.nameLabel'), { target: { value: 'New name' } });
+    fireEvent.click(screen.getByTestId('agent-tab-profile'));
+    fireEvent.click(await screen.findByRole('button', { name: 'profile.editStyle' }));
+    fireEvent.change(screen.getByTestId('agent-style-editor'), { target: { value: 'Unfinished work style' } });
+    fireEvent.click(screen.getByTestId('agent-tab-overview'));
+    fireEvent.click(screen.getByTestId('agent-overview-save'));
+    await waitFor(() => expect(screen.getByTestId('agent-tab-profile')).toHaveAttribute('data-state', 'active'));
+    expect(updateAgentMock).toHaveBeenCalledWith('main', 'New name');
+    expect(screen.getByTestId('agent-style-editor')).toHaveValue('Unfinished work style');
+    expect(writeTextMock).not.toHaveBeenCalled();
+  });
+
+  it('requires a configured model to create an assistant and never writes when cancelled', async () => {
+    agentsState.agents = [mainAgent];
+    render(<AgentsWithRouter />);
+    fireEvent.click(screen.getByTestId('agents-add-button'));
+    fireEvent.change(screen.getByLabelText('createDialog.nameLabel'), { target: { value: 'Planner' } });
+    expect(screen.getByTestId('agent-create-model-picker-button')).toBeDisabled();
+    expect(screen.getByTestId('agent-create-model-picker-button')).toHaveTextContent('profile.notConfigured');
+    expect(screen.getByRole('button', { name: 'createDialog.submit' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'common:actions.cancel' }));
+    expect(createAgentMock).not.toHaveBeenCalled();
+    expect(updateAgentModelMock).not.toHaveBeenCalled();
+  });
+
+  it('includes the explicit model in assistant creation without a follow-up model write', async () => {
+    agentsState.agents = [mainAgent];
+    providersState.accounts = [{ id: 'custom-12345678', label: 'Lab', vendorId: 'custom', authMode: 'local', enabled: true, model: 'model-a', updatedAt: '2026-10-31' }];
+    render(<AgentsWithRouter />);
+    fireEvent.click(screen.getByTestId('agents-add-button'));
+    fireEvent.change(screen.getByLabelText('createDialog.nameLabel'), { target: { value: 'Planner' } });
+    fireEvent.click(screen.getByRole('button', { name: 'createDialog.submit' }));
+    await waitFor(() => expect(createAgentMock).toHaveBeenCalledWith('Planner', { inheritWorkspace: false, instructions: '', modelRef: mainAgent.modelRef }));
+    expect(updateAgentModelMock).not.toHaveBeenCalled();
+  });
+
+  it('edits the full native SOUL.md and keeps the default assistant name editable', async () => {
+    agentsState.agents = [mainAgent];
+    render(<AgentsWithRouter />);
+    fireEvent.click(screen.getByTestId('agent-manage-main'));
+    expect(screen.getByLabelText('settingsDialog.nameLabel')).not.toHaveAttribute('readonly');
+    fireEvent.click(screen.getByTestId('agent-tab-profile'));
+    fireEvent.click(await screen.findByRole('button', { name: 'profile.editStyle' }));
+    const editor = screen.getByTestId('agent-style-editor');
+    expect(editor).toHaveValue('Use primary sources.\n\nPreserve all existing rules.');
+    fireEvent.change(editor, { target: { value: 'New role.\n\nPreserve all existing rules.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'profile.saveStyle' }));
+    await waitFor(() => expect(writeTextMock).toHaveBeenCalledWith('/workspace/SOUL.md', 'New role.\n\nPreserve all existing rules.'));
+  });
+
+  it('preserves a conflicting instruction draft and offers an explicit reload', async () => {
+    agentsState.agents = [mainAgent];
+    render(<AgentsWithRouter />);
+    fireEvent.click(screen.getByTestId('agent-manage-main'));
+    fireEvent.click(screen.getByTestId('agent-tab-profile'));
+    fireEvent.click(await screen.findByRole('button', { name: 'profile.editStyle' }));
+    fireEvent.change(screen.getByTestId('agent-style-editor'), { target: { value: 'My draft' } });
+    readTextMock.mockResolvedValue({ ok: true, content: 'External update', readOnly: false });
+    fireEvent.click(screen.getByRole('button', { name: 'profile.saveStyle' }));
+    await screen.findByRole('button', { name: 'profile.reloadStyle' });
+    expect(writeTextMock).not.toHaveBeenCalled();
+    expect(screen.getByTestId('agent-style-editor')).toHaveValue('My draft');
+    fireEvent.click(screen.getByRole('button', { name: 'profile.reloadStyle' }));
+    expect(screen.getByTestId('agent-style-editor')).toHaveValue('External update');
+  });
+
+  it('does not offer editing when Main marks the instruction file read-only', async () => {
+    agentsState.agents = [mainAgent];
+    loadWorkspaceMock.mockResolvedValue({ workspace: '/workspace', instructions: 'Read-only style', readOnly: true, files: [{ fileName: 'SOUL.md', filePath: '/workspace/SOUL.md' }], error: null });
+    render(<AgentsWithRouter />);
+    fireEvent.click(screen.getByTestId('agent-manage-main'));
+    fireEvent.click(screen.getByTestId('agent-tab-profile'));
+    await screen.findByText('profile.readOnlyStyle');
+    expect(screen.queryByRole('button', { name: 'profile.editStyle' })).not.toBeInTheDocument();
   });
 
   it('keeps the last agent snapshot visible while a refresh is in flight', async () => {
@@ -248,13 +435,13 @@ describe('Agents page status refresh', () => {
       },
     ];
 
-    const { rerender } = render(<Agents />);
+    const { rerender } = render(<AgentsWithRouter />);
 
     expect(await screen.findByText('Main')).toBeInTheDocument();
 
     agentsState.loading = true;
     await act(async () => {
-      rerender(<Agents />);
+      rerender(<AgentsWithRouter />);
     });
 
     expect(screen.getByText('Main')).toBeInTheDocument();
@@ -267,9 +454,11 @@ describe('Agents page status refresh', () => {
     refreshProviderSnapshotMock.mockImplementation(() => new Promise(() => {}));
     channelsAccountsMock.mockImplementation(() => new Promise(() => {}));
 
-    const { container } = render(<Agents />);
+    const { container } = render(<AgentsWithRouter />);
 
     expect(container.querySelector('svg.animate-spin')).toBeTruthy();
-    expect(screen.queryByText('title')).not.toBeInTheDocument();
+    expect(screen.getByText('title')).toBeInTheDocument();
   });
 });
+
+function AgentsWithRouter() { return <MemoryRouter><Agents /></MemoryRouter>; }

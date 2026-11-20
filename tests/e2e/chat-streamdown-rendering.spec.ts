@@ -137,6 +137,7 @@ test.describe('ClawX streaming Markdown rendering', { tag: E2E_EXCLUSIVE_TAG }, 
       }
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
+      await page.getByTestId(`sidebar-session-${SESSION_KEY}`).click();
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
       await emitAcpSessionUpdates(app, [{
         sessionUpdate: 'agent_message',
