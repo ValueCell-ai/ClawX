@@ -349,3 +349,106 @@ describe('native cron model selection after remote catalog updates', () => {
     expect(f.params.payload.model).toBeUndefined();
   });
 });
+
+describe('snapshot-backed scheduled worker deadlines', () => {
+  const timeouts = requireRuntime(path.join(runtimeDir, 'clawx-cron-timeout-migration.mjs')) as {
+    migrateClawxCronTimeouts: (params: Json) => Promise<void>;
+    getClawxMigratedLauncher: (job: Json) => { command: string; timeoutSeconds: number } | undefined;
+  };
+
+  async function timeoutFixture(historicalSeconds = 60) {
+    const f = await fixture();
+    const command = 'uv run python "C:\\Scheduled Jobs\\legacy.py" --start --timeout-seconds 900';
+    f.job.payload = { kind: 'agentTurn', message: '启动独立 worker：' + command, timeoutSeconds: historicalSeconds };
+    const definition = structuredClone(f.job);
+    delete definition.agentId;
+    const launcher = { command, timeoutSeconds: historicalSeconds === 60 ? 3600 : historicalSeconds };
+    const manifestPath = path.join(homes.at(-1)!, 'workers.json');
+    await writeFile(manifestPath, JSON.stringify({ version: 1, jobs: [{ definition, jobId: f.job.id, agentId: 'main', ...launcher }] }));
+    f.job.inferenceBinding = f.binding;
+    const update = vi.fn(async (_id: string, patch: Json, precondition: (job: Json) => void) => {
+      f.beforeCommit.fn?.();
+      precondition(structuredClone(f.job));
+      expect(Object.keys(patch)).toEqual(['payload']);
+      expect(Object.keys(patch.payload).sort()).toEqual(['kind', 'timeoutSeconds']);
+      f.job.payload = { ...f.job.payload, ...patch.payload };
+      f.job.updatedAtMs++;
+      return structuredClone(f.job);
+    });
+    const run = () => timeouts.migrateClawxCronTimeouts({
+      cron: { readJob: f.cron.readJob, updateWithPrecondition: update }, env: { CLAWX_CRON_TIMEOUT_MIGRATION_MANIFEST: manifestPath }, log: f.log,
+    });
+    return { ...f, launcher, manifestPath, run, update };
+  }
+
+  it('registers an unchanged custom timeout across starts and respects a later edit', async () => {
+    const f = await timeoutFixture(600);
+    const original = structuredClone(f.job);
+    for (let start = 0; start < 2; start++) {
+      await f.run();
+      expect(timeouts.getClawxMigratedLauncher(f.job)).toEqual(f.launcher);
+      expect(f.job).toEqual(original);
+    }
+    f.job.payload.timeoutSeconds = 450;
+    expect(timeouts.getClawxMigratedLauncher(f.job)).toBeUndefined();
+    await f.run();
+    expect(timeouts.getClawxMigratedLauncher(f.job)).toBeUndefined();
+    expect(f.job.payload.timeoutSeconds).toBe(450);
+    expect(f.update).not.toHaveBeenCalled();
+  });
+
+  it('preserves an existing receipt when a custom timeout snapshot claims the same job', async () => {
+    const f = await timeoutFixture();
+    await f.run();
+    const original = await readFile(f.manifestPath, 'utf8');
+    const conflicting = JSON.parse(original);
+    conflicting.jobs[0].timeoutSeconds = 600;
+    conflicting.jobs[0].definition.payload.timeoutSeconds = 600;
+    f.job.payload.timeoutSeconds = 600;
+    await writeFile(f.manifestPath, JSON.stringify(conflicting));
+    await f.run();
+    expect(timeouts.getClawxMigratedLauncher(f.job)).toBeUndefined();
+    await writeFile(f.manifestPath, original);
+    f.job.payload.timeoutSeconds = 3600;
+    await f.run();
+    expect(timeouts.getClawxMigratedLauncher(f.job)).toEqual(f.launcher);
+    expect(f.update).toHaveBeenCalledOnce();
+  });
+
+  it('changes only the deadline once, restores the exact launcher across starts, and respects a later manual change back to 60', async () => {
+    const f = await timeoutFixture();
+    const original = structuredClone(f.job);
+    await f.run();
+    expect(f.job).toEqual({ ...original, updatedAtMs: original.updatedAtMs + 1, payload: { ...original.payload, timeoutSeconds: 3600 } });
+    expect(timeouts.getClawxMigratedLauncher(f.job)).toEqual(f.launcher);
+    f.job.state.lastRunAtMs = 123;
+    f.job.updatedAtMs += 10;
+    await f.run();
+    expect(f.update).toHaveBeenCalledOnce();
+    expect(timeouts.getClawxMigratedLauncher(f.job)).toEqual(f.launcher);
+    f.job.payload.timeoutSeconds = 60;
+    await f.run();
+    expect(f.update).toHaveBeenCalledOnce();
+    expect(timeouts.getClawxMigratedLauncher(f.job)).toBeUndefined();
+  });
+
+  it('skips a changed job and invalidates registration when a command or delivery destination is edited', async () => {
+    const f = await timeoutFixture();
+    await f.run();
+    expect(timeouts.getClawxMigratedLauncher({ ...f.job, delivery: { mode: 'announce', to: 'new' } })).toBeUndefined();
+    f.job.payload.message += ' edited';
+    await f.run();
+    expect(f.update).toHaveBeenCalledOnce();
+    expect(timeouts.getClawxMigratedLauncher(f.job)).toBeUndefined();
+  });
+
+  it('retains the live job when the operator edits it before the store-locked comparison', async () => {
+    const f = await timeoutFixture();
+    f.beforeCommit.fn = () => { f.job.payload.timeoutSeconds = 125; f.job.updatedAtMs++; };
+    await f.run();
+    expect(f.job.payload.timeoutSeconds).toBe(125);
+    expect(timeouts.getClawxMigratedLauncher(f.job)).toBeUndefined();
+    await f.run();
+    expect(f.update).toHaveBeenCalledOnce();
+  });
+});

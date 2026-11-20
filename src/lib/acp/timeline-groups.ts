@@ -1,9 +1,11 @@
+import { imageGenerationTaskIdFromToolOutput } from './image-generation-compat';
 import type {
   AcpTimelineSnapshot,
   AttachmentRenderPart,
   MessageSegmentItem,
   RenderPart,
   TimelineItem,
+  ToolCallItem,
 } from './timeline-types';
 
 export type AcpUserDisplayGroup = {
@@ -23,7 +25,7 @@ export type AcpAssistantTurnDisplayGroup = {
 
 export type AcpTimelineDisplayGroup = AcpUserDisplayGroup | AcpAssistantTurnDisplayGroup;
 
-function isUserMessageSegment(item: TimelineItem): item is MessageSegmentItem {
+function isUserMessageSegment(item: TimelineItem): item is MessageSegmentItem & { role: 'user' } {
   return item.kind === 'message-segment' && item.role === 'user';
 }
 
@@ -102,20 +104,64 @@ function appendAssistantItem(groups: AcpTimelineDisplayGroup[], item: TimelineIt
   group.items.push(item);
 }
 
+function backgroundTaskForTool(tool: ToolCallItem | undefined): string | undefined {
+  if (!tool || tool.status === 'failed') return undefined;
+  const text = tool.outputParts.flatMap((part) => part.kind === 'markdown' ? [part.text] : []).join('\n');
+  return imageGenerationTaskIdFromToolOutput(tool.output, text, tool);
+}
+
 export function groupAcpTimelineItems(snapshot: AcpTimelineSnapshot): AcpTimelineDisplayGroup[] {
   const groups: AcpTimelineDisplayGroup[] = [];
+  const imageResults: MessageSegmentItem[] = [];
+  let lastTool: ToolCallItem | undefined;
+  const flushImageResults = () => {
+    for (const result of imageResults) appendAssistantItem(groups, result);
+    imageResults.length = 0;
+  };
 
   for (const itemId of snapshot.itemOrder) {
     const item = snapshot.itemsById[itemId];
     if (!item) continue;
 
     if (isUserMessageSegment(item)) {
+      flushImageResults();
+      lastTool = undefined;
       appendUserItem(groups, item);
       continue;
     }
 
+    // The store anchors a background result at its tool. Display the native
+    // acknowledgment first, including when it arrives after the image.
+    if (item.kind === 'message-segment' && item.compat?.source === 'image-generation') {
+      if (item.compat.provisionalText) {
+        // A message tool can deliver the acknowledgment as a separate card.
+        // Replay can already have placed the correlated image at an earlier tool.
+        const group = assistantGroupForItem(groups, item);
+        const taskId = item.compat.taskId;
+        if (taskId) {
+          group.items = group.items.filter((prior) => {
+            if (prior.kind !== 'message-segment' || prior.compat?.taskId !== taskId || prior.compat.provisionalText) return true;
+            imageResults.push(prior);
+            return false;
+          });
+        }
+        appendAssistantItem(groups, item);
+        continue;
+      }
+      imageResults.push(item);
+      continue;
+    }
+    if (item.kind === 'tool-call') {
+      if (imageResults.length) {
+        // The dispatch wrapper and its child can be separate cards for one task.
+        const taskId = backgroundTaskForTool(item);
+        if (!taskId || taskId !== backgroundTaskForTool(lastTool)) flushImageResults();
+      }
+      lastTool = item;
+    }
     appendAssistantItem(groups, item);
   }
 
+  flushImageResults();
   return groups;
 }

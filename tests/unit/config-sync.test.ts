@@ -128,12 +128,18 @@ describe('managed cron migration environment', () => {
   it.each([undefined, ''])('omits missing manifest %s without retaining inherited evidence', (manifest) => {
     const source = Object.freeze({
       PATH: '/usr/bin', HTTP_PROXY: '', CLAWX_CRON_MIGRATION_MANIFEST: '/old/manifest.json',
+      CLAWX_CRON_TIMEOUT_MIGRATION_MANIFEST: '/untrusted/timeout.json',
     });
     const env = withCronMigrationManifestEnv(source, manifest);
 
     expect(Object.hasOwn(env, 'CLAWX_CRON_MIGRATION_MANIFEST')).toBe(false);
     expect(env).toEqual({ PATH: '/usr/bin', HTTP_PROXY: '' });
     expect(source.CLAWX_CRON_MIGRATION_MANIFEST).toBe('/old/manifest.json');
+  });
+
+  it('can pass verified worker evidence independently of account evidence', () => {
+    const env = withCronMigrationManifestEnv({ CLAWX_CRON_TIMEOUT_MIGRATION_MANIFEST: 'inherited' }, undefined, 'verified');
+    expect(env).toEqual({ CLAWX_CRON_TIMEOUT_MIGRATION_MANIFEST: 'verified' });
   });
 
   it('injects only the current manifest path and preserves unrelated settings', () => {

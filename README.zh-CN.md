@@ -138,6 +138,13 @@ pnpm dev
 
 ### 升级已有 OpenClaw 数据
 
+Windows 升级修复会使用内置 npm，并将旧版图像模型设置迁移到 `agents.defaults.mediaModels.image`。如果已升级到 0.7.0，启动时出现 `spawn npm.cmd ENOENT`，或提示无法识别 `imageGenerationModel`，可按以下步骤恢复。
+
+1. 从系统托盘退出 ClawX。备份整个 OpenClaw 状态目录（默认为 `%USERPROFILE%\.openclaw`），保留现有数据库和迁移备份。
+2. 打开状态目录中的 `openclaw.json`。如果 `agents.defaults` 下有旧字段 `imageGenerationModel`，请检查主文件及 `$include` 引用文件中的 `mediaModels.image`。如果已有模型，保留它在原文件中的配置。如果主文件的 `image: null` 覆盖了引用文件中的模型，删除主文件中的这个空值，让引用文件中的模型及其选项生效。如果生效值仍然缺失或为 `null`，则将旧模型的完整值写入 `mediaModels.image`，包括原有的 `primary`、`fallbacks` 和 `timeoutMs`。从定义旧字段的文件中删除 `imageGenerationModel`，保留其他媒体设置后保存。
+3. 使用平时运行 ClawX 的 Windows 账户，在包含 `ClawX.exe` 的目录打开 PowerShell，运行 `npm.cmd --version`。如果找不到命令，请将带有 npm 的 Node.js 安装目录加入 PATH，在同一目录重新打开 PowerShell 并确认版本。如果配置了 DeepSeek 等供应商，Doctor 可能需要访问 npm 软件源来安装对应插件。
+4. 在刚刚成功显示 npm 版本的 PowerShell 窗口中运行 `.\ClawX.exe`。等待 Doctor 自动修复结束，确认网关已就绪。若仍启动失败，打开 **设置 → 高级 → 开发者 → 运行 Doctor 并修复**。修复成功后重启网关，再次确认就绪状态。
+
 Windows 升级会识别旧安装遗留的盘符路径和网络插件路径，从旧版加载列表中清理已失效或指向内置插件的路径，并保留仍存在的外部插件和相对包引用。
 
 从 ClawX 0.6.1 升级时，有效的多 Agent 配置会保留各 Agent 原先实际使用的工作区，以及配置中旧默认 Agent 的职责。Agent 设置、后续 Agent 编辑和工作区准备使用一致的运行时路径规则；显式配置的外部工作区保留原路径。
@@ -156,7 +163,7 @@ ClawX 支持从官方 0.6.1（OpenClaw `2026.7.1-2`）或使用 `2026.10.5` 的 
 
 需要回退时，先退出所有 ClawX、Gateway 和 Doctor 进程，再用 Node 24.16+（24.x）或 26.1+ 执行 `node <应用资源目录>/cli/restore-openclaw-upgrade.mjs <快照目录> --confirm-stopped`。恢复工具验证文件哈希，一并恢复配置、数据库和插件文件，并通过恢复日志保留被替换的新版数据；恢复中断后，在当前配置可读的前提下再次执行会先撤销未完成的恢复。工具按 JSON5 解析当前配置，同时检查当前、快照和默认端口；配置缺失、不可读或无效时拒绝恢复。如果中断时配置已被移走，须先按下方说明手工恢复当前配置。请保留工具旁的 OpenClaw 资源目录，其中包含 JSON5 解析依赖。恢复后请先安装对应的旧版 ClawX 再启动，否则新版应用会再次迁移旧数据库。详见[升级和恢复说明](harness/reference/openclaw-2026-10-10-upgrade.md)。 Windows 可使用安装目录内的 `resources/bin/node.exe`，恢复前须退出托盘中的 ClawX，并沿用原 Windows 用户配置目录。
 
-Windows 安装版从 0.6.1 直接升级时，如果需要迁移数据库，ClawX 会自动使用随附的 Node.js 运行 Doctor，然后启动 Gateway，恢复定时任务调度。
+Windows 版从 0.6.1 直接升级时，如果需要迁移数据库，ClawX 会自动使用随附的 Node.js 运行 Doctor。迁移完成后，Gateway 启动，原有定时任务恢复调度，用户也可以继续之前的对话。
 
 Windows 上清理 SQLite 临时快照和旧会话导入目录时，会先释放父进程保留的文件身份校验句柄，再删除临时数据库，避免 Doctor 自身的句柄导致升级检查或会话迁移报 `EPERM`、`ENOTEMPTY`。详见[本机升级验证记录](harness/reference/windows-sqlite-upgrade-validation-20261109.md)。
 
@@ -165,6 +172,8 @@ Doctor 也识别已验证的 `2026.10.5`/schema 25 情况：首次启动 Gateway
 扩展恢复运行时凭据时也遵循同样的升级顺序：先保留快照、完成离线 schema 准备，再恢复扩展所需的配置，最后启动 ClawX 管理的 Gateway。准备失败或被取消会阻止该次启动，不会强行向旧 schema 写入凭据。验证范围和限制见[企业版升级验证记录](harness/reference/enterprise-windows-upgrade-validation-20261109.md)。
 
 旧定时任务可在开源版或企业版凭据恢复后、按计划派发前，根据经过校验的迁移前快照补齐推理账户绑定。恢复要求沿用原账户，并保留任务 ID、时间安排、投递设置和默认模型继承方式。同步未变更的凭据会保留已有授权；账户缺失、有歧义或已更换时会留下诊断，不会静默改用其他账户。远端模型下线后，任务可沿用原服务商和账户使用已配置的备选模型；显式模型锁定或禁用回退的设置仍然有效。详见[定时任务迁移及验证限制](harness/reference/cron-inference-upgrade.md)。
+
+在 Windows 上升级时，ClawX 会从当前使用的定时任务存储中识别启动后台 worker 后立即返回的旧脚本。ClawX 继续使用原来的启动命令，等待其 Windows Job 完成。如果任务自定义了 600 秒等执行时限，worker 沿用该时限。旧设置只覆盖启动阶段、且无法确认整个后台任务所需时长时，迁移后的作业上限为 1 小时。
 
 没有需要迁移的定时任务时，Gateway 也能正常启动。创建进程前会省略未设置的可选启动参数，避免升级后出现 `Invalid value for env`。详见[故障定位及验证](harness/reference/gateway-undefined-launch-env-20261111.md)。
 

@@ -17,13 +17,19 @@ process.exitCode = Number(process.argv[2]);
     for (const code of [78, 0]) {
       const result = await app.evaluate(async (_electron, params) => {
         const { forkOpenClawUtilityProcess } = process.mainModule!.require(params.launcher);
+        const { once } = process.mainModule!.require('node:events') as typeof import('node:events');
+        const { text } = process.mainModule!.require('node:stream/consumers') as typeof import('node:stream/consumers');
         return await new Promise<{ code: number; output: string }>((resolve, reject) => {
           const child = forkOpenClawUtilityProcess(params.entry, [String(params.code)], { stdio: 'pipe' },
             { gatewayShutdownControl: params.code === 78 });
-          let output = '';
-          child.stdout.on('data', (data: Buffer) => { output += data.toString(); });
           const timeout = setTimeout(() => { child.kill(); reject(new Error('Deferred CLI exit stalled')); }, 10000);
-          child.on('exit', (exitCode: number) => { clearTimeout(timeout); resolve({ code: exitCode, output }); });
+          const stdout = child.stdout;
+          // Electron removes stdout listeners as it dispatches exit. Leave this
+          // single-line fixture buffered until the exit handler has returned.
+          once(child, 'exit')
+            .then(async ([code]) => ({ code, output: await text(stdout) }))
+            .then(resolve, reject)
+            .finally(() => clearTimeout(timeout));
         });
       }, { launcher, entry, code });
       expect(result.code).toBe(code);

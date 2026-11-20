@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
-import { prepareCronInferenceMigration } from '@electron/utils/openclaw-cron-migration';
+import { prepareCronInferenceMigration, prepareCronTimeoutMigration } from '@electron/utils/openclaw-cron-migration';
 import { ensureOpenClawUpgradeSnapshot } from '@electron/utils/openclaw-upgrade-snapshot';
 
 type JsonRecord = Record<string, unknown>;
@@ -86,6 +86,135 @@ describe('legacy cron migration snapshot evidence', () => {
     const { entries } = await prepare(f);
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({ jobId: 'canonical', profileId: 'custom:canonical', credentialDigest: runtime.stableCredentialDigest(canonical) });
+  });
+  it.each(['default', 'config', 'machine'])('loads only the active %s SQLite partition for both migrations', async selection => {
+    const f = await fixture();
+    const defaultStore = join(f.stateDir, 'cron', 'jobs.json');
+    const customStore = join(f.root, 'custom store', 'tasks.json');
+    const active = selection === 'default' ? defaultStore : customStore;
+    const inactive = selection === 'default' ? customStore : defaultStore;
+    if (selection !== 'default') await writeFile(f.configPath, JSON.stringify({
+      ...config(), meta: { lastTouchedVersion: '2026.10.5' }, ...(selection === 'config' && { cron: { store: customStore } }),
+    }));
+    await f.json('agents/main/agent/auth-profiles.json', { profiles: { 'custom:default': credential() } });
+    const launcher = (id: string, name: string) => job(id, { name, payload: {
+      kind: 'agentTurn', timeoutSeconds: 60, message: `启动独立 worker：python C:/jobs/${name}.py --start`,
+    } });
+    await f.sqlite('state/openclaw.sqlite', db => {
+      db.exec('CREATE TABLE cron_jobs (store_key TEXT, job_id TEXT, job_json TEXT, PRIMARY KEY (store_key, job_id))');
+      if (selection === 'default') db.exec('ALTER TABLE cron_jobs ADD COLUMN payload_timeout_seconds INTEGER');
+      if (selection !== 'default') {
+        db.exec('CREATE TABLE config_machine_state (state_key TEXT PRIMARY KEY, value_json TEXT)');
+        // Explicit cron.store wins even when the database contains an older selection.
+        db.prepare('INSERT INTO config_machine_state VALUES (?,?)').run('cron.store', JSON.stringify(selection === 'machine' ? active : inactive));
+      }
+      const insert = db.prepare('INSERT INTO cron_jobs (store_key, job_id, job_json) VALUES (?,?,?)');
+      for (const [key, id, name] of [[inactive, 'shared', 'stale'], [inactive, 'retired', 'old'],
+        [active, 'shared', 'current'], [active, 'independent', 'other']]) {
+        insert.run(key, id, JSON.stringify(launcher(id, name)));
+      }
+    });
+    const { entries, snapshot } = await prepare(f);
+    expect(entries.map(e => e.definition)).toEqual(expect.arrayContaining([launcher('shared', 'current'), launcher('independent', 'other')]));
+    expect(entries).toHaveLength(2);
+    const migration = await prepareCronTimeoutMigration(snapshot.snapshotDir);
+    expect(migration.eligible).toBe(2);
+    const { jobs } = JSON.parse(await readFile(migration.manifestPath!, 'utf8'));
+    expect(jobs.map((e: { command: string }) => e.command).sort()).toEqual([
+      'python C:/jobs/current.py --start', 'python C:/jobs/other.py --start',
+    ]);
+  });
+  it.each(['relative/jobs.json', '~/cron/jobs.json', 'missing'])('does not resurrect a stale partition or default JSON for %s', async selected => {
+    const f = await fixture();
+    const configured = selected === 'missing' ? join(f.root, 'missing', 'jobs.json') : selected;
+    await writeFile(f.configPath, JSON.stringify({ ...config(), cron: { store: configured } }));
+    await f.json('agents/main/agent/auth-profiles.json', { profiles: { 'custom:default': credential() } });
+    await f.json('cron/jobs.json', { jobs: [job('stale-json')] });
+    await f.sqlite('state/openclaw.sqlite', db => {
+      db.exec('CREATE TABLE cron_jobs (store_key TEXT, job_id TEXT, job_json TEXT, PRIMARY KEY (store_key, job_id))');
+      db.prepare('INSERT INTO cron_jobs VALUES (?,?,?)').run(join(f.stateDir, 'cron', 'jobs.json'), 'stale', JSON.stringify(job('stale')));
+    });
+    expect((await prepare(f)).result).toEqual({ eligible: 0, skipped: 0 });
+  });
+  it.each([true, false])('reads only a captured custom legacy JSON store (present=%s)', async captured => {
+    const f = await fixture();
+    const store = join(f.stateDir, 'my-cron', 'schedules.json');
+    await writeFile(f.configPath, JSON.stringify({ ...config(), cron: { store } }));
+    await f.json('agents/main/agent/auth-profiles.json', { profiles: { 'custom:default': credential() } });
+    await f.json('cron/jobs.json', { jobs: [job('inactive')] });
+    if (captured) await f.json('my-cron/schedules.json', { jobs: [job('active')] });
+    expect((await prepare(f)).entries.map(e => e.jobId)).toEqual(captured ? ['active'] : []);
+  });
+  it('retains default legacy JSON evidence with only the original v2 file inventory', async () => {
+    const f = await fixture({});
+    await f.json('cron/jobs.json', { jobs: [job('old-json', { payload: {
+      kind: 'agentTurn', message: '启动独立 worker：python C:/jobs/old.py --start', timeoutSeconds: 60,
+    } })] });
+    const { snapshotDir } = await f.snapshot();
+    const marker = join(snapshotDir, 'snapshot.json');
+    const manifest = JSON.parse(await readFile(marker, 'utf8'));
+    delete manifest.restoreRoots;
+    delete manifest.stateDir;
+    delete manifest.defaultCronStorePath;
+    await writeFile(marker, JSON.stringify(manifest));
+    expect((await prepareCronTimeoutMigration(snapshotDir)).eligible).toBe(1);
+  });
+  it.each(['sqlite', 'json'])('uses captured default ownership when config and state directories differ (%s)', async storage => {
+    const f = await fixture();
+    const cfg = { meta: { lastTouchedVersion: '2026.7.1-2' } };
+    // Both cron paths are captured under separate roots in the same snapshot.
+    const configPath = await f.json('profile/custom.json', cfg);
+    const stateStore = join(f.stateDir, 'cron', 'jobs.json');
+    const configStore = join(dirname(configPath), 'cron', 'jobs.json');
+    const jobAt = (name: string) => job('shared', { name, payload: {
+      kind: 'agentTurn', message: `启动独立 worker：python C:/jobs/${name}.py --start`, timeoutSeconds: 60,
+    } });
+    if (storage === 'sqlite') {
+      await f.sqlite('state/openclaw.sqlite', db => {
+        db.exec('CREATE TABLE cron_jobs (store_key TEXT, job_id TEXT, job_json TEXT, PRIMARY KEY (store_key, job_id))');
+        const insert = db.prepare('INSERT INTO cron_jobs VALUES (?, ?, ?)');
+        insert.run(stateStore, 'shared', JSON.stringify(jobAt('from-state')));
+        insert.run(configStore, 'shared', JSON.stringify(jobAt('from-config')));
+      });
+    } else {
+      await f.json('cron/jobs.json', { jobs: [jobAt('from-state')] });
+      await f.json('profile/cron/jobs.json', { jobs: [jobAt('from-config')] });
+    }
+    const { snapshotDir } = await ensureOpenClawUpgradeSnapshot({ stateDir: f.stateDir, configPath });
+    const marker = join(snapshotDir, 'snapshot.json');
+    const manifest = JSON.parse(await readFile(marker, 'utf8'));
+    for (const [captured, expected] of [[configStore, 'from-config'], [stateStore, 'from-state'],
+      [join(f.root, 'not-captured', 'jobs.json'), undefined], [undefined, undefined]] as const) {
+      await writeFile(marker, JSON.stringify({ ...manifest, defaultCronStorePath: captured }));
+      const result = await prepareCronTimeoutMigration(snapshotDir);
+      if (expected) {
+        expect(result.eligible).toBe(1);
+        expect(JSON.parse(await readFile(result.manifestPath!, 'utf8')).jobs[0].definition.name).toBe(expected);
+      } else {
+        expect(result).toEqual({ eligible: 0 });
+      }
+    }
+  });
+  it.each([
+    ['D:/Cron/old/../active/jobs.json', 'D:\\Cron\\active\\jobs.json'],
+    ['//server/share/active/jobs.json', '\\\\server\\share\\active\\jobs.json'],
+  ])('matches a Windows snapshot partition exactly for %s', async (store, key) => {
+    const f = await fixture({ ...config(), cron: { store } });
+    await f.json('agents/main/agent/auth-profiles.json', { profiles: { 'custom:default': credential() } });
+    await f.sqlite('state/openclaw.sqlite', db => {
+      db.exec('CREATE TABLE cron_jobs (store_key TEXT, job_id TEXT, job_json TEXT, PRIMARY KEY (store_key, job_id))');
+      const insert = db.prepare('INSERT INTO cron_jobs VALUES (?,?,?)');
+      insert.run(key, 'shared', JSON.stringify(job('shared', { name: 'active' })));
+      insert.run(key.toUpperCase(), 'shared', JSON.stringify(job('shared', { name: 'previous key' })));
+    });
+    const { snapshotDir } = await f.snapshot();
+    const marker = join(snapshotDir, 'snapshot.json');
+    const manifest = JSON.parse(await readFile(marker, 'utf8'));
+    manifest.stateDir = 'C:\\Users\\test\\.openclaw';
+    await writeFile(marker, JSON.stringify(manifest));
+    const result = await prepareCronInferenceMigration(snapshotDir);
+    expect(result.eligible).toBe(1);
+    expect(JSON.parse(await readFile(result.manifestPath!, 'utf8')).jobs[0].definition.name).toBe('active');
   });
   it.each(['jobs', 'profiles'])('does not resurrect stale JSON when the canonical %s are empty', async empty => {
     const f = await fixture();
@@ -247,7 +376,7 @@ describe('legacy cron migration snapshot evidence', () => {
   });
   it('rejects path traversal in restore-root metadata', async () => {
     const f = await fixture();
-    const custom = join(f.root, 'external-agent');
+    const custom = join(await realpath(f.root), 'external-agent');
     await writeFile(f.configPath, JSON.stringify({ agents: { defaults: { model: 'custom/model' }, entries: { research: { agentDir: custom } } } }));
     await f.json('cron/jobs.json', { jobs: [job('traversal', { agentId: 'research' })] });
     await mkdir(custom);
@@ -261,5 +390,70 @@ describe('legacy cron migration snapshot evidence', () => {
     marker.fileInfo[outsidePath] = { sha256: createHash('sha256').update(await readFile(authFile)).digest('hex') };
     await writeFile(markerPath, JSON.stringify(marker));
     await expect(prepareCronInferenceMigration(snapshot.snapshotDir)).rejects.toThrow('Unsafe cron migration snapshot path');
+  });
+});
+
+describe('verified historical scheduled worker deadlines', () => {
+  const command = (name: string, flags = '') => 'uv run python "C:\\My Tasks\\' + name + '.py" --start' + flags;
+  const legacy = (name: string, message: string, timeoutSeconds?: number, extra = {}) =>
+    job(name, { payload: { kind: 'agentTurn', message, timeoutSeconds }, ...extra });
+  const brief = (cmd: string) => '启动独立 worker，不等待宏完成：' + cmd + ' 。命令退出后立即结束。';
+  const read = async (f: Awaited<ReturnType<typeof fixture>>) => {
+    const { snapshotDir } = await f.snapshot();
+    const { manifestPath } = await prepareCronTimeoutMigration(snapshotDir);
+    return manifestPath ? JSON.parse(await readFile(manifestPath, 'utf8')).jobs as {
+      jobId: string; command: string; timeoutSeconds: number;
+    }[] : [];
+  };
+
+  it.each(['json', 'sqlite'])('keeps verified worker launchers and their custom budgets from the %s store', async storage => {
+    const f = await fixture({});
+    const morning = command('morning', ' --refresh-timeout-seconds 1260 --send-timeout-seconds 900');
+    const afternoon = command('afternoon', ' --refresh-timeout-seconds 1260 --send-timeout-seconds 900');
+    const night = command('night', ' --timeout-seconds 900');
+    const jobs = [
+      legacy('morning', brief(morning), 60), legacy('afternoon', brief(afternoon), 60),
+      legacy('night', '固定命令一次：\n' + night + '\n命令返回后立即结束，不检查 worker 状态。', 60, { description: '独立 worker 启动器' }),
+      ...[[], ['read']].map((toolsAllow, i) => legacy('no-exec-' + i, brief(night), 60, {
+        payload: { kind: 'agentTurn', message: brief(night), timeoutSeconds: 60, toolsAllow },
+      })),
+      legacy('foreground', command('quick').replace(' --start', ''), 60), legacy('interactive', command('other'), 60),
+      legacy('unbounded', brief(night), 0), legacy('custom-limit', brief(night), 4200),
+      legacy('not-a-script', brief('python -c "print(1)" --start'), 60),
+      legacy('wrong-mode', brief(night), 60, { sessionTarget: 'main' }),
+      legacy('multiple', brief(morning) + '\n' + brief(afternoon), 60),
+      legacy('shell', brief(night + ' && whoami'), 60), legacy('relative', brief('uv run python helper.py --start'), 60),
+    ];
+    if (storage === 'json') await f.json('cron/jobs.json', { jobs });
+    else {
+      await f.json('cron/jobs.json', { jobs: [legacy('stale-json', brief(night), 60)] });
+      await f.sqlite('state/openclaw.sqlite', db => {
+        seedCron(db, jobs);
+        db.exec('ALTER TABLE cron_jobs ADD COLUMN payload_timeout_seconds INTEGER');
+      });
+    }
+    expect((await read(f)).map(e => [e.jobId, e.command, e.timeoutSeconds])).toEqual([
+      ['morning', morning, 3600], ['afternoon', afternoon, 3600], ['night', night, 3600], ['custom-limit', night, 4200],
+    ]);
+  });
+
+  it('uses explicit overall signals and keeps stage flags out of the calculation', async () => {
+    const f = await fixture({ meta: { lastTouchedVersion: '2026.7.1-2' } });
+    await f.json('cron/jobs.json', { jobs: [
+      legacy('known-short', brief(command('short', ' --total-timeout-seconds 900')), 60),
+      legacy('known-long', brief(command('long', ' --overall-timeout-seconds=7200'))),
+      legacy('exec-budget', brief(command('budget')) + ' exec.timeoutSeconds=4800', 60),
+      legacy('stage', brief(command('stage', ' --refresh-timeout-seconds 1260'))),
+      legacy('large-budget', brief(command('long', ' --total-timeout-seconds ' + '9'.repeat(100)))),
+    ] });
+    expect((await read(f)).map(e => e.timeoutSeconds)).toEqual([900, 7200, 4800, 3600, 2_147_000]);
+  });
+
+  it('ignores current-version snapshots before touching the cron store', async () => {
+    const f = await fixture({ meta: { lastTouchedVersion: '2026.10.10' } });
+    await f.json('cron/jobs.json', { jobs: [legacy('new', brief(command('new')), 60)] });
+    const { snapshotDir } = await f.snapshot();
+    await writeFile(join(snapshotDir, 'state-files/cron/jobs.json'), 'changed');
+    expect(await prepareCronTimeoutMigration(snapshotDir)).toEqual({ eligible: 0 });
   });
 });

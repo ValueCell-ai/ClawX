@@ -1,12 +1,12 @@
 // @vitest-environment node
 import { mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { pathToFileURL } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ensureOpenClawUpgradeSnapshot, quarantineLegacyUpdateCheckState, removeOpenClawUpgradeSnapshot } from '@electron/utils/openclaw-upgrade-snapshot';
 import { restoreUpgradeSnapshot } from '../../resources/cli/restore-openclaw-upgrade.mjs';
 const roots: string[] = [];
@@ -19,6 +19,34 @@ async function fixture() {
 }
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
 describe('OpenClaw 2026.10.10 upgrade snapshot', () => {
+  it.each(['config env', 'config option', 'state env', 'state option', 'effective home', 'default home'])(
+    'records the historical default cron partition for %s', async source => {
+      const base = await mkdtemp(join(tmpdir(), 'clawx-cron-default-'));
+      roots.push(base);
+      const state = join(base, '.openclaw');
+      const separateConfig = join(base, 'config', 'openclaw.json');
+      const effectiveHome = join(base, 'runtime-home');
+      await mkdir(state);
+      await mkdir(join(base, 'config'));
+      await writeFile(separateConfig, '{}');
+      try {
+        vi.stubEnv('HOME', base);
+        vi.stubEnv('USERPROFILE', base);
+        vi.stubEnv('OPENCLAW_HOME', source === 'effective home' ? '~/runtime-home' : undefined);
+        vi.stubEnv('OPENCLAW_STATE_DIR', source === 'state env' ? state : undefined);
+        vi.stubEnv('OPENCLAW_CONFIG_PATH', ['config env', 'state env', 'state option'].includes(source) ? separateConfig : undefined);
+        expect(homedir()).toBe(base);
+        const options = source === 'state option' ? { stateDir: state, configPath: separateConfig }
+          : source === 'config option' ? { configPath: separateConfig } : {};
+        const snapshot = await ensureOpenClawUpgradeSnapshot(options);
+        const marker = JSON.parse(await readFile(join(snapshot.snapshotDir, 'snapshot.json'), 'utf8'));
+        const partition = source.startsWith('config') ? join(base, 'config') : source === 'effective home' ? join(effectiveHome, '.openclaw') : state;
+        expect(marker.defaultCronStorePath).toBe(join(partition, 'cron', 'jobs.json'));
+        expect(marker.stateDir).toBe(state);
+      } finally { vi.unstubAllEnvs(); }
+    },
+  );
+
   it('backs up legacy sessions, credentials and media once, with private permissions', async () => {
     const options = await fixture();
     for (const file of ['agents/main/sessions/sessions.json', 'agents/main/sessions/history.jsonl', 'agents/main/agent/auth-profiles.json', 'credentials/channel/token.json', 'media/inbound/image.png']) {

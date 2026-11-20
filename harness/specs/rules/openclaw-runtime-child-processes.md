@@ -7,7 +7,7 @@ appliesTo:
 ---
 
 Rules:
-  - On Windows, launch offline `doctor --fix` through the embedded Node executable with the runtime compatibility preload, hidden window and the prepared environment. Both startup and Settings repairs must honor the child's completion status. Exercise a fresh 0.6.1 profile through the desktop startup path and observe an existing scheduled job execute.
+  - On Windows, launch offline `doctor --fix` through the embedded Node executable with the runtime compatibility preload, hidden window and the prepared environment. Both startup and Settings repairs must honor the child's completion status. Upgrade an official 0.6.1 profile through desktop startup, continue an existing conversation, and verify that an existing job runs at its scheduled time.
   - Construct Gateway launch environments with `CLAWX_CRON_MIGRATION_MANIFEST` absent when no current migration evidence exists. Remove inherited stale evidence before optionally injecting the current nonempty path; do not encode absence as an undefined environment property.
   - At the shared `forkOpenClawUtilityProcess` boundary, omit undefined environment entries before calling Electron. Preserve empty strings (including proxy overrides) and defined paths exactly, without mutating the input or restoring explicitly unset inherited values. Optional cron migration evidence must not prevent the process from spawning.
   - Every ClawX-launched OpenClaw process loads `openclaw-runtime-compat.mjs`. Utility-process launches go through `forkOpenClawUtilityProcess`. `child_process` launches (ACP, completion) preload it with `--import` from `ensureOpenClawRuntimeCompat`. Do not launch `openclaw.mjs` without the shim.

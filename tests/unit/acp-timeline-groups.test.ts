@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { groupAcpTimelineItems } from '@/lib/acp/timeline-groups';
 import { createEmptyAcpTimeline } from '@/lib/acp/reducer';
-import type { AcpTimelineSnapshot } from '@/lib/acp/timeline-types';
+import type { AcpTimelineSnapshot, MessageSegmentItem, ToolCallItem } from '@/lib/acp/timeline-types';
 
 function timelineWithItems(items: AcpTimelineSnapshot['itemsById']): AcpTimelineSnapshot {
   return {
@@ -12,6 +12,56 @@ function timelineWithItems(items: AcpTimelineSnapshot['itemsById']): AcpTimeline
 }
 
 describe('groupAcpTimelineItems', () => {
+  it('keeps a late acknowledgment before its image without moving either across another task or turn', () => {
+    const message = (id: string, role: 'user' | 'assistant' = 'assistant'): MessageSegmentItem => ({
+      kind: 'message-segment', role, id, messageId: id, segmentIndex: 0, parts: [{ kind: 'markdown', text: id }],
+    });
+    const imageResult = (id: string): MessageSegmentItem => ({
+      ...message(id), parts: [{ kind: 'image', source: 'data:image/png;base64,test', mimeType: 'image/png' }],
+      compat: { source: 'image-generation', evidenceId: id },
+    });
+    const tool = (id: string, taskId: string, dispatch = false): ToolCallItem => {
+      const content = [{ type: 'text', text: `Background task started for image generation (tool:image_generate:${taskId}).` }];
+      const output = dispatch
+        ? { details: { tool: { id: 'openclaw:core:image_generate' }, result: { content } } }
+        : { content };
+      return {
+        kind: 'tool-call', id, toolCallId: id, title: dispatch ? 'dispatch_action' : 'image_generate',
+        status: 'completed', output, outputParts: [], locations: [],
+      };
+    };
+    const first = '11111111-1111-4111-8111-111111111111';
+    const second = '22222222-2222-4222-8222-222222222222';
+    const items = [
+      message('prompt', 'user'), tool('dispatch', first, true), imageResult('first-image'), tool('child', first),
+      message('first-ack'), tool('second-tool', second), imageResult('second-image'), message('second-ack'),
+      message('next-prompt', 'user'), message('next-answer'),
+    ];
+    const displayed = (count: number) => {
+      const snapshot = timelineWithItems(Object.fromEntries(items.slice(0, count).map((item) => [item.id, item])));
+      return groupAcpTimelineItems(snapshot).map((group) => group.items.map((item) => item.id));
+    };
+    expect(displayed(3)).toEqual([['prompt'], ['dispatch', 'first-image']]);
+    expect(displayed(5)).toEqual([['prompt'], ['dispatch', 'child', 'first-ack', 'first-image']]);
+    expect(displayed(items.length)).toEqual([
+      ['prompt'], ['dispatch', 'child', 'first-ack', 'first-image', 'second-tool', 'second-ack', 'second-image'],
+      ['next-prompt'], ['next-answer'],
+    ]);
+    // The requester can send its receipt via a different message tool. The
+    // image remains paired with that receipt even if replay put it upstream.
+    const photo = imageResult('photo');
+    const receipt = message('message-receipt');
+    photo.compat = { source: 'image-generation', evidenceId: 'photo', taskId: first };
+    receipt.compat = { source: 'image-generation', evidenceId: 'receipt', taskId: first, provisionalText: true };
+    const messageTool: ToolCallItem = {
+      kind: 'tool-call', id: 'message-tool', toolCallId: 'message-tool', title: 'message',
+      status: 'completed', outputParts: [], locations: [],
+    };
+    const delivery = [items[0]!, items[1]!, photo, messageTool, receipt];
+    const groups = groupAcpTimelineItems(timelineWithItems(Object.fromEntries(delivery.map((item) => [item.id, item]))));
+    expect(groups[1]?.items.map((item) => item.id)).toEqual(['dispatch', 'message-tool', 'message-receipt', 'photo']);
+  });
+
   it('preserves unchanged item references so rendered history can bail out', () => {
     const item: AcpTimelineSnapshot['itemsById'][string] = {
       kind: 'message-segment',

@@ -270,7 +270,7 @@ export function launchOpenClawCommandProcess(
   logger.info(`Running Windows Doctor repair with Node runtime: ${execPath}`);
   return spawn(execPath, [...getOpenClawRuntimeCompatExecArgv(), entry, ...args], {
     cwd: options.cwd,
-    env: getEmbeddedNodeEnv({ ...options.env, OPENCLAW_DEBUG: '1' }, electronRunAsNode),
+    env: getEmbeddedNodeEnv(options.env, electronRunAsNode),
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });

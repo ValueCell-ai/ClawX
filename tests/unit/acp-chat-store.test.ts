@@ -2018,6 +2018,46 @@ describe('ACP Chat store', () => {
     });
   });
 
+  it.each([
+    { mode: 'live', prefix: 'tool:image_generate:' },
+    { mode: 'replay', prefix: 'tool:image_generate:' },
+    { mode: 'live', prefix: '' },
+    { mode: 'replay', prefix: '' },
+  ])('keeps a quoted image acknowledgment in its original read tool during $mode (prefix "$prefix")', async ({ mode, prefix }) => {
+    const sessionKey = 'agent:pi:s1';
+    const text = `Background task started for image generation (${prefix}32aa3a12-a05b-4074-af4e-246cc4a9a303).`;
+    const updates = [
+      { sessionUpdate: 'tool_call', toolCallId: 'call-1', title: 'read', kind: 'read', status: 'pending' },
+      {
+        sessionUpdate: 'tool_call_update', toolCallId: 'call-1', status: 'completed',
+        content: [{ type: 'content', content: { type: 'text', text } }],
+      },
+      {
+        sessionUpdate: 'tool_call_update', toolCallId: 'delivery', status: 'completed',
+        rawOutput: { details: { sourceReplySink: 'internal-ui', deliveryStatus: 'sent', sourceReply: { text: 'Log read.' } } },
+      },
+      { sessionUpdate: 'agent_message_chunk', messageId: 'answer', content: { type: 'text', text: 'This is an old log.' } },
+    ].map((update) => ({
+      sessionKey, generation: 1, historical: mode === 'replay', notification: { sessionId: sessionKey, update },
+    }));
+    if (mode === 'replay') {
+      hostApiMock.loadAcpSession.mockResolvedValueOnce({ success: true, generation: 1, sessionUpdates: updates });
+    }
+    const { useAcpChatSessionStore, ensureAcpChatSubscriptions } = await importStore();
+    ensureAcpChatSubscriptions();
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey, workspaceRoot: '/repo', cwd: '/repo' });
+    if (mode === 'live') {
+      for (const event of updates) hostEventsMock.updateListener?.(event);
+    }
+    const { pendingImageGenerationTaskIds, timeline } = useAcpChatSessionStore.getState();
+    expect(pendingImageGenerationTaskIds).toEqual([]);
+    expect(timeline.itemOrder).toEqual(['tool:call-1', 'tool:delivery', 'answer:0']);
+    expect(timeline.itemsById['tool:call-1']).toMatchObject({
+      title: 'read', status: 'completed', outputParts: [{ kind: 'markdown', text }],
+    });
+    expect(hostApiMock.recordAcpTrace).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'image-generation:start-detected' }));
+  });
+
   it('projects trusted image-generation Gateway media into the ACP timeline', async () => {
     hostApiMock.loadAcpSession
       .mockResolvedValueOnce({ success: true, generation: 1 })
@@ -2626,7 +2666,7 @@ describe('ACP Chat store', () => {
     expect(hostApiMock.sessionsHistory).not.toHaveBeenCalled();
   });
 
-  it('projects a recorded image-generation background task completion from its task session', async () => {
+  it.each(['', 'tool:image_generate:'])('projects a recorded image-generation completion from its task session (prefix %j)', async (prefix) => {
     const taskId = '32aa3a12-a05b-4074-af4e-246cc4a9a303';
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();
@@ -2656,8 +2696,8 @@ describe('ACP Chat store', () => {
 
     hostEventsMock.runtimeEventListener?.({
       type: 'tool.completed',
-      sessionKey: `image_generate:${taskId}`,
-      runId: `image_generate:${taskId}:ok`,
+      sessionKey: `image_generate:${prefix}${taskId}`,
+      runId: `image_generate:${prefix}${taskId}:ok`,
       toolCallId: 'message-tool',
       name: 'message',
       result: {
@@ -2693,6 +2733,17 @@ describe('ACP Chat store', () => {
         { kind: 'image', source: 'data:image/png;base64,abc123', mimeType: 'image/png', alt: 'Image' },
       ],
     });
+    hostEventsMock.updateListener?.({
+      sessionKey: 'agent:pi:s1', generation: 1,
+      notification: { sessionId: 'agent:pi:s1', update: {
+        sessionUpdate: 'tool_call_update', toolCallId: 'dispatch-parent', status: 'completed',
+        rawOutput: { details: {
+          tool: { id: 'openclaw:core:image_generate' },
+          result: { content: [{ type: 'text', text: `Background task started for image generation (tool:image_generate:${taskId}).` }] },
+        } },
+      } },
+    });
+    expect(useAcpChatSessionStore.getState().pendingImageGenerationTaskIds).toEqual([]);
   });
 
   it('projects a text-only image-generation failure as an assistant reply', async () => {
@@ -2893,9 +2944,12 @@ describe('ACP Chat store', () => {
     });
   });
 
-  it('rejects a task-tagged completion that does not match the recorded image task', async () => {
+  it.each([
+    ['agent:pi:s1', '45bb4b23-b16c-4185-b05f-357dd5b0b414'],
+    ['agent:pi:other', '32aa3a12-a05b-4074-af4e-246cc4a9a303'],
+    ['image_generate:tool:image_generate:45bb4b23-b16c-4185-b05f-357dd5b0b414', '32aa3a12-a05b-4074-af4e-246cc4a9a303'],
+  ])('rejects a completion with a mismatched session or task (%s, %s)', async (sessionKey, runTaskId) => {
     const recordedTaskId = '32aa3a12-a05b-4074-af4e-246cc4a9a303';
-    const unrelatedTaskId = '45bb4b23-b16c-4185-b05f-357dd5b0b414';
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();
     await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
@@ -2921,8 +2975,8 @@ describe('ACP Chat store', () => {
 
     hostEventsMock.runtimeEventListener?.({
       type: 'tool.completed',
-      sessionKey: 'agent:pi:s1',
-      runId: `image_generate:${unrelatedTaskId}:error`,
+      sessionKey,
+      runId: `image_generate:${runTaskId}:error`,
       toolCallId: 'message-tool',
       name: 'message',
       result: {
@@ -4328,6 +4382,37 @@ describe('ACP Chat store', () => {
       await vi.advanceTimersByTimeAsync(60_000);
 
       expect(hostApiMock.sessionsHistory).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps waiting after a requester text delivery and unlocks the composer when image retries expire', async () => {
+    vi.useFakeTimers();
+    try {
+      const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
+      ensureAcpChatSubscriptions();
+      const sessionKey = 'agent:pi:s1';
+      const taskId = '0d2ee919-2dfd-4b72-9da3-d87e6ee56747';
+      const prompt = createDeferred<{ success: true }>();
+      hostApiMock.sendAcpPrompt.mockReturnValueOnce(prompt.promise);
+      await useAcpChatSessionStore.getState().loadSession({ sessionKey, workspaceRoot: '/repo', cwd: '/repo', createIfMissing: true });
+      const turn = useAcpChatSessionStore.getState().sendPrompt({ sessionKey, cwd: '/repo', message: 'Draw a cat', messageId: 'cat' });
+      const update = (toolCallId: string, rawOutput: unknown) => hostEventsMock.updateListener?.({
+        sessionKey, generation: 1, notification: { sessionId: sessionKey, update: {
+          sessionUpdate: 'tool_call_update', toolCallId, status: 'completed', rawOutput,
+        } },
+      });
+      update('image', { content: [{ type: 'text', text: `Background task started for image generation (${taskId}).` }] });
+      update('message', { details: {
+        sourceReplySink: 'internal-ui', status: 'ok', deliveryStatus: 'sent', sourceReply: { text: 'Started.' },
+      } });
+      prompt.resolve({ success: true });
+      await turn;
+      await vi.advanceTimersByTimeAsync(0);
+      expect(useAcpChatSessionStore.getState().pendingImageGenerationTaskIds).toEqual([taskId]);
+      await vi.advanceTimersByTimeAsync(200_000);
+      expect(useAcpChatSessionStore.getState().pendingImageGenerationTaskIds).toEqual([]);
     } finally {
       vi.useRealTimers();
     }
