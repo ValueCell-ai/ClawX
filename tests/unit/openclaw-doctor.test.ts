@@ -37,8 +37,8 @@ vi.mock('electron', () => ({
   },
 }));
 
-vi.mock('@electron/utils/openclaw-utility-process', () => ({
-  forkOpenClawUtilityProcess: mockFork,
+vi.mock('@electron/utils/openclaw-cli', () => ({
+  launchOpenClawCommandProcess: mockFork,
 }));
 
 vi.mock('@electron/utils/paths', () => ({

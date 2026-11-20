@@ -18,8 +18,8 @@ vi.mock('@electron/utils/paths', () => ({
 }));
 vi.mock('@electron/utils/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 vi.mock('@electron/utils/uv-env', () => ({ getUvMirrorEnv: async () => ({}) }));
-vi.mock('@electron/utils/openclaw-utility-process', () => ({
-  forkOpenClawUtilityProcess: () => {
+vi.mock('@electron/utils/openclaw-cli', () => ({
+  launchOpenClawCommandProcess: () => {
     const child = Object.assign(new EventEmitter(), {
       stdout: new EventEmitter(),
       stderr: new EventEmitter(),
