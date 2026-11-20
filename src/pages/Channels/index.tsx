@@ -951,7 +951,7 @@ export function Channels() {
         title={t('account.resetWorkspaceAuth')}
         message={t('account.resetWorkspaceAuthConfirm')}
         confirmLabel={t('account.resetWorkspaceAuthConfirmAction')}
-        cancelLabel={t('common.cancel', 'Cancel')}
+        cancelLabel={t('common:actions.cancel')}
         variant="destructive"
         onConfirm={() => {
           void handleResetDingTalkWorkspaceAuth();
@@ -961,10 +961,10 @@ export function Channels() {
 
       <ConfirmDialog
         open={!!deleteTarget}
-        title={t('common.confirm', 'Confirm')}
+        title={t('common:actions.confirm')}
         message={deleteTarget?.accountId ? t('account.deleteConfirm') : t('deleteConfirm')}
-        confirmLabel={t('common.delete', 'Delete')}
-        cancelLabel={t('common.cancel', 'Cancel')}
+        confirmLabel={t('common:actions.delete')}
+        cancelLabel={t('common:actions.cancel')}
         variant="destructive"
         onConfirm={() => {
           void handleDelete();
