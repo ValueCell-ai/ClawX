@@ -1,7 +1,8 @@
 // @vitest-environment node
 
 import { mkdir, readFile, rm, writeFile } from 'fs/promises';
-import { join } from 'path';
+import { join, resolve } from 'path';
+import { readConfigFileSnapshot } from 'openclaw/plugin-sdk/health';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { testHome, testUserData, getSettingMock, setSettingMock } = vi.hoisted(() => {
@@ -494,6 +495,147 @@ describe('sanitizeOpenClawConfig', () => {
     );
 
     logSpy.mockRestore();
+  });
+
+  it('moves the legacy image generation model and all its options before Gateway startup', async () => {
+    const image = {
+      primary: 'clawx-openai-image/qwen-image-3.0',
+      fallbacks: ['openai/gpt-image-2'],
+      timeoutMs: 180_000,
+    };
+    await writeOpenClawJson({ agents: { defaults: { imageGenerationModel: image } } });
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+
+    await sanitizeOpenClawConfig();
+    const migrated = await readOpenClawJson();
+    expect(migrated).toHaveProperty('agents.defaults.mediaModels', { image });
+    expect(migrated).not.toHaveProperty('agents.defaults.imageGenerationModel');
+
+    await sanitizeOpenClawConfig();
+    expect(await readOpenClawJson()).toEqual(migrated);
+  });
+
+  it.each([
+    { mediaModels: { video: 'provider/video' }, image: 'provider/legacy' },
+    { mediaModels: { video: 'provider/video', image: 'provider/current' }, image: 'provider/current' },
+  ])('preserves existing media settings when migrating into $mediaModels', async ({ mediaModels, image }) => {
+    await writeOpenClawJson({ agents: { defaults: { imageGenerationModel: 'provider/legacy', mediaModels } } });
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+
+    await sanitizeOpenClawConfig();
+    const result = await readOpenClawJson();
+    expect(result).toHaveProperty('agents.defaults.mediaModels', { video: 'provider/video', image });
+    expect(result).not.toHaveProperty('agents.defaults.imageGenerationModel');
+  });
+
+  describe('legacy image model migration', () => {
+    const stateDir = resolve(testHome, '.openclaw');
+    const legacy = {
+      primary: 'clawx-openai-image/image-2',
+      fallbacks: ['openai/gpt-image-2'],
+      timeoutMs: 180_000,
+    };
+    const current = { primary: 'openai/gpt-image-2', fallbacks: ['provider/alternate'] };
+
+    beforeEach(() => {
+      vi.stubEnv('OPENCLAW_STATE_DIR', stateDir);
+      vi.stubEnv('OPENCLAW_CONFIG_PATH', join(stateDir, 'openclaw.json'));
+    });
+    afterEach(() => vi.unstubAllEnvs());
+
+    async function readValidatedMediaModels() {
+      const snapshot = await readConfigFileSnapshot({
+        observe: false,
+        isolateEnv: true,
+        skipPluginValidation: true,
+      });
+      expect(snapshot.issues).toEqual([]);
+      expect(snapshot.valid).toBe(true);
+      return snapshot.sourceConfig.agents?.defaults?.mediaModels;
+    }
+
+    it.each([
+      { name: 'keeps an included image selection', included: { image: current, video: 'provider/video' } },
+      { name: 'adds the legacy selection beside included settings', included: { video: 'provider/video' } },
+    ])('$name', async ({ included }) => {
+      const include = { $include: './media.json' };
+      await writeOpenClawJson({
+        agents: { entries: { main: {} }, defaults: { mediaModels: include, imageGenerationModel: legacy } },
+      });
+      const includePath = join(stateDir, 'media.json');
+      const original = JSON.stringify(included, null, 2);
+      await writeFile(includePath, original, 'utf8');
+      const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+
+      await sanitizeOpenClawConfig();
+
+      const migrated = await readOpenClawJson();
+      expect(migrated).not.toHaveProperty('agents.defaults.imageGenerationModel');
+      const expectedLocal = included.image ? include : { ...include, image: legacy };
+      expect(migrated).toHaveProperty('agents.defaults.mediaModels', expectedLocal);
+      expect(await readFile(includePath, 'utf8')).toBe(original);
+      expect(await readValidatedMediaModels()).toEqual({ image: included.image ?? legacy, video: 'provider/video' });
+    });
+
+    it('removes a null override so the included image selection stays editable', async () => {
+      const include = { $include: './media.json' };
+      const defaults = { imageGenerationModel: legacy, mediaModels: { ...include, image: null } };
+      await writeOpenClawJson({ agents: { entries: { main: {} }, defaults } });
+      const includePath = join(stateDir, 'media.json');
+      const included = { image: current, video: 'provider/video' };
+      const original = JSON.stringify(included, null, 2);
+      await writeFile(includePath, original, 'utf8');
+      const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+
+      await sanitizeOpenClawConfig();
+
+      const migrated = await readOpenClawJson();
+      expect(migrated).not.toHaveProperty('agents.defaults.imageGenerationModel');
+      expect(migrated).toHaveProperty('agents.defaults.mediaModels', include);
+      expect(await readFile(includePath, 'utf8')).toBe(original);
+      expect(await readValidatedMediaModels()).toEqual(included);
+
+      const edited = { ...included, image: { primary: 'provider/new', fallbacks: ['provider/new-fallback'] } };
+      await writeFile(includePath, JSON.stringify(edited), 'utf8');
+      expect(await readValidatedMediaModels()).toEqual(edited);
+    });
+
+    it('retains the legacy selection until a missing media include can be read', async () => {
+      const defaults = { imageGenerationModel: legacy, mediaModels: { $include: './missing.json' } };
+      await writeOpenClawJson({ agents: { entries: { main: {} }, defaults } });
+      const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+
+      await sanitizeOpenClawConfig();
+
+      expect(await readOpenClawJson()).toHaveProperty('agents.defaults', defaults);
+    });
+
+    it('recovers the complete legacy selection when the canonical image is null', async () => {
+      await writeOpenClawJson({
+        agents: {
+          entries: { main: {} },
+          defaults: { imageGenerationModel: legacy, mediaModels: { image: null, video: 'provider/video' } },
+        },
+      });
+      const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+
+      await sanitizeOpenClawConfig();
+
+      const migrated = await readOpenClawJson();
+      expect(migrated).not.toHaveProperty('agents.defaults.imageGenerationModel');
+      expect(await readValidatedMediaModels()).toEqual({ image: legacy, video: 'provider/video' });
+      await sanitizeOpenClawConfig();
+      expect(await readOpenClawJson()).toEqual(migrated);
+    });
+  });
+
+  it.each([{ mediaModels: null }, { mediaModels: ['provider/video'] }])('retains malformed mediaModels $mediaModels and the legacy value for Doctor', async ({ mediaModels }) => {
+    const defaults = { imageGenerationModel: 'provider/legacy', mediaModels };
+    await writeOpenClawJson({ agents: { defaults } });
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+
+    await sanitizeOpenClawConfig();
+    expect(await readOpenClawJson()).toHaveProperty('agents.defaults', defaults);
   });
 
   it('repairs additional legacy config keys rejected by OpenClaw 2026.10', async () => {
