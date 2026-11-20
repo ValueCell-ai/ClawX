@@ -243,6 +243,7 @@ function captureLiveSession(state: AcpChatSessionState): void {
 function restoreImageGenerationProjections(
   timeline: AcpTimelineSnapshot,
   snapshot: AcpTimelineSnapshot,
+  options: { requireTurnAnchor?: boolean } = {},
 ): AcpTimelineSnapshot {
   let restored = timeline;
   const restoredIds = new Set(timeline.itemOrder);
@@ -256,10 +257,13 @@ function restoreImageGenerationProjections(
         afterItemId = priorItemId;
         break;
       }
+      const prior = priorItemId && snapshot.itemsById[priorItemId];
+      if (options.requireTurnAnchor && prior && prior.kind === 'message-segment' && prior.role === 'user') break;
     }
+    if (!afterItemId && options.requireTurnAnchor) continue;
     restored = appendSyntheticAssistantMessage(restored, {
       messageId: item.messageId,
-      evidenceId: item.compat.evidenceId,
+      ...item.compat,
       parts: item.parts,
       afterItemId,
     });
@@ -873,6 +877,16 @@ function scheduleLiveTranscriptSupplement(operation: TranscriptSupplementOperati
   operation.retryIndex += 1;
   operation.retryTimer = setTimeout(() => {
     operation.retryTimer = undefined;
+    if (operation.retryIndex === IMAGE_GENERATION_TRANSCRIPT_RETRY_DELAYS_MS.length) {
+      void runLiveTranscriptSupplement(operation).finally(() => {
+        if (!isCurrentTranscriptSupplement(useAcpChatSessionStore.getState(), operation)) return;
+        operation.terminal = true;
+        useAcpChatSessionStore.setState((state) => ({
+          pendingImageGenerationTaskIds: state.pendingImageGenerationTaskIds.filter((id) => !operation.imageTaskIds.has(id)),
+        }));
+      });
+      return;
+    }
     void runLiveTranscriptSupplement(operation);
     scheduleLiveTranscriptSupplement(operation);
   }, delay);
@@ -1453,7 +1467,8 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       const settledResult = replayResult?.success ? replayResult : promptResult;
       const settledGeneration = settledResult.generation ?? state.generation;
       const settledTimeline = replayTimeline
-        ?? (settledGeneration === state.generation
+        ? restoreImageGenerationProjections(replayTimeline, state.timeline, { requireTurnAnchor: true })
+        : (settledGeneration === state.generation
           ? state.timeline
           : { ...state.timeline, loadGeneration: settledGeneration });
       const pendingAttachments = replayTimeline ? collectPendingAttachments(replayTimeline) : [];
@@ -1714,6 +1729,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       ?? imageGenerationTaskIdFromSessionKey(evidence.sessionKey)
       ?? (usesReplayImageGenerationContext(evidence) ? compat.lastReplayTaskId : compat.lastTaskId);
     const settlePendingTask = (current: AcpChatSessionState): string[] => {
+      if (evidence.provisionalText) return current.pendingImageGenerationTaskIds;
       if (!correlatedTaskId) {
         return usesReplayImageGenerationContext(evidence)
           ? current.pendingImageGenerationTaskIds
@@ -1721,11 +1737,16 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       }
       return current.pendingImageGenerationTaskIds.filter((taskId) => taskId !== correlatedTaskId);
     };
-    const key = imageGenerationEvidenceKey({
+    const scopedEvidence = {
       ...evidence,
       sessionKey,
       ...(correlatedTaskId ? { taskId: correlatedTaskId } : {}),
-    });
+    };
+    // ACP can expose a message-tool delivery before a task-correlated event
+    // confirms that the very same delivery was the terminal reply.
+    const receiptKey = evidence.toolCallId && !evidence.candidates.length
+      ? imageGenerationEvidenceKey({ ...scopedEvidence, provisionalText: true }) : undefined;
+    const key = receiptKey && compat.delivered.has(receiptKey) ? receiptKey : imageGenerationEvidenceKey(scopedEvidence);
     if (evidence.authoritativeCaption) {
       const captions = compat.authoritativeCaptions;
       const next = { text: evidence.caption, priority: imageGenerationCaptionPriority(evidence.source) };
@@ -1746,7 +1767,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
         generation,
         details: projectionTraceDetails(evidence),
       });
-      if (compat.delivered.has(key)) {
+      if (compat.delivered.has(key) && !evidence.provisionalText) {
         set((current) => ({
           pendingImageGenerationTaskIds: settlePendingTask(current),
         }));
@@ -1958,6 +1979,8 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
           evidenceId: key,
           parts,
           afterItemId,
+          taskId: correlatedTaskId,
+          provisionalText: evidence.provisionalText,
         }),
         pendingImageGenerationTaskIds: settlePendingTask(current),
       };
@@ -1969,7 +1992,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       generation,
       details: projectionTraceDetails(evidence, { imageCount: imageParts.length, missingCount }),
     });
-    stopLiveTranscriptSupplementRetry(sessionKey, generation, correlatedTaskId);
+    if (!evidence.provisionalText) stopLiveTranscriptSupplementRetry(sessionKey, generation, correlatedTaskId);
   },
 
   applyUpdateEnvelope(event) {

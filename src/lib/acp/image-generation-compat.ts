@@ -34,6 +34,8 @@ export type ImageGenerationCompletionEvidence = {
   evidenceId: string;
   caption: string;
   authoritativeCaption?: true;
+  /** A confirmed text delivery on the requester turn does not finish the background job. */
+  provisionalText?: true;
   candidates: ImageGenerationMediaCandidate[];
 };
 
@@ -262,19 +264,23 @@ function transcriptCompletionTrigger(message: RawMessage): { taskId: string; fai
   return taskId ? { taskId, failed } : undefined;
 }
 
+export function imageGenerationTaskIdFromToolOutput(output: unknown, text: string): string | undefined {
+  const rawOutput = asRecord(output);
+  if (rawOutput?.isError === true) return undefined;
+  const details = asRecord(rawOutput?.details);
+  return details?.tool
+    ? dispatchedImageGenerationTaskId(details)
+    : taskIdFromAcknowledgment(text) ?? taskIdFromAcknowledgment(textFromMessageContent(rawOutput?.content ?? output));
+}
+
 export function extractImageGenerationStartFromAcpEnvelope(
   event: AcpSessionUpdateEnvelope,
 ): ImageGenerationTaskStart | null {
   const notification = asRecord(event.notification);
   const update = asRecord(notification?.update);
   if (update?.sessionUpdate !== 'tool_call' && update?.sessionUpdate !== 'tool_call_update') return null;
-  const rawOutput = asRecord(update.rawOutput);
-  if (update.status === 'failed' || rawOutput?.isError === true) return null;
-  const details = asRecord(rawOutput?.details);
-  const taskId = details?.tool
-    ? dispatchedImageGenerationTaskId(details)
-    : taskIdFromAcknowledgment(textFromToolContent(update.content))
-      ?? taskIdFromAcknowledgment(textFromMessageContent(rawOutput?.content ?? update.rawOutput));
+  if (update.status === 'failed') return null;
+  const taskId = imageGenerationTaskIdFromToolOutput(update.rawOutput, textFromToolContent(update.content));
   if (!taskId) return null;
 
   const toolCallId = stringValue(update.toolCallId);
@@ -331,6 +337,7 @@ export function extractImageGenerationCompletionFromAcpEnvelope(
     ...(event.historical ? { historical: true } : {}),
     ...(toolCallId !== 'unknown-tool' ? { toolCallId } : {}),
     evidenceId: `acp:${event.sessionKey}:${toolCallId}:${candidates.map((entry) => entry.key).join('|') || 'text-only'}`,
+    ...(candidates.length === 0 ? { provisionalText: true } : {}),
     caption: caption ?? GENERATED_IMAGE_CAPTION,
     ...(caption ? { authoritativeCaption: true } : {}),
     candidates,
@@ -422,7 +429,9 @@ export function extractImageGenerationTranscriptSupplement(
     const evidenceId = `transcript:${sessionKey}:${messageId}:${candidates.map((entry) => entry.key).join('|') || 'text-only'}`;
     if (seenCompletionIds.has(evidenceId)) continue;
     seenCompletionIds.add(evidenceId);
-    const { taskId, toolCallId } = matchedStart;
+    const { taskId } = matchedStart;
+    const provisionalText = role === 'toolresult' && !completionTaskId && candidates.length === 0;
+    const toolCallId = provisionalText ? message.toolCallId ?? matchedStart.toolCallId : matchedStart.toolCallId;
     completions.push({
       sessionKey,
       source: 'transcript-history',
@@ -430,6 +439,7 @@ export function extractImageGenerationTranscriptSupplement(
       taskId,
       ...(toolCallId ? { toolCallId } : {}),
       evidenceId,
+      ...(provisionalText ? { provisionalText: true } : {}),
       caption: caption ?? GENERATED_IMAGE_CAPTION,
       ...(caption ? { authoritativeCaption: true } : {}),
       candidates,
@@ -494,7 +504,9 @@ export function extractImageGenerationCompletionFromGatewayChatMessage(
     ...(sessionKey ? { sessionKey } : {}),
     source: 'gateway-chat-message',
     ...(taskId ? { taskId } : {}),
+    ...(trustedMessageToolResult && typeof message.toolCallId === 'string' ? { toolCallId: message.toolCallId } : {}),
     evidenceId: `gateway:${runId}:${candidates.map((entry) => entry.key).join('|') || 'text-only'}`,
+    ...(trustedMessageToolResult && !taskId && candidates.length === 0 ? { provisionalText: true } : {}),
     caption: sourceReplyCaption ?? GENERATED_IMAGE_CAPTION,
     ...(sourceReplyCaption ? { authoritativeCaption: true } : {}),
     candidates,
@@ -536,6 +548,7 @@ export function extractImageGenerationCompletionFromRuntimeEvent(
       ...(taskId ? { taskId } : {}),
       ...(stringValue(record.toolCallId) ? { toolCallId: stringValue(record.toolCallId) } : {}),
       evidenceId: `runtime:tool.completed:${stringValue(record.runId) ?? 'unknown-run'}:${candidates.map((entry) => entry.key).join('|') || 'text-only'}`,
+      ...(!taskId && candidates.length === 0 ? { provisionalText: true } : {}),
       caption: caption ?? GENERATED_IMAGE_CAPTION,
       ...(caption ? { authoritativeCaption: true } : {}),
       candidates,
@@ -565,6 +578,10 @@ export function extractImageGenerationCompletionFromRuntimeEvent(
 }
 
 export function imageGenerationEvidenceKey(evidence: ImageGenerationCompletionEvidence): string {
+  if (evidence.provisionalText) {
+    const delivery = JSON.stringify(['text-receipt', evidence.taskId, evidence.toolCallId ?? evidence.caption]);
+    return `${evidence.sessionKey ?? 'unknown'}:image-generation:${delivery}`;
+  }
   const candidateKeys = Array.from(new Set(evidence.candidates.map((entry) => entry.key)))
     .sort();
   const candidateSetKey = candidateKeys.length > 0

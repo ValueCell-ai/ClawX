@@ -633,7 +633,8 @@ describe('ACP image-generation compatibility extraction', () => {
     expect(supplement.completions).toEqual([
       expect.objectContaining({
         taskId: TASK_ID,
-        toolCallId: 'tool-image',
+        toolCallId: 'message-tool',
+        provisionalText: true,
         caption: 'Image generation failed because the provider returned no images.',
         candidates: [],
       }),

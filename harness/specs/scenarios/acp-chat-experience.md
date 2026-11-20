@@ -87,6 +87,7 @@ When OpenClaw dispatches image generation in the background, Chat keeps the
 generation indicator visible after the initial acknowledgment. The completed
 image appears in the originating assistant turn and is visible again when the
 conversation is reopened, including when only the transcript contains the result.
+In both views the assistant's acknowledgment precedes the generated image.
 
 After Gateway restart, a new prompt waits for ACP's own authenticated connection
 and subscription recovery, with a default 60-second admission deadline and working

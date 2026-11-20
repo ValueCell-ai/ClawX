@@ -4347,6 +4347,37 @@ describe('ACP Chat store', () => {
     }
   });
 
+  it('keeps waiting after a requester text delivery and unlocks the composer when image retries expire', async () => {
+    vi.useFakeTimers();
+    try {
+      const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
+      ensureAcpChatSubscriptions();
+      const sessionKey = 'agent:pi:s1';
+      const taskId = '0d2ee919-2dfd-4b72-9da3-d87e6ee56747';
+      const prompt = createDeferred<{ success: true }>();
+      hostApiMock.sendAcpPrompt.mockReturnValueOnce(prompt.promise);
+      await useAcpChatSessionStore.getState().loadSession({ sessionKey, workspaceRoot: '/repo', cwd: '/repo', createIfMissing: true });
+      const turn = useAcpChatSessionStore.getState().sendPrompt({ sessionKey, cwd: '/repo', message: 'Draw a cat', messageId: 'cat' });
+      const update = (toolCallId: string, rawOutput: unknown) => hostEventsMock.updateListener?.({
+        sessionKey, generation: 1, notification: { sessionId: sessionKey, update: {
+          sessionUpdate: 'tool_call_update', toolCallId, status: 'completed', rawOutput,
+        } },
+      });
+      update('image', { content: [{ type: 'text', text: `Background task started for image generation (${taskId}).` }] });
+      update('message', { details: {
+        sourceReplySink: 'internal-ui', status: 'ok', deliveryStatus: 'sent', sourceReply: { text: 'Started.' },
+      } });
+      prompt.resolve({ success: true });
+      await turn;
+      await vi.advanceTimersByTimeAsync(0);
+      expect(useAcpChatSessionStore.getState().pendingImageGenerationTaskIds).toEqual([taskId]);
+      await vi.advanceTimersByTimeAsync(200_000);
+      expect(useAcpChatSessionStore.getState().pendingImageGenerationTaskIds).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps polling a recorded image task until its live transcript completion appears', async () => {
     vi.useFakeTimers();
     try {
