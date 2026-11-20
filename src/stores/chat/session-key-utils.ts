@@ -101,11 +101,11 @@ export function shouldRetainSessionInCatalog(session: ChatSession): boolean {
   return true;
 }
 
-export function shouldIncludeSessionInSidebarList(session: ChatSession): boolean {
+export function shouldIncludeSessionInSidebarList(session: ChatSession, hasFailedPrompt = false): boolean {
   // Native children remain in the catalog for status, attention, and deletion joins.
-  return shouldRetainSessionInCatalog(session) && !isNativeSubagentSessionKey(session.key);
+  return shouldIncludeSessionInWorkspaceDeletion(session, hasFailedPrompt) && !isNativeSubagentSessionKey(session.key);
 }
 
-export function shouldIncludeSessionInWorkspaceDeletion(session: ChatSession): boolean {
-  return shouldRetainSessionInCatalog(session);
+export function shouldIncludeSessionInWorkspaceDeletion(session: ChatSession, hasFailedPrompt = false): boolean {
+  return hasFailedPrompt || shouldRetainSessionInCatalog(session);
 }

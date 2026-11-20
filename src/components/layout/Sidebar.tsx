@@ -34,6 +34,7 @@ import { isGatewayRestarting } from '@/lib/gateway-status';
 import { rendererExtensionRegistry } from '@/extensions/registry';
 import { useSettingsStore } from '@/stores/settings';
 import { useChatStore } from '@/stores/chat';
+import { useComposerDraftStore } from '@/stores/composer-drafts';
 import { useSessionAttentionStore } from '@/stores/session-attention';
 import { useGatewayStore } from '@/stores/gateway';
 import { useAgentsStore } from '@/stores/agents';
@@ -155,6 +156,7 @@ export function Sidebar() {
   const stopResizeRef = useRef<(() => void) | null>(null);
 
   const sessions = useChatStore((s) => s.sessions);
+  const failedPrompts = useComposerDraftStore((s) => s.failedPrompts);
   const currentSessionKey = useChatStore((s) => s.currentSessionKey);
   const sessionLabels = useChatStore((s) => s.sessionLabels);
   const sessionLastActivity = useChatStore((s) => s.sessionLastActivity);
@@ -381,8 +383,8 @@ export function Sidebar() {
     [agents],
   );
   const workspaceCatalogSessions = useMemo(
-    () => sessions.filter((session) => shouldIncludeSessionInWorkspaceDeletion(session)),
-    [sessions],
+    () => sessions.filter((session) => shouldIncludeSessionInWorkspaceDeletion(session, !!failedPrompts[session.key])),
+    [sessions, failedPrompts],
   );
   const workspaceCatalogGroups = groupSessionsByWorkspace(
     workspaceCatalogSessions,
@@ -399,7 +401,7 @@ export function Sidebar() {
   );
   const workspaceSessionGroups = workspaceCatalogGroups.map((group) => ({
     ...group,
-    sessions: group.sessions.filter(({ session }) => shouldIncludeSessionInSidebarList(session)),
+    sessions: group.sessions.filter(({ session }) => shouldIncludeSessionInSidebarList(session, !!failedPrompts[session.key])),
   }));
   const workspaceAvailability = useWorkspaceAvailability(
     workspaceSessionGroups.map((group) => group.workspacePath),
@@ -707,7 +709,9 @@ export function Sidebar() {
                         const agentName = agentNameById[agentId] || agentId;
                         const isEditing = editingSessionKey === s.key;
                         const isCurrentSession = isOnChat && currentSessionKey === s.key;
-                        const sessionLabel = getSessionDisplayTitle(s, sessionLabels);
+                        const failedPrompt = s.createdLocally ? failedPrompts[s.key]?.[0] : undefined;
+                        const localTitle = failedPrompt?.text.trim().slice(0, 50) || failedPrompt?.attachments?.[0]?.fileName;
+                        const sessionLabel = getSessionDisplayTitle(localTitle ? { ...s, derivedTitle: localTitle } : s, sessionLabels);
                         const relativeTime = formatSessionRelativeTime(activityMs, nowMs, i18n.language);
                         const runState = projectSessionRunState(s);
                         const attention = sessionAttentionByKey[s.key];

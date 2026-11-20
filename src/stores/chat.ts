@@ -225,7 +225,7 @@ function isHeartbeatOnlySummaryForSession(
   session: ChatSession | undefined,
   summary: SessionLabelSummary,
 ): boolean {
-  if (!session || !isClawXDesktopSessionKey(session.key)) return false;
+  if (!session || !isClawXDesktopSessionKey(session.key) || hasSubmittedPrompt(session.key)) return false;
   if (!summary.heartbeatOnly && !isOpenClawHeartbeatPollText(summary.firstUserText)) return false;
   return isOpenClawHeartbeatOnlySession({
     ...session,
@@ -246,7 +246,7 @@ function getHeartbeatCachedLabelCleanup(
       ...session,
       lastMessagePreview: OPENCLAW_HEARTBEAT_POLL_SENTINEL,
     };
-    if (isOpenClawHeartbeatOnlySession(heartbeatMarkedSession)) hiddenSessionKeys.add(session.key);
+    if (isOpenClawHeartbeatOnlySession(heartbeatMarkedSession) && !hasSubmittedPrompt(session.key)) hiddenSessionKeys.add(session.key);
     else staleLabelKeys.add(session.key);
   }
 
@@ -317,18 +317,27 @@ function clearSessionEntryFromMap<T extends Record<string, unknown>>(entries: T,
   return Object.fromEntries(Object.entries(entries).filter(([key]) => key !== sessionKey)) as T;
 }
 
+function hasSubmittedPrompt(key: string, composer = useComposerDraftStore.getState()): boolean {
+  return Boolean(composer.failedPrompts[key]?.length || composer.submissions[key]?.length);
+}
+
 function buildSessionSwitchPatch(
   state: Pick<ChatState, 'currentSessionKey' | 'sessions' | 'sessionLabels' | 'sessionLastActivity'>,
   nextSessionKey: string,
   options: { createdLocally?: boolean; workspacePath?: string } = {},
 ): Partial<ChatState> {
   const leavingLocalPlaceholder = state.currentSessionKey !== nextSessionKey
+    && !hasSubmittedPrompt(state.currentSessionKey)
     && state.sessions.some((session) => (
       session.key === state.currentSessionKey && session.createdLocally === true
     ));
   const sessions = leavingLocalPlaceholder
     ? state.sessions.filter((session) => session.key !== state.currentSessionKey)
     : state.sessions;
+  if (leavingLocalPlaceholder) {
+    localDraftSessionKeys.delete(state.currentSessionKey);
+    useComposerDraftStore.getState().clearDraft(state.currentSessionKey);
+  }
 
   return {
     currentSessionKey: nextSessionKey,
@@ -630,14 +639,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 (session) => !suppressedSessionKeys.has(session.key),
               );
             }
-            // During restart the first catalog can omit the still-running turn.
-            // Keep its row until ACP settles; explicit delete events below still win.
+            // A restart or a placeholder-only gateway row can omit the user's
+            // submission. Keep the local row until it settles or is explicitly deleted.
             const acpState = useAcpChatSessionStore.getState();
             const liveSessionKey = acpState.sending ? acpState.activeSessionKey : null;
-            const pendingConfirmationSessions = localSessions.filter((session) => (
-              (pendingCatalogConfirmationSessionKeys.has(session.key) || session.key === liveSessionKey)
-              && !normalizedSessionKeys.has(session.key)
-            ));
+            const visibleKeys = new Set(visibleMergedSessions.map((session) => session.key));
+            const pendingConfirmationSessions = localSessions.filter((session) => {
+              if (hasSubmittedPrompt(session.key)) return !visibleKeys.has(session.key);
+              return (pendingCatalogConfirmationSessionKeys.has(session.key) || session.key === liveSessionKey)
+                && !normalizedSessionKeys.has(session.key);
+            });
             if (pendingConfirmationSessions.length > 0) {
               visibleMergedSessions = [...visibleMergedSessions, ...pendingConfirmationSessions];
             }
@@ -686,6 +697,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 visibleMergedSessions,
                 event,
                 latestSessionEventTsByKey,
+                hasSubmittedPrompt,
               );
               const eventRemovedSessionKeys = getRemovedSessionKeys(
                 sessionsBeforeEvent,
@@ -732,14 +744,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
               nextSessionKey,
               normalizedSessions,
             );
-            if (hiddenCurrentSession || heartbeatCleanup.hiddenSessionKeys.has(nextSessionKey)) {
+            if (!hasSubmittedPrompt(nextSessionKey) && (hiddenCurrentSession || heartbeatCleanup.hiddenSessionKeys.has(nextSessionKey))) {
               const prefix = getCanonicalPrefixFromSessionKey(nextSessionKey)
                 ?? getCanonicalPrefixFromSessions(sessions)
                 ?? DEFAULT_CANONICAL_PREFIX;
               nextSessionKey = `${prefix}:session-${Date.now()}`;
               replacedHiddenHeartbeatSession = true;
             }
-            if (!nextSessionKey.startsWith('agent:')) {
+            if (!nextSessionKey.startsWith('agent:') && !hasSubmittedPrompt(nextSessionKey)) {
               const canonicalMatch = canonicalBySuffix.get(nextSessionKey);
               if (canonicalMatch) nextSessionKey = canonicalMatch;
             }
@@ -768,19 +780,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
             }
 
             const localCurrentSession = localSessions.find((session) => session.key === nextSessionKey);
-            const currentSessionToInsert = localCurrentSession
-              && (
-                localCurrentSession.createdLocally
-                || pendingCatalogConfirmationSessionKeys.has(nextSessionKey)
-              )
-              ? localCurrentSession
-              : {
-                  ...(localCurrentSession ?? {
-                    key: nextSessionKey,
-                    displayName: nextSessionKey,
-                  }),
-                  createdLocally: true,
-                };
+            const currentSessionToInsert = localCurrentSession ?? {
+              key: nextSessionKey,
+              displayName: nextSessionKey,
+              ...(nextSessionKey === DEFAULT_SESSION_KEY || replacedHiddenHeartbeatSession || localDraftSessionKeys.has(nextSessionKey)
+                ? { createdLocally: true } : {}),
+            };
             let sessionsWithCurrent = !visibleMergedSessions.some((session) => session.key === nextSessionKey)
               && nextSessionKey
               && isClawXDesktopSessionKey(nextSessionKey)
@@ -1051,6 +1056,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 reducedSessions,
                 event,
                 latestSessionEventTsByKey,
+                hasSubmittedPrompt,
               );
               const eventRemovedSessionKeys = getRemovedSessionKeys(
                 sessionsBeforeEvent,
@@ -1184,6 +1190,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       sessionsBeforeEvent,
       payload,
       latestSessionEventTsByKey,
+      hasSubmittedPrompt,
     );
     if (result.applied) {
       const removedSessionKeys = getRemovedSessionKeys(sessionsBeforeEvent, result.sessions);
@@ -1223,11 +1230,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   switchSession: (key) => {
-    const { currentSessionKey, sessions } = get();
-    if (key === currentSessionKey) return;
-    if (sessions.some((session) => session.key === currentSessionKey && session.createdLocally)) {
-      useComposerDraftStore.getState().clearDraft(currentSessionKey);
-    }
+    if (key === get().currentSessionKey) return;
     markLocalSessionCatalogMutation();
     set((state) => buildSessionSwitchPatch(state, key));
   },
@@ -1238,10 +1241,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       key === currentSessionKey
       && (!workspacePath || sessions.find((session) => session.key === key)?.workspacePath === workspacePath)
     ) return;
-    if (sessions.some((session) => session.key === currentSessionKey && session.createdLocally)) {
-      localDraftSessionKeys.delete(currentSessionKey);
-      useComposerDraftStore.getState().clearDraft(currentSessionKey);
-    }
     if (!sessions.some((session) => session.key === key)) localDraftSessionKeys.add(key);
     markLocalSessionCatalogMutation();
     set((state) => buildSessionSwitchPatch(state, key, { createdLocally: true, workspacePath }));
@@ -1253,10 +1252,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       ?? getCanonicalPrefixFromSessions(sessions)
       ?? DEFAULT_CANONICAL_PREFIX;
     const sessionKey = `${prefix}:session-${Date.now()}`;
-    if (sessions.some((session) => session.key === currentSessionKey && session.createdLocally)) {
-      localDraftSessionKeys.delete(currentSessionKey);
-      useComposerDraftStore.getState().clearDraft(currentSessionKey);
-    }
     localDraftSessionKeys.add(sessionKey);
     markLocalSessionCatalogMutation();
     set((state) => buildSessionSwitchPatch(
@@ -1398,13 +1393,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const sessionPrefix = `agent:${normalizedAgentId}:`;
     const belongsToAgent = (sessionKey: string): boolean => sessionKey.startsWith(sessionPrefix);
     const state = get();
-    const composerDrafts = useComposerDraftStore.getState().drafts;
+    const composer = useComposerDraftStore.getState();
     const attentionKeys = Object.keys(useSessionAttentionStore.getState().bySessionKey);
     const removedKeys = new Set([
       ...state.sessions.map((session) => session.key),
       ...Object.keys(state.sessionLabels),
       ...Object.keys(state.sessionLastActivity),
-      ...Object.keys(composerDrafts),
+      ...Object.keys(composer.drafts),
+      ...Object.keys(composer.failedPrompts),
+      ...Object.keys(composer.submissions),
       ...attentionKeys,
       ...localDraftSessionKeys,
       ...pendingCatalogConfirmationSessionKeys,
@@ -1477,3 +1474,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }));
   },
 }));
+
+// The selected session can be missing from a stale catalog. Retain its identity
+// without granting permission to create a session or skip reading its model.
+useComposerDraftStore.subscribe((composer, previous) => {
+  if (composer.failedPrompts === previous.failedPrompts && composer.submissions === previous.submissions) return;
+  const submittedKeys = new Set([...Object.keys(composer.failedPrompts), ...Object.keys(composer.submissions)]);
+  const added = [...submittedKeys].filter((key) => !hasSubmittedPrompt(key, previous));
+  if (!added.length) return;
+  markLocalSessionCatalogMutation();
+  useChatStore.setState((state) => {
+    const missing = added.filter((key) => !state.sessions.some((session) => session.key === key));
+    if (!missing.length) return state;
+    return {
+      sessions: [
+        ...state.sessions,
+        ...missing.map((key) => ({
+          key,
+          displayName: key,
+          ...(localDraftSessionKeys.has(key) ? { createdLocally: true } : {}),
+        })),
+      ],
+    };
+  });
+});

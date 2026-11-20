@@ -45,7 +45,9 @@ vi.mock('@/stores/agents', () => ({
 }));
 
 vi.mock('@/stores/chat', () => ({
-  useChatStore: (selector: (state: typeof chatState) => unknown) => selector(chatState),
+  useChatStore: Object.assign((selector: (state: typeof chatState) => unknown) => selector(chatState), {
+    getState: () => chatState,
+  }),
 }));
 
 vi.mock('@/stores/gateway', () => ({
@@ -277,7 +279,7 @@ describe('ChatInput agent targeting', () => {
     agentsState.updateAgentModel.mockReset();
     modelApi.getModel.mockReset().mockResolvedValue({ modelRef: null });
     modelApi.setModel.mockReset().mockImplementation(async (_key, modelRef) => ({ modelRef }));
-    useComposerDraftStore.setState({ drafts: {}, modelRefs: {}, thinkingLevels: {} });
+    useComposerDraftStore.setState({ drafts: {}, modelRefs: {}, thinkingLevels: {}, failedPrompts: {}, submissions: {} });
     chatState.currentAgentId = 'main';
     chatState.currentSessionKey = 'agent:main:session-1';
     chatState.sessions = [{ key: 'agent:main:session-1' }];
@@ -558,11 +560,62 @@ describe('ChatInput agent targeting', () => {
       })));
       expect(modelApi.getModel).toHaveBeenCalledWith(target);
       expect(send).not.toHaveBeenCalled();
-      expect(screen.getByRole('textbox')).toHaveValue('Check this');
+      const failed = await screen.findByTestId('chat-failed-prompt');
+      expect(failed).toHaveTextContent('Check this');
+      expect(failed).toHaveTextContent('denied');
+      expect(screen.getByRole('textbox')).toHaveValue('');
+      fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Next draft' } });
+      fireEvent.click(screen.getByTestId('chat-retry-prompt'));
+      await waitFor(() => expect(guard).toHaveBeenCalledTimes(2));
+      expect(screen.getAllByTestId('chat-failed-prompt')).toHaveLength(1);
+      expect(send).not.toHaveBeenCalled();
+      guard.mockResolvedValue({ ok: true });
+      fireEvent.click(screen.getByTestId('chat-retry-prompt'));
+      await waitFor(() => expect(send).toHaveBeenCalledWith('Check this', undefined, 'research'));
+      expect(guard).toHaveBeenLastCalledWith(expect.objectContaining({ sessionKey: target, sessionModelRef: pin }));
+      expect(screen.queryByTestId('chat-failed-prompt')).not.toBeInTheDocument();
+      expect(screen.getByRole('textbox')).toHaveValue('Next draft');
     } finally {
       hasGuard.mockRestore();
       guard.mockRestore();
     }
+  });
+
+  it('retains exact text on async admission failure without replacing a newer draft', async () => {
+    let rejectSend!: (reason: Error) => void;
+    const send = vi.fn(() => new Promise<boolean>((_resolve, reject) => { rejectSend = reject; }));
+    renderChatInput(send);
+    const input = screen.getByRole('textbox');
+    const prompt = '  Review these files.\n\n    Keep the indentation.\n';
+    fireEvent.change(input, { target: { value: prompt } });
+    fireEvent.click(screen.getByTitle('Send'));
+    fireEvent.change(input, { target: { value: 'Next draft' } });
+    await act(async () => rejectSend(new Error('Connection lost')));
+
+    const failed = screen.getByTestId('chat-failed-prompt');
+    expect(failed).toHaveTextContent('Connection lost');
+    expect(failed.textContent).toContain(prompt);
+    expect(input).toHaveValue('Next draft');
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries only in the workspace where the failed prompt was submitted', async () => {
+    const send = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const composer = (workspacePath: string) => (
+      <TooltipProvider><ChatInput onSend={send} workspacePath={workspacePath} /></TooltipProvider>
+    );
+    const { rerender } = render(composer('/work/first'));
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Read the project' } });
+    fireEvent.click(screen.getByTitle('Send'));
+    await screen.findByTestId('chat-failed-prompt');
+    rerender(composer('/work/second'));
+    fireEvent.click(screen.getByTestId('chat-retry-prompt'));
+    expect(screen.getByTestId('chat-failed-prompt')).toHaveTextContent('composer.retryDestinationChanged');
+    expect(send).toHaveBeenCalledTimes(1);
+    rerender(composer('/work/first'));
+    fireEvent.click(screen.getByTestId('chat-retry-prompt'));
+    await waitFor(() => expect(screen.queryByTestId('chat-failed-prompt')).not.toBeInTheDocument());
+    expect(send).toHaveBeenCalledTimes(2);
   });
 
   it('hides malformed context usage and clamps valid overages to 100%', () => {

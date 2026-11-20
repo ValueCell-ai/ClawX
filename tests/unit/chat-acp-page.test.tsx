@@ -303,7 +303,7 @@ function deferredPromise() {
 describe('ACP Chat page', () => {
   beforeEach(() => {
     setSessionModel.mockReset().mockImplementation(async (_key, modelRef) => ({ modelRef }));
-    useComposerDraftStore.setState({ drafts: {}, modelRefs: {}, thinkingLevels: {} });
+    useComposerDraftStore.setState({ drafts: {}, modelRefs: {}, thinkingLevels: {}, failedPrompts: {}, submissions: {} });
     targetPromptAdmitted.mockReset();
     ensureAcpChatSubscriptions.mockReset();
     acpState.loading = false;
@@ -413,6 +413,7 @@ describe('ACP Chat page', () => {
     });
     fireEvent.click(screen.getByTestId('mock-send'));
     expect(acpState.sendPrompt).toHaveBeenCalledWith({
+      messageId: expect.stringMatching(/^user:/),
       sessionKey: 'agent:main:main',
       cwd: '/workspace',
       message: 'Ship it',
@@ -423,6 +424,27 @@ describe('ACP Chat page', () => {
 
     fireEvent.click(screen.getByTestId('mock-stop'));
     expect(acpState.cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([false, true])('handles a late dispatch failure after leaving Chat (deleted = %s)', async (deleted) => {
+    const key = chatState.currentSessionKey;
+    const pending = deferredPromise();
+    acpState.workspaceRoot = acpState.cwd = '/workspace';
+    acpState.sendPrompt.mockImplementationOnce(() => pending.promise.then(() => false));
+    const { unmount } = render(<Chat />);
+    await waitFor(() => expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-disabled', 'false'));
+    fireEvent.click(screen.getByTestId('mock-send'));
+    const id = acpState.sendPrompt.mock.calls[0][0].messageId;
+    unmount();
+    chatState.currentSessionKey = 'agent:main:other';
+    acpState.activeSessionKey = chatState.currentSessionKey;
+    acpState.error = 'Unrelated session error';
+    if (deleted) useComposerDraftStore.getState().clearDraft(key);
+    await act(async () => pending.resolve());
+    const { failedPrompts } = useComposerDraftStore.getState();
+    expect(failedPrompts[chatState.currentSessionKey]).toBeUndefined();
+    if (deleted) expect(failedPrompts[key]).toBeUndefined();
+    else expect(failedPrompts[key]).toMatchObject([{ id, text: 'Ship it', error: '' }]);
   });
 
   it('loads immediately, then corrects the default session workspace after agents resolve', async () => {
@@ -1086,6 +1108,7 @@ describe('ACP Chat page', () => {
     });
     expect(chatState.selectAcpSession).toHaveBeenCalledWith('agent:research:desk', '/research-workspace');
     expect(acpState.sendPrompt).toHaveBeenCalledWith({
+      messageId: expect.stringMatching(/^user:/),
       sessionKey: 'agent:research:desk',
       cwd: '/research-workspace',
       message: 'Ask research',
@@ -1164,6 +1187,7 @@ describe('ACP Chat page', () => {
       'Ask research',
     );
     expect(acpState.sendPrompt).toHaveBeenCalledWith({
+      messageId: expect.stringMatching(/^user:/),
       sessionKey: 'agent:research:main',
       cwd: '/research-workspace',
       message: 'Ask research',
@@ -1202,6 +1226,7 @@ describe('ACP Chat page', () => {
       });
     });
     expect(acpState.sendPrompt).toHaveBeenCalledWith({
+      messageId: expect.stringMatching(/^user:/),
       sessionKey,
       cwd: '/research-workspace',
       message: 'Ask research',
