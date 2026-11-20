@@ -129,6 +129,7 @@ export function applyGatewaySessionsChanged(
   sessions: ChatSession[],
   payload: GatewaySessionsChangedPayload,
   latestEventTsByKey: Map<string, number>,
+  hasSubmittedPrompt?: (sessionKey: string) => boolean,
 ): {
   sessions: ChatSession[];
   applied: boolean;
@@ -199,7 +200,7 @@ export function applyGatewaySessionsChanged(
 
   if (eventTs !== undefined) latestEventTsByKey.set(key, eventTs);
   const nextSessions = [...sessions];
-  if (merged.createdLocally || shouldRetainSessionInCatalog(merged)) {
+  if (merged.createdLocally || shouldRetainSessionInCatalog(merged) || hasSubmittedPrompt?.(key)) {
     nextSessions[index] = merged;
   } else {
     nextSessions.splice(index, 1);

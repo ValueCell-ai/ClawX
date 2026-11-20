@@ -3,7 +3,7 @@ import { useComposerDraftStore } from '@/stores/composer-drafts';
 
 describe('composer draft store', () => {
   beforeEach(() => {
-    useComposerDraftStore.setState({ drafts: {} });
+    useComposerDraftStore.setState(useComposerDraftStore.getInitialState());
   });
 
   it('keeps unsent text isolated by session', () => {
@@ -31,5 +31,38 @@ describe('composer draft store', () => {
     setDraft('agent:main:second', 'other');
     clearDraft('agent:main:second');
     expect(useComposerDraftStore.getState().drafts).toEqual({});
+  });
+
+  it('updates the same failed send on retry while preserving identical independent prompts', () => {
+    const { saveFailedPrompt, removeFailedPrompt, clearDraft } = useComposerDraftStore.getState();
+    const first = { id: '1', text: 'same prompt', error: 'login required' };
+    const second = { ...first, id: '2' };
+    saveFailedPrompt('a', first);
+    saveFailedPrompt('a', second);
+    saveFailedPrompt('b', first);
+    const retry = { ...first, error: 'load failed' };
+    saveFailedPrompt('a', retry);
+    expect(useComposerDraftStore.getState().failedPrompts).toEqual({ a: [retry, second], b: [first] });
+    removeFailedPrompt('a', second.id);
+    expect(useComposerDraftStore.getState().failedPrompts.a).toEqual([retry]);
+    removeFailedPrompt('a', first.id);
+    expect(useComposerDraftStore.getState().failedPrompts).toEqual({ b: [first] });
+    clearDraft('b');
+    expect(useComposerDraftStore.getState().failedPrompts).toEqual({});
+  });
+
+  it('invalidates outstanding submissions on delete even when the same session key is reused', () => {
+    const { trackSubmission, clearDraft } = useComposerDraftStore.getState();
+    const guard = trackSubmission('a');
+    const send = trackSubmission('a');
+    guard.release();
+    expect(send.isTracked()).toBe(true);
+    clearDraft('a');
+    const next = trackSubmission('a');
+    expect(send.isTracked()).toBe(false);
+    send.release();
+    expect(next.isTracked()).toBe(true);
+    next.release();
+    expect(useComposerDraftStore.getState().submissions).toEqual({});
   });
 });

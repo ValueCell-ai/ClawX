@@ -854,6 +854,7 @@ export function Chat() {
         {(!isCurrentSessionSubagent || currentSubagentBusy) && <ChatInput
           draft={composerDraft}
           draftKey={currentSessionKey}
+          isPromptInTimeline={(id) => !acpPresentationPending && !!visibleAcpTimeline.itemsById[`${id}:0`]}
           onDraftChange={handleComposerDraftChange}
           onSend={async (text: string, attachments?: FileAttachment[], targetAgentId?: string | null) => {
             if (!currentSessionKey || !cwd || !workspaceContextAvailable) return false;
@@ -921,23 +922,39 @@ export function Chat() {
                     }
                   }
                 })();
-                if (!loaded) return false;
+                if (!loaded) {
+                  return { error: useAcpChatSessionStore.getState().error || t('acp.loadFailed') };
+                }
               }
               if (!destinationCanSend()) return false;
               try {
                 const modelWrite = applyDraftSessionModel(sessionKey, createIfMissing);
                 if (modelWrite) await modelWrite;
               } catch (error) {
-                toast.error(t('composer.modelSwitchFailed', { error: String(error) }));
-                return false;
+                return { error: t('composer.modelSwitchFailed', { error: String(error) }) };
               }
               if (!destinationCanSend()) return false;
+              const messageId = `user:${crypto.randomUUID()}`;
+              const submission = useComposerDraftStore.getState().trackSubmission(sessionKey);
+              const retainFailedPrompt = (error: string) => {
+                if (!submission.isTracked()) return;
+                useComposerDraftStore.getState().saveFailedPrompt(sessionKey, {
+                  id: messageId, text, attachments, error,
+                  destination: { sessionKey, workspace: promptCwd },
+                });
+              };
               void sendAcpPrompt({
                 sessionKey,
                 cwd: promptCwd,
-                message: text,
+                message: text.trim(),
+                messageId,
                 media,
-              });
+              }).then((success) => {
+                if (success) return;
+                const acp = useAcpChatSessionStore.getState();
+                retainFailedPrompt(acp.activeSessionKey === sessionKey ? acp.error ?? '' : '');
+              }, (error: unknown) => retainFailedPrompt(error instanceof Error ? error.message : String(error)))
+                .finally(submission.release);
               if (targetAgent) selectAcpSession(sessionKey, promptCwd);
               if (createIfMissing) acknowledgeAcpSessionCreated(sessionKey, promptCwd, text);
               requestAnimationFrame(() => {

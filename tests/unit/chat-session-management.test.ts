@@ -57,6 +57,86 @@ describe('chat session management', () => {
     expect(useChatStore.getState().sessions).toContainEqual(expect.objectContaining({ key: persistedKey }));
   });
 
+  it('retains the first failed send across navigation and catalog reconciliation until deleted', async () => {
+    const other = 'agent:main:other';
+    const { useChatStore } = await import('@/stores/chat');
+    const { useComposerDraftStore } = await import('@/stores/composer-drafts');
+    const chat = useChatStore.getState();
+    const composer = useComposerDraftStore.getState();
+    useChatStore.setState({ currentSessionKey: other, sessions: [{ key: other, label: 'Other' }] });
+    chat.newSession();
+    const local = useChatStore.getState().currentSessionKey;
+    gatewayRpcMock.mockResolvedValue({ ts: 100, sessions: [{ key: other, label: 'Other' }] });
+
+    const guard = composer.trackSubmission(local);
+    chat.switchSession(other);
+    await chat.loadSessions({ force: true });
+    expect(useChatStore.getState().sessions).toContainEqual(expect.objectContaining({ key: local, createdLocally: true }));
+
+    const failed = { id: '1', text: 'long prompt', error: 'login required' };
+    composer.saveFailedPrompt(local, failed);
+    guard.release();
+    chat.switchSession(local);
+    chat.newSession();
+    await chat.loadSessions({ force: true });
+    expect(useChatStore.getState().sessions).toContainEqual(expect.objectContaining({ key: local }));
+    chat.selectAcpSession(local, '/workspace');
+    expect(useComposerDraftStore.getState().failedPrompts[local]).toEqual([failed]);
+
+    const retry = composer.trackSubmission(local);
+    await expect(chat.deleteSession(local)).resolves.toEqual({ success: true });
+    expect(retry.isTracked()).toBe(false);
+    expect(useComposerDraftStore.getState().failedPrompts[local]).toBeUndefined();
+  });
+
+  it.each([false, true])('preserves an unlisted session identity without granting creation permission (refresh before send: %s)', async (refreshBeforeSend) => {
+    const key = 'agent:research:main';
+    const { useChatStore } = await import('@/stores/chat');
+    const { useComposerDraftStore } = await import('@/stores/composer-drafts');
+    const composer = useComposerDraftStore.getState();
+    const chat = useChatStore.getState();
+    useChatStore.setState({ currentSessionKey: key, sessions: [] });
+    gatewayRpcMock.mockResolvedValue({ ts: 100, sessions: [] });
+    if (refreshBeforeSend) await chat.loadSessions({ force: true });
+    const submission = composer.trackSubmission(key);
+    composer.saveFailedPrompt(key, { id: '1', text: 'Keep my model', error: 'login required' });
+    submission.release();
+
+    await chat.loadSessions({ force: true });
+    expect(useChatStore.getState().sessions).toEqual([{ key, displayName: key }]);
+    const retry = composer.trackSubmission(key);
+    chat.selectAcpSession(key, '/research');
+    gatewayRpcMock.mockResolvedValue({ ts: 101, sessions: [{ key, model: 'my-provider/model' }] });
+    await chat.loadSessions({ force: true });
+    expect(useChatStore.getState().sessions).toEqual([{ key, model: 'my-provider/model', workspacePath: '/research' }]);
+
+    composer.removeFailedPrompt(key, '1');
+    retry.release();
+    gatewayRpcMock.mockResolvedValue({ ts: 102, sessions: [] });
+    await chat.loadSessions({ force: true });
+    expect(useChatStore.getState().sessions[0]).not.toHaveProperty('createdLocally');
+  });
+
+  it('keeps an undelivered prompt through placeholder snapshots and updates until an explicit delete', async () => {
+    const key = 'agent:main:feishu:chat';
+    const hidden = 'agent:main:feishu:untouched';
+    const { useChatStore } = await import('@/stores/chat');
+    const { useComposerDraftStore } = await import('@/stores/composer-drafts');
+    const chat = useChatStore.getState();
+    useChatStore.setState({ currentSessionKey: key, sessions: [{ key, lastMessagePreview: 'Prior message' }] });
+    const failed = { id: '1', text: 'Keep this', error: 'offline' };
+    useComposerDraftStore.getState().saveFailedPrompt(key, failed);
+    gatewayRpcMock.mockResolvedValue({ ts: 100, sessions: [{ key }, { key: hidden }] });
+    await chat.loadSessions({ force: true });
+    expect(useChatStore.getState().sessions.map((s) => s.key)).toEqual([key]);
+    chat.handleSessionsChanged({ session: { key, lastMessagePreview: null }, ts: 101 });
+    expect(useChatStore.getState().sessions.map((s) => s.key)).toEqual([key]);
+    expect(useComposerDraftStore.getState().failedPrompts[key]).toEqual([failed]);
+    chat.handleSessionsChanged({ sessionKey: key, reason: 'delete', ts: 102 });
+    expect(useChatStore.getState().sessions.map((s) => s.key)).not.toContain(key);
+    expect(useComposerDraftStore.getState().failedPrompts[key]).toBeUndefined();
+  });
+
   it('uses the first prompt to title a newly created non-default Agent main session', async () => {
     const key = 'agent:research:main';
     const { useChatStore } = await import('@/stores/chat');
@@ -242,6 +322,8 @@ describe('chat session management', () => {
       },
     });
     useComposerDraftStore.getState().setDraft(deletedChat, 'unsent');
+    const pending = useComposerDraftStore.getState().trackSubmission(deletedChat);
+    useComposerDraftStore.getState().saveFailedPrompt(deletedMain, { id: '1', text: 'offer', error: 'offline' });
     useSessionAttentionStore.setState({
       bySessionKey: { [deletedChat]: { observedBusy: false, unread: true } },
       visibleSessionKey: null,
@@ -263,6 +345,8 @@ describe('chat session management', () => {
       },
     });
     expect(useComposerDraftStore.getState().drafts[deletedChat]).toBeUndefined();
+    expect(useComposerDraftStore.getState().failedPrompts[deletedMain]).toBeUndefined();
+    expect(pending.isTracked()).toBe(false);
     expect(useSessionAttentionStore.getState().bySessionKey[deletedChat]).toBeUndefined();
 
     useChatStore.getState().handleSessionsChanged({
