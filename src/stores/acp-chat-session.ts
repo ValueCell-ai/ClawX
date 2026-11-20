@@ -19,6 +19,7 @@ import {
   extractImageGenerationCompletionFromRuntimeEvent,
   extractImageGenerationStartFromAcpEnvelope,
   imageGenerationEvidenceKey,
+  imageGenerationTaskIdFromSessionKey,
   type ImageGenerationCompletionEvidence,
   type ImageGenerationMediaCandidate,
   type ImageGenerationTaskStart,
@@ -388,9 +389,13 @@ function commitDelivery(sessionKey: string, key: string, owner: string): void {
   session.delivered.add(key);
 }
 
-function imageGenerationTaskIdFromSessionKey(sessionKey: string | undefined): string | null {
-  const match = sessionKey?.match(/^image_generate:([0-9a-f-]{36})(?::|$)/i);
-  return match?.[1] ?? null;
+function matchesImageGenerationSession(
+  sessionKey: string,
+  evidenceSessionKey: string | undefined,
+  taskId: string | undefined,
+): boolean {
+  return !evidenceSessionKey || evidenceSessionKey === sessionKey
+    || (taskId !== undefined && imageGenerationTaskIdFromSessionKey(evidenceSessionKey) === taskId);
 }
 
 function deferInactiveImageGenerationCompletion(
@@ -402,6 +407,7 @@ function deferInactiveImageGenerationCompletion(
   for (const [sessionKey, snapshot] of liveSessionSnapshots) {
     if (
       sessionKey === activeSessionKey
+      || !matchesImageGenerationSession(sessionKey, evidence.sessionKey, taskId)
       || !snapshot.pendingImageGenerationTaskIds.includes(taskId)
     ) continue;
     const key = imageGenerationEvidenceKey(evidence);
@@ -426,9 +432,9 @@ function resolveImageGenerationProjectionSession(
     ? session?.replayTaskIds
     : session?.taskIds;
   const taskId = evidence.taskId ?? imageGenerationTaskIdFromSessionKey(evidence.sessionKey);
+  if (!matchesImageGenerationSession(activeSessionKey, evidence.sessionKey, taskId)) return null;
   if (taskId) return taskIds?.has(taskId) ? activeSessionKey : null;
-  if (!evidence.sessionKey || evidence.sessionKey === activeSessionKey) return activeSessionKey;
-  return null;
+  return activeSessionKey;
 }
 
 function imageGenerationCaptionPriority(source: ImageGenerationCompletionEvidence['source']): number {
@@ -1612,6 +1618,8 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       session.replayTaskIds.add(start.taskId);
       recordImageGenerationStartAnchor(session, start, true);
     } else {
+      // The dispatch wrapper can repeat the child tool's acknowledgment after delivery.
+      if (session.taskIds.has(start.taskId) && !state.pendingImageGenerationTaskIds.includes(start.taskId)) return;
       session.taskStartedAt = Date.now();
       session.taskIds.add(start.taskId);
       recordImageGenerationStartAnchor(session, start, false);

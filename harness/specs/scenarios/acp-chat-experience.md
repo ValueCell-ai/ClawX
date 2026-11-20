@@ -83,6 +83,11 @@ caption supplements, and they cannot extend visible-turn timing. Internal
 image-generation user triggers retain their bounded metadata-only role.
 See [internal control replay evidence](../../reference/acp-internal-control-replay.md).
 
+When OpenClaw dispatches image generation in the background, Chat keeps the
+generation indicator visible after the initial acknowledgment. The completed
+image appears in the originating assistant turn and is visible again when the
+conversation is reopened, including when only the transcript contains the result.
+
 After Gateway restart, a new prompt waits for ACP's own authenticated connection
 and subscription recovery, with a default 60-second admission deadline and working
 cancel/supersede behavior. Main's gatewayReady alone does not release the wait.

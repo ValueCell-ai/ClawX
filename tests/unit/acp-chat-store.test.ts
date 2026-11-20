@@ -2626,7 +2626,7 @@ describe('ACP Chat store', () => {
     expect(hostApiMock.sessionsHistory).not.toHaveBeenCalled();
   });
 
-  it('projects a recorded image-generation background task completion from its task session', async () => {
+  it.each(['', 'tool:image_generate:'])('projects a recorded image-generation completion from its task session (prefix %j)', async (prefix) => {
     const taskId = '32aa3a12-a05b-4074-af4e-246cc4a9a303';
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();
@@ -2656,8 +2656,8 @@ describe('ACP Chat store', () => {
 
     hostEventsMock.runtimeEventListener?.({
       type: 'tool.completed',
-      sessionKey: `image_generate:${taskId}`,
-      runId: `image_generate:${taskId}:ok`,
+      sessionKey: `image_generate:${prefix}${taskId}`,
+      runId: `image_generate:${prefix}${taskId}:ok`,
       toolCallId: 'message-tool',
       name: 'message',
       result: {
@@ -2693,6 +2693,17 @@ describe('ACP Chat store', () => {
         { kind: 'image', source: 'data:image/png;base64,abc123', mimeType: 'image/png', alt: 'Image' },
       ],
     });
+    hostEventsMock.updateListener?.({
+      sessionKey: 'agent:pi:s1', generation: 1,
+      notification: { sessionId: 'agent:pi:s1', update: {
+        sessionUpdate: 'tool_call_update', toolCallId: 'dispatch-parent', status: 'completed',
+        rawOutput: { details: {
+          tool: { id: 'openclaw:core:image_generate' },
+          result: { content: [{ type: 'text', text: `Background task started for image generation (tool:image_generate:${taskId}).` }] },
+        } },
+      } },
+    });
+    expect(useAcpChatSessionStore.getState().pendingImageGenerationTaskIds).toEqual([]);
   });
 
   it('projects a text-only image-generation failure as an assistant reply', async () => {
@@ -2893,9 +2904,12 @@ describe('ACP Chat store', () => {
     });
   });
 
-  it('rejects a task-tagged completion that does not match the recorded image task', async () => {
+  it.each([
+    ['agent:pi:s1', '45bb4b23-b16c-4185-b05f-357dd5b0b414'],
+    ['agent:pi:other', '32aa3a12-a05b-4074-af4e-246cc4a9a303'],
+    ['image_generate:tool:image_generate:45bb4b23-b16c-4185-b05f-357dd5b0b414', '32aa3a12-a05b-4074-af4e-246cc4a9a303'],
+  ])('rejects a completion with a mismatched session or task (%s, %s)', async (sessionKey, runTaskId) => {
     const recordedTaskId = '32aa3a12-a05b-4074-af4e-246cc4a9a303';
-    const unrelatedTaskId = '45bb4b23-b16c-4185-b05f-357dd5b0b414';
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();
     await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
@@ -2921,8 +2935,8 @@ describe('ACP Chat store', () => {
 
     hostEventsMock.runtimeEventListener?.({
       type: 'tool.completed',
-      sessionKey: 'agent:pi:s1',
-      runId: `image_generate:${unrelatedTaskId}:error`,
+      sessionKey,
+      runId: `image_generate:${runTaskId}:error`,
       toolCallId: 'message-tool',
       name: 'message',
       result: {

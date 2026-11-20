@@ -1,5 +1,6 @@
-import type { ElectronApplication } from '@playwright/test';
-import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
+import type { ElectronApplication, Page } from '@playwright/test';
+import type { RawMessage } from '../../shared/chat/types';
+import { closeElectronApp, expect, getStableWindow, installAttachmentHostFixture, installIpcMocks, test } from './fixtures/electron';
 
 const MAIN_SESSION_KEY = 'agent:main:main';
 const MAIN_WORKSPACE = '/workspace';
@@ -159,6 +160,80 @@ async function openChat(app: ElectronApplication) {
   return page;
 }
 
+const KITTEN_PROMPT = 'Generate a kitten on a blue windowsill.';
+const KITTEN_ACK = 'The kitten image is being generated.';
+const KITTEN_CAPTION = 'Here is your kitten.';
+const OTHER_SESSION_KEY = 'agent:main:other';
+
+async function kittenGenerationFixture(app: ElectronApplication) {
+  const fixture = await installAttachmentHostFixture(app, {
+    sessions: [
+      { key: MAIN_SESSION_KEY, title: 'Kitten chat' },
+      { key: OTHER_SESSION_KEY, title: 'Other chat' },
+    ],
+  });
+  const imagePath = await fixture.createOpenClawMediaFile(
+    'tool-image-generation/kitten.png',
+    Buffer.from(ONE_PIXEL_PNG_BASE64, 'base64'),
+  );
+  const taskId = `tool:image_generate:${IMAGE_GENERATION_TASK_ID}`;
+  const start = `Background task started for image generation (${taskId}). Do not call image_generate again for this request.`;
+  const result = {
+    content: [{ type: 'text', text: start }],
+    details: { async: true, status: 'started', taskId },
+  };
+  const dispatch = {
+    tool: { id: 'openclaw:core:image_generate', name: 'image_generate', source: 'openclaw' },
+    result,
+  };
+  const dispatchContent = [{ type: 'text', text: JSON.stringify(dispatch, null, 2) }];
+  const parentId = 'call_kitten';
+  const updates: AcpSessionUpdate[] = [
+    {
+      sessionUpdate: 'tool_call_update', toolCallId: `tool_call:${parentId}:image_generate:1`, status: 'completed',
+      rawOutput: result, content: result.content.map((content) => ({ type: 'content', content })),
+    },
+    {
+      sessionUpdate: 'tool_call_update', toolCallId: parentId, status: 'completed',
+      rawOutput: { content: dispatchContent, details: dispatch },
+      content: dispatchContent.map((content) => ({ type: 'content', content })),
+    },
+    { sessionUpdate: 'agent_message', messageId: 'kitten-ack', content: [{ type: 'text', text: KITTEN_ACK }] },
+  ];
+  const pending: RawMessage[] = [
+    { role: 'user', content: KITTEN_PROMPT },
+    {
+      // OpenClaw writes camel case to its transcript.
+      role: 'toolResult' as RawMessage['role'],
+      toolName: 'dispatch_action', toolCallId: parentId, content: dispatchContent, details: dispatch,
+    },
+    { role: 'assistant', content: KITTEN_ACK },
+  ];
+  const trigger = {
+    role: 'user' as const,
+    display: false,
+    provenance: { kind: 'inter_session', sourceTool: 'image_generate', sourceSessionKey: `image_generate:${taskId}` },
+    content: [{ type: 'text', text: `A background task completed.\nGenerated media:\nMEDIA:${imagePath}` }],
+  };
+  const completed: RawMessage[] = [
+    ...pending,
+    trigger,
+    { role: 'assistant', timestamp: 1_790_000_003_000, content: [{ type: 'text', text: `${KITTEN_CAPTION}\nMEDIA:${imagePath}` }] },
+  ];
+  return { fixture, updates, pending, completed };
+}
+
+async function expectKittenPreview(page: Page) {
+  const timeline = page.getByTestId('acp-chat-timeline');
+  const turn = timeline.getByTestId('acp-assistant-turn').filter({ hasText: KITTEN_ACK });
+  const image = turn.getByRole('img', { name: 'Image' });
+  await expect(turn.getByText(KITTEN_CAPTION, { exact: true })).toBeVisible();
+  await expect(image).toBeVisible();
+  await expect(image).toHaveJSProperty('naturalWidth', 1);
+  await expect(timeline.getByTestId('acp-image-part')).toHaveCount(1);
+  await expect(page.getByTestId('chat-composer-image-generation-indicator')).toHaveCount(0);
+}
+
 test.describe('ClawX chat run state events', () => {
   test('renders ACP tool run-state updates inline', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
@@ -271,6 +346,59 @@ test.describe('ClawX chat run state events', () => {
       await expect(page.getByText('Puppy ready')).toBeVisible();
       await expect(toolCard.getByTestId('acp-image-part')).toBeVisible();
       await expect(toolCard.getByTestId('acp-image-part').locator('img')).toBeVisible();
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('projects OpenClaw image-generation from a delayed dispatch transcript in the open chat', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    try {
+      const { fixture, updates, pending, completed } = await kittenGenerationFixture(app);
+      await fixture.setPromptUpdates(KITTEN_PROMPT, updates);
+      const page = await openChat(app);
+      await fixture.waitForHistoryRequestCount(MAIN_SESSION_KEY, 1);
+      await fixture.waitForHistoryQuiet(MAIN_SESSION_KEY);
+      // The tool acknowledgment can precede on-disk delivery by multiple reads.
+      // The background task sends no corresponding completion over ACP.
+      await fixture.setTranscriptResponses(MAIN_SESSION_KEY, [pending, pending, { messages: completed, deferId: 'kitten-ready' }]);
+      await page.getByTestId('chat-composer-input').fill(KITTEN_PROMPT);
+      await page.getByTestId('chat-composer-send').click();
+      await expect(page.getByText(KITTEN_ACK, { exact: true })).toBeVisible();
+      await expect(page.getByTestId('chat-composer-image-generation-indicator')).toBeVisible();
+      await fixture.waitForDeferredTranscriptReady('kitten-ready', 20_000);
+      await expect(page.getByTestId('acp-image-part')).toHaveCount(0);
+      await fixture.releaseTranscriptResponse('kitten-ready');
+      await expectKittenPreview(page);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('projects OpenClaw image-generation from a persisted dispatch transcript when reopening the chat', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    try {
+      const { fixture, updates, completed } = await kittenGenerationFixture(app);
+      const page = await openChat(app);
+      await fixture.waitForHistoryRequestCount(MAIN_SESSION_KEY, 1);
+      await page.getByTestId(`sidebar-session-${OTHER_SESSION_KEY}`).click();
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();
+      const laterPrompt = 'What color was the windowsill?';
+      const laterReply = 'The windowsill was blue.';
+      await fixture.setSessionReplay(MAIN_SESSION_KEY, [
+        { sessionUpdate: 'user_message', messageId: 'kitten-prompt', content: [{ type: 'text', text: KITTEN_PROMPT }] },
+        ...updates,
+        { sessionUpdate: 'user_message', messageId: 'later-prompt', content: [{ type: 'text', text: laterPrompt }] },
+        { sessionUpdate: 'agent_message', messageId: 'later-reply', content: [{ type: 'text', text: laterReply }] },
+      ]);
+      await fixture.setTranscriptResponses(MAIN_SESSION_KEY, [[
+        ...completed,
+        { role: 'user', id: 'later-prompt', content: laterPrompt },
+        { role: 'assistant', id: 'later-reply', content: laterReply },
+      ]]);
+      await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
+      await expect(page.getByText(laterReply, { exact: true })).toBeVisible();
+      await expectKittenPreview(page);
     } finally {
       await closeElectronApp(app);
     }
