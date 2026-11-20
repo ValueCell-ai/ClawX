@@ -1,3 +1,18 @@
+diff --git a/dist/extra-params-C2eLKBPI.mjs b/dist/extra-params-C2eLKBPI.mjs
+--- a/dist/extra-params-C2eLKBPI.mjs
++++ b/dist/extra-params-C2eLKBPI.mjs
+@@ -299,2 +299,8 @@
+ ]);
++const DEEPSEEK_V41_FLASH_ALIASES = new Set(["deepseek-v4.1-flash", "deepseek-v4.1-flash-1017"]);
++function usesDeepSeekV4Thinking(model) {
++	if (isOpenAICompletionsModel(model, DEEPSEEK_V4_MODEL_IDS)) return true;
++	return model.reasoning === true && model.compat?.thinkingFormat === "deepseek" && model.compat.supportsReasoningEffort !== false &&
++		isOpenAICompletionsModel(model, DEEPSEEK_V41_FLASH_ALIASES);
++}
+ function normalizeCompatibleModelId(modelId) {
+@@ -439,1 +445,1 @@
+-			shouldPatchModel: (candidateModel) => isOpenAICompletionsModel(candidateModel, DEEPSEEK_V4_MODEL_IDS) && !isMicrosoftFoundryProviderId(candidateModel.provider) && deepSeekV4NativeThinkingAllowedByCompat(candidateModel)
++			shouldPatchModel: (candidateModel) => usesDeepSeekV4Thinking(candidateModel) && !isMicrosoftFoundryProviderId(candidateModel.provider) && deepSeekV4NativeThinkingAllowedByCompat(candidateModel)
 diff --git a/dist/agent-core-BucXfq8L.mjs b/dist/agent-core-BucXfq8L.mjs
 --- a/dist/agent-core-BucXfq8L.mjs
 +++ b/dist/agent-core-BucXfq8L.mjs

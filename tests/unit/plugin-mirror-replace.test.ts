@@ -149,10 +149,11 @@ describe('replacePluginMirror', () => {
       writeFileSync(join(dir, 'openclaw.plugin.json'), JSON.stringify({ id: 'wecom' }));
       writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: '@wecom/wecom-openclaw-plugin', version }));
     }
-    persist.mockImplementationOnce(() => { throw new Error('disk full'); });
+    persist.mockImplementation(() => { throw new Error('disk full'); });
     const { ensurePluginInstalled } = await import('@electron/utils/plugin-install');
     expect(await ensurePluginInstalled('wecom', [source], 'WeCom')).toMatchObject({ installed: false });
     expect(JSON.parse(readFileSync(join(target, 'package.json'), 'utf8')).version).toBe('2026.8.17');
+    persist.mockReturnValue(true);
     expect(await ensurePluginInstalled('wecom', [source], 'WeCom')).toMatchObject({ installed: true });
     expect(JSON.parse(readFileSync(join(target, 'package.json'), 'utf8')).version).toBe('2026.10.30');
   });

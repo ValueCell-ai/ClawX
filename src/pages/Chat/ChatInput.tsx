@@ -41,6 +41,7 @@ import { useVoiceDictation } from '@/hooks/useVoiceDictation';
 import { VoiceDictationButton } from '@/components/voice/VoiceDictationButton';
 import { MicrophonePermissionDialog } from '@/components/voice/MicrophonePermissionDialog';
 import type { AsrMicrophoneAccessResult } from '@shared/host-api/contract';
+import { ThinkingStrengthPicker } from './ThinkingStrengthPicker';
 import { ModelIcon } from '@/components/common/ModelIcon';
 import { AcpSessionPlan } from './AcpSessionPlan';
 import { AcpSubagentSessions, type AcpSubagentSession } from './AcpSubagentSessions';
@@ -405,6 +406,7 @@ export function ChatInput({
   const sessionModel = useSessionModel(destinationKey, destination,
     gatewayStatus.state === 'running' && gatewayStatus.gatewayReady !== false, sending, agentModelRef);
   const effectiveModelRef = sessionModel.value?.modelRef || sessionModel.value?.effectiveModelRef || agentModelRef;
+  const thinking = sessionModel.thinking;
   const currentModelLabel = useMemo(() => {
     const matchedOption = modelOptions.find((option) => option.modelRef === effectiveModelRef);
     return matchedOption?.modelId || (effectiveModelRef ? formatModelRefLabel(effectiveModelRef) : t('composer.pickModel'));
@@ -1487,6 +1489,19 @@ export function ChatInput({
                   </div>
                 )}
               </div>
+            )}
+
+            {thinking && (
+              <ThinkingStrengthPicker
+                key={JSON.stringify([destinationKey, effectiveModelRef, thinking.levels.map(({ id }) => id)])}
+                profile={thinking}
+                disabled={inputDisabled || sending || admitting || sessionModel.writing || !isGatewayUsable}
+                onSelect={(level) => {
+                  void sessionModel.select(undefined, level).catch((error) => {
+                    if (destinationKeyRef.current === destinationKey) toast.error(t('composer.thinkingFailed', { error: String(error) }));
+                  });
+                }}
+              />
             )}
 
             <div className="ml-auto flex items-center gap-1">

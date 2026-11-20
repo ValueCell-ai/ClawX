@@ -21,6 +21,7 @@ touchedAreas:
   - harness/specs/rules/openclaw-runtime-child-processes.md
 expectedUserBehavior:
   - Desktop startup completes offline migration and starts the Gateway automatically.
+  - Existing jobs keep their identity, schedule, model, account and delivery settings and an enabled job runs at its scheduled time.
   - The upgraded app preserves old session history, workspace, settings and model selection and accepts a new chat message in the same session.
 requiredProfiles:
   - fast
@@ -40,6 +41,7 @@ acceptance:
   - Observe the complete cleanup output and the expected exit code from the Electron utility process for both migration refusal and Doctor success.
   - Exercise the failing cleanup through the real Windows runtime.
   - Upgrade state generated with the official 0.6.1 runtime through the Windows Electron Gateway manager, including its own Doctor, then read the old conversation and send an ACP prompt to the same session with a loopback provider.
+  - Verify that the old job retains its run history and executes at its scheduled time against the loopback provider.
   - Preserve SQLite integrity checks, private staging, junction handling and error propagation.
 docs:
   required: true

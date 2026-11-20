@@ -45,4 +45,6 @@ permission from an absent transcript ID or weaken existing-session write guards.
 Resolve an Agent mention to its main session for model reads, writes and prompt
 dispatch. The source conversation continues to own the message draft.
 
+Display the destination's Gateway thinking profile and send canonical option IDs. Keep first-prompt overrides local and validate the model and thinking choice in one session patch.
+
 See [Conversation model selection](../../reference/acp-chat.md#conversation-model-selection).

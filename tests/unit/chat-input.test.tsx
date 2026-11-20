@@ -8,7 +8,7 @@ import type { AcpCurrentPlan } from '@/lib/acp/current-plan';
 import type { AcpSubagentSession } from '@/pages/Chat/AcpSubagentSessions';
 const hostApiFetchMock = vi.hoisted(() => vi.fn());
 const hostApiDialogOpenMock = vi.hoisted(() => vi.fn());
-const modelApi = vi.hoisted(() => ({ getModel: vi.fn(), setModel: vi.fn() }));
+const modelApi = vi.hoisted(() => ({ getModel: vi.fn(), setModel: vi.fn(), getDraftThinking: vi.fn().mockResolvedValue(null) }));
 const toastErrorMock = vi.hoisted(() => vi.fn());
 const microphoneMocks = vi.hoisted(() => ({ getConfig: vi.fn(), getMicrophoneAccess: vi.fn(), openMicrophoneSettings: vi.fn() }));
 const { agentsState, chatState, gatewayState, settingsState, providersState, artifactPanelMocks } = vi.hoisted(() => ({
@@ -277,7 +277,7 @@ describe('ChatInput agent targeting', () => {
     agentsState.updateAgentModel.mockReset();
     modelApi.getModel.mockReset().mockResolvedValue({ modelRef: null });
     modelApi.setModel.mockReset().mockImplementation(async (_key, modelRef) => ({ modelRef }));
-    useComposerDraftStore.setState({ drafts: {}, modelRefs: {} });
+    useComposerDraftStore.setState({ drafts: {}, modelRefs: {}, thinkingLevels: {} });
     chatState.currentAgentId = 'main';
     chatState.currentSessionKey = 'agent:main:session-1';
     chatState.sessions = [{ key: 'agent:main:session-1' }];
