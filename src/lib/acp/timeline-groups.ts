@@ -107,7 +107,7 @@ function appendAssistantItem(groups: AcpTimelineDisplayGroup[], item: TimelineIt
 function backgroundTaskForTool(tool: ToolCallItem | undefined): string | undefined {
   if (!tool || tool.status === 'failed') return undefined;
   const text = tool.outputParts.flatMap((part) => part.kind === 'markdown' ? [part.text] : []).join('\n');
-  return imageGenerationTaskIdFromToolOutput(tool.output, text);
+  return imageGenerationTaskIdFromToolOutput(tool.output, text, tool);
 }
 
 export function groupAcpTimelineItems(snapshot: AcpTimelineSnapshot): AcpTimelineDisplayGroup[] {

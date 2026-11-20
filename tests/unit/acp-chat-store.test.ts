@@ -2018,6 +2018,46 @@ describe('ACP Chat store', () => {
     });
   });
 
+  it.each([
+    { mode: 'live', prefix: 'tool:image_generate:' },
+    { mode: 'replay', prefix: 'tool:image_generate:' },
+    { mode: 'live', prefix: '' },
+    { mode: 'replay', prefix: '' },
+  ])('keeps a quoted image acknowledgment in its original read tool during $mode (prefix "$prefix")', async ({ mode, prefix }) => {
+    const sessionKey = 'agent:pi:s1';
+    const text = `Background task started for image generation (${prefix}32aa3a12-a05b-4074-af4e-246cc4a9a303).`;
+    const updates = [
+      { sessionUpdate: 'tool_call', toolCallId: 'call-1', title: 'read', kind: 'read', status: 'pending' },
+      {
+        sessionUpdate: 'tool_call_update', toolCallId: 'call-1', status: 'completed',
+        content: [{ type: 'content', content: { type: 'text', text } }],
+      },
+      {
+        sessionUpdate: 'tool_call_update', toolCallId: 'delivery', status: 'completed',
+        rawOutput: { details: { sourceReplySink: 'internal-ui', deliveryStatus: 'sent', sourceReply: { text: 'Log read.' } } },
+      },
+      { sessionUpdate: 'agent_message_chunk', messageId: 'answer', content: { type: 'text', text: 'This is an old log.' } },
+    ].map((update) => ({
+      sessionKey, generation: 1, historical: mode === 'replay', notification: { sessionId: sessionKey, update },
+    }));
+    if (mode === 'replay') {
+      hostApiMock.loadAcpSession.mockResolvedValueOnce({ success: true, generation: 1, sessionUpdates: updates });
+    }
+    const { useAcpChatSessionStore, ensureAcpChatSubscriptions } = await importStore();
+    ensureAcpChatSubscriptions();
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey, workspaceRoot: '/repo', cwd: '/repo' });
+    if (mode === 'live') {
+      for (const event of updates) hostEventsMock.updateListener?.(event);
+    }
+    const { pendingImageGenerationTaskIds, timeline } = useAcpChatSessionStore.getState();
+    expect(pendingImageGenerationTaskIds).toEqual([]);
+    expect(timeline.itemOrder).toEqual(['tool:call-1', 'tool:delivery', 'answer:0']);
+    expect(timeline.itemsById['tool:call-1']).toMatchObject({
+      title: 'read', status: 'completed', outputParts: [{ kind: 'markdown', text }],
+    });
+    expect(hostApiMock.recordAcpTrace).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'image-generation:start-detected' }));
+  });
+
   it('projects trusted image-generation Gateway media into the ACP timeline', async () => {
     hostApiMock.loadAcpSession
       .mockResolvedValueOnce({ success: true, generation: 1 })

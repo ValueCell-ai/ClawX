@@ -88,6 +88,8 @@ generation indicator visible after the initial acknowledgment. The completed
 image appears in the originating assistant turn and is visible again when the
 conversation is reopened, including when only the transcript contains the result.
 In both views the assistant's acknowledgment precedes the generated image.
+If a file read or shell command prints an image task acknowledgment, its output
+stays on the ordinary tool card and the composer remains available after the run.
 
 After Gateway restart, a new prompt waits for ACP's own authenticated connection
 and subscription recovery, with a default 60-second admission deadline and working

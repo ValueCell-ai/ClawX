@@ -25,7 +25,10 @@ describe('groupAcpTimelineItems', () => {
       const output = dispatch
         ? { details: { tool: { id: 'openclaw:core:image_generate' }, result: { content } } }
         : { content };
-      return { kind: 'tool-call', id, toolCallId: id, title: id, status: 'completed', output, outputParts: [], locations: [] };
+      return {
+        kind: 'tool-call', id, toolCallId: id, title: dispatch ? 'dispatch_action' : 'image_generate',
+        status: 'completed', output, outputParts: [], locations: [],
+      };
     };
     const first = '11111111-1111-4111-8111-111111111111';
     const second = '22222222-2222-4222-8222-222222222222';
@@ -50,7 +53,11 @@ describe('groupAcpTimelineItems', () => {
     const receipt = message('message-receipt');
     photo.compat = { source: 'image-generation', evidenceId: 'photo', taskId: first };
     receipt.compat = { source: 'image-generation', evidenceId: 'receipt', taskId: first, provisionalText: true };
-    const delivery = [items[0]!, items[1]!, photo, tool('message-tool', second), receipt];
+    const messageTool: ToolCallItem = {
+      kind: 'tool-call', id: 'message-tool', toolCallId: 'message-tool', title: 'message',
+      status: 'completed', outputParts: [], locations: [],
+    };
+    const delivery = [items[0]!, items[1]!, photo, messageTool, receipt];
     const groups = groupAcpTimelineItems(timelineWithItems(Object.fromEntries(delivery.map((item) => [item.id, item]))));
     expect(groups[1]?.items.map((item) => item.id)).toEqual(['dispatch', 'message-tool', 'message-receipt', 'photo']);
   });

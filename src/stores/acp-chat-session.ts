@@ -98,7 +98,7 @@ function deferInactiveImageUpdate(
   snapshot: LiveSessionSnapshot,
   event: AcpSessionUpdateEnvelope,
 ): LiveSessionSnapshot {
-  const start = extractImageGenerationStartFromAcpEnvelope(event);
+  const start = extractImageGenerationStartFromAcpEnvelope(event, snapshot.timeline);
   const evidence = extractImageGenerationCompletionFromAcpEnvelope(event);
   if (!start && !evidence) return snapshot;
   const key = start
@@ -245,6 +245,7 @@ function restoreImageGenerationProjections(
   snapshot: AcpTimelineSnapshot,
   options: { requireTurnAnchor?: boolean } = {},
 ): AcpTimelineSnapshot {
+  if (!snapshot.hasImageGenerationProjection) return timeline;
   let restored = timeline;
   const restoredIds = new Set(timeline.itemOrder);
   for (const [index, itemId] of snapshot.itemOrder.entries()) {
@@ -1615,7 +1616,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
     const state = get();
     if (event.sessionKey !== state.activeSessionKey || event.generation !== state.generation) return;
 
-    const start = extractImageGenerationStartFromAcpEnvelope(event);
+    const start = extractImageGenerationStartFromAcpEnvelope(event, state.timeline);
     if (!start) return;
     recordProjectionTrace({
       event: 'image-generation:start-detected',

@@ -14,7 +14,11 @@ const SESSION_KEY = 'agent:main:main';
 const TASK_ID = '32aa3a12-a05b-4074-af4e-246cc4a9a303';
 
 describe('ACP image-generation compatibility extraction', () => {
-  it.each([TASK_ID, `tool:image_generate:${TASK_ID.toUpperCase()}`])('extracts and normalizes the ACP image task handle %s', (handle) => {
+  it.each([
+    { handle: TASK_ID, toolCallId: 'legacy-call' },
+    { handle: `tool:image_generate:${TASK_ID.toUpperCase()}`, toolCallId: 'call-1', title: 'image_generate' },
+    { handle: `tool:image_generate:${TASK_ID}`, toolCallId: 'tool_call:call-1:image_generate:1' },
+  ])('extracts and normalizes the ACP image task handle from $toolCallId', ({ handle, toolCallId, title }) => {
     const start = extractImageGenerationStartFromAcpEnvelope({
       sessionKey: SESSION_KEY,
       generation: 1,
@@ -22,7 +26,8 @@ describe('ACP image-generation compatibility extraction', () => {
         sessionId: SESSION_KEY,
         update: {
           sessionUpdate: 'tool_call_update',
-          toolCallId: 'tool-image',
+          toolCallId,
+          title,
           status: 'completed',
           content: [{
             type: 'content',
@@ -38,9 +43,36 @@ describe('ACP image-generation compatibility extraction', () => {
     expect(start).toEqual({
       sessionKey: SESSION_KEY,
       taskId: TASK_ID,
-      toolCallId: 'tool-image',
-      evidenceId: `start:${SESSION_KEY}:tool-image:${TASK_ID}`,
+      toolCallId,
+      evidenceId: `start:${SESSION_KEY}:${toolCallId}:${TASK_ID}`,
     });
+  });
+
+  it.each([
+    { title: 'read', kind: 'read' },
+    { title: 'exec', kind: 'execute' },
+    { title: undefined, kind: undefined },
+  ] as const)('ignores a namespaced image acknowledgment without image tool identity (title $title)', ({ title, kind }) => {
+    const text = `Background task started for image generation (tool:image_generate:${TASK_ID}).`;
+    const outputBlock = { type: 'text', text } as const;
+    expect(extractImageGenerationStartFromAcpEnvelope({
+      sessionKey: SESSION_KEY, generation: 1, notification: { sessionId: SESSION_KEY, update: {
+        sessionUpdate: 'tool_call_update', toolCallId: 'call-1', title, kind, status: 'completed',
+        content: [{ type: 'content', content: outputBlock }], rawOutput: { content: [outputBlock] },
+      } },
+    })).toBeNull();
+  });
+
+  it('recognizes a dispatch_action result for the image tool', () => {
+    const text = `Background task started for image generation (tool:image_generate:${TASK_ID}).`;
+    const result = { content: [{ type: 'text', text }] };
+    const start = extractImageGenerationStartFromAcpEnvelope({
+      sessionKey: SESSION_KEY, generation: 1, notification: { sessionId: SESSION_KEY, update: {
+        sessionUpdate: 'tool_call_update', toolCallId: 'call-1', title: 'dispatch_action', status: 'completed',
+        rawOutput: { details: { tool: { id: 'openclaw:core:image_generate' }, result } },
+      } },
+    });
+    expect(start).toMatchObject({ taskId: TASK_ID, toolCallId: 'call-1' });
   });
 
   it('extracts message-tool media URLs from Gateway chat-message payloads', () => {

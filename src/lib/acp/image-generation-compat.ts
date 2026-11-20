@@ -3,12 +3,13 @@ import type { ChatRuntimeEvent } from '@shared/chat-runtime-events';
 import type { RawMessage } from '@shared/chat/types';
 import type { MediaThumbnailEntry } from '@shared/host-api/contract';
 import type { GatewayChatMessageEvent } from '@shared/host-events/contract';
+import type { AcpTimelineSnapshot } from './timeline-types';
 
 const MESSAGE_TOOL = 'message';
 const GENERATED_IMAGE_CAPTION = 'Generated image is ready.';
 const TASK_UUID_PATTERN = '([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})';
 const TASK_HANDLE_PATTERN = '(?:tool:image_generate:)?' + TASK_UUID_PATTERN;
-const START_RE = new RegExp('^Background task started for image generation \\(' + TASK_HANDLE_PATTERN + '\\)', 'i');
+const START_RE = new RegExp('^Background task started for image generation \\((tool:image_generate:)?' + TASK_UUID_PATTERN + '\\)', 'i');
 const TASK_SESSION_RE = new RegExp('^image_generate:' + TASK_HANDLE_PATTERN + '(?::|$)', 'i');
 const NATIVE_RUN_RE = new RegExp('^tool:image_generate:' + TASK_UUID_PATTERN + '$', 'i');
 const MEDIA_TAG_RE = /(?<![A-Za-z0-9/\\])(?:MEDIA|media):((?:\/|~\/|[A-Za-z]:\\)[^\n"'()\x5b\x5d,<>`]*?\.(?:png|jpe?g|gif|webp|bmp|avif|svg|ico|tiff?))(?=$|[\s\n"'()\x5b\x5d,<>`]|[，。；;,.!?])/g;
@@ -191,8 +192,9 @@ function imageGenerationTaskIdFromRunId(value: unknown): string | undefined {
   return stringValue(value)?.match(NATIVE_RUN_RE)?.[1]?.toLowerCase() ?? imageGenerationTaskIdFromSessionKey(value);
 }
 
-function taskIdFromAcknowledgment(text: string): string | undefined {
-  return text.trim().match(START_RE)?.[1]?.toLowerCase();
+function taskIdFromAcknowledgment(text: string, allowNamespaced = true): string | undefined {
+  const match = text.trim().match(START_RE);
+  return match && (allowNamespaced || !match[1]) ? match[2]?.toLowerCase() : undefined;
 }
 
 function dispatchedImageGenerationTaskId(details: Record<string, unknown> | null): string | undefined {
@@ -264,26 +266,44 @@ function transcriptCompletionTrigger(message: RawMessage): { taskId: string; fai
   return taskId ? { taskId, failed } : undefined;
 }
 
-export function imageGenerationTaskIdFromToolOutput(output: unknown, text: string): string | undefined {
+export function imageGenerationTaskIdFromToolOutput(
+  output: unknown, text: string, call: { toolCallId?: string; title?: string; toolKind?: string },
+): string | undefined {
+  // OpenClaw formats ACP titles as "name: arguments". A sparse result can
+  // also carry a dispatched child's identity in tool_call:<parent>:<name>:<n>.
+  const titleName = call.title === call.toolCallId ? undefined : call.title?.split(': ', 1)[0];
+  const childName = call.toolCallId?.match(/^tool_call:.+:([^:]+):\d+$/)?.[1];
+  const toolName = titleName && titleName !== 'tool' ? titleName : childName;
+  if (call.toolKind && call.toolKind !== 'other') return undefined;
+  if (toolName && !['image_generate', 'dispatch_action', MESSAGE_TOOL].includes(toolName)) return undefined;
   const rawOutput = asRecord(output);
   if (rawOutput?.isError === true) return undefined;
   const details = asRecord(rawOutput?.details);
-  return details?.tool
-    ? dispatchedImageGenerationTaskId(details)
-    : taskIdFromAcknowledgment(text) ?? taskIdFromAcknowledgment(textFromMessageContent(rawOutput?.content ?? output));
+  if (details?.tool || toolName === 'dispatch_action') return dispatchedImageGenerationTaskId(details);
+  // Older ACP results may contain just the legacy bare-UUID acknowledgment.
+  const allowNamespaced = toolName === 'image_generate';
+  return taskIdFromAcknowledgment(text, allowNamespaced)
+    ?? taskIdFromAcknowledgment(textFromMessageContent(rawOutput?.content ?? output), allowNamespaced);
 }
 
 export function extractImageGenerationStartFromAcpEnvelope(
   event: AcpSessionUpdateEnvelope,
+  timeline?: AcpTimelineSnapshot,
 ): ImageGenerationTaskStart | null {
   const notification = asRecord(event.notification);
   const update = asRecord(notification?.update);
   if (update?.sessionUpdate !== 'tool_call' && update?.sessionUpdate !== 'tool_call_update') return null;
   if (update.status === 'failed') return null;
-  const taskId = imageGenerationTaskIdFromToolOutput(update.rawOutput, textFromToolContent(update.content));
+  const toolCallId = stringValue(update.toolCallId);
+  const previous = toolCallId && timeline?.itemsById[`tool:${toolCallId}`];
+  const tool = previous && previous.kind === 'tool-call' ? previous : undefined;
+  const taskId = imageGenerationTaskIdFromToolOutput(update.rawOutput, textFromToolContent(update.content), {
+    toolCallId,
+    title: stringValue(update.title) ?? tool?.title,
+    toolKind: stringValue(update.kind) ?? tool?.toolKind,
+  });
   if (!taskId) return null;
 
-  const toolCallId = stringValue(update.toolCallId);
   return {
     sessionKey: event.sessionKey,
     taskId,
@@ -358,7 +378,7 @@ function transcriptImageGenerationStart(
   if (message.toolName === 'dispatch_action') {
     taskId = dispatchedImageGenerationTaskId(asRecord(message.details));
   } else if (message.toolName === MESSAGE_TOOL || message.toolName === 'image_generate') {
-    taskId = taskIdFromAcknowledgment(textFromMessageContent(message.content));
+    taskId = taskIdFromAcknowledgment(textFromMessageContent(message.content), message.toolName === 'image_generate');
   }
   if (!taskId) return null;
 

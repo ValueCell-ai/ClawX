@@ -379,6 +379,7 @@ export function appendSyntheticAssistantMessage(
 
   return dedupeTimelineAttachments({
     ...closed,
+    hasImageGenerationProjection: true,
     itemOrder: nextOrder,
     itemsById: { ...closed.itemsById, [id]: item },
     segmentCounts: { ...closed.segmentCounts, [input.messageId]: 1 },

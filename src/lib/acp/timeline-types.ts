@@ -137,6 +137,7 @@ export type AcpSessionMetadata = {
 export type AcpTimelineSnapshot = {
   sessionId: string;
   loadGeneration: number;
+  hasImageGenerationProjection?: true;
   itemOrder: string[];
   itemsById: Record<string, TimelineItem>;
   metadata: AcpSessionMetadata;

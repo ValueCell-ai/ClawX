@@ -765,6 +765,7 @@ test.describe('ClawX chat run state events', () => {
   test('does not render plain MEDIA assistant text without image-generation context', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
     const untrustedPath = '/tmp/not-trusted.png';
+    const logEntry = `Background task started for image generation (tool:image_generate:${IMAGE_GENERATION_TASK_ID}).`;
 
     try {
       await installAcpChatMocks(app, { success: true, generation: 1 }, {
@@ -781,6 +782,18 @@ test.describe('ClawX chat run state events', () => {
       });
       const page = await openChat(app);
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+
+      // A file can quote an actual task receipt. ACP sends tool identity on
+      // the opening event and may omit it from the completed update.
+      await emitAcpSessionUpdates(app, [
+        { sessionUpdate: 'tool_call', toolCallId: 'read-log', title: 'Read build.log', kind: 'read', status: 'in_progress' },
+        {
+          sessionUpdate: 'tool_call_update', toolCallId: 'read-log', status: 'completed',
+          content: [{ type: 'content', content: { type: 'text', text: logEntry } }],
+        },
+      ]);
+      await expect(page.getByTestId('acp-tool-call-card')).toContainText(logEntry);
+      await expect(page.getByTestId('chat-composer-image-generation-indicator')).toHaveCount(0);
 
       await emitAcpSessionUpdates(app, [{
         sessionUpdate: 'agent_message',
