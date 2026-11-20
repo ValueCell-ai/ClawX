@@ -155,7 +155,7 @@ Renderer code must not create direct Gateway WebSocket connections. Gateway fram
 Startup recovery must distinguish Gateway state-ownership contention from configuration
 or schema failures. An ownership failure cannot be repaired by running Doctor against
 the same occupied state. Stopping or superseding startup fences recovery, including
-Doctor preparation and completion, without killing an in-flight migration. See
+Doctor preparation and completion, without killing an in-flight migration. Windows offline repairs use the embedded Node launcher so Doctor can retire its SQLite staging files before the Gateway retries. See
 `harness/specs/tasks/fix-upgrade-state-ownership-recovery.md` and
 `harness/specs/rules/gateway-readiness-policy.md`.
 

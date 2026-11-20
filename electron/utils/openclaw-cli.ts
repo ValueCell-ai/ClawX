@@ -17,7 +17,7 @@ import { delimiter, join, dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { getOpenClawDir, getOpenClawEntryPath } from './paths';
 import { logger } from './logger';
-import { ensureOpenClawRuntimeCompat } from './openclaw-utility-process';
+import { ensureOpenClawRuntimeCompat, forkOpenClawUtilityProcess } from './openclaw-utility-process';
 
 // ── Quoting helpers ──────────────────────────────────────────────────────────
 
@@ -143,7 +143,7 @@ function getDevNodeExecPath(): string | null {
     .filter((candidate, index, all) => all.indexOf(candidate) === index && fileExists(candidate));
   for (const candidate of candidates) {
     try {
-      const version = execFileSync(candidate, ['--version'], { encoding: 'utf8', timeout: 1000 });
+      const version = execFileSync(candidate, ['--version'], { encoding: 'utf8', timeout: 1000, windowsHide: true });
       if (isSupportedOpenClawNodeVersion(version)) return candidate;
       logger.warn(`[openclaw] Ignoring unsupported development Node runtime (${version.trim()})`);
     } catch (error) {
@@ -233,10 +233,9 @@ function getOpenClawEmbeddedExecPath(): { execPath: string; electronRunAsNode: b
   return { execPath: process.execPath, electronRunAsNode: Boolean(process.versions?.electron) };
 }
 
-export function getOpenClawEmbeddedForkSpec(args: string[] = []): OpenClawEmbeddedForkSpec {
-  const { execPath, electronRunAsNode } = getOpenClawEmbeddedExecPath();
+function getEmbeddedNodeEnv(base: NodeJS.ProcessEnv, electronRunAsNode: boolean): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
-    ...process.env,
+    ...base,
     OPENCLAW_NO_RESPAWN: '1',
     OPENCLAW_EMBEDDED_IN: 'ClawX',
     OPENCLAW_EXEC_SHELL_SNAPSHOT: '0',
@@ -247,13 +246,45 @@ export function getOpenClawEmbeddedForkSpec(args: string[] = []): OpenClawEmbedd
   } else {
     delete env.ELECTRON_RUN_AS_NODE;
   }
+  return env;
+}
+
+interface OpenClawCommandProcess extends Pick<Electron.UtilityProcess, 'stdout' | 'stderr' | 'kill'> {
+  on(event: 'error', listener: (error: unknown) => void): void;
+  on(event: 'exit', listener: (code: number | null) => void): void;
+}
+
+/** Offline Windows Doctor must release the SQLite staging files before the Gateway starts. */
+export function launchOpenClawCommandProcess(
+  entry: string,
+  args: string[],
+  options: { cwd: string; env: NodeJS.ProcessEnv; stdio: 'pipe' },
+): OpenClawCommandProcess {
+  if (process.platform !== 'win32' || args[0] !== 'doctor' || !args.includes('--fix')) {
+    return forkOpenClawUtilityProcess(entry, args, options);
+  }
+
+  // Electron utility processes can leave owner.sqlite locked during snapshot retirement.
+  // Use the same Node executable and child-process compatibility preload as embedded ACP.
+  const { execPath, electronRunAsNode } = getOpenClawEmbeddedExecPath();
+  logger.info(`Running Windows Doctor repair with Node runtime: ${execPath}`);
+  return spawn(execPath, [...getOpenClawRuntimeCompatExecArgv(), entry, ...args], {
+    cwd: options.cwd,
+    env: getEmbeddedNodeEnv(options.env, electronRunAsNode),
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+  });
+}
+
+export function getOpenClawEmbeddedForkSpec(args: string[] = []): OpenClawEmbeddedForkSpec {
+  const { execPath, electronRunAsNode } = getOpenClawEmbeddedExecPath();
 
   return {
     modulePath: getOpenClawEntryPath(),
     args,
     options: {
       cwd: getOpenClawDir(),
-      env,
+      env: getEmbeddedNodeEnv(process.env, electronRunAsNode),
       execPath,
       execArgv: getOpenClawRuntimeCompatExecArgv(),
       stdio: ['pipe', 'pipe', 'pipe', 'ipc'],

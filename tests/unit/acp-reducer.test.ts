@@ -559,6 +559,7 @@ describe('ACP timeline reducer', () => {
       },
     });
 
+    expect(state.hasImageGenerationProjection).toBeUndefined();
     state = appendSyntheticAssistantMessage(state, {
       messageId: 'compat:image-generation:task-1',
       evidenceId: 'evidence-1',
@@ -568,6 +569,7 @@ describe('ACP timeline reducer', () => {
       ],
     });
 
+    expect(state.hasImageGenerationProjection).toBe(true);
     expect(state.itemOrder).toEqual(['live-msg:0', 'compat:image-generation:task-1:0']);
     expect(state.openMessageSegments).toEqual({});
     expect(state.itemsById['compat:image-generation:task-1:0']).toMatchObject({
