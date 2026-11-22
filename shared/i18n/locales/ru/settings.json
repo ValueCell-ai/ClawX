@@ -52,7 +52,7 @@
       "apiKeyMissing": "API-ключ ещё не сохранён.",
       "apiKeyStored": "Ваш API-ключ хранится локально на вашем компьютере.",
       "replaceApiKey": "Заменить API-ключ",
-      "replaceApiKeyHelp": "Оставьте пустым, чтобы сохранить текущий API-ключ.",
+      "replaceApiKeyHelp": "Оставьте пустым, чтобы сохранить текущий API-ключ",
       "baseUrl": "Базовый URL",
       "modelId": "ID модели",
       "configuredModels": "Настроенные модели",

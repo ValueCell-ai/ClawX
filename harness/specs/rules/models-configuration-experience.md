@@ -40,6 +40,12 @@ and cancellation. Pass the chosen model ID through the native OAuth request.
 Show each regional service as its own adjacent option in the left list. Let the service
 list and form scroll independently and keep the two footer buttons anchored as the
 service, authentication method and form height change.
+Reuse the split layout for voice and image settings. Voice shows the supported
+presets in the left list. Image shows its single compatible endpoint and the
+advanced controls, without presenting extra providers. Built-in voice presets
+determine their API type and display it in the configuration form. Custom
+endpoints use the OpenAI Audio Transcriptions API. Reuse a saved voice key only for the preset it
+was configured for.
 
 Background usage refresh must preserve valid page selection, filters and scroll position.
 Only deliberate range changes reset pagination; clamp invalid pages when records shrink.

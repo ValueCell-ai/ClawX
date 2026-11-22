@@ -1,4 +1,3 @@
-import { selectValue } from './fixtures/radix-select';
 import { navigateToSection } from './fixtures/navigation';
 import type { ElectronApplication, Page } from '@playwright/test';
 import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
@@ -243,13 +242,20 @@ test.describe('ClawX voice dictation', () => {
       await expect(page).toHaveURL(/tab=voice/);
       await expect(page.getByTestId('asr-settings')).toBeVisible();
       await page.getByTestId('asr-configure').click();
-      await page.getByTestId('asr-config-dialog').locator('summary').click();
 
-      await expect(page.getByTestId('asr-protocol-select')).toHaveAttribute('value', 'transcriptions');
+      await expect(page.getByTestId('asr-protocol-hint')).toContainText('OpenAI Audio Transcriptions');
+      await expect(page.getByTestId('asr-protocol-select')).toHaveCount(0);
       await expect(page.getByTestId('asr-base-url-suffix')).toBeVisible();
 
-      await selectValue(page.getByTestId('asr-protocol-select'), 'chat');
-      await expect(page.getByTestId('asr-preset-select')).toContainText('Alibaba Cloud Model Studio');
+      await page.getByTestId('asr-preset-custom').click();
+      await expect(page.getByTestId('asr-preset-custom')).toHaveAttribute('aria-pressed', 'true');
+      await expect(page.getByTestId('asr-protocol-hint')).toContainText('OpenAI Audio Transcriptions');
+      await expect(page.getByTestId('asr-protocol-select')).toHaveCount(0);
+
+      await page.getByTestId('asr-preset-bailian').click();
+      await expect(page.getByTestId('asr-preset-bailian')).toHaveAttribute('aria-pressed', 'true');
+      await expect(page.getByTestId('asr-protocol-hint')).toContainText('OpenAI Chat Completions');
+      await expect(page.getByTestId('asr-protocol-select')).toHaveCount(0);
       await expect(page.getByTestId('asr-base-url-input')).toHaveValue(
         'https://<WorkspaceId>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
       );

@@ -1,4 +1,5 @@
 import { I18N_RESOURCES } from '../../shared/i18n/resources';
+import type { Locator } from '@playwright/test';
 import { navigateToSection } from './fixtures/navigation';
 import { expectQuietFieldFocus } from './fixtures/field-focus';
 import { closeElectronApp, expect, getRecordedHostInvocations, getStableWindow, installIpcMocks, test } from './fixtures/electron';
@@ -7,6 +8,11 @@ function stableKey(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'undefined';
   if (Array.isArray(value)) return `[${value.map(stableKey).join(',')}]`;
   return `{${Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([name, item]) => `${JSON.stringify(name)}:${stableKey(item)}`).join(',')}}`;
+}
+
+function modelDialogBounds(dialog: Locator) {
+  const actions = dialog.locator('footer').getByRole('button');
+  return Promise.all([dialog.boundingBox(), actions.first().boundingBox(), actions.last().boundingBox()]);
 }
 
 test('keeps usage filters available when the selected time window is empty', async ({ launchElectronApp }) => {
@@ -73,6 +79,7 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       });
       const page = await getStableWindow(app);
       await page.reload();
+      await page.emulateMedia({ reducedMotion: 'reduce' });
       await navigateToSection(page, 'models');
       const table = page.getByTestId('token-usage-table');
       await expect(table).toHaveCount(0);
@@ -166,16 +173,38 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       await expect(page.getByTestId('asr-summary')).toContainText(text.settings.modelManagement.needsConfiguration);
       await expect(page.getByTestId('asr-model-input')).toHaveCount(0);
       const voiceConfigure = page.getByTestId('asr-summary').getByTestId('asr-configure');
+      await expect(voiceConfigure).toHaveText(text.settings.modelManagement.configure);
       await voiceConfigure.click();
       const voiceDialog = page.getByTestId('asr-config-dialog');
       await expect(voiceDialog).toBeVisible();
-      await expect(voiceDialog.locator('summary')).toHaveCSS('font-size', '14px');
-      await expect(voiceDialog.getByTestId('asr-base-url-input')).not.toBeVisible();
-      await voiceDialog.getByTestId('asr-preset-select').click();
-      await page.getByRole('option', { name: text.settings.asr.presets.bailian, exact: true }).click();
+      await expect(voiceDialog.getByTestId('asr-base-url-input')).toBeVisible();
+      await expect(voiceDialog.getByTestId('asr-protocol-hint')).toContainText(text.settings.asr.protocol.transcriptions);
+      const protocolHint = voiceDialog.getByTestId('asr-protocol-hint');
+      const urlLabel = voiceDialog.getByText(text.settings.aiProviders.dialog.baseUrl, { exact: true });
+      const urlInput = voiceDialog.getByTestId('asr-base-url-input');
+      await expect(protocolHint.locator('dt')).toHaveCSS('font-size', await urlLabel.evaluate(node => getComputedStyle(node).fontSize));
+      await expect(protocolHint.locator('dt')).toHaveCSS('color', await urlLabel.evaluate(node => getComputedStyle(node).color));
+      await expect(protocolHint.locator('dd')).toHaveCSS('font-size', await urlInput.evaluate(node => getComputedStyle(node).fontSize));
+      await expect(protocolHint.locator('dd')).toHaveCSS('color', await urlInput.evaluate(node => getComputedStyle(node).color));
+      const [protocolBounds, urlFieldBounds] = await Promise.all([protocolHint.boundingBox(), urlLabel.locator('..').boundingBox()]);
+      expect(urlFieldBounds!.y - (protocolBounds!.y + protocolBounds!.height)).toBeCloseTo(16, 0);
+      const voiceServices = voiceDialog.getByTestId('asr-config-services');
+      const groqOption = voiceDialog.getByTestId('asr-preset-groq');
+      const groqIcon = groqOption.locator('img');
+      await expect(groqIcon).toBeVisible();
+      const groqIconSource = await groqIcon.getAttribute('src');
+      expect(decodeURIComponent(groqIconSource!)).toContain('<title>Groq</title>');
+      await groqOption.click();
+      await expect(voiceDialog.getByTestId('asr-config-details').locator('img')).toHaveAttribute('src', groqIconSource!);
+      const bailian = voiceServices.getByRole('button', { name: text.settings.asr.presets.bailian, exact: true });
+      const voiceBounds = await modelDialogBounds(voiceDialog);
+      expect(voiceBounds[1]!.width).toBeCloseTo(voiceBounds[2]!.width, 0);
+      await bailian.click();
+      await expect(bailian).toHaveAttribute('aria-pressed', 'true');
       await expect(voiceDialog.getByTestId('asr-model-input')).toHaveValue('qwen3-asr-flash');
-      await voiceDialog.locator('summary').click();
-      await expect(voiceDialog.getByTestId('asr-protocol-select')).toHaveAttribute('value', 'chat');
+      await expect(voiceDialog.getByTestId('asr-protocol-hint')).toContainText(text.settings.asr.protocol.chat);
+      await expect(voiceDialog.getByTestId('asr-protocol-select')).toHaveCount(0);
+      expect(await modelDialogBounds(voiceDialog)).toEqual(voiceBounds);
       await page.keyboard.press('Escape');
       await expect(voiceDialog).toHaveCount(0);
       await expect(voiceConfigure).toBeFocused();
@@ -186,15 +215,25 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       await expect(page.getByTestId('image-generation-summary')).toContainText('gpt-image-2');
       await expect(page.getByTestId('image-generation-model-icon')).toBeVisible();
       await expect(page.getByTestId('image-generation-summary')).not.toContainText(text.settings.modelManagement.configured);
+      const imageEdit = page.getByTestId('image-generation-configure');
+      await expect(imageEdit).toHaveAccessibleName(text.settings.modelManagement.editConfiguration);
+      await expect(imageEdit).toHaveText('');
+      await imageEdit.hover();
+      await expect(page.getByRole('tooltip')).toContainText(text.settings.modelManagement.editConfiguration);
       await page.screenshot({ path: testInfo.outputPath(`model-image-summary-${language}.png`), animations: 'disabled' });
       await page.getByTestId('image-generation-summary').getByTestId('image-generation-configure').click();
       const imageDialog = page.getByTestId('image-generation-config-dialog');
       await expect(imageDialog.getByTestId('image-generation-save')).toBeDisabled();
-      await expect(imageDialog.locator('summary')).toHaveCSS('font-size', '14px');
+      await expect(imageDialog.getByTestId('image-generation-endpoint-section')).toHaveAttribute('aria-pressed', 'true');
       await expect(imageDialog.getByTestId('image-generation-relay-api-key')).toHaveValue('');
-      await expect(imageDialog.getByTestId('image-generation-agent-auth-table')).not.toBeVisible();
-      await imageDialog.locator('summary').click();
-      await expect(imageDialog.getByTestId('image-generation-agent-row-main')).toContainText(text.dashboard.imageGeneration.authConfigured);
+      await expect(imageDialog.getByTestId('image-generation-agent-auth-table')).toHaveCount(0);
+      const imageBounds = await modelDialogBounds(imageDialog);
+      expect(imageBounds[1]!.width).toBeCloseTo(imageBounds[2]!.width, 0);
+      expect(imageBounds[0]).toEqual(voiceBounds[0]);
+      await imageDialog.getByTestId('image-generation-advanced').click();
+      await expect(imageDialog.getByTestId('image-generation-agent-auth-table')).toHaveCount(0);
+      await expect(imageDialog.getByTestId('image-generation-test-agent')).toBeVisible();
+      expect(await modelDialogBounds(imageDialog)).toEqual(imageBounds);
       await page.keyboard.press('Escape');
       await expect(imageDialog).toHaveCount(0);
 

@@ -52,7 +52,7 @@
       "apiKeyMissing": "尚未保存 API 密钥。",
       "apiKeyStored": "您的 API 密钥存储在本地机器上。",
       "replaceApiKey": "替换 API 密钥",
-      "replaceApiKeyHelp": "留空保留已保存的 API 密钥。",
+      "replaceApiKeyHelp": "留空保留已保存的 API 密钥",
       "baseUrl": "基础 URL",
       "modelId": "模型 ID",
       "configuredModels": "已配置模型",

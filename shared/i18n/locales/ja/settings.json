@@ -52,7 +52,7 @@
       "apiKeyMissing": "API キーは未保存です。",
       "apiKeyStored": "API キーはローカルマシンに保存されます。",
       "replaceApiKey": "API キーを更新",
-      "replaceApiKeyHelp": "保存済みの API キーを使う場合は空欄にしてください。",
+      "replaceApiKeyHelp": "保存済みの API キーを使う場合は空欄にしてください",
       "baseUrl": "ベース URL",
       "modelId": "モデル ID",
       "configuredModels": "設定済みモデル",

@@ -52,7 +52,7 @@
       "apiKeyMissing": "No API key has been saved yet.",
       "apiKeyStored": "Your API key is stored locally on your machine.",
       "replaceApiKey": "Replace API key",
-      "replaceApiKeyHelp": "Leave blank to keep the saved API key.",
+      "replaceApiKeyHelp": "Leave blank to keep the saved API key",
       "baseUrl": "Base URL",
       "modelId": "Model ID",
       "configuredModels": "Configured models",

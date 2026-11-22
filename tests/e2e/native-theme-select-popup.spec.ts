@@ -1,77 +1,54 @@
 import { navigateToSection } from './fixtures/navigation';
 import { closeElectronApp, expect, getStableWindow, test } from './fixtures/electron';
 
-/**
- * Chromium paints native <select> dropdown popups with the select's own
- * computed background-color and text color. If the select is transparent
- * (e.g. shared `bg-transparent` input classes), the Windows popup shows a
- * white page background behind light option text in dark mode — unreadable.
- * These specs lock in the fix: every themed select must resolve the opaque
- * `--surface-input` token in both schemes.
- */
-async function expectSelectThemed(page: import('@playwright/test').Page, testId: string): Promise<void> {
-  await expect
-    .poll(async () => page.evaluate((id) => {
-      const select = document.querySelector<HTMLSelectElement>(`[data-testid="${id}"]`);
-      if (!select) return null;
-      const probe = document.createElement('div');
-      probe.style.backgroundColor = 'hsl(var(--surface-input))';
-      document.body.appendChild(probe);
-      const expected = getComputedStyle(probe).backgroundColor;
-      probe.remove();
-      const actual = getComputedStyle(select).backgroundColor;
-      return { actual, expected };
-    }, testId))
-    .toEqual({ actual: expect.not.stringContaining('rgba'), expected: expect.any(String) });
-
-  const colors = await page.evaluate((id) => {
-    const select = document.querySelector<HTMLSelectElement>(`[data-testid="${id}"]`);
+async function expectAsrLanguagePopupThemed(page: import('@playwright/test').Page): Promise<void> {
+  await navigateToSection(page, 'models');
+  await page.getByTestId('models-tab-voice').click();
+  await page.getByTestId('asr-configure').click();
+  const dialog = page.getByTestId('asr-config-dialog');
+  const groq = dialog.getByTestId('asr-preset-groq');
+  await groq.click();
+  const expectedFilter = await page.evaluate(() => document.documentElement.classList.contains('dark') ? 'invert(1)' : 'none');
+  await expect(groq.locator('img')).toHaveCSS('filter', expectedFilter);
+  await expect(dialog.getByTestId('asr-config-details').locator('img')).toHaveCSS('filter', expectedFilter);
+  await dialog.getByTestId('asr-preset-openai').click();
+  await dialog.getByTestId('asr-language-input').click();
+  const list = page.getByRole('listbox');
+  await expect(list).toBeVisible();
+  const surface = await list.evaluate(element => {
     const probe = document.createElement('div');
-    probe.style.backgroundColor = 'hsl(var(--surface-input))';
+    probe.style.backgroundColor = 'hsl(var(--surface-modal))';
     document.body.appendChild(probe);
     const expected = getComputedStyle(probe).backgroundColor;
     probe.remove();
-    return { actual: getComputedStyle(select).backgroundColor, expected };
-  }, testId);
-  expect(colors.actual).toBe(colors.expected);
+    return { actual: getComputedStyle(element).backgroundColor, expected };
+  });
+  expect(surface.actual).toBe(surface.expected);
+  expect(surface.actual).not.toBe('rgba(0, 0, 0, 0)');
+  await page.keyboard.press('Escape');
+  await expect(list).toHaveCount(0);
+  await expect(dialog).toBeVisible();
+  await dialog.getByTestId('asr-config-dialog-close').click();
 }
 
-test.describe('native select theming', () => {
-  test('speech-to-text provider select uses the opaque themed background in both schemes', async ({ launchElectronApp }) => {
+test.describe('model select theming', () => {
+  test('speech-to-text language options use the opaque themed background in both schemes', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
       const page = await getStableWindow(app);
       await expect(page.getByTestId('main-layout')).toBeVisible();
-
-      // Switch the app to dark mode via Settings > Appearance.
-      await page.getByTestId('sidebar-nav-settings').click();
-      await expect(page.getByTestId('settings-page')).toBeVisible();
       await navigateToSection(page, 'advanced');
       const devModeSwitch = page.getByTestId('settings-dev-mode-switch');
       if (await devModeSwitch.getAttribute('data-state') !== 'checked') await devModeSwitch.click();
       await expect(devModeSwitch).toHaveAttribute('data-state', 'checked');
-      await navigateToSection(page, 'general');
-      await page.getByRole('button', { name: 'Dark', exact: true }).click();
-      await expect(page.evaluate(() => document.documentElement.classList.contains('dark'))).resolves.toBe(true);
 
-      // The AI models > Voice (speech-to-text) provider select must resolve the
-      // dark opaque input surface so its popup options stay readable.
-      await navigateToSection(page, 'models');
-      await page.getByTestId('models-tab-voice').click();
-      await expect(page.getByTestId('asr-preset-select')).toBeVisible();
-      await expectSelectThemed(page, 'asr-preset-select');
-
-      // Switching back to light keeps the select on the (now white) token.
-      await page.getByTestId('sidebar-nav-settings').click();
-      await expect(page.getByTestId('settings-page')).toBeVisible();
-      await page.getByRole('button', { name: 'Light', exact: true }).click();
-      await expect(page.evaluate(() => document.documentElement.classList.contains('light'))).resolves.toBe(true);
-
-      await navigateToSection(page, 'models');
-      await page.getByTestId('models-tab-voice').click();
-      await expect(page.getByTestId('asr-preset-select')).toBeVisible();
-      await expectSelectThemed(page, 'asr-preset-select');
+      for (const theme of ['Dark', 'Light']) {
+        await navigateToSection(page, 'general');
+        await page.getByRole('button', { name: theme, exact: true }).click();
+        await expect.poll(() => page.evaluate(name => document.documentElement.classList.contains(name), theme.toLowerCase())).toBe(true);
+        await expectAsrLanguagePopupThemed(page);
+      }
     } finally {
       await closeElectronApp(app);
     }
