@@ -24,6 +24,7 @@ interface ModelPickerProps {
   align?: 'start' | 'end';
   className?: string;
   labelledBy?: string;
+  hideIcon?: boolean;
   testIdPrefix: string;
 }
 
@@ -31,7 +32,7 @@ interface ModelPickerProps {
 export const ModelPicker = forwardRef<HTMLButtonElement, ModelPickerProps>(function ModelPicker({
   options, value, label, title, valueTitle, providerLabel, onValueChange, disabled, busy = false,
   open, onOpenChange, onCloseAutoFocus, side = 'top', align = 'end',
-  className, labelledBy, testIdPrefix,
+  className, labelledBy, hideIcon = false, testIdPrefix,
 }, ref) {
   const [localOpen, setLocalOpen] = useState(false);
   const isOpen = open ?? localOpen;
@@ -60,7 +61,7 @@ export const ModelPicker = forwardRef<HTMLButtonElement, ModelPickerProps>(funct
             (isOpen || busy) && 'text-foreground', className,
           )}
         >
-          {busy ? <Loader2 aria-hidden="true" className="h-3.5 w-3.5 shrink-0 animate-spin" /> : <ModelIcon modelName={label} testId={`${testIdPrefix}-current-icon`} />}
+          {busy ? <Loader2 aria-hidden="true" className="h-3.5 w-3.5 shrink-0 animate-spin" /> : !hideIcon && <ModelIcon modelName={label} testId={`${testIdPrefix}-current-icon`} />}
           <span id={selectedDescriptionId} className="flex min-w-0 items-center gap-1">
             {selectedOption && <>
               <span className="min-w-0 max-w-[50%] truncate font-normal text-muted-foreground">{selectedOption.providerName}</span>

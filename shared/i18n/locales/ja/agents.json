@@ -1,4 +1,19 @@
 {
+    "fallbacks": {
+        "title": "代替モデル",
+        "globalModel": "グローバルのデフォルトモデル",
+        "globalTitle": "デフォルトの代替モデル",
+        "globalDescription": "グローバルのデフォルトモデルが失敗した場合に順番に試します。アシスタントごとにも設定できます。",
+        "agentDescription": "このアシスタントのデフォルトモデルに適用されます。タスクで明示的に選択したモデルは切り替わりません。",
+        "add": "代替モデルを追加",
+        "moveUp": "{{model}} を上へ",
+        "moveDown": "{{model}} を下へ",
+        "remove": "{{model}} を削除",
+        "inherited": "グローバルの代替モデルを使用",
+        "copied": "保存時に現在のデフォルト代替モデルをコピーします",
+        "strict": "代替モデルなし",
+        "saveFailed": "代替モデルを保存できませんでした：{{error}}"
+    },
     "title": "アシスタント",
     "subtitle": "タスクに合わせた働き方を用意します。",
     "refresh": "更新",

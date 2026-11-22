@@ -274,6 +274,9 @@ export const hostApi = {
     updateModel: (id: string, modelRef: string | null) => (
       invokeHost('agents', 'updateModel', { id, modelRef })
     ),
+    updateFallbacks: (id: string | null, fallbacks: string[] | null) => (
+      invokeHost('agents', 'updateFallbacks', { id, fallbacks })
+    ),
     delete: (id: string) => invokeHost('agents', 'delete', { id }),
     assignChannel: (id: string, channelType: string) => (
       invokeHost('agents', 'assignChannel', { id, channelType })

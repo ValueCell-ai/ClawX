@@ -285,7 +285,7 @@ describe('provider-runtime-sync config delivery', () => {
     mocks.getProvider.mockResolvedValue(createProvider({ id: 'custom-work1234', type: 'custom', model: undefined }));
     mocks.getProviderAccount.mockResolvedValue({ id: 'custom-work1234', vendorId: 'custom', metadata: { customModels: ['model-a', 'provider/model-b'] } });
     await syncDefaultProviderToRuntime('custom-work1234');
-    expect(mocks.setOpenClawDefaultModelWithOverride).toHaveBeenCalledWith('custom-work1234', 'custom-work1234/model-a', expect.any(Object), expect.any(Array));
+    expect(mocks.setOpenClawDefaultModelWithOverride).toHaveBeenCalledWith('custom-work1234', 'custom-work1234/model-a', expect.any(Object), undefined);
   });
 
   it('rejects a legacy custom default switch with no configured model', async () => {
@@ -300,7 +300,7 @@ describe('provider-runtime-sync config delivery', () => {
     mocks.getProvider.mockResolvedValue(provider);
     mocks.getProviderAccount.mockResolvedValue({ id: provider.id, vendorId: 'custom', metadata: { customModels: ['model-a', 'provider/model-b'] } });
     await syncDefaultProviderToRuntime(provider.id, undefined, 'provider/model-b');
-    expect(mocks.setOpenClawDefaultModelWithOverride).toHaveBeenCalledWith(provider.id, `${provider.id}/provider/model-b`, expect.any(Object), expect.any(Array));
+    expect(mocks.setOpenClawDefaultModelWithOverride).toHaveBeenCalledWith(provider.id, `${provider.id}/provider/model-b`, expect.any(Object), undefined);
     expect(provider.model).toBeUndefined();
   });
 
@@ -339,7 +339,7 @@ describe('provider-runtime-sync config delivery', () => {
         baseUrl: 'https://chatgpt.com/backend-api/codex',
         api: 'openai-chatgpt-responses',
       },
-      expect.any(Array),
+      undefined,
     );
   });
 
@@ -370,7 +370,7 @@ describe('provider-runtime-sync config delivery', () => {
     expect(mocks.setOpenClawDefaultModel).toHaveBeenCalledWith(
       'openai',
       'openai/gpt-5.6',
-      [],
+      undefined,
     );
   });
 
@@ -549,7 +549,7 @@ describe('provider-runtime-sync config delivery', () => {
         baseUrl: 'http://localhost:11434/v1',
         api: 'openai-completions',
       }),
-      expect.any(Array),
+      undefined,
     );
   });
   it('syncs updated Ollama provider as default with correct override config', async () => {
@@ -576,7 +576,7 @@ describe('provider-runtime-sync config delivery', () => {
         baseUrl: 'http://localhost:11434/v1',
         api: 'openai-completions',
       }),
-      expect.any(Array),
+      undefined,
     );
     // Should NOT call the non-override path
     expect(mocks.setOpenClawDefaultModel).not.toHaveBeenCalled();

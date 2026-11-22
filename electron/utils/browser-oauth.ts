@@ -267,15 +267,6 @@ export class BrowserOAuthManager extends EventEmitter {
     if (!this.isCurrentFlow(flowId)) return;
 
     const modelRef = `${runtimeProviderId}/${modelId}`;
-    const fallbackModelRefs = (nextAccount.fallbackModels ?? [])
-      .map((fallback) => fallback.trim())
-      .filter(Boolean)
-      .map((fallback) => (
-        fallback.replace(/^openai-codex\//, `${runtimeProviderId}/`).startsWith(`${runtimeProviderId}/`)
-          ? fallback.replace(/^openai-codex\//, `${runtimeProviderId}/`)
-          : `${runtimeProviderId}/${fallback}`
-      ));
-
     try {
       await setOpenClawDefaultModelWithOverride(
         runtimeProviderId,
@@ -284,7 +275,6 @@ export class BrowserOAuthManager extends EventEmitter {
           baseUrl: OPENAI_CODEX_OAUTH_PROVIDER_CONFIG.baseUrl,
           api: OPENAI_CODEX_OAUTH_PROVIDER_CONFIG.api,
         },
-        fallbackModelRefs,
       );
       await ensureOpenClawProviderAgentRuntimePins();
       logger.info(`[BrowserOAuth] Registered ${runtimeProviderId} in openclaw.json (default model: ${modelRef})`);
@@ -352,9 +342,6 @@ export class BrowserOAuthManager extends EventEmitter {
         apiKeyEnv: 'TOKENDANCE_API_KEY',
         headers: TOKENDANCE_APP_HEADER,
       },
-      (nextAccount.fallbackModels ?? []).map((fallback) => (
-        fallback.startsWith(`${providerType}/`) ? fallback : `${providerType}/${fallback}`
-      )),
     );
     if (!this.ownsFlow(flowId, signal)) return;
 

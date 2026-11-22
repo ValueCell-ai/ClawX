@@ -29,6 +29,12 @@ inside a single-model input. Creation accepts one model ID and explains that
 comma-separated input is unsupported. Existing native defaults remain compatible
 and are never migrated as part of this presentation change.
 
+Fallback models are ordered OpenClaw settings, not per-service policies. Manage
+the global chain and each assistant's explicit chain in Assistants; preserve
+unknown references and distinguish inherited, empty and explicitly set chains.
+Service editing and OAuth setup must not replace the global chain. Explicit
+task model selection remains strict and does not enable model fallback.
+
 Add and edit forms share dialog and connection-field patterns. Retain existing validation,
 OAuth, local-provider defaults and immutable model-ID behavior. Keep diagnostics behind
 advanced disclosure and preserve native Host API authority and secret handling.

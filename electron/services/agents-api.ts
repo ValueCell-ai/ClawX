@@ -9,6 +9,7 @@ import {
   removeAgentWorkspaceDirectory,
   resolveAccountIdForAgent,
   updateAgentModel,
+  updateModelFallbacks,
   updateAgentName,
 } from '../utils/agent-config';
 import { deleteChannelAccountConfig } from '../utils/channel-config';
@@ -69,6 +70,14 @@ export function createAgentsApi(ctx: AgentsApiContext): CompleteHostServiceRegis
       const snapshot = await updateAgentModel(agentId, modelRef);
       await syncAllProviderAuthToRuntime();
       await syncAgentModelOverrideToRuntime(agentId);
+      return { success: true, ...snapshot };
+    },
+    updateFallbacks: async (payload) => {
+      if (!isRecord(payload) || (payload.id !== null && (typeof payload.id !== 'string' || !payload.id.trim()))
+        || (payload.fallbacks !== null && (!Array.isArray(payload.fallbacks) || payload.fallbacks.some(value => typeof value !== 'string')))) {
+        throw new Error('Invalid model fallback configuration');
+      }
+      const snapshot = await updateModelFallbacks(payload.id as string | null, payload.fallbacks as string[] | null);
       return { success: true, ...snapshot };
     },
     delete: async (payload) => {

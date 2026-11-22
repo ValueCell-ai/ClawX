@@ -322,6 +322,7 @@ export type AgentDeleteResult = AgentSnapshotResult & {
 export type AgentCreatePayload = { name: string; inheritWorkspace?: boolean; instructions?: string; modelRef?: string };
 export type AgentUpdatePayload = { id: string; name: string };
 export type AgentUpdateModelPayload = { id: string; modelRef: string | null };
+export type AgentUpdateFallbacksPayload = { id: string | null; fallbacks: string[] | null };
 export type AgentIdPayload = { id: string };
 export type AgentChannelPayload = { id: string; channelType: string };
 
@@ -1034,6 +1035,7 @@ export type HostApiContract = {
     create: (payload: AgentCreatePayload) => AgentSnapshotResult;
     update: (payload: AgentUpdatePayload) => AgentSnapshotResult;
     updateModel: (payload: AgentUpdateModelPayload) => AgentSnapshotResult;
+    updateFallbacks: (payload: AgentUpdateFallbacksPayload) => AgentSnapshotResult;
     delete: (payload: AgentIdPayload) => AgentDeleteResult;
     assignChannel: (payload: AgentChannelPayload) => AgentSnapshotResult;
     removeChannel: (payload: AgentChannelPayload) => AgentSnapshotResult;

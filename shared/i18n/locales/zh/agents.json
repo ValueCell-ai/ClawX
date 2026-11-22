@@ -1,4 +1,19 @@
 {
+    "fallbacks": {
+        "title": "备用模型",
+        "globalModel": "全局默认模型",
+        "globalTitle": "默认备用模型",
+        "globalDescription": "全局默认模型失败时依次尝试；助手可单独配置。",
+        "agentDescription": "仅在该助手使用默认模型时生效；任务中手动选择模型后不会自动回退。",
+        "add": "添加备用模型",
+        "moveUp": "上移 {{model}}",
+        "moveDown": "下移 {{model}}",
+        "remove": "移除 {{model}}",
+        "inherited": "使用全局默认备用模型",
+        "copied": "保存时将复制当前默认备用模型",
+        "strict": "未设置备用模型",
+        "saveFailed": "保存备用模型失败：{{error}}"
+    },
     "title": "助手",
     "subtitle": "为不同任务准备不同的工作方式。",
     "refresh": "刷新",

@@ -9,6 +9,7 @@ interface AgentsState {
   agents: AgentSummary[];
   defaultAgentId: string;
   defaultModelRef: string | null;
+  defaultModelFallbacks: string[];
   configuredChannelTypes: string[];
   channelOwners: Record<string, string>;
   channelAccountOwners: Record<string, string>;
@@ -18,6 +19,7 @@ interface AgentsState {
   createAgent: (name: string, options?: { inheritWorkspace?: boolean; instructions?: string; modelRef?: string }) => Promise<void>;
   updateAgent: (agentId: string, name: string) => Promise<void>;
   updateAgentModel: (agentId: string, modelRef: string | null) => Promise<void>;
+  updateFallbacks: (agentId: string | null, fallbacks: string[] | null) => Promise<void>;
   deleteAgent: (agentId: string) => Promise<void>;
   assignChannel: (agentId: string, channelType: ChannelType) => Promise<void>;
   removeChannel: (agentId: string, channelType: ChannelType) => Promise<void>;
@@ -29,6 +31,7 @@ function applySnapshot(snapshot: AgentsSnapshot | undefined) {
     agents: snapshot.agents ?? [],
     defaultAgentId: snapshot.defaultAgentId ?? 'main',
     defaultModelRef: snapshot.defaultModelRef ?? null,
+    defaultModelFallbacks: snapshot.defaultModelFallbacks ?? [],
     configuredChannelTypes: snapshot.configuredChannelTypes ?? [],
     channelOwners: snapshot.channelOwners ?? {},
     channelAccountOwners: snapshot.channelAccountOwners ?? {},
@@ -64,6 +67,7 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
   agents: [],
   defaultAgentId: 'main',
   defaultModelRef: null,
+  defaultModelFallbacks: [],
   configuredChannelTypes: [],
   channelOwners: {},
   channelAccountOwners: {},
@@ -125,6 +129,16 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
     set({ error: null });
     try {
       const snapshot = await hostApi.agents.updateModel(agentId, modelRef);
+      commitMutationSnapshot(set, snapshot);
+    } catch (error) {
+      set({ error: String(error) });
+      throw error;
+    }
+  },
+
+  updateFallbacks: async (agentId, fallbacks) => {
+    try {
+      const snapshot = await hostApi.agents.updateFallbacks(agentId, fallbacks);
       commitMutationSnapshot(set, snapshot);
     } catch (error) {
       set({ error: String(error) });

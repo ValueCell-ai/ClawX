@@ -103,6 +103,7 @@ export interface AgentSummary {
   overrideModelRef: string | null;
   contextWindow?: number;
   inheritedModel: boolean;
+  modelFallbacks: string[] | null;
   workspace: string;
   agentDir: string;
   mainSessionKey: string;
@@ -113,6 +114,7 @@ export interface AgentsSnapshot {
   agents: AgentSummary[];
   defaultAgentId: string;
   defaultModelRef: string | null;
+  defaultModelFallbacks: string[];
   configuredChannelTypes: string[];
   channelOwners: Record<string, string>;
   channelAccountOwners: Record<string, string>;
@@ -725,6 +727,7 @@ async function buildSnapshotFromConfig(config: AgentConfigDocument, preloadedCha
   const defaultModelConfig = (config.agents as AgentsConfig | undefined)?.defaults?.model;
   const defaultModelLabel = formatModelLabel(defaultModelConfig);
   const defaultModelRef = resolveModelRef(defaultModelConfig);
+  const defaultModelFallbacks = readModelFallbacks(defaultModelConfig) ?? [];
   const agents: AgentSummary[] = entries.map((entry) => {
     const explicitModelRef = resolveModelRef(entry.model);
     const effectiveModelRef = explicitModelRef || defaultModelRef || null;
@@ -741,6 +744,7 @@ async function buildSnapshotFromConfig(config: AgentConfigDocument, preloadedCha
       overrideModelRef: explicitModelRef,
       contextWindow: resolveModelContextWindow(config, effectiveModelRef),
       inheritedModel,
+      modelFallbacks: readModelFallbacks(entry.model),
       workspace: resolveWorkspace(config.agents, entry.id),
       agentDir: entry.agentDir || getDefaultAgentDirPath(entry.id),
       mainSessionKey: buildAgentMainSessionKey(config, entry.id),
@@ -754,6 +758,7 @@ async function buildSnapshotFromConfig(config: AgentConfigDocument, preloadedCha
     agents,
     defaultAgentId,
     defaultModelRef,
+    defaultModelFallbacks,
     configuredChannelTypes: configuredChannels.map((channelType) => toUiChannelType(channelType)),
     channelOwners,
     channelAccountOwners,
@@ -934,17 +939,74 @@ function isValidModelRef(modelRef: string): boolean {
   return firstSlash > 0 && firstSlash < modelRef.length - 1;
 }
 
+function readModelFallbacks(model: unknown): string[] | null {
+  if (!model || typeof model !== 'object' || !Array.isArray((model as AgentModelConfig).fallbacks)) return null;
+  return ((model as AgentModelConfig).fallbacks as unknown[]).filter((value): value is string => typeof value === 'string');
+}
+
+function normalizeModelFallbacks(fallbacks: string[], existing: string[]): string[] {
+  if (!Array.isArray(fallbacks) || fallbacks.some(ref => typeof ref !== 'string' || (!isValidModelRef(ref.trim()) && !existing.includes(ref)))) {
+    throw new Error('Each fallback must be a provider/model reference');
+  }
+  const normalized = fallbacks.map(ref => ref.trim());
+  if (new Set(normalized).size !== normalized.length) throw new Error('Duplicate fallback model');
+  return normalized;
+}
+
+export async function updateModelFallbacks(agentId: string | null, fallbacks: string[] | null): Promise<AgentsSnapshot> {
+  if (agentId === null && fallbacks === null) throw new Error('Global fallbacks must be a list');
+  let snapshot: AgentsSnapshot | undefined;
+  await mutateOpenClawConfig(async (configSnapshot) => {
+    const config = configSnapshot as AgentConfigDocument;
+    const agentsConfig = config.agents ?? {};
+    if (agentId === null) {
+      const defaults = agentsConfig.defaults ?? {};
+      const existing = defaults.model;
+      const normalized = normalizeModelFallbacks(fallbacks!, readModelFallbacks(existing) ?? []);
+      const model: AgentModelConfig = typeof existing === 'string' ? { primary: existing } : { ...existing };
+      model.fallbacks = normalized;
+      defaults.model = model;
+      agentsConfig.defaults = defaults;
+      config.agents = agentsConfig;
+    } else {
+      const { entries, syntheticMain } = normalizeAgentsConfig(config);
+      const index = entries.findIndex(entry => entry.id === agentId);
+      if (index === -1) throw new Error(`Agent "${agentId}" not found`);
+      const existing = entries[index].model;
+      const normalized = fallbacks === null ? null : normalizeModelFallbacks(fallbacks, readModelFallbacks(existing) ?? []);
+      const model: AgentModelConfig = typeof existing === 'string' ? { primary: existing } : { ...existing };
+      if (normalized === null) delete model.fallbacks;
+      else model.fallbacks = normalized;
+      const entry = { ...entries[index] };
+      if (Object.keys(model).length) entry.model = model;
+      else delete entry.model;
+      if (Array.isArray(agentsConfig.list) && !agentsConfig.entries) {
+        agentsConfig.list = agentsConfig.list.map(item => item.id === agentId ? entry : item);
+      } else if (syntheticMain) {
+        if (Object.keys(model).length) agentsConfig.entries = { [agentId]: { model } };
+      } else {
+        const { id: _id, ...storedEntry } = entry;
+        agentsConfig.entries = { ...(agentsConfig.entries ?? {}), [agentId]: storedEntry };
+      }
+      if (syntheticMain && agentId !== MAIN_AGENT_ID) throw new Error(`Agent "${agentId}" not found`);
+      config.agents = agentsConfig;
+    }
+    snapshot = await buildSnapshotFromConfig(config);
+  });
+  return snapshot!;
+}
+
 function agentModelWithPrimary(
   primary: string,
   existing: AgentListEntry['model'],
   defaults: AgentDefaultsConfig['model'],
 ): AgentModelConfig {
-  // Preserve custom fields and explicit empty fallback chains. Native per-agent
-  // model objects otherwise suppress inherited fallbacks, so carry them forward.
+  // Preserve explicit agent policies, including a strict model with no fallback.
+  // Only copy global fallbacks when switching from an inherited primary.
   const model: AgentModelConfig = existing && typeof existing === 'object'
     ? { ...existing, primary }
     : { primary };
-  if (!Array.isArray(model.fallbacks) && defaults && typeof defaults === 'object' && Array.isArray(defaults.fallbacks)) {
+  if (!resolveModelRef(existing) && !Array.isArray(model.fallbacks) && defaults && typeof defaults === 'object' && Array.isArray(defaults.fallbacks)) {
     const inherited = defaults.fallbacks.filter((ref): ref is string => typeof ref === 'string' && ref.trim().length > 0);
     if (inherited.length > 0) model.fallbacks = inherited;
   }

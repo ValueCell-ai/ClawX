@@ -559,7 +559,8 @@ export async function syncUpdatedProviderToRuntime(
   }
 
   const ock = context.runtimeProviderKey;
-  const fallbackModels = await getProviderFallbackModelRefs(config);
+  // Leave the fallback list untouched in the same locked config mutation.
+  const fallbackModels = undefined;
 
   const defaultProviderId = await getDefaultProvider();
   const isDefaultProvider = defaultProviderId === config.id;
@@ -683,7 +684,7 @@ export async function syncDefaultProviderToRuntime(
 
   const ock = await resolveRuntimeProviderKey(provider);
   const providerKey = await getApiKey(providerId);
-  const fallbackModels = await getProviderFallbackModelRefs(provider);
+  const fallbackModels = undefined;
   const oauthTypes = ['minimax-portal', 'minimax-portal-cn'];
   const browserOAuthRuntimeProvider = await getBrowserOAuthRuntimeProvider(provider);
   const isOAuthProvider = (oauthTypes.includes(provider.type) && !providerKey) || Boolean(browserOAuthRuntimeProvider);
@@ -745,7 +746,7 @@ export async function syncDefaultProviderToRuntime(
           baseUrl: OPENAI_CODEX_OAUTH_PROVIDER_CONFIG.baseUrl,
           api: OPENAI_CODEX_OAUTH_PROVIDER_CONFIG.api,
         },
-        fallbackModels.map((fallback) => fallback.replace(/^openai-codex\//, `${browserOAuthRuntimeProvider}/`)),
+        fallbackModels,
       );
       logger.info(`Configured openclaw.json for browser OAuth provider "${provider.id}"`);
       await syncAgentModelsToRuntime();

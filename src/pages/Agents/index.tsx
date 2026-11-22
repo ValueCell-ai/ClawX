@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import * as Menu from '@/components/ui/dropdown-menu';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Dialog } from '@/components/ui/dialog';
+import { ConfigDialogContent } from '@/components/ui/config-dialog-content';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { ModelIcon } from '@/components/common/ModelIcon';
 import { ChannelLogo } from '@/components/channels/ChannelLogo';
@@ -26,6 +28,7 @@ import { AgentDetails } from './AgentDetails';
 import { useAgentWorkspaces } from './useAgentWorkspaces';
 import { useAgentModels } from './use-agent-models';
 import { splitModelRef } from '@/lib/model-options';
+import { ModelFallbackEditor } from './ModelFallbackEditor';
 
 export function Agents() {
   const { t } = useTranslation('agents');
@@ -33,7 +36,17 @@ export function Agents() {
   const gatewayStatus = useGatewayStore(state => state.status);
   const refreshProviderSnapshot = useProviderStore(state => state.refreshProviderSnapshot);
   const lastGatewayStateRef = useRef(gatewayStatus.state);
-  const { agents, loading, error, fetchAgents, createAgent, deleteAgent } = useAgentsStore();
+  const { agents, loading, error, fetchAgents, createAgent, deleteAgent, defaultModelRef, defaultModelFallbacks, updateFallbacks } = useAgentsStore();
+  const globalFallbackTriggerRef = useRef<HTMLButtonElement>(null);
+  const [globalFallbackOpen, setGlobalFallbackOpen] = useState(false);
+  const [fallbackDraft, setFallbackDraft] = useState<string[]>([]);
+  const [savingFallbacks, setSavingFallbacks] = useState(false);
+  const [confirmFallbackClose, setConfirmFallbackClose] = useState(false);
+  const requestCloseGlobalFallback = () => {
+    if (savingFallbacks) return;
+    if (JSON.stringify(fallbackDraft) !== JSON.stringify(defaultModelFallbacks)) setConfirmFallbackClose(true);
+    else setGlobalFallbackOpen(false);
+  };
   const sessions = useChatStore(state => state.sessions);
   const [channelGroups, setChannelGroups] = useState<ChannelGroupItem[]>([]);
   const [hasCompletedInitialLoad, setHasCompletedInitialLoad] = useState(() => agents.length > 0);
@@ -45,6 +58,7 @@ export function Agents() {
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const { snapshots, refresh: refreshWorkspaces } = useAgentWorkspaces(agents);
   const modelOptions = useAgentModels();
+  const globalModelOption = modelOptions.find(option => option.modelRef === defaultModelRef);
   const fetchChannelAccounts = useCallback(async () => {
     try { setChannelGroups((await hostApi.channels.accounts()).channels || []); }
     catch { /* Retain the last usable snapshot during refresh failures. */ }
@@ -83,7 +97,7 @@ export function Agents() {
     <div className="mx-auto flex h-full w-full max-w-6xl flex-col p-6 md:p-8">
       <div className="mb-6 flex shrink-0 flex-col justify-between gap-4 md:flex-row md:items-start">
         <div><h1 className="mb-1 font-sans text-2xl font-medium tracking-normal text-foreground">{t('title')}</h1><p className="text-sm text-muted-foreground">{t('subtitle')}</p></div>
-        <div className="flex flex-wrap items-center gap-3 md:mt-2"><Button variant="outline" onClick={refresh} className="h-9 px-3 text-sm shadow-none"><RefreshCw className={cn('mr-2 h-3.5 w-3.5', loading && hasCompletedInitialLoad && 'animate-spin')} />{t('refresh')}</Button><Button data-testid="agents-add-button" onClick={() => setShowAddDialog(true)} className="h-9 px-3 text-sm shadow-none"><Plus className="mr-2 h-3.5 w-3.5" />{t('addAgent')}</Button></div>
+        <div className="flex flex-wrap items-center gap-3 md:mt-2"><Button variant="outline" size="sm" ref={globalFallbackTriggerRef} data-testid="global-fallback-open" disabled={loading || !hasCompletedInitialLoad || !!error} onClick={() => { setFallbackDraft([...defaultModelFallbacks]); setGlobalFallbackOpen(true); }}>{t('fallbacks.globalTitle')}</Button><Button variant="outline" onClick={refresh} className="h-9 px-3 text-sm shadow-none"><RefreshCw className={cn('mr-2 h-3.5 w-3.5', loading && hasCompletedInitialLoad && 'animate-spin')} />{t('refresh')}</Button><Button data-testid="agents-add-button" onClick={() => setShowAddDialog(true)} className="h-9 px-3 text-sm shadow-none"><Plus className="mr-2 h-3.5 w-3.5" />{t('addAgent')}</Button></div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto -mr-2 pr-2">
         {error && <div role="alert" className="mb-4 flex items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive"><AlertCircle className="h-4 w-4 shrink-0" />{error}</div>}
@@ -95,6 +109,10 @@ export function Agents() {
       </div>
     </div>
     <CreateAgentDialog open={showAddDialog} onClose={() => setShowAddDialog(false)} onCreate={async (name, options) => { await createAgent(name, options); setShowAddDialog(false); toast.success(t('toast.agentCreated')); }} />
+    <Dialog open={globalFallbackOpen} onOpenChange={next => { if (!next) requestCloseGlobalFallback(); }}><ConfigDialogContent data-testid="global-fallback-dialog" onCloseAutoFocus={event => { if (globalFallbackTriggerRef.current) { event.preventDefault(); globalFallbackTriggerRef.current.focus(); } }} title={t('fallbacks.globalTitle')} description={t('fallbacks.globalDescription')} closeLabel={t('common:actions.close')} closeDisabled={savingFallbacks} onClose={requestCloseGlobalFallback} footer={<><Button variant="outline" size="sm" disabled={savingFallbacks} onClick={requestCloseGlobalFallback}>{t('common:actions.cancel')}</Button><Button size="sm" disabled={savingFallbacks || JSON.stringify(fallbackDraft) === JSON.stringify(defaultModelFallbacks)} onClick={() => { setSavingFallbacks(true); void updateFallbacks(null, fallbackDraft).then(() => setGlobalFallbackOpen(false)).catch(error => toast.error(t('fallbacks.saveFailed', { error: String(error) }))).finally(() => setSavingFallbacks(false)); }}>{t('common:actions.save')}</Button></>}>
+      <div className="space-y-4"><div className="flex min-w-0 items-center gap-3 text-sm"><span className="shrink-0 text-muted-foreground">{t('fallbacks.globalModel')}</span><span className="min-w-0 truncate" title={defaultModelRef || undefined}>{globalModelOption ? `${globalModelOption.providerName} / ${globalModelOption.modelId}` : defaultModelRef || t('profile.notConfigured')}</span></div><ModelFallbackEditor value={fallbackDraft} onChange={setFallbackDraft} options={modelOptions} primary={defaultModelRef} disabled={savingFallbacks} prefix="global" /></div>
+    </ConfigDialogContent></Dialog>
+    <ConfirmDialog open={confirmFallbackClose} title={t('settingsDialog.unsavedChangesTitle')} message={t('settingsDialog.unsavedChangesMessage')} confirmLabel={t('settingsDialog.closeWithoutSaving')} cancelLabel={t('common:actions.cancel')} onCancel={() => setConfirmFallbackClose(false)} onConfirm={() => { setConfirmFallbackClose(false); setGlobalFallbackOpen(false); }} />
     {detailAgent && <AgentDetails key={detailVisit} open={!!activeAgent} agent={detailAgent} workspace={workspaceFor(detailAgent)} channelGroups={channelGroups} onClose={() => setActiveAgentId(null)} onReturnFocus={() => returnFocusRef.current?.focus()} onWorkspaceSaved={refreshWorkspaces} />}
     <ConfirmDialog open={!!agentToDelete} title={t('deleteDialog.title')} message={agentToDelete ? t('deleteDialog.message', { name: agentToDelete.name }) : ''} confirmLabel={t('deleteDialog.confirm')} cancelLabel={t('common:actions.cancel')} variant="destructive" onCancel={() => setAgentToDelete(null)} onConfirm={async () => {
       if (!agentToDelete) return;

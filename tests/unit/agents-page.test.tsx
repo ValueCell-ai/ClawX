@@ -3,6 +3,7 @@ import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { Agents } from '../../src/pages/Agents/index';
+import { TooltipProvider } from '../../src/components/ui/tooltip';
 
 const channelsAccountsMock = vi.fn();
 const subscribeHostEventMock = vi.fn();
@@ -24,6 +25,7 @@ const { gatewayState, agentsState, providersState } = vi.hoisted(() => ({
   agentsState: {
     agents: [] as Array<Record<string, unknown>>,
     defaultModelRef: null as string | null,
+    defaultModelFallbacks: [] as string[],
     loading: false,
     error: null as string | null,
   },
@@ -123,6 +125,7 @@ describe('Agents page status refresh', () => {
     gatewayState.status = { state: 'running', port: 18789 };
     agentsState.agents = [];
     agentsState.defaultModelRef = null;
+    agentsState.defaultModelFallbacks = [];
     providersState.accounts = [];
     providersState.statuses = [];
     providersState.vendors = [];
@@ -461,4 +464,4 @@ describe('Agents page status refresh', () => {
   });
 });
 
-function AgentsWithRouter() { return <MemoryRouter><Agents /></MemoryRouter>; }
+function AgentsWithRouter() { return <MemoryRouter><TooltipProvider><Agents /></TooltipProvider></MemoryRouter>; }

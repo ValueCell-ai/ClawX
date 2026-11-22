@@ -20,6 +20,7 @@ import { ChannelLogo } from '@/components/channels/ChannelLogo';
 import { splitModelRef } from '@/lib/model-options';
 import { useAgentsStore } from '@/stores/agents';
 import { useAgentModels } from './use-agent-models';
+import { ModelFallbackEditor } from './ModelFallbackEditor';
 import { CHANNEL_NAMES, type ChannelType } from '@/types/channel';
 import type { AgentSummary } from '@/types/agent';
 
@@ -37,13 +38,14 @@ export function AgentDetails({ open, agent, workspace, channelGroups, onClose, o
 }) {
   const { t } = useTranslation('agents');
   const navigate = useNavigate();
-  const { updateAgent, updateAgentModel } = useAgentsStore();
+  const { updateAgent, updateAgentModel, updateFallbacks, defaultModelFallbacks } = useAgentsStore();
   const modelOptions = useAgentModels();
   const [tab, setTab] = useState('overview');
   const [name, setName] = useState(agent.name);
   const [savingOverview, setSavingOverview] = useState(false);
   // Null means the existing OpenClaw configuration has not been edited.
   const [modelDraft, setModelDraft] = useState<string | null>(null);
+  const [fallbackDraft, setFallbackDraft] = useState<string[] | null | undefined>(undefined);
   const [editingStyle, setEditingStyle] = useState(false);
   const [styleDraft, setStyleDraft] = useState('');
   const styleBaseRef = useRef('');
@@ -59,13 +61,17 @@ export function AgentDetails({ open, agent, workspace, channelGroups, onClose, o
   const nameChanged = name.trim() !== agent.name;
   const modelChanged = modelDraft !== null && modelDraft !== agent.modelRef;
   const selectedModel = modelDraft ?? agent.modelRef ?? null;
+  const fallbackChanged = fallbackDraft !== undefined;
+  const originallyInherited = !agent.overrideModelRef;
+  const inheritedFallbacks = !agent.overrideModelRef && !modelChanged;
+  const fallbackValue = fallbackDraft === undefined ? (agent.modelFallbacks ?? (originallyInherited ? defaultModelFallbacks : [])) : (fallbackDraft ?? (inheritedFallbacks ? defaultModelFallbacks : []));
   const styleChanged = editingStyle && styleDraft !== styleBaseRef.current;
   const busy = savingOverview || savingStyle;
   const finishClose = (action?: () => void) => { onClose(); action?.(); };
   const requestClose = (action?: () => void) => {
     if (busy) return;
     pendingNavigation.current = action;
-    if (nameChanged || modelChanged || styleChanged) setConfirmClose(true);
+    if (nameChanged || modelChanged || fallbackChanged || styleChanged) setConfirmClose(true);
     else finishClose(action);
   };
   const openFile = (target: FilePreviewTarget, trigger: HTMLButtonElement) => { fileTriggerRef.current = trigger; setFile(target); setReaderOpen(true); };
@@ -74,21 +80,23 @@ export function AgentDetails({ open, agent, workspace, channelGroups, onClose, o
   const hasMemory = remainingFiles.some(file => file.fileName === 'MEMORY.md' || /\d{4}-\d{2}-\d{2}/.test(file.fileName));
   const boundAccounts = channelGroups.flatMap(group => group.accounts.filter(account => account.agentId === agent.id).map(account => ({ ...account, channelType: group.channelType, channelName: CHANNEL_NAMES[group.channelType as ChannelType] || group.channelType })));
   const saveOverview = async () => {
-    if (busy || !name.trim() || (!nameChanged && !modelChanged)) return;
+    if (busy || !name.trim() || (!nameChanged && !modelChanged && !fallbackChanged)) return;
     if (modelChanged && !splitModelRef(modelDraft)) { toast.error(t('toast.agentModelInvalid')); return; }
     setSavingOverview(true);
-    let field: 'name' | 'model' = 'name';
+    let field: 'name' | 'model' | 'fallback' = 'name';
     let nameSaved = false;
     try {
       if (nameChanged) { await updateAgent(agent.id, name.trim()); nameSaved = true; }
       field = 'model';
       if (modelChanged && modelDraft) await updateAgentModel(agent.id, modelDraft);
+      field = 'fallback';
+      if (fallbackChanged) await updateFallbacks(agent.id, fallbackDraft ?? null);
       toast.success(t('toast.agentUpdated'));
       // A separate SOUL.md draft cannot be committed with these settings.
       if (styleChanged) setTab('profile');
       else onClose();
     } catch (error) {
-      const key = field === 'name' ? 'toast.agentUpdateFailed' : nameSaved ? 'toast.agentOverviewPartialSave' : 'toast.agentModelUpdateFailed';
+      const key = field === 'name' ? 'toast.agentUpdateFailed' : nameSaved || (field === 'fallback' && modelChanged) ? 'toast.agentOverviewPartialSave' : field === 'fallback' ? 'fallbacks.saveFailed' : 'toast.agentModelUpdateFailed';
       toast.error(t(key, { error: String(error) }));
     } finally {
       setSavingOverview(false);
@@ -147,6 +155,14 @@ export function AgentDetails({ open, agent, workspace, channelGroups, onClose, o
                 </div>
               </section>
               <section className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,6rem)_minmax(0,1fr)] sm:gap-3">
+                <h3 className="text-sm font-medium text-foreground sm:pt-2">{t('fallbacks.title')}</h3>
+                <div className="min-w-0 space-y-2"><p className="text-sm text-muted-foreground">{t('fallbacks.agentDescription')}</p>
+                  {fallbackDraft === undefined && agent.modelFallbacks == null && <p className="text-sm text-muted-foreground">{t(inheritedFallbacks ? 'fallbacks.inherited' : originallyInherited && modelChanged && defaultModelFallbacks.length > 0 ? 'fallbacks.copied' : 'fallbacks.strict')}</p>}
+                  <ModelFallbackEditor value={fallbackValue} onChange={setFallbackDraft} options={modelOptions} primary={selectedModel} disabled={busy} prefix="agent" />
+                  {inheritedFallbacks && (agent.modelFallbacks != null || fallbackDraft !== undefined && fallbackDraft !== null) && <Button variant="ghost" size="sm" onClick={() => setFallbackDraft(null)}>{t('fallbacks.inherited')}</Button>}
+                </div>
+              </section>
+              <section className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,6rem)_minmax(0,1fr)] sm:gap-3">
                 <h3 className="text-sm font-medium text-foreground sm:pt-2">{t('detailTabs.directory')}</h3>
                 <div className="flex min-h-9 min-w-0 items-center gap-3"><span className="min-w-0 flex-1 truncate text-sm text-foreground" title={agent.workspace}>{agent.workspace}</span><Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" aria-label={t('profile.openFolder')} onClick={() => void openWorkspace()}><FolderOpen className="h-4 w-4" /></Button></TooltipTrigger><TooltipContent>{t('profile.openFolder')}</TooltipContent></Tooltip></div>
               </section>
@@ -176,9 +192,9 @@ export function AgentDetails({ open, agent, workspace, channelGroups, onClose, o
       </Tabs>
       <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-border px-6 py-3">
         <Button variant="outline" size="sm" disabled={busy} onClick={() => requestClose()}>{t(tab === 'overview' ? 'common:actions.cancel' : 'common:actions.close')}</Button>
-        {tab === 'overview' && <Button size="sm" data-testid="agent-overview-save" disabled={busy || !name.trim() || (!nameChanged && !modelChanged)} onClick={() => void saveOverview()}>{savingOverview && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}{t('common:actions.save')}</Button>}
+        {tab === 'overview' && <Button size="sm" data-testid="agent-overview-save" disabled={busy || !name.trim() || (!nameChanged && !modelChanged && !fallbackChanged)} onClick={() => void saveOverview()}>{savingOverview && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}{t('common:actions.save')}</Button>}
       </footer>
     </DialogContent>
-    <ConfirmDialog open={confirmClose} title={t('settingsDialog.unsavedChangesTitle')} message={t('settingsDialog.unsavedChangesMessage')} confirmLabel={t('settingsDialog.closeWithoutSaving')} cancelLabel={t('common:actions.cancel')} onCancel={() => { setConfirmClose(false); pendingNavigation.current = undefined; }} onConfirm={() => { setConfirmClose(false); setName(agent.name); setModelDraft(null); setEditingStyle(false); finishClose(pendingNavigation.current); }} />
+    <ConfirmDialog open={confirmClose} title={t('settingsDialog.unsavedChangesTitle')} message={t('settingsDialog.unsavedChangesMessage')} confirmLabel={t('settingsDialog.closeWithoutSaving')} cancelLabel={t('common:actions.cancel')} onCancel={() => { setConfirmClose(false); pendingNavigation.current = undefined; }} onConfirm={() => { setConfirmClose(false); setName(agent.name); setModelDraft(null); setFallbackDraft(undefined); setEditingStyle(false); finishClose(pendingNavigation.current); }} />
   </Dialog>;
 }

@@ -109,7 +109,7 @@ describe('BrowserOAuthManager TokenDance flow', () => {
     expect(mocks.saveProviderKeyToOpenClaw).toHaveBeenCalledTimes(1);
     expect(mocks.createAccount).toHaveBeenCalledWith(expect.objectContaining({ model: 'td-model' }), 'td-secret');
     expect(mocks.setOpenClawDefaultModelWithOverride).toHaveBeenCalledExactlyOnceWith(
-      'tokendance', 'tokendance/td-model', expect.any(Object), [],
+      'tokendance', 'tokendance/td-model', expect.any(Object),
     );
   });
 
@@ -126,7 +126,7 @@ describe('BrowserOAuthManager TokenDance flow', () => {
     await vi.waitFor(() => expect(success).toHaveBeenCalledWith({ provider: 'openai', accountId: 'openai-account' }));
     expect(mocks.createAccount).toHaveBeenCalledWith(expect.objectContaining({ model: 'test-choice' }));
     expect(mocks.setOpenClawDefaultModelWithOverride).toHaveBeenCalledExactlyOnceWith(
-      'openai', 'openai/test-choice', expect.any(Object), [],
+      'openai', 'openai/test-choice', expect.any(Object),
     );
   });
 

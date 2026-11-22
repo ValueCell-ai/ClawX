@@ -61,6 +61,53 @@ describe('agent config lifecycle', () => {
 
   afterEach(() => vi.unstubAllEnvs());
 
+  it('updates global and agent fallbacks without changing model primaries or other agents', async () => {
+    await writeOpenClawJson({ agents: { defaults: { model: { primary: 'a/main', fallbacks: ['a/old'], extra: true } }, entries: { main: {}, other: { model: { primary: 'b/main', fallbacks: [], custom: 'keep' } } } } });
+    const { updateModelFallbacks } = await import('@electron/utils/agent-config');
+    const global = await updateModelFallbacks(null, ['b/backup', 'a/backup']);
+    expect(global.defaultModelFallbacks).toEqual(['b/backup', 'a/backup']);
+    const explicit = await updateModelFallbacks('other', ['a/backup']);
+    expect(explicit.agents.find(agent => agent.id === 'other')?.modelFallbacks).toEqual(['a/backup']);
+    const config = await readOpenClawJson();
+    expect(config.agents).toEqual({ defaults: { model: { primary: 'a/main', fallbacks: ['b/backup', 'a/backup'], extra: true } }, entries: { main: {}, other: { model: { primary: 'b/main', fallbacks: ['a/backup'], custom: 'keep' } } } });
+    await updateModelFallbacks('other', []);
+    expect((await readOpenClawJson()).agents).toMatchObject({ entries: { other: { model: { primary: 'b/main', fallbacks: [], custom: 'keep' } } } });
+    await updateModelFallbacks('other', null);
+    expect((await readOpenClawJson()).agents).toMatchObject({ entries: { other: { model: { primary: 'b/main', custom: 'keep' } } } });
+  });
+
+  it('preserves inherited primary and rejects invalid fallback chains', async () => {
+    await writeOpenClawJson({ agents: { defaults: { model: 'a/main' }, entries: { main: {} } } });
+    const { updateModelFallbacks } = await import('@electron/utils/agent-config');
+    await updateModelFallbacks('main', ['b/backup']);
+    expect((await readOpenClawJson()).agents).toEqual({ defaults: { model: 'a/main' }, entries: { main: { model: { fallbacks: ['b/backup'] } } } });
+    await expect(updateModelFallbacks(null, ['invalid'])).rejects.toThrow('provider/model');
+    await expect(updateModelFallbacks(null, ['a/model', 'a/model'])).rejects.toThrow('Duplicate');
+  });
+
+  it('adds only a model override for an implicit main assistant', async () => {
+    await writeOpenClawJson({ agents: { defaults: { model: 'a/main' } } });
+    const { updateModelFallbacks } = await import('@electron/utils/agent-config');
+    await updateModelFallbacks('main', ['b/backup']);
+    expect((await readOpenClawJson()).agents).toEqual({ defaults: { model: 'a/main' }, entries: { main: { model: { fallbacks: ['b/backup'] } } } });
+  });
+
+  it('retains existing model aliases while editing a fallback chain', async () => {
+    await writeOpenClawJson({ agents: { defaults: { model: { primary: 'a/main', fallbacks: ['legacy-alias'] } } } });
+    const { updateModelFallbacks } = await import('@electron/utils/agent-config');
+    await updateModelFallbacks(null, ['legacy-alias', 'b/backup']);
+    expect((await readOpenClawJson()).agents).toMatchObject({ defaults: { model: { fallbacks: ['legacy-alias', 'b/backup'] } } });
+  });
+
+  it('keeps an explicitly selected strict assistant model strict when changing it', async () => {
+    await writeOpenClawJson({ agents: { defaults: { model: { primary: 'a/main', fallbacks: ['a/backup'] } }, entries: { main: { model: { primary: 'b/main' } } } } });
+    const { updateAgentModel } = await import('@electron/utils/agent-config');
+    await updateAgentModel('main', 'b/new');
+    expect((await readOpenClawJson()).agents).toMatchObject({ entries: { main: { model: { primary: 'b/new' } } } });
+    const agents = (await readOpenClawJson()).agents as { entries: { main: { model: Record<string, unknown> } } };
+    expect(agents.entries.main.model).not.toHaveProperty('fallbacks');
+  });
+
   it.each([
     { label: 'implicit first agent', list: [{ id: 'main' }, { id: 'coder' }], defaults: {}, owner: 'main' },
     { label: 'marked main', list: [{ id: 'coder' }, { id: 'main', default: true }], defaults: {}, owner: 'main' },

@@ -1,4 +1,19 @@
 {
+    "fallbacks": {
+        "title": "Fallback models",
+        "globalModel": "Global default model",
+        "globalTitle": "Default fallback models",
+        "globalDescription": "Tried in order when the global default model fails; assistants can have their own list.",
+        "agentDescription": "Applies to this assistant’s default model. Explicit task model selections do not fall back.",
+        "add": "Add fallback model",
+        "moveUp": "Move {{model}} up",
+        "moveDown": "Move {{model}} down",
+        "remove": "Remove {{model}}",
+        "inherited": "Using global default fallbacks",
+        "copied": "The current default fallbacks will be copied on save",
+        "strict": "No fallback models",
+        "saveFailed": "Could not save fallback models: {{error}}"
+    },
     "title": "Assistants",
     "subtitle": "Different ways of working for different tasks.",
     "refresh": "Refresh",
