@@ -20,6 +20,10 @@
   text-align: center;
 }
 
+.usage-detail-table [data-column='cost'] {
+  width: 7.5rem;
+}
+
 .usage-detail-table :is([data-column='cache'], [data-total-breakdown]) {
   display: none;
 }

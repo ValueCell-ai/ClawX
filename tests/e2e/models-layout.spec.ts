@@ -53,7 +53,7 @@ test('keeps chart controls independent from usage details and fits the table in 
     return {
       sessionId: `usage-${index}`,
       timestamp: new Date(now - (index === 11 ? 3 * 24 * 60 * 60_000 : index * 60_000)).toISOString(),
-      model: index === 0 ? 'heavy-model' : 'shared-model',
+      model: index === 0 ? 'glm-5.3-flash' : 'gpt-test-shared',
       provider: index === 11 ? 'Other API' : 'Work API',
       agentId: 'main',
       inputTokens: totalTokens - 25,
@@ -82,6 +82,14 @@ test('keeps chart controls independent from usage details and fits the table in 
 
     const table = page.getByTestId('token-usage-table');
     const rows = table.getByTestId('token-usage-entry');
+    const chart = page.getByRole('group', { name: labels.chart });
+    const firstMode = chart.getByRole('button').first();
+    await expect(firstMode).toHaveText(labels.groupByTime);
+    await expect(firstMode).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId('usage-time-chart')).toBeVisible();
+    await expect(rows.first().locator('[data-model-icon="zai"]')).toBeVisible();
+    await chart.getByRole('button', { name: labels.groupByModel, exact: true }).click();
+    await expect(page.getByTestId('usage-model-chart').locator('[data-model-icon="zai"]')).toBeVisible();
     const bars = page.getByTestId('usage-model-bar');
     await expect(bars).toHaveCount(3);
     const widths = await bars.evaluateAll((items) => items.map((item) => Number.parseFloat((item as HTMLElement).style.width)));
@@ -89,7 +97,29 @@ test('keeps chart controls independent from usage details and fits the table in 
     expect(widths[1]).toBeCloseTo(0.2, 5);
     expect(widths[2]).toBeCloseTo(0.0101, 5);
 
-    await page.getByRole('button', { name: labels.next, exact: true }).click();
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const range = page.getByRole('group', { name: labels.timeRange });
+    const usageSummary = page.getByTestId('usage-summary');
+    await expect(usageSummary.getByTitle('1,002,101', { exact: true })).toHaveText('1 M');
+    await expect(usageSummary.getByTitle('120', { exact: true })).toHaveText('< 0.01 M');
+    const [rangeBounds, summaryBounds] = await Promise.all([range.boundingBox(), usageSummary.boundingBox()]);
+    expect(summaryBounds!.x).toBeGreaterThan(rangeBounds!.x + rangeBounds!.width);
+    expect(summaryBounds!.y + summaryBounds!.height / 2).toBeCloseTo(rangeBounds!.y + rangeBounds!.height / 2, 0);
+
+    await page.setViewportSize({ width: 760, height: 650 });
+    await expect(usageSummary).toBeInViewport({ ratio: 1 });
+    const narrowBounds = await usageSummary.boundingBox();
+    expect(narrowBounds!.y).toBeGreaterThan((await range.boundingBox())!.y);
+    const tabScroller = page.getByTestId('models-content-scroll');
+    const main = page.getByTestId('main-content');
+    await expect.poll(() => tabScroller.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeGreaterThan(0);
+    await expect.poll(() => main.evaluate((el) => el.scrollHeight - el.clientHeight)).toBe(0);
+    const nextPage = page.getByRole('button', { name: labels.next, exact: true });
+    await nextPage.scrollIntoViewIfNeeded();
+    await expect(nextPage).toBeInViewport();
+    expect(await tabScroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+    expect(await main.evaluate((el) => el.scrollTop)).toBe(0);
+    await nextPage.click();
     await expect(rows).toHaveCount(2);
     const secondPage = await rows.allTextContents();
     await page.getByRole('button', { name: labels.groupByTime, exact: true }).click();
@@ -98,17 +128,43 @@ test('keeps chart controls independent from usage details and fits the table in 
     await expect(page.locator('[data-testid="usage-time-bucket"][data-tokens="0"]')).not.toHaveCount(0);
     expect(await rows.allTextContents()).toEqual(secondPage);
 
-    const summary = await page.getByTestId('usage-summary').textContent();
-    const filter = page.getByRole('combobox', { name: labels.columns.model });
+    const summary = await usageSummary.textContent();
+    const filter = page.getByTestId('usage-model-filter-button');
+    const menu = page.getByTestId('usage-model-filter-menu');
+    await expect(filter).toHaveAccessibleName(labels.allModels);
+    await filter.press('Enter');
+    const allModels = menu.getByRole('menuitemradio', { name: labels.allModels, exact: true });
+    await expect(allModels).toHaveAttribute('aria-checked', 'true');
+    await expect(allModels.locator('[data-slot="menu-selection-indicator"]')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(menu).toHaveCount(0);
+    await expect(filter).toBeFocused();
     await filter.click();
-    await page.getByRole('option', { name: 'shared-model / Other API', exact: true }).click();
+    const otherModel = menu.getByRole('group', { name: 'Other API', exact: true })
+      .getByRole('menuitemradio', { name: 'gpt-test-shared', exact: true });
+    await expect(menu.getByRole('group', { name: 'Work API', exact: true })
+      .getByRole('menuitemradio', { name: 'gpt-test-shared', exact: true })).toBeVisible();
+    await expect(otherModel.locator('[data-model-icon="openai"]')).toBeVisible();
+    await otherModel.click();
+    await expect(filter.locator('[data-model-icon="openai"]')).toBeVisible();
+    await expect(filter).toHaveAccessibleName('Other API / gpt-test-shared');
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toContainText('Other API');
-    await expect(page.getByTestId('usage-summary')).toHaveText(summary!);
+    await expect(usageSummary).toHaveText(summary!);
 
-    await page.setViewportSize({ width: 760, height: 650 });
     await expect(table.getByRole('columnheader', { name: labels.columns.total, exact: true })).toBeVisible();
-    await expect(table.getByRole('columnheader', { name: labels.columns.cost, exact: true })).toBeVisible();
+    const costHelp = table.getByRole('columnheader', { name: labels.columns.cost, exact: true })
+      .getByRole('button', { name: labels.costHelp, exact: true });
+    const costHint = page.getByRole('tooltip', { name: labels.costHint, exact: true });
+    await expect(page.getByText(labels.costHint, { exact: true })).toHaveCount(0);
+    await costHelp.hover();
+    await expect(costHint).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(costHint).toBeHidden();
+    await costHelp.focus();
+    await expect(costHint).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(costHint).toBeHidden();
     await expect(table.getByRole('columnheader', { name: labels.columns.cacheRead, exact: true })).toHaveCount(0);
     const viewContent = rows.first().getByRole('button', { name: labels.viewContent });
     await viewContent.scrollIntoViewIfNeeded();
@@ -132,6 +188,11 @@ test('keeps chart controls independent from usage details and fits the table in 
     await expect(viewContent).toBeFocused();
     await page.getByTestId('models-page-title').click();
     await page.screenshot({ path: testInfo.outputPath('usage-narrow.png'), animations: 'disabled' });
+    await filter.click();
+    await expect(otherModel).toHaveAttribute('aria-checked', 'true');
+    await allModels.click();
+    await expect(filter).toHaveAccessibleName(labels.allModels);
+    await expect(rows).toHaveCount(10);
   } finally {
     await closeElectronApp(app);
   }
@@ -343,7 +404,9 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
 
       await page.getByTestId('models-tab-usage').click();
       await expect(page.getByRole('tabpanel').getByRole('heading', { level: 2, name: text.dashboard.recentTokenHistory.details })).toBeVisible();
-      await expect(page.getByTestId('models-usage-description')).toHaveText(text.dashboard.recentTokenHistory.sourceHint);
+      await expect(page.getByTestId('usage-summary')).toContainText(text.dashboard.recentTokenHistory.totalTokens);
+      await expect(table.getByRole('columnheader', { name: text.dashboard.recentTokenHistory.columns.cost, exact: true })
+        .getByRole('button', { name: text.dashboard.recentTokenHistory.costHelp, exact: true })).toBeVisible();
       await expect(table).toBeVisible();
       const rows = table.getByTestId('token-usage-entry');
       await expect(rows).toHaveCount(10);

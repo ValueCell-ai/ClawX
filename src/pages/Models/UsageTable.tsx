@@ -1,5 +1,6 @@
-import { ChevronDown, FileText } from 'lucide-react';
+import { ChevronDown, CircleQuestionMark, FileText } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { ModelIcon } from '@/components/common/ModelIcon';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -64,9 +65,30 @@ export function UsageTable({ entries, showContent, onViewContent }: {
                 key={column}
                 scope="col"
                 data-column={column}
+                aria-label={column === 'cost' ? t('columns.cost') : undefined}
                 className="px-2 py-2 font-medium first:rounded-tl-xl last:rounded-tr-xl"
               >
-                {column === 'actions' ? <span className="sr-only">{t('columns.actions')}</span> : t(`columns.${column}`)}
+                {column === 'actions' ? (
+                  <span className="sr-only">{t('columns.actions')}</span>
+                ) : column === 'cost' ? (
+                  <div className="flex items-center justify-end gap-1">
+                    <span className="min-w-0">{t('columns.cost')}</span>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="size-5 shrink-0 rounded-sm text-muted-foreground hover:text-foreground"
+                          aria-label={t('costHelp')}
+                        >
+                          <CircleQuestionMark aria-hidden="true" className="size-3.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" align="end" className="max-w-xs text-left font-normal">{t('costHint')}</TooltipContent>
+                    </Tooltip>
+                  </div>
+                ) : t(`columns.${column}`)}
               </th>
             ))}
           </tr>
@@ -83,8 +105,13 @@ export function UsageTable({ entries, showContent, onViewContent }: {
             return (
               <tr key={`${entry.sessionId}-${entry.timestamp}-${index}`} data-testid="token-usage-entry">
                 <td data-column="model" className="px-2 py-2.5">
-                  <p className="truncate font-medium" title={entry.model}>{entry.model || t('unknownModel')}</p>
-                  {source && <p className="mt-0.5 truncate text-meta text-muted-foreground" title={source}>{source}</p>}
+                  <div className="flex min-w-0 gap-2">
+                    <ModelIcon modelName={entry.model ?? ''} className="mt-0.5" />
+                    <div className="min-w-0">
+                      <p className="truncate font-medium" title={entry.model}>{entry.model || t('unknownModel')}</p>
+                      {source && <p className="mt-0.5 truncate text-meta text-muted-foreground" title={source}>{source}</p>}
+                    </div>
+                  </div>
                   <span className="sr-only">{entry.sessionId}</span>
                 </td>
                 <td data-column="time" className="px-2 py-2.5 text-meta text-muted-foreground">

@@ -7,13 +7,16 @@ import type { ConfiguredModelOption } from '@/lib/model-options';
 import { cn } from '@/lib/utils';
 import { ModelIcon } from './ModelIcon';
 
+type ModelPickerOption = Pick<ConfiguredModelOption, 'modelRef' | 'label' | 'modelId' | 'providerName' | 'runtimeProviderKey'>;
+
 interface ModelPickerProps {
-  options: ConfiguredModelOption[];
+  options: ModelPickerOption[];
   value: string | null;
   label: string;
   title: string;
   valueTitle?: string;
   providerLabel?: string;
+  allModelsLabel?: string;
   onValueChange: (value: string) => void;
   disabled?: boolean;
   busy?: boolean;
@@ -28,9 +31,9 @@ interface ModelPickerProps {
   testIdPrefix: string;
 }
 
-/** Shared model UI; callers retain ownership of assistant or task-specific changes. */
+/** Shared model menu; callers own selection and persistence. */
 export const ModelPicker = forwardRef<HTMLButtonElement, ModelPickerProps>(function ModelPicker({
-  options, value, label, title, valueTitle, providerLabel, onValueChange, disabled, busy = false,
+  options, value, label, title, valueTitle, providerLabel, allModelsLabel, onValueChange, disabled, busy = false,
   open, onOpenChange, onCloseAutoFocus, side = 'top', align = 'end',
   className, labelledBy, hideIcon = false, testIdPrefix,
 }, ref) {
@@ -39,7 +42,7 @@ export const ModelPicker = forwardRef<HTMLButtonElement, ModelPickerProps>(funct
   const selectedOption = providerLabel ? options.find(option => option.modelRef === value) : undefined;
   const selectedDescriptionId = `${testIdPrefix}-selected-value`;
   const groups = useMemo(() => {
-    const groups = new Map<string, { name: string; options: ConfiguredModelOption[] }>();
+    const groups = new Map<string, { name: string; options: ModelPickerOption[] }>();
     for (const option of options) {
       const group = groups.get(option.runtimeProviderKey);
       if (group) group.options.push(option);
@@ -47,6 +50,28 @@ export const ModelPicker = forwardRef<HTMLButtonElement, ModelPickerProps>(funct
     }
     return [...groups.entries()];
   }, [options]);
+
+  function renderOption({ modelRef, label: optionLabel, modelId }: {
+    modelRef: string;
+    label: string;
+    modelId?: string;
+  }) {
+    const selected = modelRef === (value ?? '');
+    return (
+      <DropdownMenu.RadioItem key={modelRef} value={modelRef} asChild>
+        <button type="button" data-testid={`${testIdPrefix}-option-${optionLabel}`} title={optionLabel}
+          aria-current={selected ? 'true' : undefined}
+          className={cn('clawx-menu-item flex w-full items-center justify-between gap-3 text-left text-sm font-medium transition-colors', menuOptionStateClass(selected))}>
+          <span className="flex min-w-0 items-center gap-2">
+            {modelId && <ModelIcon modelName={modelId} testId={`${testIdPrefix}-option-icon`} />}
+            <span className="min-w-0 truncate">{modelId ?? optionLabel}</span>
+          </span>
+          <MenuSelectionIndicator selected={selected} />
+        </button>
+      </DropdownMenu.RadioItem>
+    );
+  }
+
   return (
     <DropdownMenu.Root open={isOpen} onOpenChange={next => {
       if (open === undefined) setLocalOpen(next);
@@ -79,17 +104,11 @@ export const ModelPicker = forwardRef<HTMLButtonElement, ModelPickerProps>(funct
           <div data-testid={`${testIdPrefix}-title`} className="px-3 py-1.5 text-sm font-normal text-muted-foreground">{title}</div>
           <DropdownMenu.RadioGroup value={value ?? ''} onValueChange={onValueChange}
             className="max-h-[min(16rem,calc(var(--radix-dropdown-menu-content-available-height)-3rem))] space-y-2 overflow-y-auto">
+            {allModelsLabel && <div className="clawx-menu-list">{renderOption({ modelRef: '', label: allModelsLabel })}</div>}
             {groups.map(([key, group]) => <div key={key} role="group" aria-label={group.name} data-testid={`${testIdPrefix}-provider-group-${key}`}>
               <div title={group.name} className="truncate px-3 py-1 text-sm font-normal text-muted-foreground">{group.name}</div>
               <div className="clawx-menu-list">
-                {group.options.map(option => <DropdownMenu.RadioItem key={option.modelRef} value={option.modelRef} asChild>
-                  <button type="button" data-testid={`${testIdPrefix}-option-${option.label}`} title={option.label}
-                    aria-current={option.modelRef === value ? 'true' : undefined}
-                    className={cn('clawx-menu-item flex w-full items-center justify-between gap-3 text-left text-sm font-medium transition-colors', menuOptionStateClass(option.modelRef === value))}>
-                    <span className="flex min-w-0 items-center gap-2"><ModelIcon modelName={option.modelId} testId={`${testIdPrefix}-option-icon`} /><span className="min-w-0 truncate">{option.modelId}</span></span>
-                    <MenuSelectionIndicator selected={option.modelRef === value} />
-                  </button>
-                </DropdownMenu.RadioItem>)}
+                {group.options.map(renderOption)}
               </div>
             </div>)}
           </DropdownMenu.RadioGroup>

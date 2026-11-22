@@ -57,8 +57,11 @@ The range at the top of Usage scopes the summary, chart and details. Keep the ch
 grouping independent from the detail filter, which identifies a model/provider pair.
 Only a range or detail filter change resets pagination. Chart grouping and background
 refresh preserve valid page selection, and invalid pages are clamped when records shrink.
-Model bars reflect relative totals and show the highest-usage entries. The 7-day and
-30-day ranges are rolling windows. Include every overlapping local date, even when
+Usage opens in the time view. Model bars reflect relative totals and show the
+highest-usage entries. Reuse ModelIcon in model bars and detail rows. The detail
+filter uses ModelPicker, grouping historical models by provider and offering an
+All models option. The 7-day and 30-day ranges are rolling windows. Include every
+overlapping local date, even when
 its usage is zero. For all-time charts, use weeks or months as the history grows and
 keep empty periods. Keep totals, cost and available row actions in view at narrow
 widths, with token breakdowns still available through shared popovers.

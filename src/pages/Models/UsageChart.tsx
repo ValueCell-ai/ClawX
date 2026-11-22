@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { ModelIcon } from '@/components/common/ModelIcon';
 import { Button } from '@/components/ui/button';
 import { groupUsageByModel, groupUsageByTime, type UsageGroupBy, type UsageHistoryEntry, type UsageWindow } from './usage-history';
 
@@ -62,7 +63,7 @@ export function UsageChart({
         <UsageChoice
           label={t('chart')}
           value={groupBy}
-          choices={[['model', t('groupByModel')], ['day', t('groupByTime')]]}
+          choices={[['day', t('groupByTime')], ['model', t('groupByModel')]]}
           onChange={onGroupChange}
         />
         <div className="flex flex-wrap gap-x-4 gap-y-2 text-meta text-muted-foreground">
@@ -91,9 +92,12 @@ function ModelUsageBars({ entries, number }: { entries: UsageHistoryEntry[]; num
       {groups.map((group) => (
         <li key={group.key} className="space-y-1">
           <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-sm">
-            <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-              <span className="max-w-full truncate font-medium" title={group.model}>{group.model || t('unknownModel')}</span>
-              {group.provider && <span className="max-w-full truncate text-meta text-muted-foreground" title={group.provider}>{group.provider}</span>}
+            <div className="flex min-w-0 items-center gap-2">
+              <ModelIcon modelName={group.model ?? ''} />
+              <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+                <span className="max-w-full truncate font-medium" title={group.model}>{group.model || t('unknownModel')}</span>
+                {group.provider && <span className="max-w-full truncate text-meta text-muted-foreground" title={group.provider}>{group.provider}</span>}
+              </div>
             </div>
             <span className="tabular-nums text-muted-foreground">
               <span className="sr-only">{t('totalTokens')}{' '}</span>{number.format(group.totalTokens)}

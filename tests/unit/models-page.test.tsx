@@ -1,6 +1,7 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { Models } from '@/pages/Models/index';
 
 const hostApiFetchMock = vi.fn();
@@ -79,7 +80,9 @@ function createUsageEntry(totalTokens: number) {
 function renderModels(initialEntry = '/models') {
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
-      <Models />
+      <TooltipProvider>
+        <Models />
+      </TooltipProvider>
     </MemoryRouter>,
   );
 }
@@ -166,7 +169,7 @@ describe('Models page auto refresh', () => {
     expect(screen.queryByRole('heading', { name: 'Token Usage History' })).not.toBeInTheDocument();
 
     fireEvent.mouseDown(screen.getByTestId('models-tab-usage'), { button: 0 });
-    expect(screen.getByTestId('models-usage-description')).toHaveTextContent('dashboard:recentTokenHistory.sourceHint');
+    expect(within(screen.getByRole('columnheader', { name: 'columns.cost' })).getByRole('button', { name: 'costHelp' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Token Usage History' })).not.toBeInTheDocument();
   });
 

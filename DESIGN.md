@@ -493,8 +493,8 @@ modes rather than adding a new color for each page:
 - Use shared Radix Dialog, DropdownMenu, Select, Popover, Tooltip and Tabs wrappers.
   The detailed floating-layer lifecycle rules in AGENTS.md still apply.
 - Reuse existing feature capabilities before adding another implementation.
-  Assistant and task model choices share ModelPicker; file readers share the
-  Workspace preview capability; configuration forms reuse ConfigDialogContent.
+  Model choices in assistants, tasks and Usage share ModelPicker. File readers
+  share Workspace preview, and configuration forms reuse ConfigDialogContent.
 - Treat consistency as consistent behavior as well as matching colors. Equivalent
   actions and fields across pages share the same components, interaction states,
   density and visual roles. Reuse a shared primitive or capability rather than

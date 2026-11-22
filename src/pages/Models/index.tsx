@@ -4,7 +4,6 @@ import { useSearchParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, MessageSquare, Mic, ImagePlus, ChartColumn } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Select, SelectItem } from '@/components/ui/select';
 import { useGatewayStore } from '@/stores/gateway';
 import { useSettingsStore } from '@/stores/settings';
 import { hostApi } from '@/lib/host-api';
@@ -13,6 +12,7 @@ import { ProvidersSettings } from '@/components/settings/ProvidersSettings';
 import { ImageGenerationSettings } from '@/components/settings/ImageGenerationSettings';
 import { AsrSettings } from '@/components/settings/AsrSettings';
 import { FeedbackState } from '@/components/common/FeedbackState';
+import { ModelPicker } from '@/components/common/ModelPicker';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   filterUsageHistoryByWindow,
@@ -57,7 +57,7 @@ export function Models({ embedded = false }: { embedded?: boolean }) {
   const usageFetchMaxAttempts =
     window.electron.platform === 'win32' ? WINDOWS_USAGE_FETCH_MAX_ATTEMPTS : DEFAULT_USAGE_FETCH_MAX_ATTEMPTS;
 
-  const [usageGroupBy, setUsageGroupBy] = useState<UsageGroupBy>('model');
+  const [usageGroupBy, setUsageGroupBy] = useState<UsageGroupBy>('day');
   const [usageWindow, setUsageWindow] = useState<UsageWindow>('7d');
   const [usageNow, setUsageNow] = useState(Date.now);
   const [usagePage, setUsagePage] = useState(1);
@@ -265,11 +265,30 @@ export function Models({ embedded = false }: { embedded?: boolean }) {
   const visibleUsageHistory = useMemo(() => isGatewayRunning
     ? usageHistory.filter((entry) => !isHiddenUsageSource(entry.provider) && !isHiddenUsageSource(entry.model))
     : [], [isGatewayRunning, usageHistory]);
-  const usageModels = useMemo(() => groupUsageByModel(visibleUsageHistory)
-    .sort((a, b) => (a.model ?? '').localeCompare(b.model ?? '') || (a.provider ?? '').localeCompare(b.provider ?? '')),
-  [visibleUsageHistory]);
+  const selectedModelKey = usageModel ? usageModelKey(usageModel) : null;
+  const usageModelOptions = useMemo(() => {
+    const groups = groupUsageByModel(visibleUsageHistory);
+    const models: UsageModel[] = [...groups];
+    if (usageModel && !groups.some((group) => group.key === selectedModelKey)) models.push(usageModel);
+
+    return models
+      .sort((a, b) => (a.provider ?? '').localeCompare(b.provider ?? '', usageLocale) || (a.model ?? '').localeCompare(b.model ?? '', usageLocale))
+      .map((item) => {
+        const modelId = item.model || t('dashboard:recentTokenHistory.unknownModel');
+        const providerName = item.provider || t('dashboard:recentTokenHistory.unknownProvider');
+        return {
+          modelRef: usageModelKey(item),
+          modelId,
+          providerName,
+          runtimeProviderKey: item.provider ?? '',
+          label: `${modelId} (${providerName})`,
+          source: { model: item.model, provider: item.provider },
+        };
+      });
+  }, [selectedModelKey, t, usageLocale, usageModel, visibleUsageHistory]);
+  const selectedUsageModel = usageModelOptions.find((item) => item.modelRef === selectedModelKey);
+  const allModelsLabel = t('dashboard:recentTokenHistory.allModels');
   const recentUsage = filterUsageHistoryByWindow(visibleUsageHistory, usageWindow, usageNow);
-  const selectedModelKey = usageModel ? usageModelKey(usageModel) : '';
   const usageDetails = selectedModelKey ? recentUsage.filter((entry) => usageModelKey(entry) === selectedModelKey) : recentUsage;
   const usageTotals = recentUsage.reduce((total, entry) => ({
     total: total.total + entry.totalTokens,
@@ -284,6 +303,7 @@ export function Models({ embedded = false }: { embedded?: boolean }) {
   const usageLoading = isGatewayRunning && fetchState.status === 'loading' && visibleUsageHistory.length === 0;
   const usageEmpty = recentUsage.length === 0;
   const usageNumber = new Intl.NumberFormat(usageLocale);
+  const usageMillions = new Intl.NumberFormat(usageLocale, { maximumFractionDigits: 2 });
   const widerUsageWindow = usageWindow === '7d' && filterUsageHistoryByWindow(visibleUsageHistory, '30d', usageNow).length > 0
     ? '30d' : 'all';
 
@@ -291,10 +311,6 @@ export function Models({ embedded = false }: { embedded?: boolean }) {
     setUsageNow(Date.now());
     setUsageWindow(value);
     setUsagePage(1);
-  }
-
-  function usageModelLabel({ model, provider }: UsageModel): string {
-    return `${model || t('dashboard:recentTokenHistory.unknownModel')} / ${provider || t('dashboard:recentTokenHistory.unknownProvider')}`;
   }
 
   return (
@@ -316,8 +332,8 @@ export function Models({ embedded = false }: { embedded?: boolean }) {
           </div>
         </div>
 
-        {/* Content Area */}
-        <div className="flex-1 overflow-y-auto pr-2 min-h-0 -mr-2 space-y-8">
+        {/* Keep absolutely positioned screen-reader text inside the tab scroller. */}
+        <div data-testid="models-content-scroll" className="relative -mr-2 min-h-0 flex-1 space-y-8 overflow-y-auto pr-2">
           <Tabs
             value={selectedManagementTab}
             onValueChange={(value) => {
@@ -367,16 +383,35 @@ export function Models({ embedded = false }: { embedded?: boolean }) {
             )}
             <TabsContent value="usage" className="mt-5">
               <div data-testid="models-usage-panel" className="space-y-4">
-                <UsageChoice
-                  label={t('dashboard:recentTokenHistory.timeRange')}
-                  value={usageWindow}
-                  choices={[
-                    ['7d', t('dashboard:recentTokenHistory.last7Days')],
-                    ['30d', t('dashboard:recentTokenHistory.last30Days')],
-                    ['all', t('dashboard:recentTokenHistory.allTime')],
-                  ]}
-                  onChange={changeUsageWindow}
-                />
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+                  <UsageChoice
+                    label={t('dashboard:recentTokenHistory.timeRange')}
+                    value={usageWindow}
+                    choices={[
+                      ['7d', t('dashboard:recentTokenHistory.last7Days')],
+                      ['30d', t('dashboard:recentTokenHistory.last30Days')],
+                      ['all', t('dashboard:recentTokenHistory.allTime')],
+                    ]}
+                    onChange={changeUsageWindow}
+                  />
+                  {!usageEmpty && (
+                    <div data-testid="usage-summary" className="ml-auto flex flex-wrap justify-end gap-x-4 gap-y-2 text-sm">
+                      {([['totalTokens', usageTotals.total], ['inputShort', usageTotals.input], ['outputShort', usageTotals.output], ['cacheShort', usageTotals.cache]] as const).map(([label, value]) => {
+                        const millions = value / 1_000_000;
+                        const amount = millions > 0 && millions < 0.01
+                          ? `< ${usageMillions.format(0.01)}`
+                          : usageMillions.format(millions);
+
+                        return (
+                          <div key={label} className="flex items-baseline gap-2 whitespace-nowrap">
+                            <span className="text-meta text-muted-foreground">{t(`dashboard:recentTokenHistory.${label}`)}</span>
+                            <span className="font-medium tabular-nums" title={usageNumber.format(value)}>{amount} M</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
                 {usageLoading ? (
                   <FeedbackState state="loading" title={t('dashboard:recentTokenHistory.loading')} />
                 ) : usageEmpty ? (
@@ -391,14 +426,6 @@ export function Models({ embedded = false }: { embedded?: boolean }) {
                   />
                 ) : (
                   <>
-                    <div data-testid="usage-summary" className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
-                      {([['totalTokens', usageTotals.total], ['inputShort', usageTotals.input], ['outputShort', usageTotals.output], ['cacheShort', usageTotals.cache]] as const).map(([label, value]) => (
-                        <div key={label} className="flex items-baseline gap-2">
-                          <span className="text-meta text-muted-foreground">{t(`dashboard:recentTokenHistory.${label}`)}</span>
-                          <span className="font-medium tabular-nums">{usageNumber.format(value)}</span>
-                        </div>
-                      ))}
-                    </div>
                     <UsageChart entries={recentUsage} window={usageWindow} now={usageNow} groupBy={usageGroupBy} onGroupChange={setUsageGroupBy} />
 
                     <section className="space-y-3 pt-2" aria-labelledby="usage-details-title">
@@ -409,23 +436,22 @@ export function Models({ embedded = false }: { embedded?: boolean }) {
                             {t('dashboard:recentTokenHistory.showingLast', { count: usageDetails.length })}
                           </span>
                         </div>
-                        <Select
-                          className="h-9 w-64 max-w-full"
-                          aria-label={t('dashboard:recentTokenHistory.columns.model')}
+                        <ModelPicker
+                          options={usageModelOptions}
                           value={selectedModelKey}
+                          label={selectedUsageModel?.modelId ?? allModelsLabel}
+                          title={t('dashboard:recentTokenHistory.columns.model')}
+                          providerLabel={selectedUsageModel?.providerName}
+                          allModelsLabel={allModelsLabel}
+                          hideIcon={!selectedUsageModel}
+                          side="bottom"
+                          testIdPrefix="usage-model-filter"
                           onValueChange={(key) => {
-                            setUsageModel(usageModels.find((item) => item.key === key) ?? null);
+                            if (key === (selectedModelKey ?? '')) return;
+                            setUsageModel(usageModelOptions.find((item) => item.modelRef === key)?.source ?? null);
                             setUsagePage(1);
                           }}
-                        >
-                          <SelectItem value="">{t('dashboard:recentTokenHistory.allModels')}</SelectItem>
-                          {usageModel && !usageModels.some((item) => item.key === selectedModelKey) && (
-                            <SelectItem value={selectedModelKey} className="break-all">{usageModelLabel(usageModel)}</SelectItem>
-                          )}
-                          {usageModels.map((item) => (
-                            <SelectItem key={item.key} value={item.key} className="break-all">{usageModelLabel(item)}</SelectItem>
-                          ))}
-                        </Select>
+                        />
                       </div>
                       {usageDetails.length > 0 ? (
                         <>
@@ -461,9 +487,6 @@ export function Models({ embedded = false }: { embedded?: boolean }) {
                               </Button>
                             </div>
                           </div>
-                          <p data-testid="models-usage-description" className="text-meta text-muted-foreground">
-                            {t('dashboard:recentTokenHistory.sourceHint')}
-                          </p>
                         </>
                       ) : <FeedbackState state="empty" title={t('dashboard:recentTokenHistory.emptyForModel')} />}
                     </section>
