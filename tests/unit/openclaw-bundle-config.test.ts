@@ -141,4 +141,20 @@ describe('openclaw bundle config', () => {
     };
     expect(packageJson.devDependencies?.acpx ?? packageJson.dependencies?.acpx).toBe('0.5.3');
   });
+
+  it('bundles the playwright-core version that OpenClaw pins', () => {
+    // EXTRA_BUNDLED_PACKAGES copies the workspace playwright-core ahead of OpenClaw's own copy,
+    // so a different version replaces the one OpenClaw's browser tool was built against.
+    const host = realpathSync(resolve(process.cwd(), 'node_modules/openclaw'));
+    const runtime = JSON.parse(readFileSync(resolve(host, 'package.json'), 'utf8')) as {
+      dependencies: Record<string, string>;
+    };
+    const bundled = JSON.parse(readFileSync(
+      resolve(process.cwd(), 'node_modules/playwright-core/package.json'),
+      'utf8',
+    )) as { version: string };
+
+    expect(bundled.version).toBe(runtime.dependencies['playwright-core']);
+    expect(() => require.resolve('playwright-core/lib/coreBundle', { paths: [process.cwd()] })).not.toThrow();
+  });
 });
