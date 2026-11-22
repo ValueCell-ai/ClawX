@@ -134,6 +134,9 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       await expect(edit.getByTestId(`provider-edit-cancel-${accountId}`)).toHaveAccessibleName(text.settings.aiProviders.dialog.cancel);
       await edit.getByLabel(text.settings.aiProviders.dialog.displayName, { exact: true }).fill('Renamed API');
       await page.screenshot({ path: testInfo.outputPath(`model-edit-${language}.png`), animations: 'disabled' });
+      await edit.getByText(text.settings.aiProviders.dialog.advancedConfig, { exact: true }).click();
+      await expect(edit.getByLabel(text.settings.aiProviders.dialog.userAgent, { exact: true }))
+        .toHaveAttribute('placeholder', text.settings.aiProviders.dialog.userAgentPlaceholder);
       await edit.getByTestId(`provider-edit-cancel-${accountId}`).click();
       await expect(edit).toHaveCount(0);
       await expect(editTrigger).toBeFocused();
@@ -159,6 +162,9 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       await expect(dialog.getByTestId('add-provider-base-url-input')).toHaveCSS('height', '36px');
       await dialog.getByTestId('add-provider-base-url-input').focus();
       await expectQuietFieldFocus(dialog.getByTestId('add-provider-base-url-input'));
+      await dialog.getByRole('button', { name: text.settings.aiProviders.dialog.advancedConfig, exact: true }).click();
+      await expect(dialog.getByLabel(text.settings.aiProviders.dialog.userAgent, { exact: true }))
+        .toHaveAttribute('placeholder', text.settings.aiProviders.dialog.userAgentPlaceholder);
       await page.keyboard.press('Escape');
       await expect(dialog).toHaveCount(0);
       await expect(add).toBeFocused();

@@ -65,7 +65,7 @@
       "protocol": "Протокол",
       "advancedConfig": "Расширенная конфигурация",
       "userAgent": "User-Agent",
-      "userAgentPlaceholder": "ClawX/1.0",
+      "userAgentPlaceholder": "Оставьте пустым для значения по умолчанию",
       "fallbackModels": "Резервные модели",
       "fallbackProviders": "Резервные провайдеры",
       "fallbackModelIds": "ID резервных моделей",
