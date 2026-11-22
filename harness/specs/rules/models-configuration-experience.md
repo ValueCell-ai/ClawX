@@ -63,6 +63,9 @@ filter uses ModelPicker, grouping historical models by provider and offering an
 All models option. The 7-day and 30-day ranges are rolling windows. Include every
 overlapping local date, even when
 its usage is zero. For all-time charts, use weeks or months as the history grows and
-keep empty periods. Keep totals, cost and available row actions in view at narrow
-widths, with token breakdowns still available through shared popovers.
-Content dialogs use the shared Radix layer for focus, dismissal and accessibility.
+keep empty periods. Center each date tick under its bar. Time bars share one Tab
+stop, and arrow keys move between periods. Hover and focus expose exact totals and
+breakdowns through the shared tooltip. Keep output, totals and cost in view at
+narrow widths, with token breakdowns available through shared popovers. In
+developer mode, underline output values that can open recorded content. Use the
+shared Dialog and return focus to the output value on close.

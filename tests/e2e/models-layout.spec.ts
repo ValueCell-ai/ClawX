@@ -25,7 +25,7 @@ test('keeps usage filters available when the selected time window is empty', asy
         [key('settings', 'getAll')]: { language: 'en', setupComplete: true, theme: 'light' },
         [key('usage', 'recentTokenHistory', { limit: undefined })]: [{
           sessionId: 'old-usage', timestamp: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(), model: 'older-model', provider: 'Test', agentId: 'main',
-          inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 15,
+          inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 15, content: 'Recorded output',
         }],
       },
     });
@@ -37,7 +37,9 @@ test('keeps usage filters available when the selected time window is empty', asy
     await expect(page.getByText(labels.emptyForWindow)).toBeVisible();
     await page.getByRole('button', { name: labels.viewLast30Days, exact: true }).click();
     await expect(page.getByRole('button', { name: labels.last30Days, exact: true })).toHaveAttribute('aria-pressed', 'true');
-    await expect(page.getByTestId('token-usage-table')).toContainText('older-model');
+    const table = page.getByTestId('token-usage-table');
+    await expect(table).toContainText('older-model');
+    await expect(table.locator('[data-column="output"]').getByRole('button')).toHaveCount(0);
   } finally {
     await closeElectronApp(app);
   }
@@ -62,7 +64,7 @@ test('keeps chart controls independent from usage details and fits the table in 
       cacheWriteTokens: 3,
       totalTokens,
       costUsd: 0.0142,
-      content: `Usage detail ${index}`,
+      content: index === 0 ? undefined : `Usage detail ${index}`,
     };
   });
   try {
@@ -88,8 +90,13 @@ test('keeps chart controls independent from usage details and fits the table in 
     await expect(firstMode).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByTestId('usage-time-chart')).toBeVisible();
     await expect(rows.first().locator('[data-model-icon="zai"]')).toBeVisible();
+    await expect(rows.first().locator('[data-column="output"]')).toHaveText('10');
+    await expect(rows.first().locator('[data-column="output"]').getByRole('button')).toHaveCount(0);
     await chart.getByRole('button', { name: labels.groupByModel, exact: true }).click();
-    await expect(page.getByTestId('usage-model-chart').locator('[data-model-icon="zai"]')).toBeVisible();
+    const modelChart = page.getByTestId('usage-model-chart');
+    await expect(modelChart.locator('[data-model-icon="zai"]')).toBeVisible();
+    await expect(modelChart.getByTitle('1,000,000', { exact: true }).locator('[aria-hidden="true"]')).toHaveText('1 M');
+    await expect(modelChart.getByTitle('101', { exact: true }).locator('[aria-hidden="true"]')).toHaveText('< 0.01 M');
     const bars = page.getByTestId('usage-model-bar');
     await expect(bars).toHaveCount(3);
     const widths = await bars.evaluateAll((items) => items.map((item) => Number.parseFloat((item as HTMLElement).style.width)));
@@ -130,6 +137,35 @@ test('keeps chart controls independent from usage details and fits the table in 
 
     const summary = await usageSummary.textContent();
     const filter = page.getByTestId('usage-model-filter-button');
+    const timeChart = page.getByTestId('usage-time-chart');
+    const tickOffsets = await timeChart.getByTestId('usage-time-tick').evaluateAll((ticks) => ticks.map((tick) => {
+      const label = tick.getBoundingClientRect();
+      const bar = tick.closest('[data-testid="usage-time-bucket"]')!
+        .querySelector('[data-testid="usage-time-bar"]')!.getBoundingClientRect();
+      return Math.abs(label.left + label.width / 2 - bar.left - bar.width / 2);
+    }));
+    expect(tickOffsets).toHaveLength(4);
+    expect(Math.max(...tickOffsets)).toBeLessThan(1);
+
+    const dates = timeChart.getByRole('button');
+    const latestHint = page.getByRole('tooltip', { name: /Total Tokens 1,002,000/ });
+    const emptyHint = page.getByRole('tooltip', { name: /Total Tokens 0/ });
+    await dates.last().hover();
+    await expect(latestHint).toContainText('Total Tokens 1,002,000, Input 1,001,725, Output 110, Cache 165');
+    await chart.getByRole('button', { name: labels.groupByModel, exact: true }).focus();
+    await page.keyboard.press('Tab');
+    await expect(dates.first()).toBeFocused();
+    await expect(emptyHint).toContainText('Total Tokens 0, Input 0, Output 0, Cache 0');
+    await page.keyboard.press('ArrowRight');
+    await expect(dates.nth(1)).toBeFocused();
+    await page.keyboard.press('End');
+    await expect(dates.last()).toBeFocused();
+    await expect(latestHint).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(latestHint).toBeHidden();
+    await page.keyboard.press('Tab');
+    await expect(filter).toBeFocused();
+
     const menu = page.getByTestId('usage-model-filter-menu');
     await expect(filter).toHaveAccessibleName(labels.allModels);
     await filter.press('Enter');
@@ -166,9 +202,14 @@ test('keeps chart controls independent from usage details and fits the table in 
     await page.keyboard.press('Escape');
     await expect(costHint).toBeHidden();
     await expect(table.getByRole('columnheader', { name: labels.columns.cacheRead, exact: true })).toHaveCount(0);
-    const viewContent = rows.first().getByRole('button', { name: labels.viewContent });
+    await expect(table.getByRole('columnheader', { name: labels.columns.output, exact: true })).toBeVisible();
+    await expect(table.locator('[data-column="actions"]')).toHaveCount(0);
+    const viewContent = rows.first().locator('[data-column="output"]')
+      .getByRole('button', { name: `10 · ${labels.viewContent}`, exact: true });
     await viewContent.scrollIntoViewIfNeeded();
     await expect(viewContent).toBeInViewport({ ratio: 1 });
+    await expect(viewContent).toHaveText('10');
+    await expect(viewContent).toHaveCSS('text-decoration-style', 'dashed');
     expect(await table.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
     const price = rows.first().getByRole('cell', { name: '$0.0142', exact: true });
     expect(await price.evaluate((cell) => {
@@ -182,7 +223,7 @@ test('keeps chart controls independent from usage details and fits the table in 
     await expect(page.getByRole('dialog', { name: labels.columns.total }).getByText(labels.columns.cacheRead, { exact: true })).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(breakdown).toBeFocused();
-    await viewContent.click();
+    await viewContent.press('Enter');
     await expect(page.getByTestId('usage-content-dialog')).toContainText('Usage detail 11');
     await page.keyboard.press('Escape');
     await expect(viewContent).toBeFocused();
@@ -418,7 +459,8 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       await page.evaluate(() => window.dispatchEvent(new Event('focus')));
       await expect.poll(async () => (await getRecordedHostInvocations(app)).filter(call => call.module === 'usage').length).toBeGreaterThan(callsBefore);
       await expect(rows.first()).toContainText('test-model-10');
-      const contentButton = rows.first().getByRole('button', { name: text.dashboard.recentTokenHistory.viewContent, exact: true });
+      const contentButton = rows.first().locator('[data-column="output"]')
+        .getByRole('button', { name: `30 · ${text.dashboard.recentTokenHistory.viewContent}`, exact: true });
       await contentButton.click();
       const contentDialog = page.getByTestId('usage-content-dialog');
       await expect(contentDialog).toHaveAccessibleName(text.dashboard.recentTokenHistory.contentDialogTitle);

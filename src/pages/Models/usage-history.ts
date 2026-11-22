@@ -64,6 +64,16 @@ export function usageModelKey({ model, provider }: UsageModel): string {
   return JSON.stringify([model || '', provider || '']);
 }
 
+export function createUsageMillionsFormatter(locale?: string): (tokens: number) => string {
+  const number = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 });
+  return (tokens) => {
+    const millions = tokens / 1_000_000;
+    return millions > 0 && millions < 0.01
+      ? `< ${number.format(0.01)} M`
+      : `${number.format(millions)} M`;
+  };
+}
+
 export function formatUsageTimestamp(timestamp: string, locale?: string): string {
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return timestamp;

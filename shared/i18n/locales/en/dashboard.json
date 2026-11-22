@@ -62,8 +62,8 @@
         "cacheRead": "Cache read {{value}}",
         "cacheWrite": "Cache write {{value}}",
         "cost": "Cost ${{amount}}",
-        "viewContent": "View content",
-        "contentDialogTitle": "Usage detail content",
+        "viewContent": "View output",
+        "contentDialogTitle": "Output content",
         "close": "Close",
         "noUsage": "No usage",
         "usageParseError": "Usage parse error",
@@ -76,7 +76,6 @@
             "cacheWrite": "Cache write",
             "total": "Total",
             "cost": "Cost (USD)",
-            "actions": "Details",
             "cache": "Cache"
         },
         "costHelp": "About costs",

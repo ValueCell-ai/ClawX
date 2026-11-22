@@ -344,4 +344,4 @@ ClawX is released under the [MIT License](LICENSE). You're free to use, modify, 
   <sub>Built with ❤️ by the ValueCell Team</sub>
 </p>
 
-Model configuration tabs share compact icons, form controls and card styling. Usage opens on a timeline with zero-usage periods. The model view shows proportional bars with model icons. The details table keeps totals, costs and available actions visible in narrow windows, with token breakdowns available on demand.
+Model configuration tabs share compact icons, form controls and card styling. Usage opens on a timeline with zero-usage periods. Hover over a period or focus it to see exact counts. Use the left and right arrow keys to move between periods. The model view shows proportional bars with model icons. The details table keeps output, totals and costs visible in narrow windows. In developer mode, select an underlined output value to see the recorded output. Full token breakdowns are available on demand.

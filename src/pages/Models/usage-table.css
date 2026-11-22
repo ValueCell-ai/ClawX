@@ -15,11 +15,6 @@
   text-align: left;
 }
 
-.usage-detail-table [data-column='actions'] {
-  width: 2.75rem;
-  text-align: center;
-}
-
 .usage-detail-table [data-column='cost'] {
   width: 7.5rem;
 }
@@ -52,7 +47,7 @@
 }
 
 @container (width < 42rem) {
-  .usage-detail-table :is([data-column='input'], [data-column='output'], [data-column='cache'], [data-total-value]:has(+ [data-total-breakdown])) {
+  .usage-detail-table :is([data-column='input'], [data-column='cache'], [data-total-value]:has(+ [data-total-breakdown])) {
     display: none;
   }
 
@@ -64,7 +59,7 @@
     width: 23%;
   }
 
-  .usage-detail-table [data-column='total'] {
+  .usage-detail-table :is([data-column='output'], [data-column='total']) {
     width: 4.5rem;
   }
 

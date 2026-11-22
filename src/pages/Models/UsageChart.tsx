@@ -1,7 +1,9 @@
+import { useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ModelIcon } from '@/components/common/ModelIcon';
 import { Button } from '@/components/ui/button';
-import { groupUsageByModel, groupUsageByTime, type UsageGroupBy, type UsageHistoryEntry, type UsageWindow } from './usage-history';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { createUsageMillionsFormatter, groupUsageByModel, groupUsageByTime, type UsageGroupBy, type UsageHistoryEntry, type UsageWindow } from './usage-history';
 
 const series = [
   { field: 'inputTokens', label: 'inputShort', color: 'bg-usage-input' },
@@ -76,44 +78,53 @@ export function UsageChart({
         </div>
       </div>
       {groupBy === 'model'
-        ? <ModelUsageBars entries={entries} number={number} />
+        ? <ModelUsageBars entries={entries} locale={locale} number={number} />
         : <TimeUsageBars entries={entries} window={window} now={now} locale={locale} number={number} />}
     </section>
   );
 }
 
-function ModelUsageBars({ entries, number }: { entries: UsageHistoryEntry[]; number: Intl.NumberFormat }) {
+function ModelUsageBars({ entries, locale, number }: {
+  entries: UsageHistoryEntry[];
+  locale?: string;
+  number: Intl.NumberFormat;
+}) {
   const { t } = useTranslation('dashboard', { keyPrefix: 'recentTokenHistory' });
   const groups = groupUsageByModel(entries).slice(0, 8);
   const max = Math.max(groups[0]?.totalTokens ?? 0, 1);
+  const formatMillions = createUsageMillionsFormatter(locale);
 
   return (
     <ul data-testid="usage-model-chart" className="space-y-3">
-      {groups.map((group) => (
-        <li key={group.key} className="space-y-1">
-          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-sm">
-            <div className="flex min-w-0 items-center gap-2">
-              <ModelIcon modelName={group.model ?? ''} />
-              <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-                <span className="max-w-full truncate font-medium" title={group.model}>{group.model || t('unknownModel')}</span>
-                {group.provider && <span className="max-w-full truncate text-meta text-muted-foreground" title={group.provider}>{group.provider}</span>}
+      {groups.map((group) => {
+        const exactTokens = number.format(group.totalTokens);
+        return (
+          <li key={group.key} className="space-y-1">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-sm">
+              <div className="flex min-w-0 items-center gap-2">
+                <ModelIcon modelName={group.model ?? ''} />
+                <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+                  <span className="max-w-full truncate font-medium" title={group.model}>{group.model || t('unknownModel')}</span>
+                  {group.provider && <span className="max-w-full truncate text-meta text-muted-foreground" title={group.provider}>{group.provider}</span>}
+                </div>
+              </div>
+              <span className="tabular-nums text-muted-foreground" title={exactTokens}>
+                <span className="sr-only">{t('totalTokens')}{' '}{exactTokens}</span>
+                <span aria-hidden="true">{formatMillions(group.totalTokens)}</span>
+              </span>
+            </div>
+            <div aria-hidden="true" className="h-2 overflow-hidden rounded-full bg-muted">
+              <div
+                data-testid="usage-model-bar"
+                className="flex h-full overflow-hidden"
+                style={{ width: `${group.totalTokens / max * 100}%` }}
+              >
+                <TokenStack counts={group} />
               </div>
             </div>
-            <span className="tabular-nums text-muted-foreground">
-              <span className="sr-only">{t('totalTokens')}{' '}</span>{number.format(group.totalTokens)}
-            </span>
-          </div>
-          <div aria-hidden="true" className="h-2 overflow-hidden rounded-full bg-muted">
-            <div
-              data-testid="usage-model-bar"
-              className="flex h-full overflow-hidden"
-              style={{ width: `${group.totalTokens / max * 100}%` }}
-            >
-              <TokenStack counts={group} />
-            </div>
-          </div>
-        </li>
-      ))}
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -128,8 +139,11 @@ function TimeUsageBars({
   number: Intl.NumberFormat;
 }) {
   const { t } = useTranslation('dashboard', { keyPrefix: 'recentTokenHistory' });
-  const { interval, buckets } = groupUsageByTime(entries, window, now);
+  const [focusedStart, setFocusedStart] = useState<number | null>(null);
+  const bucketButtons = useRef(new Map<number, HTMLButtonElement>());
+  const { interval, buckets } = useMemo(() => groupUsageByTime(entries, window, now), [entries, window, now]);
   if (buckets.length === 0) return null;
+  const tabbableStart = buckets.some((bucket) => bucket.start === focusedStart) ? focusedStart : buckets[0].start;
   const max = buckets.reduce((value, bucket) => Math.max(value, bucket.totalTokens), 0);
   const compact = new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 });
   const tickDate = new Intl.DateTimeFormat(locale, interval === 'month'
@@ -137,47 +151,104 @@ function TimeUsageBars({
   const fullDate = new Intl.DateTimeFormat(locale, interval === 'month'
     ? { month: 'long', year: 'numeric' } : { month: 'long', day: 'numeric', year: 'numeric' });
   const tickCount = Math.min(buckets.length, 4);
-  const ticks = Array.from({ length: tickCount }, (_, index) =>
-    buckets[Math.round(index * (buckets.length - 1) / Math.max(tickCount - 1, 1))]);
+  const tickIndexes = new Set(Array.from({ length: tickCount }, (_, index) =>
+    Math.round(index * (buckets.length - 1) / Math.max(tickCount - 1, 1))));
+  const totalLabel = t('totalTokens');
+
+  function moveBucketFocus(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+    const lastIndex = buckets.length - 1;
+    let targetIndex;
+    switch (event.key) {
+      case 'ArrowLeft': targetIndex = Math.max(0, index - 1); break;
+      case 'ArrowRight': targetIndex = Math.min(lastIndex, index + 1); break;
+      case 'Home': targetIndex = 0; break;
+      case 'End': targetIndex = lastIndex; break;
+      default: return;
+    }
+    event.preventDefault();
+    bucketButtons.current.get(buckets[targetIndex].start)?.focus({ preventScroll: true });
+  }
 
   return (
-    <div data-testid="usage-time-chart" className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 text-meta text-muted-foreground">
-      <div aria-hidden="true" className="flex flex-col justify-between text-right tabular-nums">
+    <div data-testid="usage-time-chart" className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 text-meta text-muted-foreground">
+      <div aria-hidden="true" className="flex h-36 flex-col justify-between text-right tabular-nums">
         <span>{max > 0 ? compact.format(max) : ''}</span>
         <span>{number.format(0)}</span>
       </div>
-      <div className="relative h-36 border-y border-border">
-        <div aria-hidden="true" className="absolute inset-x-0 top-1/2 border-t border-border" />
-        <ul className="relative flex h-full gap-px sm:gap-1">
-          {buckets.map((bucket) => {
+      <div className="relative">
+        <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-36 border-y border-border">
+          <div className="absolute inset-x-0 top-1/2 border-t border-border" />
+        </div>
+        <ul className="relative flex px-8">
+          {buckets.map((bucket, index) => {
             const date = fullDate.format(bucket.start);
             const label = interval === 'week' ? t('weekOf', { date }) : date;
-            const description = [`${label} · ${t('totalTokens')} ${number.format(bucket.totalTokens)}`,
-              ...series.map(({ field, label }) => `${t(label)} ${number.format(bucket[field])}`),
-            ].join('\n');
+            const total = number.format(bucket.totalTokens);
+            const details = series.map(({ field, label, color }) => ({
+              field, name: t(label), value: number.format(bucket[field]), color,
+            }));
+            const description = [label, `${totalLabel} ${total}`, ...details.map(({ name, value }) => `${name} ${value}`)].join(', ');
             return (
               <li
                 key={bucket.start}
                 data-testid="usage-time-bucket"
                 data-tokens={bucket.totalTokens}
-                title={description}
-                className="flex min-w-0 flex-1 items-end justify-center"
+                className="min-w-0 flex-1"
               >
-                <span className="sr-only">{description}</span>
-                <span
-                  aria-hidden="true"
-                  className="flex w-full max-w-8 flex-col-reverse overflow-hidden rounded-t-sm"
-                  style={{ height: `${max > 0 ? bucket.totalTokens / max * 100 : 0}%` }}
-                >
-                  <TokenStack counts={bucket} />
-                </span>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      ref={(node) => {
+                        if (node) bucketButtons.current.set(bucket.start, node);
+                        else bucketButtons.current.delete(bucket.start);
+                      }}
+                      type="button"
+                      aria-label={label}
+                      tabIndex={bucket.start === tabbableStart ? 0 : -1}
+                      onFocus={() => setFocusedStart(bucket.start)}
+                      onKeyDown={(event) => moveBucketFocus(event, index)}
+                      className="flex h-36 w-full cursor-default items-end justify-center rounded-sm outline-none hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                    >
+                      <span
+                        aria-hidden="true"
+                        data-testid="usage-time-bar"
+                        className="flex w-4/5 max-w-8 flex-col-reverse overflow-hidden rounded-t-sm"
+                        style={{ height: `${max > 0 ? bucket.totalTokens / max * 100 : 0}%` }}
+                      >
+                        <TokenStack counts={bucket} />
+                      </span>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" aria-label={description} className="max-w-xs py-2">
+                    <p className="font-medium">{label}</p>
+                    <dl className="mt-2 grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-1 tabular-nums">
+                      <dt className="font-medium">{totalLabel}</dt>
+                      <dd className="text-right font-medium">{total}</dd>
+                      {details.map(({ field, name, value, color }) => (
+                        <div key={field} className="contents">
+                          <dt className="flex items-center gap-2 text-muted-foreground">
+                            <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${color}`} />
+                            {name}
+                          </dt>
+                          <dd className="text-right">{value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </TooltipContent>
+                </Tooltip>
+                {tickIndexes.has(index) && (
+                  <span
+                    aria-hidden="true"
+                    data-testid="usage-time-tick"
+                    className="pointer-events-none relative left-1/2 mt-2 block w-max -translate-x-1/2 whitespace-nowrap"
+                  >
+                    {tickDate.format(bucket.start)}
+                  </span>
+                )}
               </li>
             );
           })}
         </ul>
-      </div>
-      <div aria-hidden="true" className="col-start-2 flex justify-between gap-2">
-        {ticks.map(({ start }) => <span key={start}>{tickDate.format(start)}</span>)}
       </div>
     </div>
   );

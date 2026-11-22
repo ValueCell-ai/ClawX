@@ -62,8 +62,8 @@
         "cacheRead": "Чтение кэша {{value}}",
         "cacheWrite": "Запись кэша {{value}}",
         "cost": "Стоимость ${{amount}}",
-        "viewContent": "Просмотр содержимого",
-        "contentDialogTitle": "Детали использования",
+        "viewContent": "Посмотреть вывод",
+        "contentDialogTitle": "Содержимое вывода",
         "close": "Закрыть",
         "noUsage": "Нет использования",
         "usageParseError": "Ошибка解析 использования",
@@ -76,7 +76,6 @@
             "cacheWrite": "Запись кэша",
             "total": "Всего",
             "cost": "Стоимость (USD)",
-            "actions": "Подробности",
             "cache": "Кэш"
         },
         "costHelp": "О стоимости",

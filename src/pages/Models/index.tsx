@@ -15,6 +15,7 @@ import { FeedbackState } from '@/components/common/FeedbackState';
 import { ModelPicker } from '@/components/common/ModelPicker';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
+  createUsageMillionsFormatter,
   filterUsageHistoryByWindow,
   groupUsageByModel,
   isHiddenUsageSource,
@@ -303,7 +304,7 @@ export function Models({ embedded = false }: { embedded?: boolean }) {
   const usageLoading = isGatewayRunning && fetchState.status === 'loading' && visibleUsageHistory.length === 0;
   const usageEmpty = recentUsage.length === 0;
   const usageNumber = new Intl.NumberFormat(usageLocale);
-  const usageMillions = new Intl.NumberFormat(usageLocale, { maximumFractionDigits: 2 });
+  const formatUsageMillions = createUsageMillionsFormatter(usageLocale);
   const widerUsageWindow = usageWindow === '7d' && filterUsageHistoryByWindow(visibleUsageHistory, '30d', usageNow).length > 0
     ? '30d' : 'all';
 
@@ -396,19 +397,12 @@ export function Models({ embedded = false }: { embedded?: boolean }) {
                   />
                   {!usageEmpty && (
                     <div data-testid="usage-summary" className="ml-auto flex flex-wrap justify-end gap-x-4 gap-y-2 text-sm">
-                      {([['totalTokens', usageTotals.total], ['inputShort', usageTotals.input], ['outputShort', usageTotals.output], ['cacheShort', usageTotals.cache]] as const).map(([label, value]) => {
-                        const millions = value / 1_000_000;
-                        const amount = millions > 0 && millions < 0.01
-                          ? `< ${usageMillions.format(0.01)}`
-                          : usageMillions.format(millions);
-
-                        return (
-                          <div key={label} className="flex items-baseline gap-2 whitespace-nowrap">
-                            <span className="text-meta text-muted-foreground">{t(`dashboard:recentTokenHistory.${label}`)}</span>
-                            <span className="font-medium tabular-nums" title={usageNumber.format(value)}>{amount} M</span>
-                          </div>
-                        );
-                      })}
+                      {([['totalTokens', usageTotals.total], ['inputShort', usageTotals.input], ['outputShort', usageTotals.output], ['cacheShort', usageTotals.cache]] as const).map(([label, value]) => (
+                        <div key={label} className="flex items-baseline gap-2 whitespace-nowrap">
+                          <span className="text-meta text-muted-foreground">{t(`dashboard:recentTokenHistory.${label}`)}</span>
+                          <span className="font-medium tabular-nums" title={usageNumber.format(value)}>{formatUsageMillions(value)}</span>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>

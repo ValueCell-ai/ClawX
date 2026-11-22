@@ -1,4 +1,4 @@
-import { ChevronDown, CircleQuestionMark, FileText } from 'lucide-react';
+import { ChevronDown, CircleQuestionMark } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ModelIcon } from '@/components/common/ModelIcon';
 import { Button } from '@/components/ui/button';
@@ -54,7 +54,7 @@ export function UsageTable({ entries, showContent, onViewContent }: {
   const { t, i18n } = useTranslation('dashboard', { keyPrefix: 'recentTokenHistory' });
   const locale = i18n?.resolvedLanguage ?? i18n?.language;
   const number = new Intl.NumberFormat(locale);
-  const columns = ['model', 'time', ...tokenColumns.map(([name]) => name), 'cache', 'total', 'cost', ...(showContent ? ['actions'] : [])];
+  const columns = ['model', 'time', ...tokenColumns.map(([name]) => name), 'cache', 'total', 'cost'];
   return (
     <div className="rounded-xl border border-border bg-surface-modal [container-type:inline-size]">
       <table data-testid="token-usage-table" className="usage-detail-table w-full table-fixed text-sm" aria-label={t('title')}>
@@ -68,9 +68,7 @@ export function UsageTable({ entries, showContent, onViewContent }: {
                 aria-label={column === 'cost' ? t('columns.cost') : undefined}
                 className="px-2 py-2 font-medium first:rounded-tl-xl last:rounded-tr-xl"
               >
-                {column === 'actions' ? (
-                  <span className="sr-only">{t('columns.actions')}</span>
-                ) : column === 'cost' ? (
+                {column === 'cost' ? (
                   <div className="flex items-center justify-end gap-1">
                     <span className="min-w-0">{t('columns.cost')}</span>
                     <Tooltip>
@@ -117,11 +115,31 @@ export function UsageTable({ entries, showContent, onViewContent }: {
                 <td data-column="time" className="px-2 py-2.5 text-meta text-muted-foreground">
                   {formatUsageTimestamp(entry.timestamp, locale)}
                 </td>
-                {tokenColumns.map(([name], index) => (
-                  <td key={name} data-column={name} className="px-2 py-2.5 tabular-nums text-muted-foreground">
-                    {hasUsage ? metrics[index][1] : '—'}
-                  </td>
-                ))}
+                {tokenColumns.map(([name], index) => {
+                  const value = hasUsage ? metrics[index][1] : '—';
+                  return (
+                    <td key={name} data-column={name} className="px-2 py-2.5 tabular-nums text-muted-foreground">
+                      {name === 'output' && showContent && entry.content ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="link"
+                              size="sm"
+                              aria-label={`${value} · ${t('viewContent')}`}
+                              aria-haspopup="dialog"
+                              className="h-auto max-w-full whitespace-normal px-0 py-0 text-right font-normal underline decoration-dashed [overflow-wrap:anywhere]"
+                              onClick={(event) => onViewContent(entry, event.currentTarget)}
+                            >
+                              {value}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>{t('viewContent')}</TooltipContent>
+                        </Tooltip>
+                      ) : value}
+                    </td>
+                  );
+                })}
                 <td data-column="cache" className="px-2 py-2.5 text-muted-foreground">
                   {hasUsage ? (
                     <TokenBreakdown label={t('columns.cache')} value={number.format(entry.cacheReadTokens + entry.cacheWriteTokens)} metrics={metrics.slice(2)} />
@@ -141,26 +159,6 @@ export function UsageTable({ entries, showContent, onViewContent }: {
                 <td data-column="cost" className="px-2 py-2.5 tabular-nums">
                   {typeof entry.costUsd === 'number' && Number.isFinite(entry.costUsd) ? `$${entry.costUsd.toFixed(4)}` : '—'}
                 </td>
-                {showContent && (
-                  <td data-column="actions" className="px-1 py-2">
-                    {entry.content && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label={t('viewContent')}
-                            className="size-8 text-muted-foreground hover:text-foreground"
-                            onClick={(event) => onViewContent(entry, event.currentTarget)}
-                          >
-                            <FileText aria-hidden="true" className="size-4" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>{t('viewContent')}</TooltipContent>
-                      </Tooltip>
-                    )}
-                  </td>
-                )}
               </tr>
             );
           })}
