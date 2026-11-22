@@ -87,6 +87,7 @@ function renderModels(initialEntry = '/models') {
 describe('Models page auto refresh', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-02T12:00:00.000Z'));
     vi.clearAllMocks();
     settingsState.devModeUnlocked = false;
     gatewayState.status = { state: 'running', port: 18789, connectedAt: 1, pid: 1234 };

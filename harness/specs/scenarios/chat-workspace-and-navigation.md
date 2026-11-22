@@ -11,7 +11,9 @@ ownedPaths:
   - tests/unit/sidebar-task-search.test.ts
   - src/App.tsx
   - src/pages/Settings/**
-  - src/pages/Models/index.tsx
+  - src/pages/Models/**
+  - tests/e2e/models-layout.spec.ts
+  - tests/unit/models-usage-history.test.ts
   - src/components/settings/ModelConfigDialog.tsx
   - src/components/settings/ModelConfigurationSummary.tsx
   - src/components/common/ModelPicker.tsx
@@ -125,6 +127,7 @@ conditionalProfiles:
   e2e:
     - workspace selection, binding, sidebar, browser, or question navigation changes
     - Markdown file-preview rendering or syntax highlighting changes
+    - AI Models usage chart, filter, or detail layout changes
 requiredRules:
   - shared-file-reader
   - task-sidebar-search-and-pins
@@ -133,6 +136,7 @@ requiredRules:
   - session-workspace-authority
   - renderer-main-boundary
   - ui-i18n-design-tokens
+  - models-configuration-experience
   - sidebar-session-attention-authority
   - office-preview-safety
   - web-browser-security-and-lifecycle

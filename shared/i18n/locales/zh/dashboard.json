@@ -44,8 +44,8 @@
         "empty": "还没有 token 消耗历史",
         "groupByModel": "按模型",
         "groupByTime": "按时间",
-        "last7Days": "7 天",
-        "last30Days": "30 天",
+        "last7Days": "近 7 天",
+        "last30Days": "近 30 天",
         "allTime": "全部",
         "showingLast": "共 {{count}} 条记录",
         "totalTokens": "总 token",
@@ -76,9 +76,19 @@
             "cacheWrite": "缓存写入",
             "total": "总量",
             "cost": "费用（USD）",
-            "actions": "详情"
+            "actions": "详情",
+            "cache": "缓存"
         },
-        "sourceHint": "用量与费用来自本地运行记录，记录费用可能与服务商实际账单不同。"
+        "sourceHint": "费用来自本地记录，以服务商账单为准。",
+        "timeRange": "时间范围",
+        "chart": "用量图表",
+        "details": "用量明细",
+        "allModels": "全部模型",
+        "unknownProvider": "未知服务商",
+        "emptyForModel": "此模型与服务商在所选时段内暂无用量",
+        "viewLast30Days": "查看近 30 天",
+        "viewAllTime": "查看全部用量",
+        "weekOf": "{{date}}起的一周"
     },
     "imageGeneration": {
         "title": "图像生成",

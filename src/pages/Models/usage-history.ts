@@ -17,14 +17,24 @@ export type UsageHistoryEntry = {
 export type UsageWindow = '7d' | '30d' | 'all';
 export type UsageGroupBy = 'model' | 'day';
 
-export type UsageGroup = {
-  label: string;
+type UsageTotals = {
   totalTokens: number;
   inputTokens: number;
   outputTokens: number;
   cacheTokens: number;
-  sortKey: number | string;
 };
+
+export type UsageModel = Pick<UsageHistoryEntry, 'model' | 'provider'>;
+export type UsageModelGroup = UsageTotals & UsageModel & { key: string };
+export type UsageTimeBucket = UsageTotals & { start: number };
+type UsageTimeInterval = 'day' | 'week' | 'month';
+
+const HIDDEN_USAGE_MARKERS = ['gateway-injected', 'delivery-mirror'];
+
+export function isHiddenUsageSource(source?: string): boolean {
+  const normalizedSource = source?.trim().toLowerCase() ?? '';
+  return HIDDEN_USAGE_MARKERS.some((marker) => normalizedSource.includes(marker));
+}
 
 export function resolveStableUsageHistory(
   previousStableEntries: UsageHistoryEntry[],
@@ -50,55 +60,89 @@ export function resolveVisibleUsageHistory(
   return currentEntries;
 }
 
-export function formatUsageDay(timestamp: string): string {
+export function usageModelKey({ model, provider }: UsageModel): string {
+  return JSON.stringify([model || '', provider || '']);
+}
+
+export function formatUsageTimestamp(timestamp: string, locale?: string): string {
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return timestamp;
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(locale, {
     month: 'short',
     day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
   }).format(date);
 }
 
-export function getUsageDaySortKey(timestamp: string): number {
-  const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) return 0;
-  date.setHours(0, 0, 0, 0);
-  return date.getTime();
+function emptyTotals(): UsageTotals {
+  return { totalTokens: 0, inputTokens: 0, outputTokens: 0, cacheTokens: 0 };
 }
 
-export function groupUsageHistory(
-  entries: UsageHistoryEntry[],
-  groupBy: UsageGroupBy,
-): UsageGroup[] {
-  const grouped = new Map<string, UsageGroup>();
+function addUsage(totals: UsageTotals, entry: UsageHistoryEntry): void {
+  totals.totalTokens += entry.totalTokens;
+  totals.inputTokens += entry.inputTokens;
+  totals.outputTokens += entry.outputTokens;
+  totals.cacheTokens += entry.cacheReadTokens + entry.cacheWriteTokens;
+}
 
+export function groupUsageByModel(entries: UsageHistoryEntry[]): UsageModelGroup[] {
+  const groups = new Map<string, UsageModelGroup>();
   for (const entry of entries) {
-    const label = groupBy === 'model'
-      ? (entry.model || 'Unknown')
-      : formatUsageDay(entry.timestamp);
-    const current = grouped.get(label) ?? {
-      label,
-      totalTokens: 0,
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheTokens: 0,
-      sortKey: groupBy === 'day' ? getUsageDaySortKey(entry.timestamp) : label.toLowerCase(),
-    };
-    current.totalTokens += entry.totalTokens;
-    current.inputTokens += entry.inputTokens;
-    current.outputTokens += entry.outputTokens;
-    current.cacheTokens += entry.cacheReadTokens + entry.cacheWriteTokens;
-    grouped.set(label, current);
+    const key = usageModelKey(entry);
+    const group = groups.get(key) ?? { key, model: entry.model, provider: entry.provider, ...emptyTotals() };
+    addUsage(group, entry);
+    groups.set(key, group);
   }
+  return Array.from(groups.values()).sort((a, b) => b.totalTokens - a.totalTokens);
+}
 
-  const sorted = Array.from(grouped.values()).sort((a, b) => {
-    if (groupBy === 'day') {
-      return Number(a.sortKey) - Number(b.sortKey);
-    }
-    return b.totalTokens - a.totalTokens;
-  });
+const DAY_MS = 24 * 60 * 60 * 1000;
 
-  return groupBy === 'model' ? sorted.slice(0, 8) : sorted;
+function getWindowStart(window: Exclude<UsageWindow, 'all'>, now: number): number {
+  return now - (window === '7d' ? 7 : 30) * DAY_MS;
+}
+
+function startOfBucket(timestamp: number, interval: UsageTimeInterval): Date {
+  const date = new Date(timestamp);
+  date.setHours(0, 0, 0, 0);
+  if (interval === 'week') date.setDate(date.getDate() - (date.getDay() + 6) % 7);
+  if (interval === 'month') date.setDate(1);
+  return date;
+}
+
+export function groupUsageByTime(
+  entries: UsageHistoryEntry[],
+  window: UsageWindow,
+  now = Date.now(),
+): { interval: UsageTimeInterval; buckets: UsageTimeBucket[] } {
+  const windowStart = window === 'all' ? -Infinity : getWindowStart(window, now);
+  const windowEnd = window === 'all' ? Infinity : now;
+  const timedEntries = entries.map((entry) => ({ entry, timestamp: Date.parse(entry.timestamp) }))
+    .filter(({ timestamp }) => timestamp >= windowStart && timestamp <= windowEnd);
+  let first = window === 'all' ? Infinity : windowStart;
+  let last = window === 'all' ? -Infinity : now;
+  for (const { timestamp } of timedEntries) {
+    first = Math.min(first, timestamp);
+    last = Math.max(last, timestamp);
+  }
+  const spanDays = (last - first) / DAY_MS;
+  const interval = window === 'all' && spanDays > 31
+    ? (spanDays > 120 ? 'month' : 'week') : 'day';
+  const buckets = new Map<number, UsageTimeBucket>();
+  const cursor = startOfBucket(first, interval);
+  while (cursor.getTime() <= last) {
+    const start = cursor.getTime();
+    buckets.set(start, { start, ...emptyTotals() });
+    if (interval === 'month') cursor.setMonth(cursor.getMonth() + 1);
+    else cursor.setDate(cursor.getDate() + (interval === 'week' ? 7 : 1));
+    cursor.setHours(0, 0, 0, 0);
+  }
+  for (const { entry, timestamp } of timedEntries) {
+    const bucket = buckets.get(startOfBucket(timestamp, interval).getTime());
+    if (bucket) addUsage(bucket, entry);
+  }
+  return { interval, buckets: Array.from(buckets.values()) };
 }
 
 export function filterUsageHistoryByWindow(
@@ -108,11 +152,10 @@ export function filterUsageHistoryByWindow(
 ): UsageHistoryEntry[] {
   if (window === 'all') return entries;
 
-  const days = window === '7d' ? 7 : 30;
-  const cutoff = now - days * 24 * 60 * 60 * 1000;
+  const cutoff = getWindowStart(window, now);
 
   return entries.filter((entry) => {
     const timestamp = Date.parse(entry.timestamp);
-    return Number.isFinite(timestamp) && timestamp >= cutoff;
+    return timestamp >= cutoff && timestamp <= now;
   });
 }

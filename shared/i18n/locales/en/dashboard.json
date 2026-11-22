@@ -76,9 +76,19 @@
             "cacheWrite": "Cache write",
             "total": "Total",
             "cost": "Cost (USD)",
-            "actions": "Details"
+            "actions": "Details",
+            "cache": "Cache"
         },
-        "sourceHint": "Usage and costs come from local runtime records. Recorded costs may differ from the provider’s bill."
+        "sourceHint": "Costs are from local records. Refer to your provider’s bill.",
+        "timeRange": "Time range",
+        "chart": "Usage chart",
+        "details": "Usage details",
+        "allModels": "All models",
+        "unknownProvider": "Unknown provider",
+        "emptyForModel": "No usage for this model and provider in this time range",
+        "viewLast30Days": "View last 30 days",
+        "viewAllTime": "View all usage",
+        "weekOf": "Week of {{date}}"
     },
     "imageGeneration": {
         "title": "Image Generation",

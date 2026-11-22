@@ -323,7 +323,7 @@ function ProviderCard({
 }: ProviderCardProps) {
   const { t, i18n } = useTranslation('settings');
   const { account, vendor, status } = item;
-  const editTriggerRef = useRef<HTMLElement | null>(null);
+  const editTriggerRef = useRef<HTMLButtonElement>(null);
   const [displayName, setDisplayName] = useState(account.label);
   const [newKey, setNewKey] = useState('');
   const [baseUrl, setBaseUrl] = useState(account.baseUrl || '');
@@ -450,15 +450,26 @@ function ProviderCard({
             : <Key className="h-4 w-4 text-muted-foreground" />}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-2">
-            <button type="button" className="truncate rounded text-left text-sm font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={event => { editTriggerRef.current = event.currentTarget; onEdit(); }}>{account.label}</button>
-          </div>
+          <p className="truncate text-sm font-medium" title={account.label}>{account.label}</p>
           <p data-testid={`provider-model-${account.id}`} className="mt-0.5 truncate text-meta text-muted-foreground" title={models.join(', ')}>{modelSummary}{models.length > 2 && ` +${models.length - 2}`}</p>
           <p className="mt-0.5 flex items-center gap-1.5 text-meta text-muted-foreground"><span className="truncate">{host || vendor?.name || account.vendorId}</span>{!hasConfiguredCredentials(account, status) && <><span aria-hidden="true">·</span><span className="shrink-0">{t('aiProviders.card.noKey')}</span></>}</p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <Tooltip disableHoverableContent>
-            <TooltipTrigger asChild><Button data-testid={`provider-edit-${account.id}`} type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" aria-label={t('aiProviders.card.editKey')} onClick={event => { editTriggerRef.current = event.currentTarget; onEdit(); }}><Edit aria-hidden="true" className="h-4 w-4" /></Button></TooltipTrigger>
+            <TooltipTrigger asChild>
+              <Button
+                ref={editTriggerRef}
+                data-testid={`provider-edit-${account.id}`}
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground"
+                aria-label={t('aiProviders.card.editKey')}
+                onClick={onEdit}
+              >
+                <Edit aria-hidden="true" className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
             <TooltipContent>{t('aiProviders.card.editKey')}</TooltipContent>
           </Tooltip>
           <Tooltip disableHoverableContent>

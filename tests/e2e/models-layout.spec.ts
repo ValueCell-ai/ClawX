@@ -35,8 +35,103 @@ test('keeps usage filters available when the selected time window is empty', asy
     await page.getByTestId('models-tab-usage').click();
     const labels = I18N_RESOURCES.en.dashboard.recentTokenHistory;
     await expect(page.getByText(labels.emptyForWindow)).toBeVisible();
-    await page.getByRole('button', { name: labels.last30Days, exact: true }).click();
+    await page.getByRole('button', { name: labels.viewLast30Days, exact: true }).click();
+    await expect(page.getByRole('button', { name: labels.last30Days, exact: true })).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByTestId('token-usage-table')).toContainText('older-model');
+  } finally {
+    await closeElectronApp(app);
+  }
+});
+
+test('keeps chart controls independent from usage details and fits the table in a narrow window', async ({ launchElectronApp }, testInfo) => {
+  const app = await launchElectronApp({ skipSetup: true });
+  const labels = I18N_RESOURCES.en.dashboard.recentTokenHistory;
+  const key = (module: string, action: string, payload: unknown = null) => stableKey([module, action, payload]);
+  const now = new Date(2026, 10, 22, 12).getTime();
+  const entries = Array.from({ length: 12 }, (_, index) => {
+    const totalTokens = index === 0 ? 1_000_000 : index === 11 ? 101 : 200;
+    return {
+      sessionId: `usage-${index}`,
+      timestamp: new Date(now - (index === 11 ? 3 * 24 * 60 * 60_000 : index * 60_000)).toISOString(),
+      model: index === 0 ? 'heavy-model' : 'shared-model',
+      provider: index === 11 ? 'Other API' : 'Work API',
+      agentId: 'main',
+      inputTokens: totalTokens - 25,
+      outputTokens: 10,
+      cacheReadTokens: 12,
+      cacheWriteTokens: 3,
+      totalTokens,
+      costUsd: 0.0142,
+      content: `Usage detail ${index}`,
+    };
+  });
+  try {
+    await installIpcMocks(app, {
+      gatewayStatus: { state: 'running', gatewayReady: true, port: 18789 },
+      hostApi: {
+        [key('settings', 'getAll')]: { language: 'en', setupComplete: true, devModeUnlocked: true, theme: 'light' },
+        [key('usage', 'recentTokenHistory', { limit: undefined })]: entries,
+      },
+    });
+    const page = await getStableWindow(app);
+    await page.reload();
+    await page.clock.setFixedTime(new Date(now + 1_000));
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await navigateToSection(page, 'models');
+    await page.getByTestId('models-tab-usage').click();
+
+    const table = page.getByTestId('token-usage-table');
+    const rows = table.getByTestId('token-usage-entry');
+    const bars = page.getByTestId('usage-model-bar');
+    await expect(bars).toHaveCount(3);
+    const widths = await bars.evaluateAll((items) => items.map((item) => Number.parseFloat((item as HTMLElement).style.width)));
+    expect(widths[0]).toBe(100);
+    expect(widths[1]).toBeCloseTo(0.2, 5);
+    expect(widths[2]).toBeCloseTo(0.0101, 5);
+
+    await page.getByRole('button', { name: labels.next, exact: true }).click();
+    await expect(rows).toHaveCount(2);
+    const secondPage = await rows.allTextContents();
+    await page.getByRole('button', { name: labels.groupByTime, exact: true }).click();
+    const dateBuckets = page.getByTestId('usage-time-bucket');
+    await expect(dateBuckets).toHaveCount(8);
+    await expect(page.locator('[data-testid="usage-time-bucket"][data-tokens="0"]')).not.toHaveCount(0);
+    expect(await rows.allTextContents()).toEqual(secondPage);
+
+    const summary = await page.getByTestId('usage-summary').textContent();
+    const filter = page.getByRole('combobox', { name: labels.columns.model });
+    await filter.click();
+    await page.getByRole('option', { name: 'shared-model / Other API', exact: true }).click();
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText('Other API');
+    await expect(page.getByTestId('usage-summary')).toHaveText(summary!);
+
+    await page.setViewportSize({ width: 760, height: 650 });
+    await expect(table.getByRole('columnheader', { name: labels.columns.total, exact: true })).toBeVisible();
+    await expect(table.getByRole('columnheader', { name: labels.columns.cost, exact: true })).toBeVisible();
+    await expect(table.getByRole('columnheader', { name: labels.columns.cacheRead, exact: true })).toHaveCount(0);
+    const viewContent = rows.first().getByRole('button', { name: labels.viewContent });
+    await viewContent.scrollIntoViewIfNeeded();
+    await expect(viewContent).toBeInViewport({ ratio: 1 });
+    expect(await table.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    const price = rows.first().getByRole('cell', { name: '$0.0142', exact: true });
+    expect(await price.evaluate((cell) => {
+      const range = document.createRange();
+      range.selectNodeContents(cell);
+      return range.getClientRects().length;
+    })).toBe(1);
+
+    const breakdown = rows.first().getByRole('button', { name: `${labels.columns.total} · 101` });
+    await breakdown.click();
+    await expect(page.getByRole('dialog', { name: labels.columns.total }).getByText(labels.columns.cacheRead, { exact: true })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(breakdown).toBeFocused();
+    await viewContent.click();
+    await expect(page.getByTestId('usage-content-dialog')).toContainText('Usage detail 11');
+    await page.keyboard.press('Escape');
+    await expect(viewContent).toBeFocused();
+    await page.getByTestId('models-page-title').click();
+    await page.screenshot({ path: testInfo.outputPath('usage-narrow.png'), animations: 'disabled' });
   } finally {
     await closeElectronApp(app);
   }
@@ -106,6 +201,10 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       await page.screenshot({ path: testInfo.outputPath(`model-services-${language}.png`), animations: 'disabled' });
 
       await expect(page.getByTestId(`provider-more-${accountId}`)).toHaveCount(0);
+      const edit = page.getByTestId(`provider-edit-dialog-${accountId}`);
+      await expect(card.getByRole('button', { name: 'Work API', exact: true })).toHaveCount(0);
+      await card.getByText('Work API', { exact: true }).click();
+      await expect(edit).toHaveCount(0);
       const editTrigger = page.getByTestId(`provider-edit-${accountId}`);
       const deleteTrigger = page.getByTestId(`provider-delete-${accountId}`);
       await expect(editTrigger).toBeVisible();
@@ -121,7 +220,6 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       await expect(editTooltip).toHaveCount(0);
       await editTrigger.focus();
       await editTrigger.press('Enter');
-      const edit = page.getByTestId(`provider-edit-dialog-${accountId}`);
       await expect(edit).toHaveAccessibleName(text.settings.modelManagement.editService);
       const configuredModels = edit.getByRole('list', { name: text.settings.aiProviders.dialog.configuredModels, exact: true });
       await expect(configuredModels.getByRole('listitem')).toHaveText(['model-alpha', 'model-beta', 'gpt-5.5']);
@@ -244,7 +342,7 @@ for (const language of ['en', 'zh', 'ja', 'ru'] as const) {
       await expect(imageDialog).toHaveCount(0);
 
       await page.getByTestId('models-tab-usage').click();
-      await expect(page.getByRole('tabpanel').getByRole('heading', { level: 2 })).toHaveCount(0);
+      await expect(page.getByRole('tabpanel').getByRole('heading', { level: 2, name: text.dashboard.recentTokenHistory.details })).toBeVisible();
       await expect(page.getByTestId('models-usage-description')).toHaveText(text.dashboard.recentTokenHistory.sourceHint);
       await expect(table).toBeVisible();
       const rows = table.getByTestId('token-usage-entry');

@@ -44,8 +44,8 @@
         "empty": "トークン使用履歴はまだありません",
         "groupByModel": "モデル別",
         "groupByTime": "時間別",
-        "last7Days": "7日",
-        "last30Days": "30日",
+        "last7Days": "過去 7 日間",
+        "last30Days": "過去 30 日間",
         "allTime": "すべて",
         "showingLast": "{{count}} 件",
         "totalTokens": "合計トークン",
@@ -76,9 +76,19 @@
             "cacheWrite": "キャッシュ書込",
             "total": "合計",
             "cost": "費用（USD）",
-            "actions": "詳細"
+            "actions": "詳細",
+            "cache": "キャッシュ"
         },
-        "sourceHint": "使用量と費用はローカルの実行記録に基づき、サービス提供元の請求額と異なる場合があります。"
+        "sourceHint": "費用はローカルの記録です。実際の請求額は提供元で確認してください。",
+        "timeRange": "期間",
+        "chart": "使用量グラフ",
+        "details": "使用量の明細",
+        "allModels": "すべてのモデル",
+        "unknownProvider": "不明な提供元",
+        "emptyForModel": "この期間に選択したモデルと提供元の使用量はありません",
+        "viewLast30Days": "過去 30 日間を表示",
+        "viewAllTime": "すべての使用量を表示",
+        "weekOf": "{{date}}からの週"
     },
     "imageGeneration": {
         "title": "画像生成",

@@ -53,6 +53,13 @@ determine their API type and display it in the configuration form. Custom
 endpoints use the OpenAI Audio Transcriptions API. Reuse a saved voice key only for the preset it
 was configured for.
 
-Background usage refresh must preserve valid page selection, filters and scroll position.
-Only deliberate range changes reset pagination; clamp invalid pages when records shrink.
+The range at the top of Usage scopes the summary, chart and details. Keep the chart
+grouping independent from the detail filter, which identifies a model/provider pair.
+Only a range or detail filter change resets pagination. Chart grouping and background
+refresh preserve valid page selection, and invalid pages are clamped when records shrink.
+Model bars reflect relative totals and show the highest-usage entries. The 7-day and
+30-day ranges are rolling windows. Include every overlapping local date, even when
+its usage is zero. For all-time charts, use weeks or months as the history grows and
+keep empty periods. Keep totals, cost and available row actions in view at narrow
+widths, with token breakdowns still available through shared popovers.
 Content dialogs use the shared Radix layer for focus, dismissal and accessibility.
