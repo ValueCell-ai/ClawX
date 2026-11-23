@@ -10,7 +10,7 @@ import type { AcpCurrentPlan } from '@/lib/acp/current-plan';
 import type { AcpSubagentSession } from '@/pages/Chat/AcpSubagentSessions';
 const hostApiFetchMock = vi.hoisted(() => vi.fn());
 const hostApiDialogOpenMock = vi.hoisted(() => vi.fn());
-const modelApi = vi.hoisted(() => ({ getModel: vi.fn(), setModel: vi.fn() }));
+const modelApi = vi.hoisted(() => ({ getModel: vi.fn(), setModel: vi.fn(), getDraftThinking: vi.fn().mockResolvedValue(null) }));
 const toastErrorMock = vi.hoisted(() => vi.fn());
 const microphoneMocks = vi.hoisted(() => ({ getConfig: vi.fn(), getMicrophoneAccess: vi.fn(), openMicrophoneSettings: vi.fn() }));
 const { agentsState, chatState, gatewayState, settingsState, providersState, artifactPanelMocks } = vi.hoisted(() => ({
@@ -47,7 +47,9 @@ vi.mock('@/stores/agents', () => ({
 }));
 
 vi.mock('@/stores/chat', () => ({
-  useChatStore: (selector: (state: typeof chatState) => unknown) => selector(chatState),
+  useChatStore: Object.assign((selector: (state: typeof chatState) => unknown) => selector(chatState), {
+    getState: () => chatState,
+  }),
 }));
 
 vi.mock('@/stores/gateway', () => ({
@@ -279,7 +281,7 @@ describe('ChatInput execution agent and composer', () => {
     agentsState.updateAgentModel.mockReset();
     modelApi.getModel.mockReset().mockResolvedValue({ modelRef: null });
     modelApi.setModel.mockReset().mockImplementation(async (_key, modelRef) => ({ modelRef }));
-    useComposerDraftStore.setState({ drafts: {}, editorDrafts: {}, attachments: {}, modelRefs: {} });
+    useComposerDraftStore.setState(useComposerDraftStore.getInitialState());
     chatState.currentAgentId = 'main';
     chatState.currentSessionKey = 'agent:main:session-1';
     chatState.sessions = [{ key: 'agent:main:session-1' }];
@@ -567,11 +569,62 @@ describe('ChatInput execution agent and composer', () => {
       })));
       expect(modelApi.getModel).toHaveBeenCalledWith(target);
       expect(send).not.toHaveBeenCalled();
-      expect(composerText(screen.getByRole('textbox'))).toBe('Check this');
+      const failed = await screen.findByTestId('chat-failed-prompt');
+      expect(failed).toHaveTextContent('Check this');
+      expect(failed).toHaveTextContent('denied');
+      expect(composerText(screen.getByRole('textbox'))).toBe('');
+      fillComposer(screen.getByRole('textbox'), 'Next draft');
+      fireEvent.click(screen.getByTestId('chat-retry-prompt'));
+      await waitFor(() => expect(guard).toHaveBeenCalledTimes(2));
+      expect(screen.getAllByTestId('chat-failed-prompt')).toHaveLength(1);
+      expect(send).not.toHaveBeenCalled();
+      guard.mockResolvedValue({ ok: true });
+      fireEvent.click(screen.getByTestId('chat-retry-prompt'));
+      await waitFor(() => expect(send).toHaveBeenCalledWith('Check this', undefined, 'research'));
+      expect(guard).toHaveBeenLastCalledWith(expect.objectContaining({ sessionKey: target, sessionModelRef: pin }));
+      expect(screen.queryByTestId('chat-failed-prompt')).not.toBeInTheDocument();
+      expect(composerText(screen.getByRole('textbox'))).toBe('Next draft');
     } finally {
       hasGuard.mockRestore();
       guard.mockRestore();
     }
+  });
+
+  it('retains exact text on async admission failure without replacing a newer draft', async () => {
+    let rejectSend!: (reason: Error) => void;
+    const send = vi.fn(() => new Promise<boolean>((_resolve, reject) => { rejectSend = reject; }));
+    renderChatInput(send);
+    const input = screen.getByRole('textbox');
+    const prompt = '  Review these files.\n\n    Keep the indentation.\n';
+    fillComposer(input, prompt);
+    fireEvent.click(screen.getByTitle('Send'));
+    fillComposer(input, 'Next draft');
+    await act(async () => rejectSend(new Error('Connection lost')));
+
+    const failed = screen.getByTestId('chat-failed-prompt');
+    expect(failed).toHaveTextContent('Connection lost');
+    expect(failed.textContent).toContain(prompt);
+    expect(composerText(input)).toBe('Next draft');
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries only in the workspace where the failed prompt was submitted', async () => {
+    const send = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const composer = (workspacePath: string) => (
+      <TooltipProvider><ChatInput onSend={send} workspacePath={workspacePath} /></TooltipProvider>
+    );
+    const { rerender } = render(composer('/work/first'));
+    fillComposer(screen.getByRole('textbox'), 'Read the project');
+    fireEvent.click(screen.getByTitle('Send'));
+    await screen.findByTestId('chat-failed-prompt');
+    rerender(composer('/work/second'));
+    fireEvent.click(screen.getByTestId('chat-retry-prompt'));
+    expect(screen.getByTestId('chat-failed-prompt')).toHaveTextContent('composer.retryDestinationChanged');
+    expect(send).toHaveBeenCalledTimes(1);
+    rerender(composer('/work/first'));
+    fireEvent.click(screen.getByTestId('chat-retry-prompt'));
+    await waitFor(() => expect(screen.queryByTestId('chat-failed-prompt')).not.toBeInTheDocument());
+    expect(send).toHaveBeenCalledTimes(2);
   });
 
   it('hides malformed context usage and clamps valid overages to 100%', () => {
@@ -1374,7 +1427,7 @@ describe('ChatInput execution agent and composer', () => {
     expect(screen.getByTestId('chat-composer-agent')).toHaveTextContent('Main');
   });
 
-  it('retains the draft when send admission is rejected', async () => {
+  it('retains a rejected submission in the retry card', async () => {
     const onSend = vi.fn().mockResolvedValue(false);
     renderChatInput(onSend);
     const input = screen.getByTestId('chat-composer-input');
@@ -1382,7 +1435,8 @@ describe('ChatInput execution agent and composer', () => {
     fireEvent.click(screen.getByTitle('Send'));
     await waitFor(() => expect(onSend).toHaveBeenCalledWith('Keep this rejected draft', undefined));
     await waitFor(() => expect(input).toHaveAttribute('contenteditable', 'true'));
-    expect(composerText(input)).toBe('Keep this rejected draft');
+    expect(screen.getByTestId('chat-failed-prompt')).toHaveTextContent('Keep this rejected draft');
+    expect(composerText(input)).toBe('');
   });
 
   it('uses a single Lexical contenteditable for ordinary text', () => {

@@ -5,6 +5,8 @@ import { dirname } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import JSON5 from 'json5';
 import type { GatewayManager } from './manager';
+import { applyProviderModelCompatibility } from '../shared/providers/model-compat';
+import { isRecord } from '../services/payload-utils';
 import { withConfigLock } from '../utils/config-mutex';
 import { logger } from '../utils/logger';
 import { resolveOpenClawConfigPath } from '../utils/paths';
@@ -244,11 +246,26 @@ async function applyMutator(
   sourceExists: boolean,
 ): Promise<boolean> {
   const baseline = structuredClone(config);
+  // An extension can replace a legacy provider with an equal object and then
+  // reuse that object for agent-local models.json after the commit.
+  const originalProviders = isRecord(config.models) && isRecord(config.models.providers)
+    ? { ...config.models.providers } : {};
   const context: ActiveMutationContext = { config, active: true, sourceExists };
   try {
     await activeMutation.run(context, async () => await mutator(config));
   } finally {
     context.active = false;
+  }
+  // Provider accounts and extension-supplied catalogs share this delivery path.
+  // Normalize new and replaced provider definitions before the atomic commit.
+  const providers = isRecord(config.models) ? config.models.providers : undefined;
+  const previous = isRecord(baseline.models) && isRecord(baseline.models.providers) ? baseline.models.providers : {};
+  if (isRecord(providers)) {
+    for (const [key, provider] of Object.entries(providers)) {
+      if (isRecord(provider) && (provider !== originalProviders[key] || !isDeepStrictEqual(provider, previous[key]))) {
+        applyProviderModelCompatibility(provider, key, config.agents);
+      }
+    }
   }
   return !isDeepStrictEqual(config, baseline);
 }

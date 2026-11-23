@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/badge';
 import { useAgentsStore } from '@/stores/agents';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import { useChatStore } from '@/stores/chat';
+import { useGatewayStore } from '@/stores/gateway';
 import { useComposerDraftStore } from '@/stores/composer-drafts';
 import { useSessionAttentionStore } from '@/stores/session-attention';
 import { useSettingsStore } from '@/stores/settings';
@@ -44,7 +45,7 @@ import { ChatToolbar } from './ChatToolbar';
 import { AcpTimeline } from './AcpTimeline';
 import { AcpErrorBanner } from './AcpErrorBanner';
 import { projectSessionRunState } from '@/stores/chat/session-status';
-import { formatSubagentSessionTitle, getPromptSessionKey, isNativeSubagentSessionKey } from '@/stores/chat/session-key-utils';
+import { formatSubagentSessionTitle, getPromptSessionKey, getPromptWorkspacePath, isNativeSubagentSessionKey } from '@/stores/chat/session-key-utils';
 import type { AcpSubagentSession } from './AcpSubagentSessions';
 
 const ResponsiveArtifactPanelLazy = lazy(() => import('@/components/file-preview/ResponsiveArtifactPanel'));
@@ -213,6 +214,7 @@ export function Chat() {
   const { t } = useTranslation('chat');
 
   const currentSessionKey = useChatStore((s) => s.currentSessionKey);
+  const gatewayReady = useGatewayStore(({ status }) => status.state === 'running' && status.gatewayReady !== false);
   const sessions = useChatStore((s) => s.sessions);
   const sessionLabels = useChatStore((s) => s.sessionLabels);
   const currentAgentId = useChatStore((s) => s.currentAgentId);
@@ -245,6 +247,7 @@ export function Chat() {
     () => sessions.find((session) => session.key === currentSessionKey) ?? null,
     [currentSessionKey, sessions],
   );
+  const hasExistingConversation = currentSession !== null && !currentSession.createdLocally;
   const currentAgent = useMemo(
     () => (agents ?? []).find((agent) => agent.id === currentAgentId) ?? null,
     [agents, currentAgentId],
@@ -379,6 +382,7 @@ export function Chat() {
   selectedFamilySessionKeyRef.current = currentSessionKey;
 
   const loadCurrentSessionFamily = useCallback((sessionKey: string) => {
+    if (!gatewayReady) return;
     const requestId = ++familyRequestIdRef.current;
     void hostApi.chat.getAcpSessionFamily({ sessionKey }).then((result) => {
       if (
@@ -388,16 +392,16 @@ export function Chat() {
       ) return;
       setLoadedSessionFamily({ sessionKey, result });
     }).catch(() => undefined);
-  }, []);
+  }, [gatewayReady]);
 
   useEffect(() => {
     familyRequestIdRef.current += 1;
     setLoadedSessionFamily((current) => current?.sessionKey === currentSessionKey ? current : null);
-    if (currentSessionKey) loadCurrentSessionFamily(currentSessionKey);
+    if (currentSessionKey && hasExistingConversation) loadCurrentSessionFamily(currentSessionKey);
     return () => {
       familyRequestIdRef.current += 1;
     };
-  }, [currentSessionKey, loadCurrentSessionFamily]);
+  }, [currentSessionKey, hasExistingConversation, loadCurrentSessionFamily]);
 
   useEffect(() => {
     setVisibleSession(currentSessionKey);
@@ -468,7 +472,7 @@ export function Chat() {
   }, [acpActiveSessionKey, acpCwd, acpTimeline.itemOrder.length, acpTimeline.sessionId, acpWorkspaceRoot, currentSession, currentSessionKey, cwd, prepareLocalAcpSession, promptOrigin]);
 
   useEffect(() => {
-    if (!currentSession || currentSession.createdLocally || !cwd || !workspaceContextAvailable || promptOrigin === currentSessionKey) return;
+    if (!gatewayReady || !hasExistingConversation || !cwd || !workspaceContextAvailable || promptOrigin === currentSessionKey) return;
     if (acpActiveSessionKey === currentSessionKey && acpWorkspaceRoot === cwd && acpCwd === cwd) return;
     const acpLoadKey = `${currentSessionKey}\0${cwd}`;
     if (acpLoadInFlightKeyRef.current === acpLoadKey) return;
@@ -482,7 +486,7 @@ export function Chat() {
         acpLoadInFlightKeyRef.current = null;
       }
     });
-  }, [acpActiveSessionKey, acpCwd, acpWorkspaceRoot, currentSession, currentSessionKey, cwd, loadAcpSession, promptOrigin, workspaceContextAvailable]);
+  }, [acpActiveSessionKey, acpCwd, acpWorkspaceRoot, currentSessionKey, cwd, gatewayReady, hasExistingConversation, loadAcpSession, promptOrigin, workspaceContextAvailable]);
 
   const platform = window.electron?.platform;
   const isMac = platform === 'darwin';
@@ -831,6 +835,7 @@ export function Chat() {
             }}
             draft={composerDraft}
             draftKey={currentSessionKey}
+            isPromptInTimeline={(id) => !acpPresentationPending && !!visibleAcpTimeline.itemsById[`${id}:0`]}
             onDraftChange={handleComposerDraftChange}
             onSend={async (text: string, attachments?: FileAttachment[], targetAgentId?: string | null) => {
               if (!currentSessionKey || !cwd || !workspaceContextAvailable) return false;
@@ -841,9 +846,7 @@ export function Chat() {
               const sessionKey = getPromptSessionKey(currentSessionKey, targetAgent);
               const existingSession = sessions.find((session) => session.key === sessionKey);
               setLastPromptAttemptSessionKey(sessionKey);
-              const promptCwd = targetAgent
-                ? normalizeWorkspacePath(existingSession?.workspacePath) ?? (targetAgent.workspace || cwd)
-                : cwd;
+              const promptCwd = getPromptWorkspacePath(cwd, targetAgent, existingSession);
               const media = attachments
                 ?.filter((file) => file.status === 'ready')
                 .map((file) => ({
@@ -900,23 +903,44 @@ export function Chat() {
                       }
                     }
                   })();
-                  if (!loaded) return false;
+                  if (!loaded) {
+                    const acp = useAcpChatSessionStore.getState();
+                    const error = acp.timeline.sessionId === sessionKey ? acp.error : null;
+                    return { error: error || t('acp.loadFailed') };
+                  }
                 }
                 if (!destinationCanSend()) return false;
                 try {
                   const modelWrite = applyDraftSessionModel(sessionKey, createIfMissing);
                   if (modelWrite) await modelWrite;
                 } catch (error) {
-                  toast.error(t('composer.modelSwitchFailed', { error: String(error) }));
-                  return false;
+                  return { error: t('composer.modelSwitchFailed', { error: String(error) }) };
                 }
                 if (!destinationCanSend()) return false;
+                const messageId = `user:${crypto.randomUUID()}`;
+                const submission = useComposerDraftStore.getState().trackSubmission(sessionKey);
+                const retainFailedPrompt = (error: string) => {
+                  if (!submission.isTracked()) return;
+                  useComposerDraftStore.getState().saveFailedPrompt(sessionKey, {
+                    id: messageId,
+                    text,
+                    attachments,
+                    error,
+                    destination: { sessionKey, workspace: promptCwd },
+                  });
+                };
                 void sendAcpPrompt({
                   sessionKey,
                   cwd: promptCwd,
-                  message: text,
+                  message: text.trim(),
+                  messageId,
                   media,
-                });
+                }).then((success) => {
+                  if (success) return;
+                  const acp = useAcpChatSessionStore.getState();
+                  retainFailedPrompt(acp.activeSessionKey === sessionKey ? acp.error ?? '' : '');
+                }, (error: unknown) => retainFailedPrompt(error instanceof Error ? error.message : String(error)))
+                  .finally(submission.release);
                 if (targetAgent) selectAcpSession(sessionKey, promptCwd);
                 if (createIfMissing) acknowledgeAcpSessionCreated(sessionKey, promptCwd, text);
                 requestAnimationFrame(() => {

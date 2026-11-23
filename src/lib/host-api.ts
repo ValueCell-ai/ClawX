@@ -410,8 +410,9 @@ export const hostApi = {
     ),
   },
   sessions: {
+    getDraftThinking: (sessionKey: string, modelRef: string) => invokeHost('sessions', 'getDraftThinking', { sessionKey, modelRef }),
     getModel: (sessionKey: string) => invokeHost('sessions', 'getModel', { sessionKey }),
-    setModel: (sessionKey: string, modelRef: string | null, options?: { createIfMissing: boolean }) => (
+    setModel: (sessionKey: string, modelRef: string | null | undefined, options?: { createIfMissing?: boolean; thinkingLevel?: string | null }) => (
       invokeHost('sessions', 'setModel', { sessionKey, modelRef, ...options })
     ),
     delete: (id: string) => invokeHost('sessions', 'delete', { id }),

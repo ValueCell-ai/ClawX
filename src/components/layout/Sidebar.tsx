@@ -37,6 +37,7 @@ import { isGatewayRestarting } from '@/lib/gateway-status';
 import { rendererExtensionRegistry } from '@/extensions/registry';
 import { useSettingsStore } from '@/stores/settings';
 import { useChatStore } from '@/stores/chat';
+import { useComposerDraftStore } from '@/stores/composer-drafts';
 import { useSessionAttentionStore } from '@/stores/session-attention';
 import { useGatewayStore } from '@/stores/gateway';
 import { useAgentsStore } from '@/stores/agents';
@@ -187,6 +188,7 @@ export function Sidebar() {
   }, [setSidebarCollapsed]);
 
   const sessions = useChatStore((s) => s.sessions);
+  const failedPrompts = useComposerDraftStore((s) => s.failedPrompts);
   const currentSessionKey = useChatStore((s) => s.currentSessionKey);
   const sessionLabels = useChatStore((s) => s.sessionLabels);
   const sessionLastActivity = useChatStore((s) => s.sessionLastActivity);
@@ -397,8 +399,14 @@ export function Sidebar() {
     [agents],
   );
   const workspaceCatalogSessions = useMemo(
-    () => sessions.filter((session) => shouldIncludeSessionInWorkspaceDeletion(session)),
-    [sessions],
+    () => sessions
+      .filter((session) => shouldIncludeSessionInWorkspaceDeletion(session, !!failedPrompts[session.key]))
+      .map((session) => {
+        const failedPrompt = session.createdLocally ? failedPrompts[session.key]?.[0] : undefined;
+        const title = failedPrompt?.text.trim().slice(0, 50) || failedPrompt?.attachments?.[0]?.fileName;
+        return title ? { ...session, derivedTitle: title } : session;
+      }),
+    [sessions, failedPrompts],
   );
   const workspaceCatalogGroups = groupSessionsByWorkspace(
     workspaceCatalogSessions,
@@ -415,7 +423,7 @@ export function Sidebar() {
   );
   const workspaceSessionGroups = workspaceCatalogGroups.map((group) => ({
     ...group,
-    sessions: group.sessions.filter(({ session }) => shouldIncludeSessionInSidebarList(session)),
+    sessions: group.sessions.filter(({ session }) => shouldIncludeSessionInSidebarList(session, !!failedPrompts[session.key])),
   }));
   const workspaceAvailability = useWorkspaceAvailability(
     workspaceSessionGroups.map((group) => group.workspacePath),

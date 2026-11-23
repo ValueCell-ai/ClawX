@@ -719,7 +719,7 @@ function stableStringify(value: unknown): string {
 
 export async function installAttachmentHostFixture(
   app: ElectronApplication,
-  options: { sessions: AttachmentFixtureSession[] },
+  options: { sessions: AttachmentFixtureSession[]; inlineSessionReplay?: boolean },
 ): Promise<AttachmentHostFixture> {
   if (options.sessions.length === 0) throw new Error('Attachment fixture requires at least one session');
   const homeDir = await app.evaluate(async () => process.env.HOME || process.env.USERPROFILE || '');
@@ -914,6 +914,9 @@ export async function installAttachmentHostFixture(
     ipcMain.handle('host:invoke', async (event: unknown, request: HostRequest) => {
       state.hostInvocations.push({ module: request.module, action: request.action, payload: request.payload });
 
+      if (request.module === 'chat' && request.action === 'getAcpSessionFamily') {
+        return respond(request.id, { success: true, current: null, children: [] });
+      }
       if (request.module === 'chat' && request.action === 'loadAcpSession') {
         const sessionKey = String(request.payload?.sessionKey ?? '');
         state.generation += 1;
@@ -927,6 +930,14 @@ export async function installAttachmentHostFixture(
         });
         productionSessionAccess.commitGrant(grant);
         const replay = state.replays[sessionKey] ?? [];
+        if (payload.inlineSessionReplay) {
+          return respond(request.id, {
+            success: true, generation,
+            sessionUpdates: replay.map((update) => ({
+              sessionKey, generation, historical: true, notification: { sessionId: sessionKey, update },
+            })),
+          });
+        }
         state.replayReady[sessionKey] = new Promise((resolveReplay) => {
           setTimeout(() => {
             emitUpdates(sessionKey, generation, true, replay);
@@ -969,6 +980,9 @@ export async function installAttachmentHostFixture(
           state.deferredTranscriptReturned[response.deferId] = true;
         }
         return respond(request.id, { success: true, messages: response.messages });
+      }
+      if (request.module === 'sessions' && request.action === 'turnTimings') {
+        return respond(request.id, { success: true, timings: [] });
       }
       if (request.module === 'files' && request.action === 'resolveWorkspaceContext') {
         const workspaceRoot = typeof request.payload?.workspaceRoot === 'string'
@@ -1021,7 +1035,7 @@ export async function installAttachmentHostFixture(
 
       return originalHostInvoke?.(event, request) ?? respond(request.id, {});
     });
-  }, { workspaceDir, productionAttachmentBundlePath });
+  }, { workspaceDir, productionAttachmentBundlePath, inlineSessionReplay: options.inlineSessionReplay });
 
   const writeFixtureFile = async (root: string, relativePath: string, data: string | Uint8Array) => {
     const filePath = resolve(root, relativePath);

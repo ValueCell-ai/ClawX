@@ -79,6 +79,8 @@ describe('session-key-utils', () => {
     };
 
     expect(shouldIncludeSessionInSidebarList(pending)).toBe(false);
+    expect(shouldIncludeSessionInSidebarList(pending, true)).toBe(true);
+    expect(shouldIncludeSessionInWorkspaceDeletion(pending, true)).toBe(true);
 
     const acknowledged: ChatSession = {
       ...pending,

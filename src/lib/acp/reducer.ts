@@ -345,6 +345,8 @@ export function appendSyntheticAssistantMessage(
     evidenceId: string;
     parts: RenderPart[];
     afterItemId?: string;
+    taskId?: string;
+    provisionalText?: true;
   },
 ): AcpTimelineSnapshot {
   const id = `${input.messageId}:0`;
@@ -356,7 +358,11 @@ export function appendSyntheticAssistantMessage(
     segmentIndex: 0,
     blockCount: 0,
     parts: input.parts,
-    compat: { source: 'image-generation', evidenceId: input.evidenceId },
+    compat: {
+      source: 'image-generation', evidenceId: input.evidenceId,
+      ...(input.taskId ? { taskId: input.taskId } : {}),
+      ...(input.provisionalText ? { provisionalText: true } : {}),
+    },
   };
 
   const closed = closeAllMessageSegments(snapshot);
@@ -373,6 +379,7 @@ export function appendSyntheticAssistantMessage(
 
   return dedupeTimelineAttachments({
     ...closed,
+    hasImageGenerationProjection: true,
     itemOrder: nextOrder,
     itemsById: { ...closed.itemsById, [id]: item },
     segmentCounts: { ...closed.segmentCounts, [input.messageId]: 1 },

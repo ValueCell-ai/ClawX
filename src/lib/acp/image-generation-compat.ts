@@ -3,10 +3,15 @@ import type { ChatRuntimeEvent } from '@shared/chat-runtime-events';
 import type { RawMessage } from '@shared/chat/types';
 import type { MediaThumbnailEntry } from '@shared/host-api/contract';
 import type { GatewayChatMessageEvent } from '@shared/host-events/contract';
+import type { AcpTimelineSnapshot } from './timeline-types';
 
 const MESSAGE_TOOL = 'message';
 const GENERATED_IMAGE_CAPTION = 'Generated image is ready.';
-const START_RE = /Background task started for image generation \(([0-9a-f-]{36})\)/i;
+const TASK_UUID_PATTERN = '([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})';
+const TASK_HANDLE_PATTERN = '(?:tool:image_generate:)?' + TASK_UUID_PATTERN;
+const START_RE = new RegExp('^Background task started for image generation \\((tool:image_generate:)?' + TASK_UUID_PATTERN + '\\)', 'i');
+const TASK_SESSION_RE = new RegExp('^image_generate:' + TASK_HANDLE_PATTERN + '(?::|$)', 'i');
+const NATIVE_RUN_RE = new RegExp('^tool:image_generate:' + TASK_UUID_PATTERN + '$', 'i');
 const MEDIA_TAG_RE = /(?<![A-Za-z0-9/\\])(?:MEDIA|media):((?:\/|~\/|[A-Za-z]:\\)[^\n"'()\x5b\x5d,<>`]*?\.(?:png|jpe?g|gif|webp|bmp|avif|svg|ico|tiff?))(?=$|[\s\n"'()\x5b\x5d,<>`]|[，。；;,.!?])/g;
 
 export type ImageGenerationTaskStart = {
@@ -30,6 +35,8 @@ export type ImageGenerationCompletionEvidence = {
   evidenceId: string;
   caption: string;
   authoritativeCaption?: true;
+  /** A confirmed text delivery on the requester turn does not finish the background job. */
+  provisionalText?: true;
   candidates: ImageGenerationMediaCandidate[];
 };
 
@@ -177,10 +184,24 @@ function firstSourceReplyText(...values: unknown[]): string | undefined {
   return undefined;
 }
 
-function imageGenerationTaskId(value: unknown): string | undefined {
-  const text = stringValue(value);
-  if (!text) return undefined;
-  return text.match(/(?:^|:)image_generate:([0-9a-f-]{36})(?::|$)/i)?.[1];
+export function imageGenerationTaskIdFromSessionKey(value: unknown): string | undefined {
+  return stringValue(value)?.match(TASK_SESSION_RE)?.[1]?.toLowerCase();
+}
+
+function imageGenerationTaskIdFromRunId(value: unknown): string | undefined {
+  return stringValue(value)?.match(NATIVE_RUN_RE)?.[1]?.toLowerCase() ?? imageGenerationTaskIdFromSessionKey(value);
+}
+
+function taskIdFromAcknowledgment(text: string, allowNamespaced = true): string | undefined {
+  const match = text.trim().match(START_RE);
+  return match && (allowNamespaced || !match[1]) ? match[2]?.toLowerCase() : undefined;
+}
+
+function dispatchedImageGenerationTaskId(details: Record<string, unknown> | null): string | undefined {
+  const tool = asRecord(details?.tool);
+  const result = asRecord(details?.result);
+  if (tool?.id !== 'openclaw:core:image_generate' || result?.isError === true) return undefined;
+  return taskIdFromAcknowledgment(textFromMessageContent(result?.content));
 }
 
 function dedupeCandidates(candidates: ImageGenerationMediaCandidate[]): ImageGenerationMediaCandidate[] {
@@ -237,31 +258,57 @@ function transcriptCompletionTrigger(message: RawMessage): { taskId: string; fai
     stringValue(provenance?.kind)?.toLowerCase() === 'inter_session'
     && stringValue(provenance?.sourceTool)?.toLowerCase() === 'image_generate'
   ) {
-    const taskId = imageGenerationTaskId(provenance?.sourceSessionKey);
+    const taskId = imageGenerationTaskIdFromSessionKey(provenance?.sourceSessionKey);
     if (taskId) return { taskId, failed };
   }
   const header = text.match(/^\[Inter-session message\][^\n]*sourceSession=(image_generate:[^\s]+)[^\n]*sourceTool=image_generate\b/i);
-  const taskId = imageGenerationTaskId(header?.[1]);
+  const taskId = imageGenerationTaskIdFromSessionKey(header?.[1]);
   return taskId ? { taskId, failed } : undefined;
+}
+
+export function imageGenerationTaskIdFromToolOutput(
+  output: unknown, text: string, call: { toolCallId?: string; title?: string; toolKind?: string },
+): string | undefined {
+  // OpenClaw formats ACP titles as "name: arguments". A sparse result can
+  // also carry a dispatched child's identity in tool_call:<parent>:<name>:<n>.
+  const titleName = call.title === call.toolCallId ? undefined : call.title?.split(': ', 1)[0];
+  const childName = call.toolCallId?.match(/^tool_call:.+:([^:]+):\d+$/)?.[1];
+  const toolName = titleName && titleName !== 'tool' ? titleName : childName;
+  if (call.toolKind && call.toolKind !== 'other') return undefined;
+  if (toolName && !['image_generate', 'dispatch_action', MESSAGE_TOOL].includes(toolName)) return undefined;
+  const rawOutput = asRecord(output);
+  if (rawOutput?.isError === true) return undefined;
+  const details = asRecord(rawOutput?.details);
+  if (details?.tool || toolName === 'dispatch_action') return dispatchedImageGenerationTaskId(details);
+  // Older ACP results may contain just the legacy bare-UUID acknowledgment.
+  const allowNamespaced = toolName === 'image_generate';
+  return taskIdFromAcknowledgment(text, allowNamespaced)
+    ?? taskIdFromAcknowledgment(textFromMessageContent(rawOutput?.content ?? output), allowNamespaced);
 }
 
 export function extractImageGenerationStartFromAcpEnvelope(
   event: AcpSessionUpdateEnvelope,
+  timeline?: AcpTimelineSnapshot,
 ): ImageGenerationTaskStart | null {
   const notification = asRecord(event.notification);
   const update = asRecord(notification?.update);
-  if (!update) return null;
-
-  const text = [textFromToolContent(update.content), stringValue(update.rawOutput)].filter(Boolean).join('\n');
-  const match = text.match(START_RE);
-  if (!match?.[1]) return null;
-
+  if (update?.sessionUpdate !== 'tool_call' && update?.sessionUpdate !== 'tool_call_update') return null;
+  if (update.status === 'failed') return null;
   const toolCallId = stringValue(update.toolCallId);
+  const previous = toolCallId && timeline?.itemsById[`tool:${toolCallId}`];
+  const tool = previous && previous.kind === 'tool-call' ? previous : undefined;
+  const taskId = imageGenerationTaskIdFromToolOutput(update.rawOutput, textFromToolContent(update.content), {
+    toolCallId,
+    title: stringValue(update.title) ?? tool?.title,
+    toolKind: stringValue(update.kind) ?? tool?.toolKind,
+  });
+  if (!taskId) return null;
+
   return {
     sessionKey: event.sessionKey,
-    taskId: match[1],
+    taskId,
     ...(toolCallId ? { toolCallId } : {}),
-    evidenceId: `start:${event.sessionKey}:${toolCallId ?? 'unknown'}:${match[1]}`,
+    evidenceId: `start:${event.sessionKey}:${toolCallId ?? 'unknown'}:${taskId}`,
   };
 }
 
@@ -310,6 +357,7 @@ export function extractImageGenerationCompletionFromAcpEnvelope(
     ...(event.historical ? { historical: true } : {}),
     ...(toolCallId !== 'unknown-tool' ? { toolCallId } : {}),
     evidenceId: `acp:${event.sessionKey}:${toolCallId}:${candidates.map((entry) => entry.key).join('|') || 'text-only'}`,
+    ...(candidates.length === 0 ? { provisionalText: true } : {}),
     caption: caption ?? GENERATED_IMAGE_CAPTION,
     ...(caption ? { authoritativeCaption: true } : {}),
     candidates,
@@ -325,20 +373,20 @@ function transcriptImageGenerationStart(
   sessionKey: string,
 ): ImageGenerationTaskStart | null {
   if (transcriptRole(message) !== 'toolresult' && transcriptRole(message) !== 'tool_result') return null;
-  if (message.toolName !== MESSAGE_TOOL && message.toolName !== 'image_generate') return null;
-
-  const details = asRecord(message.details);
-  const nestedTask = asRecord(details?.task);
-  const taskId = stringValue(details?.taskId) ?? stringValue(nestedTask?.taskId);
-  const text = [textFromMessageContent(message.content), taskId ? `(${taskId})` : ''].filter(Boolean).join('\n');
-  const match = text.match(START_RE);
-  if (!match?.[1]) return null;
+  if (message.isError) return null;
+  let taskId: string | undefined;
+  if (message.toolName === 'dispatch_action') {
+    taskId = dispatchedImageGenerationTaskId(asRecord(message.details));
+  } else if (message.toolName === MESSAGE_TOOL || message.toolName === 'image_generate') {
+    taskId = taskIdFromAcknowledgment(textFromMessageContent(message.content), message.toolName === 'image_generate');
+  }
+  if (!taskId) return null;
 
   return {
     sessionKey,
-    taskId: match[1],
+    taskId,
     ...(message.toolCallId ? { toolCallId: message.toolCallId } : {}),
-    evidenceId: `start:${sessionKey}:${message.toolCallId ?? 'unknown'}:${match[1]}`,
+    evidenceId: `start:${sessionKey}:${message.toolCallId ?? 'unknown'}:${taskId}`,
   };
 }
 
@@ -349,9 +397,8 @@ export function extractImageGenerationTranscriptSupplement(
   const starts: ImageGenerationTaskStart[] = [];
   const completions: ImageGenerationCompletionEvidence[] = [];
   const seenTaskIds = new Set<string>();
-  const activeTaskIds = new Set<string>();
+  const activeStarts = new Map<string, ImageGenerationTaskStart>();
   const seenCompletionIds = new Set<string>();
-  let latestStart: ImageGenerationTaskStart | null = null;
   let completionTaskId: string | undefined;
   let completionFailed = false;
 
@@ -361,13 +408,12 @@ export function extractImageGenerationTranscriptSupplement(
     if (transcriptRole(message) !== 'user' && asRecord(message)?.display === false) continue;
     if (transcriptRole(message) === 'user') {
       const trigger = transcriptCompletionTrigger(message);
-      if (trigger && activeTaskIds.has(trigger.taskId)) {
+      if (trigger && activeStarts.has(trigger.taskId)) {
         completionTaskId = trigger.taskId;
         completionFailed = trigger.failed;
         continue;
       }
-      activeTaskIds.clear();
-      latestStart = null;
+      activeStarts.clear();
       completionTaskId = undefined;
       completionFailed = false;
       continue;
@@ -376,13 +422,14 @@ export function extractImageGenerationTranscriptSupplement(
     if (start && !seenTaskIds.has(start.taskId)) {
       starts.push(start);
       seenTaskIds.add(start.taskId);
-    }
-    if (start) {
-      activeTaskIds.add(start.taskId);
-      latestStart = start;
+      activeStarts.set(start.taskId, start);
     }
 
-    if (activeTaskIds.size === 0) continue;
+    // An untagged assistant reply can only belong to a single outstanding task.
+    const matchedStart = completionTaskId
+      ? activeStarts.get(completionTaskId)
+      : activeStarts.size === 1 ? activeStarts.values().next().value : undefined;
+    if (!matchedStart) continue;
     const role = transcriptRole(message);
     const details = asRecord(message.details);
     const assistantText = role === 'assistant' ? textFromMessageContent(message.content) : '';
@@ -402,20 +449,23 @@ export function extractImageGenerationTranscriptSupplement(
     const evidenceId = `transcript:${sessionKey}:${messageId}:${candidates.map((entry) => entry.key).join('|') || 'text-only'}`;
     if (seenCompletionIds.has(evidenceId)) continue;
     seenCompletionIds.add(evidenceId);
-    const taskId = completionTaskId ?? latestStart?.taskId;
+    const { taskId } = matchedStart;
+    const provisionalText = role === 'toolresult' && !completionTaskId && candidates.length === 0;
+    const toolCallId = provisionalText ? message.toolCallId ?? matchedStart.toolCallId : matchedStart.toolCallId;
     completions.push({
       sessionKey,
       source: 'transcript-history',
       historical: true,
-      ...(taskId ? { taskId } : {}),
-      ...(latestStart?.toolCallId ? { toolCallId: latestStart.toolCallId } : {}),
+      taskId,
+      ...(toolCallId ? { toolCallId } : {}),
       evidenceId,
+      ...(provisionalText ? { provisionalText: true } : {}),
       caption: caption ?? GENERATED_IMAGE_CAPTION,
       ...(caption ? { authoritativeCaption: true } : {}),
       candidates,
     });
-    if (role === 'assistant' && taskId) {
-      activeTaskIds.delete(taskId);
+    if (role === 'assistant') {
+      activeStarts.delete(taskId);
       completionTaskId = undefined;
       completionFailed = false;
     }
@@ -438,7 +488,7 @@ export function extractImageGenerationCompletionFromGatewayChatMessage(
   const toolName = stringValue(message.toolName);
   const runId = stringValue(envelope.runId) ?? stringValue(root.runId) ?? 'unknown-run';
   const sessionKey = stringValue(envelope.sessionKey) ?? stringValue(root.sessionKey);
-  const taskId = imageGenerationTaskId(runId) ?? imageGenerationTaskId(sessionKey);
+  const taskId = imageGenerationTaskIdFromRunId(runId) ?? imageGenerationTaskIdFromSessionKey(sessionKey);
   const finalAssistantText = role === 'assistant' && taskId && stringValue(envelope.state)?.toLowerCase() === 'final'
     ? textFromMessageContent(message.content)
     : '';
@@ -474,7 +524,9 @@ export function extractImageGenerationCompletionFromGatewayChatMessage(
     ...(sessionKey ? { sessionKey } : {}),
     source: 'gateway-chat-message',
     ...(taskId ? { taskId } : {}),
+    ...(trustedMessageToolResult && typeof message.toolCallId === 'string' ? { toolCallId: message.toolCallId } : {}),
     evidenceId: `gateway:${runId}:${candidates.map((entry) => entry.key).join('|') || 'text-only'}`,
+    ...(trustedMessageToolResult && !taskId && candidates.length === 0 ? { provisionalText: true } : {}),
     caption: sourceReplyCaption ?? GENERATED_IMAGE_CAPTION,
     ...(sourceReplyCaption ? { authoritativeCaption: true } : {}),
     candidates,
@@ -509,20 +561,21 @@ export function extractImageGenerationCompletionFromRuntimeEvent(
       ...collectStructuredMediaCandidates(metaDetails),
     ]);
     if (name !== MESSAGE_TOOL || (!caption && candidates.length === 0)) return null;
-    const taskId = imageGenerationTaskId(sessionKey) ?? imageGenerationTaskId(record.runId);
+    const taskId = imageGenerationTaskIdFromRunId(record.runId) ?? imageGenerationTaskIdFromSessionKey(sessionKey);
     return {
       ...(sessionKey ? { sessionKey } : {}),
       source: 'runtime-event',
       ...(taskId ? { taskId } : {}),
       ...(stringValue(record.toolCallId) ? { toolCallId: stringValue(record.toolCallId) } : {}),
       evidenceId: `runtime:tool.completed:${stringValue(record.runId) ?? 'unknown-run'}:${candidates.map((entry) => entry.key).join('|') || 'text-only'}`,
+      ...(!taskId && candidates.length === 0 ? { provisionalText: true } : {}),
       caption: caption ?? GENERATED_IMAGE_CAPTION,
       ...(caption ? { authoritativeCaption: true } : {}),
       candidates,
     };
   }
 
-  const taskId = imageGenerationTaskId(record.runId);
+  const taskId = imageGenerationTaskIdFromRunId(record.runId);
   const phase = stringValue(record.phase)?.toLowerCase();
   const finalText = taskId && phase === 'final_answer'
     ? stringValue(record.text) ?? stringValue(record.delta) ?? ''
@@ -545,6 +598,10 @@ export function extractImageGenerationCompletionFromRuntimeEvent(
 }
 
 export function imageGenerationEvidenceKey(evidence: ImageGenerationCompletionEvidence): string {
+  if (evidence.provisionalText) {
+    const delivery = JSON.stringify(['text-receipt', evidence.taskId, evidence.toolCallId ?? evidence.caption]);
+    return `${evidence.sessionKey ?? 'unknown'}:image-generation:${delivery}`;
+  }
   const candidateKeys = Array.from(new Set(evidence.candidates.map((entry) => entry.key)))
     .sort();
   const candidateSetKey = candidateKeys.length > 0

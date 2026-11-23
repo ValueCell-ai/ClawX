@@ -813,7 +813,14 @@ export type SessionSummariesResult = HostSuccess & {
 };
 export type SessionDeletePayload = { id: string };
 export type SessionRenamePayload = { id: string; title: string };
+export type ThinkingProfile = {
+  levels: { id: string; label: string }[];
+  defaultLevel?: string;
+  selectedLevel?: string;
+};
+
 export type SessionModelSelection = {
+  thinking?: ThinkingProfile;
   /** Explicit user selection. A null selection follows the Agent's configuration. */
   modelRef: string | null;
   /** False when the Gateway confirms the session has no row yet. */
@@ -824,7 +831,8 @@ export type SessionModelSelection = {
 };
 export type SessionSetModelPayload = {
   sessionKey: string;
-  modelRef: string | null;
+  modelRef?: string | null;
+  thinkingLevel?: string | null;
   /** Only the first prompt of a locally created ACP conversation may materialize a Gateway row. */
   createIfMissing?: boolean;
 };
@@ -1114,6 +1122,7 @@ export type HostApiContract = {
     testImageGeneration: (payload: ImageGenerationTestPayload) => ImageGenerationTestResult;
   };
   sessions: {
+    getDraftThinking: (payload: { sessionKey: string; modelRef: string }) => ThinkingProfile | null;
     getModel: (payload: { sessionKey: string }) => SessionModelSelection;
     setModel: (payload: SessionSetModelPayload) => SessionModelSelection;
     delete: (payload: SessionDeletePayload) => HostSuccess;

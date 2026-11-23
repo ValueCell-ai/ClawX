@@ -1,4 +1,5 @@
 import { closeElectronApp, expect, getStableWindow, test } from './fixtures/electron';
+import { settleFloatingSurface } from './fixtures/floating-ui';
 
 const alphaModelRef = 'custom-alpha123/model-alpha';
 const betaModelRef = 'custom-beta5678/provider/model-beta';
@@ -14,6 +15,16 @@ test.describe('ClawX chat model picker', () => {
         const reviewerKey = 'agent:reviewer:primary';
         const sessionModels = new Map<string, string>([[reviewerKey, refs.betaModelRef]]);
         let catalogUnavailable = false;
+        const sessionLevels = new Map<string, string>();
+        const profile = (modelRef?: string, selectedLevel?: string) => ({
+          levels: modelRef?.endsWith('/deepseek-v4.1-flash-1017')
+            ? ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].map(id => ({ id, label: id }))
+            : modelRef === refs.betaModelRef ? [{ id: 'high', label: 'on' }] : [
+            { id: 'off', label: 'off' }, { id: 'high', label: 'high' }, { id: 'adaptive', label: 'adaptive' },
+          ],
+          defaultLevel: modelRef === refs.betaModelRef ? 'high' : 'off',
+          selectedLevel,
+        });
         const hostRequests: Array<{ path: string; method: string; body: unknown }> = [];
         const now = new Date().toISOString();
         let releaseProviderAccounts: (() => void) | undefined;
@@ -132,8 +143,14 @@ test.describe('ClawX chat model picker', () => {
           if (request?.module === 'agents' && request.action === 'list') {
             return makeResponse(request.id, agentsSnapshot());
           }
+          if (request?.module === 'sessions' && request.action === 'getDraftThinking') {
+            return makeResponse(request.id, profile(String(body?.modelRef)));
+          }
           if (request?.module === 'sessions' && request.action === 'getModel') {
-            return makeResponse(request.id, { modelRef: sessionModels.get(String(body?.sessionKey)) ?? null });
+            const key = String(body?.sessionKey);
+            return makeResponse(request.id, {
+              modelRef: sessionModels.get(key) ?? null, thinking: profile(sessionModels.get(key), sessionLevels.get(key)),
+            });
           }
           if (request?.module === 'sessions' && request.action === 'setModel') {
             if ((globalThis as typeof globalThis & { __modelAdmissionPending?: boolean }).__modelAdmissionPending) {
@@ -150,8 +167,12 @@ test.describe('ClawX chat model picker', () => {
               sessions.push({ key, displayName: 'Use my selection for this first turn.', workspacePath });
             }
             if (typeof body?.modelRef === 'string') sessionModels.set(key, body.modelRef);
-            else sessionModels.delete(key);
-            return makeResponse(request.id, { modelRef: sessionModels.get(key) ?? null });
+            else if (body?.modelRef === null) sessionModels.delete(key);
+            if (typeof body?.thinkingLevel === 'string') sessionLevels.set(key, body.thinkingLevel);
+            else if (body?.thinkingLevel === null) sessionLevels.delete(key);
+            return makeResponse(request.id, {
+              modelRef: sessionModels.get(key) ?? null, thinking: profile(sessionModels.get(key), sessionLevels.get(key)),
+            });
           }
           if (request?.module === 'providers' && request.action === 'accounts') {
             await providerAccountsReady;
@@ -163,6 +184,7 @@ test.describe('ClawX chat model picker', () => {
                 authMode: 'api_key',
                 baseUrl: 'http://127.0.0.1:1111/v1',
                 model: 'model-alpha',
+                metadata: { customModels: ['model-alpha', 'deepseek-v4.1-flash-1017'] },
                 enabled: true,
                 isDefault: true,
                 createdAt: now,
@@ -357,6 +379,23 @@ test.describe('ClawX chat model picker', () => {
       await gptOption.click();
       await expect(page.getByTestId('chat-model-picker-button')).toHaveText(/gpt-5.6/);
       await expect(page.getByTestId('chat-model-picker-current-icon')).toHaveAttribute('data-model-icon', 'openai');
+      const strength = page.getByRole('button', { name: 'Thinking strength' });
+      const slider = page.getByRole('slider', { name: 'Thinking strength' });
+      await test.step('switches a DeepSeek Flash session from max to off', async () => {
+        await page.getByTestId('chat-model-picker-button').click();
+        await alphaGroup.getByRole('menuitemradio', { name: 'deepseek-v4.1-flash-1017', exact: true }).click();
+        await strength.click();
+        await expect(slider).toHaveAttribute('max', '7');
+        await slider.press('End');
+        await expect(strength).toHaveText('Ultra');
+        await slider.press('ArrowLeft');
+        await expect(strength).toHaveText('Max');
+        await slider.press('Home');
+        await expect(strength).toHaveText('Off');
+        await page.keyboard.press('Escape');
+        await expect(slider).toBeHidden();
+        await expect(strength).toBeFocused();
+      });
       await page.getByTestId('chat-model-picker-button').click();
       await betaGroup.getByRole('menuitemradio', { name: 'model-alpha', exact: true }).click();
       await expect(page.getByTestId('chat-model-picker-button')).toHaveText('model-alpha');
@@ -367,6 +406,12 @@ test.describe('ClawX chat model picker', () => {
       await expect(page.getByTestId('chat-model-picker-button')).toHaveText(/provider\/model-beta/);
       await expect(page.getByTestId('chat-model-picker-button')).not.toContainText('Beta');
       await expect(page.getByTestId('chat-model-picker-current-icon')).toHaveAttribute('data-model-icon', 'fallback');
+
+      await strength.click();
+      await expect(slider).toHaveCount(0);
+      await page.getByRole('button', { name: 'On', exact: true }).click();
+      await expect(strength).toHaveText('On');
+      await page.keyboard.press('Escape');
 
       const picker = page.getByTestId('chat-model-picker-button');
       for (const sibling of ['sibling', 'other']) {
@@ -391,6 +436,26 @@ test.describe('ClawX chat model picker', () => {
       await expect(page.getByTestId('chat-model-picker-follow-agent')).toHaveCount(0);
       await gptOption.click();
       await expect(picker).toHaveText(/gpt-5.6/);
+      await strength.click();
+      await expect(slider).toHaveAttribute('max', '2');
+      await settleFloatingSurface(page.getByRole('dialog', { name: 'Thinking strength' }));
+      const track = await slider.boundingBox();
+      if (!track) throw new Error('Thinking slider is not visible');
+      const y = track.y + track.height / 2;
+      await page.mouse.move(track.x + 8, y);
+      await page.mouse.down();
+      await page.mouse.move(track.x + track.width / 2, y, { steps: 5 });
+      await expect(slider).toHaveAttribute('aria-valuetext', 'High');
+      await expect(strength).toContainText('Default');
+      await page.mouse.move(track.x + track.width - 8, y, { steps: 5 });
+      await page.mouse.up();
+      await expect(strength).toHaveText('Adaptive');
+      await page.getByRole('button', { name: 'Default', exact: true }).click();
+      await expect(strength).toContainText('Default');
+      await slider.focus();
+      await slider.press('End');
+      await expect(strength).toHaveText('Adaptive');
+      await page.keyboard.press('Escape');
       // Picking in an unsent draft must not create a Gateway conversation.
       expect(await app.evaluate(() => (
         (globalThis as typeof globalThis & {
@@ -412,7 +477,7 @@ test.describe('ClawX chat model picker', () => {
       expect(draftKey).toMatch(/^agent:main:session-/);
       expect(requests.slice(0, firstPrompt)).toContainEqual({
         path: 'sessions:setModel', method: 'HOST',
-        body: { sessionKey: draftKey, modelRef: 'openai/gpt-5.6', createIfMissing: true },
+        body: { sessionKey: draftKey, modelRef: 'openai/gpt-5.6', thinkingLevel: 'adaptive', createIfMissing: true },
       });
       expect(requests).toContainEqual({
         path: 'sessions:setModel',

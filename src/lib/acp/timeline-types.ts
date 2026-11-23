@@ -63,7 +63,7 @@ export type MessageSegmentItem = {
   blockCount?: number;
   optimistic?: boolean;
   /** Renderer-only compatibility projection, not an ACP protocol event. */
-  compat?: { source: 'image-generation' | 'openclaw-media'; evidenceId: string };
+  compat?: { source: 'image-generation' | 'openclaw-media'; evidenceId: string; taskId?: string; provisionalText?: true };
 };
 
 export type ThoughtItem = {
@@ -137,6 +137,7 @@ export type AcpSessionMetadata = {
 export type AcpTimelineSnapshot = {
   sessionId: string;
   loadGeneration: number;
+  hasImageGenerationProjection?: true;
   itemOrder: string[];
   itemsById: Record<string, TimelineItem>;
   metadata: AcpSessionMetadata;

@@ -47,7 +47,7 @@ import {
   ensureOpenClawUpgradeSnapshot,
   quarantineLegacyUpdateCheckState,
 } from '../utils/openclaw-upgrade-snapshot';
-import { prepareCronInferenceMigration } from '../utils/openclaw-cron-migration';
+import { openCronSnapshot, prepareCronInferenceMigration, prepareCronTimeoutMigration } from '../utils/openclaw-cron-migration';
 import { writeCronInferenceLaunchManifest, type GatewayStartupPreparationResult } from './cron-inference-continuity';
 import { stripSystemdSupervisorEnv, withCronMigrationManifestEnv, withCuaConnectionFileEnv } from './config-sync-env';
 import { cleanupAgentsSymlinkedSkills, cleanupStalePluginRuntimeDeps } from './skills-symlink-cleanup';
@@ -314,7 +314,18 @@ function buildPluginSourceSignatures(configuredChannels: string[]): Record<strin
   return signatures;
 }
 
-function buildPluginMaintenanceCacheKey(openclawDir: string, configuredChannels: string[]): string {
+export function buildPluginMaintenanceCacheKey(
+  openclawDir: string,
+  configuredChannels: string[],
+  extensionsDir = join(homedir(), '.openclaw', 'extensions'),
+): string {
+  // Child directory mtimes don't change when a manifest is overwritten in place.
+  // Including installed manifests also retires keys from before descriptor repair.
+  const installedManifests: Record<string, string> = {};
+  for (const channel of configuredChannels) {
+    const plugin = CHANNEL_PLUGIN_MAP[channel];
+    if (plugin) installedManifests[channel] = pathSignature(join(extensionsDir, plugin.dirName, 'openclaw.plugin.json'));
+  }
   return buildPrelaunchMaintenanceCacheKey({
     task: 'plugin-maintenance',
     appVersion: appVersionForCache(),
@@ -322,7 +333,8 @@ function buildPluginMaintenanceCacheKey(openclawDir: string, configuredChannels:
     runtimePackage: readPluginPackageMetadata(join(openclawDir, 'package.json')),
     cwd: process.cwd(),
     configuredChannels: [...configuredChannels].sort(),
-    extensionsDir: directoryChildrenSignature(join(homedir(), '.openclaw', 'extensions')),
+    extensionsDir: directoryChildrenSignature(extensionsDir),
+    installedManifests,
     sourceSignatures: buildPluginSourceSignatures(configuredChannels),
   });
 }
@@ -671,6 +683,7 @@ export async function prepareGatewayLaunchContext(
   const openclawDir = getOpenClawDir();
   const entryScript = getOpenClawEntryPath();
   let cronMigrationManifest: string | undefined;
+  let cronTimeoutManifest: string | undefined;
 
   if (!isOpenClawPresent()) {
     throw new Error(`OpenClaw package not found at: ${openclawDir}`);
@@ -681,14 +694,23 @@ export async function prepareGatewayLaunchContext(
     if (snapshot.status === 'created') {
       logger.info(`[upgrade] Created OpenClaw pre-migration snapshot (${snapshot.files.length} files): ${snapshot.snapshotDir}`);
     }
+    const evidence = openCronSnapshot(snapshot.snapshotDir);
     try {
-      const migration = await prepareCronInferenceMigration(snapshot.snapshotDir);
+      const migration = await prepareCronInferenceMigration(snapshot.snapshotDir, evidence);
       cronMigrationManifest = migration.manifestPath;
       if (migration.eligible || migration.skipped) logger.info('[upgrade] Prepared scheduled-task account migration', {
         eligible: migration.eligible, unresolved: migration.skipped,
       });
     } catch (error) {
       logger.warn('[upgrade] Scheduled-task account migration needs inspection:', error);
+    }
+    if (process.platform !== 'win32') return;
+    try {
+      const migration = await prepareCronTimeoutMigration(snapshot.snapshotDir, evidence);
+      cronTimeoutManifest = migration.manifestPath;
+      if (migration.eligible) logger.info('[upgrade] Prepared scheduled worker timeout migration', { eligible: migration.eligible });
+    } catch (error) {
+      logger.warn('[upgrade] Scheduled worker timeout migration needs inspection:', error);
     }
   });
 
@@ -761,7 +783,7 @@ export async function prepareGatewayLaunchContext(
     : baseEnvWithBin;
   const forkEnv: Record<string, string | undefined> = {
     // Runtime applies this managed launch's evidence after credentials are ready, before cron starts.
-    ...withCronMigrationManifestEnv(stripSystemdSupervisorEnv(baseEnvPatched), cronMigrationManifest),
+    ...withCronMigrationManifestEnv(stripSystemdSupervisorEnv(baseEnvPatched), cronMigrationManifest, cronTimeoutManifest),
     ...providerEnv,
     ...uvEnv,
     ...proxyEnv,

@@ -76,6 +76,8 @@ Tool-card presentation may derive its localized label and icon from the tool tit
 
 Persisted conversation selection treats workspace resolution and ACP history loading as one pending presentation, not an empty conversation. The greeting is reserved for local drafts or resolved empty history. Fast loads suppress the spinner for 200 ms; slow loads retain loading feedback. Deferred timeline rendering must not cross session or generation boundaries or replay an obsolete empty snapshot after history resolves.
 
+Keep failed outgoing prompts in Renderer memory under their originating conversation, including across navigation to enterprise sign-in and history loads during the current app session. Preserve newer composer input. Resubmission requires an explicit user retry through the ordinary extension guards and session admission path. ACP replay remains authoritative for delivered history.
+
 
 Restart continuation regression coverage must execute an installed ACP subprocess
 against a reconnecting Gateway fixture, including explicit predecessor validation,

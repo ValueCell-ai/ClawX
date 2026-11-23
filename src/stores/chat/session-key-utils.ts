@@ -1,5 +1,6 @@
 import { CHANNEL_NAMES } from '@shared/types/channel';
 import type { AgentSummary } from '@shared/types/agent';
+import { normalizeWorkspacePath } from '@/lib/workspace-context';
 import {
   containsOpenClawHeartbeatPollSentinel,
   isOpenClawHeartbeatAckText,
@@ -14,6 +15,10 @@ const SUBAGENT_CONTEXT_PREFIX = '[Subagent Context]';
 
 export function getPromptSessionKey(sourceKey: string, target: AgentSummary | null): string {
   return target ? target.mainSessionKey || `agent:${target.id}:main` : sourceKey;
+}
+
+export function getPromptWorkspacePath(cwd: string, target: AgentSummary | null, destination?: ChatSession): string {
+  return target ? normalizeWorkspacePath(destination?.workspacePath) ?? (target.workspace || cwd) : cwd;
 }
 
 function stripHeartbeatSentinel(value: string | undefined): string {
@@ -101,11 +106,11 @@ export function shouldRetainSessionInCatalog(session: ChatSession): boolean {
   return true;
 }
 
-export function shouldIncludeSessionInSidebarList(session: ChatSession): boolean {
+export function shouldIncludeSessionInSidebarList(session: ChatSession, hasFailedPrompt = false): boolean {
   // Native children remain in the catalog for status, attention, and deletion joins.
-  return shouldRetainSessionInCatalog(session) && !isNativeSubagentSessionKey(session.key);
+  return shouldIncludeSessionInWorkspaceDeletion(session, hasFailedPrompt) && !isNativeSubagentSessionKey(session.key);
 }
 
-export function shouldIncludeSessionInWorkspaceDeletion(session: ChatSession): boolean {
-  return shouldRetainSessionInCatalog(session);
+export function shouldIncludeSessionInWorkspaceDeletion(session: ChatSession, hasFailedPrompt = false): boolean {
+  return hasFailedPrompt || shouldRetainSessionInCatalog(session);
 }

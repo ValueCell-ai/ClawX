@@ -10,7 +10,7 @@ import {
   useState, useRef, useEffect, useCallback, useMemo,
   type SetStateAction,
 } from 'react';
-import { Presentation, Table2, FileScan, Monitor, WandSparkles, SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, AtSign, Bot, Search, ChevronDown } from 'lucide-react';
+import { CircleAlert, Presentation, Table2, FileScan, Monitor, WandSparkles, SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, AtSign, Bot, Search, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import * as DropdownMenu from '@/components/ui/dropdown-menu';
 import { hasFloatingSurface } from '@/components/ui/floating-ui';
@@ -27,7 +27,7 @@ import { useGatewayStore } from '@/stores/gateway';
 import { useSettingsStore } from '@/stores/settings';
 import { useAgentsStore } from '@/stores/agents';
 import { useChatStore } from '@/stores/chat';
-import { EMPTY_DRAFT_ATTACHMENTS, useComposerDraftStore } from '@/stores/composer-drafts';
+import { EMPTY_DRAFT_ATTACHMENTS, useComposerDraftStore, type FailedPrompt } from '@/stores/composer-drafts';
 import type { FileAttachment } from '@/types/attachment';
 export type { FileAttachment } from '@/types/attachment';
 import { useArtifactPanel } from '@/stores/artifact-panel';
@@ -35,7 +35,7 @@ import { buildPreviewTarget } from '@/components/file-preview/build-preview-targ
 import { useProviderStore } from '@/stores/providers';
 import { buildConfiguredModelOptions, formatModelRefLabel } from '@/lib/model-options';
 import { getSessionModelSelectionError, readSessionModel, useSessionModel } from './session-model';
-import { getPromptSessionKey } from '@/stores/chat/session-key-utils';
+import { getPromptSessionKey, getPromptWorkspacePath } from '@/stores/chat/session-key-utils';
 import type { AgentSummary } from '@/types/agent';
 import type { QuickAccessSkill } from '@/types/skill';
 import { useTranslation } from 'react-i18next';
@@ -51,6 +51,7 @@ import { VoiceDictationButton } from '@/components/voice/VoiceDictationButton';
 import { MicrophonePermissionDialog } from '@/components/voice/MicrophonePermissionDialog';
 import type { AsrMicrophoneAccessResult } from '@shared/host-api/contract';
 import { ModelPicker } from '@/components/common/ModelPicker';
+import { ThinkingStrengthPicker } from './ThinkingStrengthPicker';
 import { AcpSessionPlan } from './AcpSessionPlan';
 import { AcpSubagentSessions, type AcpSubagentSession } from './AcpSubagentSessions';
 
@@ -65,9 +66,10 @@ type ComposerExpandedPanel = 'subagents' | 'plan' | null;
 
 interface ChatInputProps {
   welcome?: boolean;
-  onSend: (text: string, attachments?: FileAttachment[], targetAgentId?: string | null) => void | Promise<boolean>;
+  onSend: (text: string, attachments?: FileAttachment[], targetAgentId?: string | null) => void | Promise<boolean | { error: string }>;
   onSelectAgent?: (agentId: string) => void;
   onStop?: () => void;
+  isPromptInTimeline?: (id: string) => boolean;
   draft?: string;
   draftKey?: string;
   onDraftChange?: (update: SetStateAction<string>) => void;
@@ -224,6 +226,7 @@ export function ChatInput({
   onSend,
   onSelectAgent,
   onStop,
+  isPromptInTimeline,
   draft,
   draftKey,
   onDraftChange,
@@ -285,6 +288,8 @@ export function ChatInput({
   const refreshProviderSnapshot = useProviderStore((s) => s.refreshProviderSnapshot);
   const currentAgentId = useChatStore((s) => s.currentAgentId);
   const currentSessionKey = useChatStore((s) => s.currentSessionKey);
+  const failedPrompts = useComposerDraftStore((s) => s.failedPrompts[currentSessionKey]);
+  const submissionPending = useComposerDraftStore((s) => !!s.submissions[currentSessionKey]?.length);
   const sessions = useChatStore((s) => s.sessions);
   const targetAgentId = target?.source === currentSessionKey ? target?.agentId ?? null : null;
   const composerSessionRef = useRef(currentSessionKey);
@@ -319,6 +324,7 @@ export function ChatInput({
   const sessionModel = useSessionModel(destinationKey, destination,
     gatewayStatus.state === 'running' && gatewayStatus.gatewayReady !== false, sending, agentModelRef);
   const effectiveModelRef = sessionModel.value?.modelRef || sessionModel.value?.effectiveModelRef || agentModelRef;
+  const thinking = sessionModel.thinking;
   const currentModelLabel = useMemo(() => {
     const matchedOption = modelOptions.find((option) => option.modelRef === effectiveModelRef);
     return matchedOption?.modelId || (effectiveModelRef ? formatModelRefLabel(effectiveModelRef) : t('composer.pickModel'));
@@ -659,61 +665,83 @@ export function ChatInput({
 
   const allReady = attachments.length === 0 || attachments.every(a => a.status === 'ready');
   const hasFailedAttachments = attachments.some((a) => a.status === 'error');
-  const canSend = (input.trim() || attachments.length > 0)
-    && allReady
-    && !inputDisabled
-    && !sessionModel.writing
-    && !admitting
-    && !sending
-    && !imageGenerating;
+  const sendEnabled = !inputDisabled && !sessionModel.writing && !submissionPending && !sending && !imageGenerating;
+  const canSend = sendEnabled && allReady && (input.trim() || attachments.length > 0);
   const canStop = sending && !inputDisabled && !!onStop;
 
-  const handleSend = useCallback(async () => {
-    if (!canSend || admissionInFlight.current) return;
-    const modelError = getSessionModelSelectionError(destinationKey);
+  const handleSend = useCallback(async (retry?: FailedPrompt) => {
+    if (!(retry ? sendEnabled : canSend) || admissionInFlight.current) return;
+    const textToSend = retry?.text ?? input;
+    const attachmentsToSend = retry ? retry.attachments : (attachments.length ? attachments : undefined);
+    const targetId = retry ? retry.targetAgentId ?? null : targetAgentId;
+    const target = targetId ? agents.find((agent) => agent.id === targetId) ?? null : null;
+    const key = getPromptSessionKey(currentSessionKey, target);
+    const destinationSession = sessions?.find((session) => session.key === key);
+    const workspace = getPromptWorkspacePath(workspacePath ?? '', target, destinationSession);
+    const destination = retry?.destination ?? { sessionKey: key, workspace: workspace || undefined };
+    const modelError = getSessionModelSelectionError(key);
     if (modelError) {
       toast.error(t('composer.modelSwitchFailed', { error: modelError }));
       return;
     }
-    const readyAttachments = attachments.filter(a => a.status === 'ready');
-    const textToSend = input.trim();
-    const attachmentsToSend = readyAttachments.length > 0 ? readyAttachments : undefined;
 
+    const submission = useComposerDraftStore.getState().trackSubmission(currentSessionKey);
     admissionInFlight.current = true;
     setAdmitting(true);
     try {
+      if ((targetId && !target) || destination.sessionKey !== key
+        || normalizeWorkspacePath(destination.workspace) !== normalizeWorkspacePath(workspace)) {
+        throw new Error(t('composer.retryDestinationChanged', { workspace: destination.workspace ?? destination.sessionKey }));
+      }
       if (rendererExtensionRegistry.hasChatBeforeSendHooks()) {
-        const draftModelRef = useComposerDraftStore.getState().modelRefs[destinationKey];
+        const draftModelRef = useComposerDraftStore.getState().modelRefs[key];
         let sessionModelRef: string | null = draftModelRef ?? null;
         let sessionEffectiveModelRef: string | undefined;
-        if (!draftModelRef && !destination?.createdLocally) {
+        if (!draftModelRef && !destinationSession?.createdLocally) {
           try {
-            const model = await readSessionModel(destinationKey);
+            const model = await readSessionModel(key);
             sessionModelRef = model.modelRef;
             sessionEffectiveModelRef = model.effectiveModelRef ?? undefined;
           } catch (error) {
-            toast.error(t('composer.modelReadFailed', { error: String(error) }));
-            return;
+            throw new Error(t('composer.modelReadFailed', { error: String(error) }), { cause: error });
           }
         }
         const guard = await rendererExtensionRegistry.runChatBeforeSend({
-          text: textToSend,
+          text: textToSend.trim(),
           attachments: attachmentsToSend,
-          targetAgentId,
-          sessionKey: destinationKey,
+          targetAgentId: targetId,
+          sessionKey: key,
           sessionModelRef,
           sessionEffectiveModelRef,
         });
-        if (composerSessionRef.current !== currentSessionKey || destinationKeyRef.current !== destinationKey) return;
-        if (!guard.ok) {
-          if (guard.message) toast.error(guard.message);
-          return;
-        }
+        if (!guard.ok) throw new Error(guard.message);
+        if (!submission.isTracked() || useChatStore.getState().currentSessionKey !== currentSessionKey
+          || (!retry && destinationKeyRef.current !== key)) throw new Error();
       }
-      const accepted = targetAgentId
-        ? onSend(textToSend, attachmentsToSend, targetAgentId)
+      const accepted = targetId
+        ? onSend(textToSend, attachmentsToSend, targetId)
         : onSend(textToSend, attachmentsToSend);
-      if (accepted && !await accepted) return;
+      if (accepted) {
+        const result = await accepted;
+        if (result !== true) throw new Error(result ? result.error : undefined);
+      }
+      if (retry) useComposerDraftStore.getState().removeFailedPrompt(currentSessionKey, retry.id);
+    } catch (error) {
+      if (!submission.isTracked()) return;
+      useComposerDraftStore.getState().saveFailedPrompt(currentSessionKey, {
+        id: retry?.id ?? crypto.randomUUID(),
+        text: textToSend,
+        attachments: attachmentsToSend,
+        targetAgentId: targetId,
+        destination,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      submission.release();
+      admissionInFlight.current = false;
+      setAdmitting(false);
+    }
+    if (!retry) {
       // An @mention can open another conversation during admission. setInput
       // still addresses the original keyed draft, while transient UI is shared.
       setInput((value) => value === input ? '' : value);
@@ -724,11 +752,8 @@ export function ChatInput({
       setPickerOpen(false);
       setSkillPickerOpen(false);
       setWorkspaceMenuOpen(false);
-    } finally {
-      admissionInFlight.current = false;
-      setAdmitting(false);
     }
-  }, [input, attachments, canSend, currentSessionKey, destination, destinationKey, onSend, setAttachments, setInput, t, targetAgentId]);
+  }, [input, attachments, canSend, sendEnabled, currentSessionKey, sessions, agents, onSend, setAttachments, setInput, t, targetAgentId, workspacePath]);
 
   const handleStop = useCallback(() => {
     if (!canStop) return;
@@ -852,6 +877,41 @@ export function ChatInput({
         </div>
       )}
       <div className="w-full">
+        {failedPrompts && failedPrompts.length > 0 && (
+          <div className="mb-3 max-h-[30vh] space-y-2 overflow-y-auto">
+            {failedPrompts.map((prompt) => (
+              <div key={prompt.id} role="alert" data-testid="chat-failed-prompt" className="rounded-xl border border-red-500/20 bg-surface-modal px-3 py-2 text-sm">
+                <div className="flex items-start gap-2 text-red-700 dark:text-red-400">
+                  <CircleAlert aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span className="min-w-0 flex-1 break-words">
+                    {t('composer.sendFailed')}
+                    {prompt.error && <span className="block">{prompt.error}</span>}
+                  </span>
+                  <button
+                    type="button" data-testid="chat-retry-prompt" disabled={!sendEnabled}
+                    className="shrink-0 underline disabled:opacity-50"
+                    onClick={() => void handleSend(prompt)}
+                  >{t('composer.retrySend')}</button>
+                  <button
+                    type="button" disabled={admitting} aria-label={t('composer.discardFailedPrompt')}
+                    onClick={() => useComposerDraftStore.getState().removeFailedPrompt(currentSessionKey, prompt.id)}
+                  ><X aria-hidden="true" className="h-4 w-4" /></button>
+                </div>
+                {!isPromptInTimeline?.(prompt.id) && (
+                  <div className="mt-1">
+                    {prompt.targetAgentId && (
+                      <span className="text-muted-foreground">
+                        {t('composer.targetChip', { agent: agents.find((agent) => agent.id === prompt.targetAgentId)?.name ?? prompt.targetAgentId })}
+                      </span>
+                    )}
+                    <div className="whitespace-pre-wrap break-words">{prompt.text}</div>
+                    {prompt.attachments?.map((file) => <div key={file.id} className="break-all text-muted-foreground">{file.fileName}</div>)}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
         {showStatusRow && (
           <div
             data-testid="chat-composer-working-indicator"
@@ -1125,6 +1185,19 @@ export function ChatInput({
                   onCloseAutoFocus={handlePickerCloseAutoFocus}
                 />}
 
+                {thinking && (
+                  <ThinkingStrengthPicker
+                    key={JSON.stringify([destinationKey, effectiveModelRef, thinking.levels.map(({ id }) => id)])}
+                    profile={thinking}
+                    disabled={inputDisabled || sending || sessionModel.writing || !isGatewayUsable}
+                    onSelect={(level) => {
+                      void sessionModel.select(undefined, level).catch((error) => {
+                        if (destinationKeyRef.current === destinationKey) toast.error(t('composer.thinkingFailed', { error: String(error) }));
+                      });
+                    }}
+                  />
+                )}
+
                 {devModeUnlocked && (
                   <VoiceDictationButton
                     status={voiceStatus}
@@ -1138,7 +1211,7 @@ export function ChatInput({
 
                 {/* Send Button */}
                 <Button
-                  onClick={sending ? handleStop : handleSend}
+                  onClick={sending ? handleStop : () => void handleSend()}
                   disabled={sending ? !canStop : !canSend}
                   size="icon"
                   data-testid="chat-composer-send"

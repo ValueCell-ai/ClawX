@@ -169,11 +169,10 @@ test.describe('ClawX chat scroll pin-to-bottom during runs', () => {
 
       // Start a run so pinning becomes active (sending === true).
       await expect(page.getByTestId('chat-composer-input')).toBeEnabled({ timeout: 30_000 });
-      await scrollContainer.evaluate((el) => {
-        const element = el as HTMLElement;
-        element.scrollTop = 0;
-        element.dispatchEvent(new Event('scroll', { bubbles: true }));
-      });
+      await expect.poll(() => scrollContainer.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeGreaterThan(360);
+      await expectPinnedToBottom();
+      await scrollContainer.hover();
+      await page.mouse.wheel(0, -360);
       await expect(page.getByTestId('chat-scroll-to-latest')).toBeVisible();
       await page.getByTestId('chat-composer-input').fill('do a multi-tool task');
       await page.getByTestId('chat-composer-send').click();
@@ -202,20 +201,20 @@ test.describe('ClawX chat scroll pin-to-bottom during runs', () => {
 
       // Back to text growth after the tool round.
       await emitDelta({ sessionUpdate: 'agent_message', messageId: 'streaming-assistant', content: [{ type: 'text', text: streamingText(14) }] });
+      await expect(page.getByText('Streaming paragraph 14.', { exact: true })).toBeAttached();
       await expectPinnedToBottom();
 
       // Even a small manual scroll-up while the run is live must pause pinning.
       // This starts inside the library's "near bottom" zone, where a streaming
       // resize used to pull the viewport straight back to the latest output.
-      const readingPosition = await scrollContainer.evaluate((el) => {
-        const element = el as HTMLElement;
-        element.scrollTop = element.scrollHeight - element.clientHeight - 24;
-        element.dispatchEvent(new Event('scroll', { bubbles: true }));
-        return element.scrollTop;
-      });
+      await scrollContainer.hover();
+      await page.mouse.wheel(0, -24);
+      await expect.poll(() => scrollContainer.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop)).toBeGreaterThan(8);
+      const readingPosition = await scrollContainer.evaluate((el) => el.scrollTop);
 
       // Further growth must NOT yank the user back down while they've escaped.
       await emitDelta({ sessionUpdate: 'agent_message', messageId: 'streaming-assistant', content: [{ type: 'text', text: streamingText(20) }] });
+      await expect(page.getByText('Streaming paragraph 20.', { exact: true })).toBeAttached();
       const jumpButton = page.getByTestId('chat-scroll-to-latest');
       await expect(jumpButton).toBeVisible();
       const scrollState = await scrollContainer.evaluate((el) => {

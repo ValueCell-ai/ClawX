@@ -28,6 +28,7 @@ import {
   isOAuthProviderType,
   isOpenClawOAuthPluginProviderKey,
 } from './provider-keys';
+import { applyProviderModelCompatibility, isAstra62 } from '../shared/providers/model-compat';
 import { normalizePiAiModelCost, type PiAiModelCostRates } from '../shared/pi-ai-model-cost';
 import {
   mutateOpenClawConfig,
@@ -55,6 +56,7 @@ import {
   CLAWX_OPENAI_IMAGE_PROVIDER_KEY,
 } from './openclaw-image-relay-constants';
 import {
+  migrateLegacyImageGenerationModel,
   readImageGenerationModelValue,
   writeImageGenerationModelValue,
 } from './openclaw-media-models';
@@ -2015,7 +2017,7 @@ function ensureCustomAstraCompletionsReasoningEffort(
 ): boolean {
   if (!provider.startsWith('custom-') || api !== 'openai-completions') return false;
 
-  const astraModelIds = modelIds.filter((modelId) => /astra/i.test(modelId));
+  const astraModelIds = modelIds.filter((modelId) => /astra/i.test(modelId) && !isAstra62(modelId));
   if (astraModelIds.length === 0) return false;
 
   const agents = isPlainRecord(config.agents) ? config.agents : {};
@@ -3266,6 +3268,7 @@ async function updateModelsJsonProviderEntriesForAgents(
     if (entry.headers !== undefined) existing.headers = entry.headers;
     if (entry.timeoutSeconds !== undefined) existing.timeoutSeconds = entry.timeoutSeconds;
     if (entry.authHeader !== undefined) existing.authHeader = entry.authHeader;
+    applyProviderModelCompatibility(existing, providerType);
     ensureAnthropicMessagesProviderDefaults(existing, providerType);
 
     providers[providerType] = existing;
@@ -3401,11 +3404,15 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       console.log('[sanitize] Removed retired config metadata "meta.lastTouchedAt"');
     }
 
-    // OpenClaw 2026.10 owns media-provider fallback selection and rejects the
-    // legacy ClawX flag. Removing it keeps the new runtime default intact.
     const agentDefaults = isPlainRecord(config.agents) && isPlainRecord(config.agents.defaults)
       ? config.agents.defaults
       : null;
+    if (await migrateLegacyImageGenerationModel(config)) {
+      modified = true;
+      console.log('[sanitize] Migrated legacy image generation setting to "agents.defaults.mediaModels.image"');
+    }
+    // OpenClaw 2026.10 owns media-provider fallback selection and rejects the
+    // legacy ClawX flag. Removing it keeps the new runtime default intact.
     if (agentDefaults && Object.hasOwn(agentDefaults, 'mediaGenerationAutoProviderFallback')) {
       delete agentDefaults.mediaGenerationAutoProviderFallback;
       modified = true;
@@ -3543,6 +3550,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     // when an existing provider has no per-model effort yet.
     for (const [providerKey, rawProvider] of Object.entries(providers)) {
       if (!isPlainRecord(rawProvider)) continue;
+      applyProviderModelCompatibility(rawProvider, providerKey, config.agents);
       const providerModels = Array.isArray(rawProvider.models) ? rawProvider.models : [];
       const modelIds = providerModels.flatMap((model) => (
         isPlainRecord(model) && typeof model.id === 'string' ? [model.id] : []

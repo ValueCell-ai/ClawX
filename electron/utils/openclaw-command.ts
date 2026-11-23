@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { getOpenClawDir, getOpenClawEntryPath } from './paths';
 import { logger } from './logger';
-import { forkOpenClawUtilityProcess } from './openclaw-utility-process';
+import { launchOpenClawCommandProcess } from './openclaw-cli';
 import { getUvMirrorEnv } from './uv-env';
 
 const MAX_COMMAND_OUTPUT_BYTES = 10 * 1024 * 1024;
@@ -78,7 +78,7 @@ function getBundledBinPath(): string {
     : path.join(process.cwd(), 'resources', 'bin', target);
 }
 
-/** Run an OpenClaw CLI command in the utility process with bounded output. */
+/** Run an OpenClaw CLI command with bounded output. */
 export async function runOpenClawCommand(
   args: string[],
   options: OpenClawCommandOptions,
@@ -116,7 +116,7 @@ export async function runOpenClawCommand(
   );
 
   return await new Promise<OpenClawCommandResult>((resolve) => {
-    const child = forkOpenClawUtilityProcess(entryScript, args, {
+    const child = launchOpenClawCommandProcess(entryScript, args, {
       cwd: openclawDir,
       stdio: 'pipe',
       env: {

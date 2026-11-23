@@ -87,6 +87,19 @@ caption supplements, and they cannot extend visible-turn timing. Internal
 image-generation user triggers retain their bounded metadata-only role.
 See [internal control replay evidence](../../reference/acp-internal-control-replay.md).
 
+When OpenClaw dispatches image generation in the background, Chat keeps the
+generation indicator visible after the initial acknowledgment. The completed
+image appears in the originating assistant turn and is visible again when the
+conversation is reopened, including when only the transcript contains the result.
+In both views the assistant's acknowledgment precedes the generated image.
+If a file read or shell command prints an image task acknowledgment, its output
+stays on the ordinary tool card and the composer remains available after the run.
+
+If a send guard rejects a prompt, session loading fails, or sending fails, Chat
+retains the submitted prompt in its conversation for the current app session and
+marks it with a red exclamation point. The user can return after enterprise
+sign-in and retry the prompt without retyping it. Each retry runs the send guards again.
+
 After Gateway restart, a new prompt waits for ACP's own authenticated connection
 and subscription recovery, with a default 60-second admission deadline and working
 cancel/supersede behavior. Main's gatewayReady alone does not release the wait.

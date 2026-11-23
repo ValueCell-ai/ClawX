@@ -41,6 +41,8 @@ ownedPaths:
   - tests/unit/session-label-hydration.test.ts
   - tests/e2e/chat-sidebar-session-attention.spec.ts
   - tests/unit/session-key-utils.test.ts
+  - scripts/test-windows-cron-worker.mjs
+  - tests/unit/openclaw-windows-cron-descendants.test.ts
   - tests/unit/openclaw-acp-stream-patch.test.ts
   - patches/openclaw@2026.10.10.patch
   - patches/@wecom__wecom-openclaw-plugin@2026.10.30.patch
@@ -61,6 +63,7 @@ conditionalProfiles:
     when:
       - renderer extension route registration or startup lifecycle changes
       - user-visible gateway status changes
+      - automatic chat history and ACP session-family loads across an upgrade readiness transition
       - user-visible chat send/receive behavior changes
       - channels/agents/settings UI depends on new backend response shape
       - Web Browser guest, navigation, session, permission, or data policy changes
@@ -122,6 +125,12 @@ legacy external routes for internal sessions. See
 Native Windows upgrade evidence for the independent official 0.6.1 and main
 inputs is recorded in `harness/reference/windows-sqlite-upgrade-validation-20261109.md`,
 including SQLite snapshot cleanup diagnostics and the limits of isolated probes.
+Startup migrates the legacy image model setting before Doctor validates the
+upgraded profile. An image model supplied by `$include` remains in its source
+file, including when a local `null` must be removed to reveal it. If the image
+setting is still missing or `null`, the complete legacy model is restored.
+On Windows, Doctor can run its npm package checks when the
+user has no system npm. See [Windows upgrade repair](../tasks/windows-upgrade-doctor-npm.md).
 
 The chat composer reads and updates session model selections through Main.
 Conversation switches, workspace changes and Agent routing must preserve the
@@ -131,6 +140,8 @@ The picker lists concrete configured models and marks the effective model when
 it is listed. Inheritance remains implicit: no Follow Agent action is exposed,
 and displaying an inherited model does not create an override. Selecting that
 concrete model explicitly pins it to the destination conversation.
+Conversation thinking choices use the destination session projection and the configured model catalog for drafts. See [session thinking levels](../tasks/session-thinking-level.md).
+
 See [Conversation model selection](../../reference/acp-chat.md#conversation-model-selection).
 
 Coordinator-owned OpenClaw config mutations, including model-switch retries after a confirmed publication rollback, and their `config.get`/`config.set` transaction contract are documented in `harness/reference/openclaw-config-delivery.md`.
@@ -147,7 +158,7 @@ Renderer code must not create direct Gateway WebSocket connections. Gateway fram
 Startup recovery must distinguish Gateway state-ownership contention from configuration
 or schema failures. An ownership failure cannot be repaired by running Doctor against
 the same occupied state. Stopping or superseding startup fences recovery, including
-Doctor preparation and completion, without killing an in-flight migration. See
+Doctor preparation and completion, without killing an in-flight migration. Windows offline repairs use the embedded Node launcher so Doctor can retire its SQLite staging files before the Gateway retries. See
 `harness/specs/tasks/fix-upgrade-state-ownership-recovery.md` and
 `harness/specs/rules/gateway-readiness-policy.md`.
 
@@ -177,6 +188,8 @@ Scheduled-task history is Main-owned backend data. Current OpenClaw versions mus
 
 Scheduled-task upgrade continuity is a backend contract. Main prepares verified snapshot evidence; the managed Gateway restores eligible legacy inference bindings through native authorization and conditional updates after credential projection and before scheduled dispatch. Trusted extension evidence can continue an expected previous binding after temporary credential cleanup only for the same encrypted login session and credential. Auth synchronization preserves authorization lifetimes for unchanged credentials and retains revocation semantics. See `harness/specs/tasks/preserve-cron-inference-on-upgrade.md` and `harness/reference/cron-inference-upgrade.md` for boundaries and validation evidence.
 
+The active cron store identifies which legacy jobs belong to the scheduler. For a verified Windows launcher, the managed Gateway supervises the worker through completion or its deadline, including a custom deadline inherited from the old job. See [the scheduled worker upgrade tests](../tasks/preserve-scheduled-exec-upgrade.md).
+
 The local HTML Preview privileged bridge is also Main-owned: Renderer may load a validated local HTML file or open that current file externally through the typed Host API. The guest is an implementation detail of the existing `preview` tab; there is no `web-browser` artifact tab or general address navigation. The durable guest contract is `harness/reference/web-browser.md`.
 
 Electron communication fixtures wait for Main initialization before replacing IPC handlers, explicitly model ACP session loading for provider-free composer flows, and retain production service transformations under test. Restart catalogs recover after their transient incomplete snapshot. See [E2E parallelism](../../reference/e2e-parallelism.md) and [full-suite repair](../tasks/stabilize-openclaw-upgrade-e2e.md) for fixture boundaries, failure diagnostics and validation evidence.
@@ -195,4 +208,8 @@ Gateway WebSocket heartbeat misses are diagnostic availability signals only and 
 
 OpenClaw 2026.10.10 baseline, channel version and offline recovery contracts are documented in `harness/reference/openclaw-2026-10-10-upgrade.md`.
 
+On the enterprise DeepSeek V4.1 Flash Chat Completions route, the session's effective choice determines the outbound DeepSeek toggle on every turn. Switching from max to off also clears the outgoing effort and replayed reasoning content. Provider migration and login projections operate only on the models in the active account.
+
 Extension runtime restoration is a Main-owned startup boundary. `GatewayManager.registerStartupPreparation` admits all registered participants with read-only checks after snapshot/config preparation, then awaits their writes before collecting the launch environment and spawning a managed Gateway. Pending native migration uses the bounded Doctor recovery path and is rechecked after every repair outcome. Cancellation or ordinary projection failure must prevent that launch and any unconditional post-start credential synchronization. Existing external/owned process attachment does not run offline projections. Enterprise-specific encrypted-session queues, login/refresh policy and SkillsHub remain in ClawX-biz. See `harness/specs/tasks/fix-enterprise-runtime-migration-order.md` and `harness/reference/enterprise-windows-upgrade-validation-20261109.md` for both Windows upgrade routes and the explicit real-authentication exclusion.
+
+An upgrade from a configuration with no outbound attachment limit must preserve delivery of supported files on WeCom, DingTalk, Feishu and Weixin. Exercise the runtime limit used before connector upload as well as explicit limits and unknown channels. See [outbound media upgrade](../tasks/outbound-media-upgrade.md).

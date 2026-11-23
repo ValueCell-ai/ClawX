@@ -5,7 +5,7 @@ import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import { stripAcpWorkingDirectoryPrefix } from '@shared/chat/session-title';
 import { isOpenClawHeartbeatPollText } from '@shared/chat/openclaw-internal';
 import type { RawMessage } from '@shared/chat/types';
-import type { SessionModelSelection, SessionTurnTimingCandidate } from '@shared/host-api/contract';
+import type { SessionModelSelection, SessionTurnTimingCandidate, ThinkingProfile } from '@shared/host-api/contract';
 import { resolveOpenClawStateDir } from '../utils/paths';
 import { logger } from '../utils/logger';
 import {
@@ -619,6 +619,19 @@ async function loadSessionTurnTimingsByKey(
 
 type SessionsApiContext = { gatewayManager?: { rpc: <T>(method: string, params?: unknown, timeoutMs?: number) => Promise<T> } };
 
+function readThinkingProfile(row: Record<string, unknown>, selected?: unknown): ThinkingProfile | undefined {
+  if (!Array.isArray(row.thinkingLevels)) return undefined;
+  const levels = row.thinkingLevels.flatMap((level) =>
+    isRecord(level) && typeof level.id === 'string' && level.id && typeof level.label === 'string' && level.label
+      ? [{ id: level.id, label: level.label }] : []);
+  if (!levels.length) return undefined;
+  return {
+    levels,
+    defaultLevel: typeof row.thinkingDefault === 'string' ? row.thinkingDefault : undefined,
+    selectedLevel: typeof selected === 'string' ? selected : undefined,
+  };
+}
+
 function projectSessionModel(
   explicit: boolean,
   provider: unknown,
@@ -826,39 +839,56 @@ async function renameSession(sessionKey: string, label: string, ctx?: SessionsAp
 
 export function createSessionsApi(ctx: SessionsApiContext = {}): CompleteHostServiceRegistry['sessions'] {
   return {
+    getDraftThinking: async (payload) => {
+      const parsed = parseSessionKey(getSessionKey(payload));
+      if (!parsed || !ctx.gatewayManager) throw new Error('Gateway session unavailable');
+      const { modelRef } = payload;
+      const result = await ctx.gatewayManager.rpc<unknown>('models.list', {
+        agentId: parsed.agentId, provider: modelRef.split('/')[0], view: 'configured', preparedOnly: true,
+      });
+      if (!isRecord(result) || !Array.isArray(result.models)) return null;
+      const model = result.models.find((entry) => isRecord(entry) && `${entry.provider}/${entry.id}` === modelRef);
+      return model ? readThinkingProfile(model) ?? null : null;
+    },
     getModel: async (payload) => {
       const row = await describeSessionModel(ctx, getSessionKey(payload));
       if (!row) return { modelRef: null, exists: false };
-      if (row.modelOverrideSource === undefined) return { modelRef: null };
+      const thinking = readThinkingProfile(row, row.thinkingLevel);
+      if (row.modelOverrideSource === undefined) return { modelRef: null, thinking };
       // Older transcripts may name the model that produced the last reply. Only
       // the Gateway's projected user override represents a deliberate choice.
-      return projectSessionModel(row.modelOverrideSource === 'user', row.modelProvider, row.model, row.contextTokens);
+      return { ...projectSessionModel(row.modelOverrideSource === 'user', row.modelProvider, row.model, row.contextTokens), thinking };
     },
     setModel: async (payload) => {
       const sessionKey = getSessionKey(payload);
-      const { modelRef, createIfMissing } = payload;
-      if (modelRef !== null && (typeof modelRef !== 'string' || !/^[^/\s]+\/\S+$/.test(modelRef))) {
+      const { modelRef, thinkingLevel, createIfMissing } = payload;
+      if (modelRef === undefined && thinkingLevel === undefined) throw new Error('Missing session selection');
+      if (thinkingLevel != null && (typeof thinkingLevel !== 'string' || !thinkingLevel.trim())) {
+        throw new Error('Invalid thinking level');
+      }
+      if (modelRef != null && (typeof modelRef !== 'string' || !/^[^/\s]+\/\S+$/.test(modelRef))) {
         throw new Error('Session model must be a provider/model reference or null');
       }
       if (!ctx.gatewayManager) throw new Error('Gateway not connected');
       const row = await describeSessionModel(ctx, sessionKey);
-      if (!row && !(createIfMissing === true && modelRef !== null)) throw new Error('Session no longer exists');
+      if (!row && !(createIfMissing === true && (typeof modelRef === 'string' || typeof thinkingLevel === 'string'))) throw new Error('Session no longer exists');
       // The explicit scope prevents admin connections from honoring an agent/global
       // sticky-model policy. Never retry an unsupported scoped patch without it.
       const result = await ctx.gatewayManager.rpc<unknown>('sessions.patch', {
         key: sessionKey,
         ...(row ? { expectedSessionId: row.sessionId } : {}),
-        model: modelRef,
-        modelScope: 'session',
+        ...(modelRef !== undefined ? { model: modelRef, modelScope: 'session' } : {}),
+        ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
       });
       if (!isRecord(result) || result.ok !== true || result.key !== sessionKey || !isRecord(result.entry)
         || !isRecord(result.resolved)) throw new Error('Gateway did not confirm the session model change');
-      return projectSessionModel(
+      const selection = projectSessionModel(
         result.entry.modelOverrideSource === 'user',
         result.resolved.modelProvider,
         result.resolved.model,
         result.resolved.contextTokens,
       );
+      return { ...selection, thinking: readThinkingProfile(result.resolved, result.entry.thinkingLevel) };
     },
     delete: async (payload) => deleteSession(getSessionKey(payload), ctx),
     rename: async (payload) => {

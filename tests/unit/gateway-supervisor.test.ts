@@ -67,8 +67,8 @@ vi.mock('@electron/utils/uv-setup', () => ({
   setupManagedPython: vi.fn(),
 }));
 
-vi.mock('@electron/utils/openclaw-utility-process', () => ({
-  forkOpenClawUtilityProcess: mockFork,
+vi.mock('@electron/utils/openclaw-cli', () => ({
+  launchOpenClawCommandProcess: mockFork,
 }));
 
 vi.mock('@electron/services/acp-chat-service', () => ({

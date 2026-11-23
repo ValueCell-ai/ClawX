@@ -166,17 +166,32 @@ pnpm dev
 
 ### 升级已有 OpenClaw 数据
 
+Windows 升级修复会使用内置 npm，并将旧版图像模型设置迁移到 `agents.defaults.mediaModels.image`。如果已升级到 0.7.0，启动时出现 `spawn npm.cmd ENOENT`，或提示无法识别 `imageGenerationModel`，可按以下步骤恢复。
+
+1. 从系统托盘退出 ClawX。备份整个 OpenClaw 状态目录（默认为 `%USERPROFILE%\.openclaw`），保留现有数据库和迁移备份。
+2. 打开状态目录中的 `openclaw.json`。如果 `agents.defaults` 下有旧字段 `imageGenerationModel`，请检查主文件及 `$include` 引用文件中的 `mediaModels.image`。如果已有模型，保留它在原文件中的配置。如果主文件的 `image: null` 覆盖了引用文件中的模型，删除主文件中的这个空值，让引用文件中的模型及其选项生效。如果生效值仍然缺失或为 `null`，则将旧模型的完整值写入 `mediaModels.image`，包括原有的 `primary`、`fallbacks` 和 `timeoutMs`。从定义旧字段的文件中删除 `imageGenerationModel`，保留其他媒体设置后保存。
+3. 使用平时运行 ClawX 的 Windows 账户，在包含 `ClawX.exe` 的目录打开 PowerShell，运行 `npm.cmd --version`。如果找不到命令，请将带有 npm 的 Node.js 安装目录加入 PATH，在同一目录重新打开 PowerShell 并确认版本。如果配置了 DeepSeek 等供应商，Doctor 可能需要访问 npm 软件源来安装对应插件。
+4. 在刚刚成功显示 npm 版本的 PowerShell 窗口中运行 `.\ClawX.exe`。等待 Doctor 自动修复结束，确认网关已就绪。若仍启动失败，打开 **设置 → 高级 → 开发者 → 运行 Doctor 并修复**。修复成功后重启网关，再次确认就绪状态。
+
 Windows 升级会识别旧安装遗留的盘符路径和网络插件路径，从旧版加载列表中清理已失效或指向内置插件的路径，并保留仍存在的外部插件和相对包引用。
 
 从 ClawX 0.6.1 升级时，有效的多 Agent 配置会保留各 Agent 原先实际使用的工作区，以及配置中旧默认 Agent 的职责。Agent 设置、后续 Agent 编辑和工作区准备使用一致的运行时路径规则；显式配置的外部工作区保留原路径。
 
 在聊天输入框中选择具体模型后，只有当前会话的后续消息会使用它。选择器显示当前模型，菜单列出已配置的模型。尚未选择模型的会话会自动使用 Agent 的默认模型；选择后会为当前会话保存该模型。从 0.6.1 升级时，原有的 Agent 默认模型和会话独立选择的模型都会保留。
 
+在已配置的 OpenAI 兼容服务中，ClawX 会将 `gpt-6.2-astra` 识别为 Responses 推理模型，并提供从 low 到 max 的原生思考档位。
+
+点击模型选择器旁的「思考强度」，拖动滑杆预览档位，松开即可应用到当前会话。可选档位由 OpenClaw 根据模型和运行时提供。选择「默认」可恢复自动选择。
+
+企业 DeepSeek V4.1 Flash（含 `-1017` 型号）会在请求中显式传递思考开关。选择「关闭」会要求网关关闭思考，普通开启档位发送 `high`，`xhigh` 和 `max` 均发送 `max`。
+
 在输入框的助手菜单中，通过**将下一条消息发送给其他助手**选择接收消息的助手。此时，模型选择器显示并修改该 Agent 主会话的模型。移除 `@agent` 后，选择器会重新显示原会话的模型。
 
 ClawX 支持从官方 0.6.1（OpenClaw `2026.7.1-2`）或使用 `2026.10.5` 的 main 构建直接原地升级到 `2026.10.10`。启动写入前会在 OpenClaw 状态目录保留独立的 `backups/clawx-openclaw-2026.10.10-pre-migration` 快照，不复用 10.5 快照。私有快照包含配置、频道凭据、旧历史、插件文件、媒体以及配置的外部 Agent/会话存储；SQLite 在线备份包含已提交的 WAL 数据。备份失败即停止启动，Gateway 就绪不会删除快照。OpenClaw 先完成 schema 迁移，ClawX 再同步凭据，中断后可以重试。工作区和运行时二进制不在备份范围内。请保留对应旧安装包，验证升级后再删除快照；快照含密钥，请勿分享。
 
 需要回退时，先退出所有 ClawX、Gateway 和 Doctor 进程，再用 Node 24.16+（24.x）或 26.1+ 执行 `node <应用资源目录>/cli/restore-openclaw-upgrade.mjs <快照目录> --confirm-stopped`。恢复工具验证文件哈希，一并恢复配置、数据库和插件文件，并通过恢复日志保留被替换的新版数据；恢复中断后，在当前配置可读的前提下再次执行会先撤销未完成的恢复。工具按 JSON5 解析当前配置，同时检查当前、快照和默认端口；配置缺失、不可读或无效时拒绝恢复。如果中断时配置已被移走，须先按下方说明手工恢复当前配置。请保留工具旁的 OpenClaw 资源目录，其中包含 JSON5 解析依赖。恢复后请先安装对应的旧版 ClawX 再启动，否则新版应用会再次迁移旧数据库。详见[升级和恢复说明](harness/reference/openclaw-2026-10-10-upgrade.md)。 Windows 可使用安装目录内的 `resources/bin/node.exe`，恢复前须退出托盘中的 ClawX，并沿用原 Windows 用户配置目录。
+
+Windows 版从 0.6.1 直接升级时，如果需要迁移数据库，ClawX 会自动使用随附的 Node.js 运行 Doctor。即使迁移超过五分钟，聊天页也会等到 Gateway 确认会话数据库就绪后再加载历史对话。Gateway 启动后，原有定时任务恢复调度。
 
 Windows 上清理 SQLite 临时快照和旧会话导入目录时，会先释放父进程保留的文件身份校验句柄，再删除临时数据库，避免 Doctor 自身的句柄导致升级检查或会话迁移报 `EPERM`、`ENOTEMPTY`。详见[本机升级验证记录](harness/reference/windows-sqlite-upgrade-validation-20261109.md)。
 
@@ -186,11 +201,15 @@ Doctor 也识别已验证的 `2026.10.5`/schema 25 情况：首次启动 Gateway
 
 旧定时任务可在开源版或企业版凭据恢复后、按计划派发前，根据经过校验的迁移前快照补齐推理账户绑定。恢复要求沿用原账户，并保留任务 ID、时间安排、投递设置和默认模型继承方式。同步未变更的凭据会保留已有授权；账户缺失、有歧义或已更换时会留下诊断，不会静默改用其他账户。远端模型下线后，任务可沿用原服务商和账户使用已配置的备选模型；显式模型锁定或禁用回退的设置仍然有效。详见[定时任务迁移及验证限制](harness/reference/cron-inference-upgrade.md)。
 
+在 Windows 上升级时，ClawX 会从当前使用的定时任务存储中识别启动后台 worker 后立即返回的旧脚本。ClawX 继续使用原来的启动命令，等待其 Windows Job 完成。如果任务自定义了 600 秒等执行时限，worker 沿用该时限。旧设置只覆盖启动阶段、且无法确认整个后台任务所需时长时，迁移后的作业上限为 1 小时。
+
 没有需要迁移的定时任务时，Gateway 也能正常启动。创建进程前会省略未设置的可选启动参数，避免升级后出现 `Invalid value for env`。详见[故障定位及验证](harness/reference/gateway-undefined-launch-env-20261111.md)。
 
 应用退出时会取消会话写入和排队的启动请求，先停止 ACP 和 ClawX 管理的 Gateway，再由扩展清理临时运行时凭据。加密登录状态保留供下次启动恢复，整个退出流程仍受原有超时限制。
 
 官方 Discord、飞书和 WhatsApp 依赖同步到 `2026.10.10`；企业微信升级到 `2026.10.30` 以适配当前配置 API，钉钉保持 `0.8.26`，微信保持 `2.4.10`。飞书沿用 main 已有迁移逻辑。
+
+网关将待发附件放入队列时，依次使用账号、频道、智能体默认设置中已有的大小上限。如果都未设置，升级后会自动采用对应的暂存上限，企业微信和钉钉为 20 MiB，飞书为 30 MiB，微信为 100 MiB。实际上传仍遵循各频道对不同文件类型的限制。
 
 OpenClaw 2026.10.5 更换了两个渠道插件，ClawX 会在首次启动 Gateway 前完成迁移。QQ 机器人从 `@openclaw/qqbot` 切换到腾讯 QQBot 2.0（`@tencent-connect/openclaw-qqbot`，插件 id `openclaw-qqbot`），默认账号移到 `channels.qqbot` 顶层，原本开放的私聊保持开放（使用审批标记 `openclaw:approval-disabled`）。带审批、密钥文件或群命令策略的 QQ 机器人配置交给 OpenClaw Doctor 处理。飞书从 `@larksuite/openclaw-lark` 切换到官方 `@openclaw/feishu`，应用凭据保持不变；官方插件提供 14 个飞书工具（原为 39 个），不再提供日历、任务、用户 OAuth、表格和搜索类工具。
 
@@ -248,6 +267,7 @@ ClawX 采用 **双进程 + Host API 统一接入架构**：React 渲染进程只
 - **配置交付**：Gateway 运行时由 Main 使用 `config.get` / `config.set`，停止或启动中则更新解析后的 JSON5 配置；普通 Provider/Agent/Skill/模型修改不会替换进程，凭据通过 `secrets.reload` 热更新。如果 Gateway 在保存时检测到配置文件标识变化并确认已回滚，ClawX 会重新读取配置并重试一次。连续三分钟没有已验证的 Gateway 活动后，ClawX 会验证核心 RPC，并且只重启其自身拥有且不可用的 Gateway 进程；外部管理的 Gateway 保留给用户手动恢复。 同时读取配置的调用会共用一个请求，Gateway 无响应时只需等待同一次超时。问题现场日志会单独记录频道状态 RPC 的耗时，并标明哪次自动重启由存活检查失败触发。
 - **ACP Chat**：Chat UI 基于 ACP ([Agent Client Protocol](https://agentclientprotocol.com)) 与 OpenClaw 交互，从而在高速迭代的 OpenClaw 前找到相对稳定的聊天协议面。ACP 走 Main 持有的 stdio bridge，支持配置热重载后的历史回放认证、跨页面持续流式输出，以及由 Main 验证和加载的媒体/附件/文件活动（Changes）展示。通过原生拖拽或文件选择器添加的文件直接引用其规范化源路径，不再创建 ClawX 暂存副本；有路径的图片会继续作为 ACP 资源链接传递，不会再被 OpenClaw 重新写入 `media/inbound`，因此源文件后续发生修改、移动或删除时会影响附件。剪贴板等没有稳定路径的字节附件仍使用受保护的临时暂存和内联图片传输。当 ACP 遗漏资源块时，经 OpenClaw internal-UI message 工具确认交付的生成文件（包括 Excel 工作簿）会恢复为附件卡片。已确认接收的请求最多等待 Main 计算出的 8 分钟重启预算；未确认请求保留 5 秒断线期限。重连时，即使会话列表暂时缺项，界面也会保留正在执行的对话。当受保护的 Gateway 重启中断已接收的对话轮次时，补丁后的 OpenClaw 运行时会将恢复 run 显式关联到原 ACP prompt，使后续文本和工具活动继续进入同一个内存轮次；之后的历史回放也会以原生 ACP 更新恢复持久化的工具边界。如果最终答复持久化后再次重启导致终态通知丢失，按 run 和会话范围执行的结算会结束 pending prompt，避免 Chat 一直显示执行中。 Chat 回复中的显式本地文件链接可在点击后打开受会话校验的文件预览或系统应用，支持工作空间以外的文件；文件不可用时会显示提示。 工具卡片通过本地化名称和图标区分执行代码、执行命令与列出文件。 重新进入对话时，ACP 适配器还会把较新的离线完成消息从原生历史补回自身账本，后续继续聊天或重新加载时仍可显示，并避免重复。 手动和自动上下文压缩也会通过 ACP 展示生命周期，包括当前对话在外部触发的压缩。 历史回放会隐藏运行时内部续接、后台命令通知和定时运行控制提示，并保留正常显示的助手回复与工具结果；附件恢复和轮次计时也遵循相同的可见性规则。工具调用前后的多段回复按原顺序显示，结束时不会把整轮汇总再次追加。
 - **对话重连**：Gateway 重启后，新消息会等待 ACP 自身连接恢复，默认最多等待 60 秒，期间可以取消。错误提示会显示经过脱敏的具体原因和协议错误码。
+- 发送失败时，只要应用仍开着，提示词就会保留在原对话中，并显示红色感叹号。如果企业服务要求重新登录，登录后回到原对话，点击**重试发送**即可。
 - **设计原则**：前端调用单一入口、Main 掌控传输策略、优雅恢复（重连/超时/退避）、安全存储与 CORS 安全。
 
 > 完整架构说明（进程图、配置协调、ACP 文件活动语义与 Gateway 排障）请参阅 [docs/zh-CN/architecture.md](docs/zh-CN/architecture.md)。

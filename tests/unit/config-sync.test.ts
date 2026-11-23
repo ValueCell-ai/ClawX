@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { stripSystemdSupervisorEnv, withCronMigrationManifestEnv } from '@electron/gateway/config-sync-env';
 
 const { mockEnsureDingTalkDwsInstalled, mockLoggerWarn, mockEnsurePluginInstalled } = vi.hoisted(() => ({
@@ -13,6 +16,31 @@ vi.mock('@electron/utils/plugin-install', async (importOriginal) => ({
 }));
 
 describe('configured channel upgrade transaction', () => {
+  it('repairs once after an old cache hit and again if the installed manifest is replaced in place', async () => {
+    const { buildPluginMaintenanceCacheKey } = await import('@electron/gateway/config-sync');
+    const { runCachedPrelaunchMaintenanceTask, stableJson } = await import('@electron/gateway/prelaunch-maintenance-cache');
+    const root = mkdtempSync(join(tmpdir(), 'clawx-plugin-cache-'));
+    try {
+      const extensions = join(root, 'extensions');
+      const mirror = join(extensions, 'wecom');
+      const manifest = join(mirror, 'openclaw.plugin.json');
+      mkdirSync(mirror, { recursive: true });
+      writeFileSync(manifest, '{"id":"wecom"}');
+      const key = () => buildPluginMaintenanceCacheKey(root, ['wecom'], extensions);
+      const options = { cachePath: join(root, 'cache.json') };
+      const previousKey = JSON.parse(key());
+      delete previousKey.installedManifests;
+      runCachedPrelaunchMaintenanceTask('plugin-maintenance', stableJson(previousKey), () => true, options);
+      const repair = () => writeFileSync(manifest, '{"id":"wecom","channelConfigs":{"wecom":{"outboundMediaMaxMb":20}}}');
+      const run = () => runCachedPrelaunchMaintenanceTask('plugin-maintenance', key, repair, options);
+      expect(run().executed).toBe(true);
+      expect(run().reason).toBe('cache-hit');
+      writeFileSync(manifest, '{"id":"wecom"}');
+      expect(run().executed).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
   it('retains disabled channel payloads without enabling accounts or changing Feishu policy', async () => {
     const { retainedChannelPluginsForMaintenance } = await import('@electron/gateway/config-sync');
     const config = { channels: {
@@ -100,12 +128,18 @@ describe('managed cron migration environment', () => {
   it.each([undefined, ''])('omits missing manifest %s without retaining inherited evidence', (manifest) => {
     const source = Object.freeze({
       PATH: '/usr/bin', HTTP_PROXY: '', CLAWX_CRON_MIGRATION_MANIFEST: '/old/manifest.json',
+      CLAWX_CRON_TIMEOUT_MIGRATION_MANIFEST: '/untrusted/timeout.json',
     });
     const env = withCronMigrationManifestEnv(source, manifest);
 
     expect(Object.hasOwn(env, 'CLAWX_CRON_MIGRATION_MANIFEST')).toBe(false);
     expect(env).toEqual({ PATH: '/usr/bin', HTTP_PROXY: '' });
     expect(source.CLAWX_CRON_MIGRATION_MANIFEST).toBe('/old/manifest.json');
+  });
+
+  it('can pass verified worker evidence independently of account evidence', () => {
+    const env = withCronMigrationManifestEnv({ CLAWX_CRON_TIMEOUT_MIGRATION_MANIFEST: 'inherited' }, undefined, 'verified');
+    expect(env).toEqual({ CLAWX_CRON_TIMEOUT_MIGRATION_MANIFEST: 'verified' });
   });
 
   it('injects only the current manifest path and preserves unrelated settings', () => {
