@@ -163,6 +163,21 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
 
     gatewayInitPromise = (async () => {
       try {
+        const refreshStatus = async () => {
+          const current = get().status;
+          const latest = await hostApi.gateway.status();
+          // A status event or lifecycle action can supersede an in-flight snapshot.
+          if (get().status !== current) return;
+          const stateChanged = latest.state !== current.state;
+          const runtimeChanged = getGatewayRuntimeIdentity(latest) !== getGatewayRuntimeIdentity(current);
+          const readinessChanged = latest.gatewayReady !== current.gatewayReady;
+          if (stateChanged) {
+            console.info(`[gateway-store] reconciled stale state: ${current.state} → ${latest.state}`);
+          }
+          if (stateChanged || runtimeChanged || readinessChanged) set({ status: latest });
+          synchronizeGatewaySessionCatalog(latest);
+        };
+
         const status = await hostApi.gateway.status();
         set({ status, isInitialized: true });
         synchronizeGatewaySessionCatalog(status);
@@ -231,23 +246,7 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
             clearInterval(gatewayReconcileTimer);
           }
           gatewayReconcileTimer = setInterval(() => {
-            hostApi.gateway.status()
-              .then((latest) => {
-                const current = get().status;
-                const stateChanged = latest.state !== current.state;
-                const runtimeChanged = getGatewayRuntimeIdentity(latest) !== getGatewayRuntimeIdentity(current);
-                const readinessChanged = latest.gatewayReady !== current.gatewayReady;
-                if (stateChanged) {
-                  console.info(
-                    `[gateway-store] reconciled stale state: ${current.state} → ${latest.state}`,
-                  );
-                }
-                if (stateChanged || runtimeChanged || readinessChanged) {
-                  set({ status: latest });
-                }
-                synchronizeGatewaySessionCatalog(latest);
-              })
-              .catch(() => { /* ignore */ });
+            void refreshStatus().catch(() => { /* ignore */ });
           }, 30_000);
         }
 
@@ -256,12 +255,7 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
         // the initial fetch and the IPC listener setup, that event was lost.
         // A second fetch guarantees we pick up the latest state.
         try {
-          const refreshed = await hostApi.gateway.status();
-          const current = get().status;
-          if (refreshed.state !== current.state) {
-            set({ status: refreshed });
-          }
-          synchronizeGatewaySessionCatalog(refreshed);
+          await refreshStatus();
         } catch {
           // Best-effort; the IPC listener will eventually reconcile.
         }

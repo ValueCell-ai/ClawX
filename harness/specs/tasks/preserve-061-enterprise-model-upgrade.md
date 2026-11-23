@@ -9,6 +9,7 @@ touchedAreas:
   - src/stores/gateway.ts
   - tests/e2e/gateway-lifecycle.spec.ts
   - tests/unit/gateway-events.test.ts
+  - tests/unit/chat-acp-page.test.tsx
   - harness/specs/rules/gateway-readiness-policy.md
   - harness/specs/scenarios/gateway-backend-communication.md
   - harness/specs/tasks/preserve-061-enterprise-model-upgrade.md
@@ -25,11 +26,13 @@ requiredProfiles:
   - e2e
 requiredTests:
   - tests/unit/acp-chat-service.test.ts
+  - tests/unit/chat-acp-page.test.tsx
   - tests/unit/gateway-events.test.ts
   - tests/e2e/gateway-lifecycle.spec.ts
 acceptance:
   - Verify legacy selection and catalog expansion in isolated state and retain authorization checks for removed or unknown models.
   - A stopped or failed Gateway still yields a bounded failure. ACP waits for the Gateway before opening shared state.
+  - If the Gateway becomes ready while status listeners are being registered, Chat sees the new readiness immediately when initialization completes.
   - Comms replay and compare pass.
 docs:
   required: true

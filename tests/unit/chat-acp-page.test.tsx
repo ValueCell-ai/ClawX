@@ -86,6 +86,7 @@ const { acpState, agentsState, artifactPanelState, artifactPanelProps, chatState
   },
   gatewayState: {
     status: { state: 'running', gatewayReady: true, port: 18789 },
+    sessionCatalogAttempted: false,
   },
   settingsState: {
     chatWorkspacePath: '/workspace',
@@ -378,6 +379,7 @@ describe('ACP Chat page', () => {
     settingsState.chatWorkspacePath = '/workspace';
     settingsState.setChatWorkspacePath.mockReset();
     gatewayState.status = { state: 'running', gatewayReady: true, port: 18789 };
+    gatewayState.sessionCatalogAttempted = false;
   });
 
   it('renders ACP inline timeline content', async () => {
@@ -483,9 +485,10 @@ describe('ACP Chat page', () => {
 
     const { rerender } = render(<Chat />);
 
-    await waitFor(() => {
-      expect(chatState.loadSessions).toHaveBeenCalledTimes(1);
-    });
+    await waitFor(() => expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-disabled', 'false'));
+    expect(acpState.loadSession).not.toHaveBeenCalled();
+    gatewayState.sessionCatalogAttempted = true;
+    rerender(<Chat />);
     await waitFor(() => {
       expect(acpState.loadSession).toHaveBeenCalledWith({
         sessionKey: 'agent:main:main', workspaceRoot: '/workspace', cwd: '/workspace', createIfMissing: true,
@@ -508,24 +511,17 @@ describe('ACP Chat page', () => {
 
   it('does not load ACP until session discovery publishes the hydrated workspace', async () => {
     const sessionKey = 'agent:main:hydrated-workspace';
-    let finishDiscovery!: () => void;
-    acpState.activeSessionKey = null;
     chatState.sessions = [];
-    chatState.currentSessionKey = 'agent:main:main';
-    chatState.loadSessions.mockImplementation(() => new Promise<void>((resolve) => {
-      finishDiscovery = () => {
-        chatState.currentSessionKey = sessionKey;
-        chatState.sessions = [{ key: sessionKey, workspacePath: '/hydrated-workspace' }];
-        resolve();
-      };
-    }));
 
-    render(<Chat />);
-
-    await waitFor(() => expect(chatState.loadSessions).toHaveBeenCalledTimes(1));
+    const { rerender } = render(<Chat />);
+    await waitFor(() => expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-disabled', 'false'));
+    expect(chatState.loadSessions).not.toHaveBeenCalled();
     expect(acpState.loadSession).not.toHaveBeenCalled();
 
-    finishDiscovery();
+    chatState.currentSessionKey = sessionKey;
+    chatState.sessions = [{ key: sessionKey, workspacePath: '/hydrated-workspace' }];
+    gatewayState.sessionCatalogAttempted = true;
+    rerender(<Chat />);
     await waitFor(() => {
       expect(acpState.loadSession).toHaveBeenCalledWith({
         sessionKey,
@@ -1066,14 +1062,23 @@ describe('ACP Chat page', () => {
     expect(useComposerDraftStore.getState().thinkingLevels[sessionKey]).toBeUndefined();
   });
 
-  it('loads ACP sessions and keeps the composer enabled while Gateway is stopped', async () => {
+  it('keeps the composer enabled while Gateway is stopped and resumes automatic ACP loading when ready', async () => {
     gatewayState.status = { state: 'stopped', gatewayReady: false, port: 18789 };
 
-    render(<Chat />);
+    const { rerender } = render(<Chat />);
+    await waitFor(() => expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-disabled', 'false'));
+    expect(acpState.loadSession).not.toHaveBeenCalled();
 
+    acpState.loadSession.mockResolvedValueOnce(false);
+    await act(async () => { fireEvent.click(screen.getByTestId('mock-send')); });
+    expect(acpState.loadSession).toHaveBeenCalledTimes(1);
+    expect(acpState.sendPrompt).not.toHaveBeenCalled();
+
+    gatewayState.status = { state: 'running', gatewayReady: true, port: 18789 };
+    rerender(<Chat />);
     await waitFor(() => {
-      expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-disabled', 'false');
-      expect(acpState.loadSession).toHaveBeenCalledWith({
+      expect(acpState.loadSession).toHaveBeenCalledTimes(2);
+      expect(acpState.loadSession).toHaveBeenLastCalledWith({
         sessionKey: 'agent:main:main', workspaceRoot: '/workspace', cwd: '/workspace',
       });
     });
