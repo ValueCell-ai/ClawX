@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Check, Copy, Sparkles } from 'lucide-react';
+import { AlertCircle, Check, Copy } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Streamdown, type Components } from 'streamdown';
 import { BrowserLink } from '@/components/common/BrowserLink';
@@ -212,15 +212,8 @@ export const AcpMessageSegment = memo(function AcpMessageSegment({ item }: { ite
   return (
     <div
       data-testid={isUser ? 'acp-user-message' : 'acp-assistant-message'}
-      className={cn('group flex w-full gap-3', isUser ? 'justify-end' : 'justify-start')}
+      className={cn('group flex w-full', isUser && 'justify-end')}
     >
-      {!isUser && (
-        <div className="flex h-6 shrink-0 items-center" data-testid="acp-assistant-avatar" aria-hidden="true">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-black/5 text-foreground dark:bg-white/5">
-            <Sparkles className="h-4 w-4" />
-          </div>
-        </div>
-      )}
       <div className={cn('flex min-w-0 flex-col gap-2', isUser ? 'max-w-[80%] items-end' : 'w-full items-start')}>
         {orderedParts.map((part, index) => (
           <AcpRenderPart key={`${part.kind}:${index}`} part={part} tone={item.role} />

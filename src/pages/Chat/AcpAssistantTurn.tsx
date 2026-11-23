@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { AcpAssistantTurnDisplayGroup } from '@/lib/acp/timeline-groups';
 import { AcpMessageSegment, AcpRenderPart, AcpAssistantHoverBar, clipboardTextForParts } from './AcpMessageSegment';
@@ -140,115 +139,107 @@ export function AcpAssistantTurn({
   const renderItems = useMemo(() => partitionTurnItems(group.items), [group.items]);
 
   return (
-    <div data-testid="acp-assistant-turn" className="group flex w-full justify-start gap-3">
-      <div className="flex h-6 shrink-0 items-center" data-testid="acp-assistant-avatar" aria-hidden="true">
-        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-black/5 text-foreground dark:bg-white/5">
-          <Sparkles className="h-4 w-4" />
-        </div>
-      </div>
-
-      <div className="flex min-w-0 flex-1 flex-col items-start gap-3">
-        {renderItems.map((item) => {
-          if (item.kind === 'tool-call-group') {
-            return (
-              <div key={item.id} className={assistantTurnBlockClassName}>
-                <AcpToolCallsGroup
-                  items={item.items}
-                  collapsedByDefault={isToolGroupSettled(item.items, timing, group.items)}
-                />
-              </div>
-            );
-          }
-
-          if (item.kind === 'message-segment') {
-            if (item.role === 'user') return <AcpMessageSegment key={item.id} item={item} />;
-            return (
-              <div key={item.id} data-acp-item-id={item.id} data-testid="acp-assistant-message" className={cn('flex flex-col gap-2', assistantTurnBlockClassName)}>
-                {item.parts.map((part, index) => (
-                  <AcpRenderPart
-                    key={`${part.kind}:${index}`}
-                    part={part}
-                    tone="assistant"
-                    {...(streamingSegmentIds.has(item.id)
-                      && index === item.parts.length - 1
-                      && part.kind === 'markdown'
-                      ? { isAnimating: true }
-                      : {})}
-                  />
-                ))}
-              </div>
-            );
-          }
-
-          if (item.kind === 'tool-call') {
-            return (
-              <div key={item.id} data-acp-item-id={item.id} className={cn('-my-1', assistantTurnBlockClassName)}>
-                <AcpToolCallCard item={item} />
-              </div>
-            );
-          }
-
-          if (item.kind === 'permission') {
-            return (
-              <div key={item.id} data-acp-item-id={item.id} className={assistantTurnBlockClassName}>
-                <AcpPermissionCard item={item} onSelect={onPermissionSelect} />
-              </div>
-            );
-          }
-
-          if (item.kind === 'thought') {
-            return (
-              <div key={item.id} data-acp-item-id={item.id} className={assistantTurnBlockClassName}>
-                <AcpThoughtBlock item={item} />
-              </div>
-            );
-          }
-
-          if (item.kind === 'plan') {
-            return (
-              <div key={item.id} data-acp-item-id={item.id} className={assistantTurnBlockClassName}>
-                <AcpPlanItem item={item} />
-              </div>
-            );
-          }
-
-          if (item.kind === 'compaction') {
-            return (
-              <div key={item.id} data-acp-item-id={item.id} className={assistantTurnBlockClassName}>
-                <AcpCompactionStatus item={item} />
-              </div>
-            );
-          }
-
-          return null;
-        })}
-
-        {group.attachments.map((attachment) => (
-          <AcpAttachmentPart key={attachment.attachmentId} part={attachment} />
-        ))}
-
-        {workspaceRoot && fileSummaries.length > 0 && (
-          <div className={assistantTurnBlockClassName}>
-            <AcpTurnFileActivity summaries={fileSummaries} workspaceRoot={workspaceRoot} />
-          </div>
-        )}
-
-        {(timing || clipboardText.trim().length > 0) && (
-          <div className={cn('flex items-center', assistantTurnBlockClassName)}>
-            {timing && (
-              <AcpTurnDuration
-                key={timing.status === 'running' ? timing.startedAtMs : timing.durationMs}
-                timing={timing}
+    <div data-testid="acp-assistant-turn" className="group flex w-full min-w-0 flex-col items-start gap-3">
+      {renderItems.map((item) => {
+        if (item.kind === 'tool-call-group') {
+          return (
+            <div key={item.id} className={assistantTurnBlockClassName}>
+              <AcpToolCallsGroup
+                items={item.items}
+                collapsedByDefault={isToolGroupSettled(item.items, timing, group.items)}
               />
-            )}
-            {clipboardText.trim().length > 0 && (
-              <div className="ml-auto min-w-0 flex-1">
-                <AcpAssistantHoverBar text={clipboardText} />
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+            </div>
+          );
+        }
+
+        if (item.kind === 'message-segment') {
+          if (item.role === 'user') return <AcpMessageSegment key={item.id} item={item} />;
+          return (
+            <div key={item.id} data-acp-item-id={item.id} data-testid="acp-assistant-message" className={cn('flex flex-col gap-2', assistantTurnBlockClassName)}>
+              {item.parts.map((part, index) => (
+                <AcpRenderPart
+                  key={`${part.kind}:${index}`}
+                  part={part}
+                  tone="assistant"
+                  {...(streamingSegmentIds.has(item.id)
+                    && index === item.parts.length - 1
+                    && part.kind === 'markdown'
+                    ? { isAnimating: true }
+                    : {})}
+                />
+              ))}
+            </div>
+          );
+        }
+
+        if (item.kind === 'tool-call') {
+          return (
+            <div key={item.id} data-acp-item-id={item.id} className={cn('-my-1', assistantTurnBlockClassName)}>
+              <AcpToolCallCard item={item} />
+            </div>
+          );
+        }
+
+        if (item.kind === 'permission') {
+          return (
+            <div key={item.id} data-acp-item-id={item.id} className={assistantTurnBlockClassName}>
+              <AcpPermissionCard item={item} onSelect={onPermissionSelect} />
+            </div>
+          );
+        }
+
+        if (item.kind === 'thought') {
+          return (
+            <div key={item.id} data-acp-item-id={item.id} className={assistantTurnBlockClassName}>
+              <AcpThoughtBlock item={item} />
+            </div>
+          );
+        }
+
+        if (item.kind === 'plan') {
+          return (
+            <div key={item.id} data-acp-item-id={item.id} className={assistantTurnBlockClassName}>
+              <AcpPlanItem item={item} />
+            </div>
+          );
+        }
+
+        if (item.kind === 'compaction') {
+          return (
+            <div key={item.id} data-acp-item-id={item.id} className={assistantTurnBlockClassName}>
+              <AcpCompactionStatus item={item} />
+            </div>
+          );
+        }
+
+        return null;
+      })}
+
+      {group.attachments.map((attachment) => (
+        <AcpAttachmentPart key={attachment.attachmentId} part={attachment} />
+      ))}
+
+      {workspaceRoot && fileSummaries.length > 0 && (
+        <div className={assistantTurnBlockClassName}>
+          <AcpTurnFileActivity summaries={fileSummaries} workspaceRoot={workspaceRoot} />
+        </div>
+      )}
+
+      {(timing || clipboardText.trim().length > 0) && (
+        <div className={cn('flex items-center', assistantTurnBlockClassName)}>
+          {timing && (
+            <AcpTurnDuration
+              key={timing.status === 'running' ? timing.startedAtMs : timing.durationMs}
+              timing={timing}
+            />
+          )}
+          {clipboardText.trim().length > 0 && (
+            <div className="ml-auto min-w-0 flex-1">
+              <AcpAssistantHoverBar text={clipboardText} />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
