@@ -65,6 +65,9 @@ test.describe('Cron job card layout', () => {
       },
     });
 
+    // Gateway initialization also runs on the setup screen. Reload with the
+    // mock installed so the task list always starts with a running Gateway.
+    await page.reload();
     await completeSetup(page);
     await page.getByTestId('sidebar-nav-cron').click();
 

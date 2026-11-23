@@ -1,7 +1,7 @@
 import { _electron as electron, expect, test } from '@playwright/test';
 import electronBinaryPath from 'electron';
 import { build } from 'esbuild';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
 // Exercise the native Electron boundary with a synthetic child and isolated
@@ -13,10 +13,14 @@ for (const withManifest of [false, true]) {
     await mkdir(directory, { recursive: true });
     const entry = join(directory, 'main.cjs');
     const childEntry = join(directory, 'child.mjs');
+    const resultPath = join(directory, 'environment.json');
     const manifest = withManifest ? join(directory, '迁移 evidence.json') : null;
     if (manifest) await writeFile(manifest, JSON.stringify({ version: 1, jobs: [] }));
+    // Capture the environment before exit so the assertion does not depend on
+    // Electron's ordering of the utility process exit and stdout events.
     await writeFile(childEntry, `
-      process.stdout.write(JSON.stringify({
+      import { writeFileSync } from 'node:fs';
+      writeFileSync(${JSON.stringify(resultPath)}, JSON.stringify({
         manifest: process.env.CLAWX_CRON_MIGRATION_MANIFEST ?? null,
         proxy: process.env.HTTP_PROXY ?? '',
         debug: process.env.OPENCLAW_DEBUG,
@@ -42,13 +46,11 @@ for (const withManifest of [false, true]) {
               const child = forkOpenClawUtilityProcess(${JSON.stringify(childEntry)}, [], {
                 env, stdio: 'pipe', serviceName: 'ClawX launch environment regression',
               });
-              let stdout = '';
               let stderr = '';
               const timeout = setTimeout(() => { child.kill(); reject(new Error('Child timed out')); }, 15000);
-              child.stdout.on('data', chunk => { stdout += chunk; });
               child.stderr.on('data', chunk => { stderr += chunk; });
               child.on('error', error => { clearTimeout(timeout); reject(error); });
-              child.on('exit', code => { clearTimeout(timeout); resolve({ code, stdout, stderr, hasManifest }); });
+              child.on('exit', code => { clearTimeout(timeout); resolve({ code, stderr, hasManifest }); });
             });
           }
         `,
@@ -67,13 +69,13 @@ for (const withManifest of [false, true]) {
       const result = await app.evaluate(async ({ app }, entry) => {
         await app.whenReady();
         const main = process.mainModule!.require(entry) as {
-          probe: () => Promise<{ code: number; stdout: string; stderr: string; hasManifest: boolean }>;
+          probe: () => Promise<{ code: number; stderr: string; hasManifest: boolean }>;
         };
         return await main.probe();
       }, entry);
       expect(result.code, result.stderr).toBe(0);
       expect(result.hasManifest).toBe(withManifest);
-      expect(JSON.parse(result.stdout)).toEqual({ manifest, proxy: '', debug: '1' });
+      expect(JSON.parse(await readFile(resultPath, 'utf8'))).toEqual({ manifest, proxy: '', debug: '1' });
     } finally {
       await app.close();
     }

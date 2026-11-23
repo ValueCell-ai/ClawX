@@ -633,7 +633,7 @@ test.describe('ClawX ACP inline timeline', () => {
       ]);
       await installAcpPromptDeferredMock(app);
       await installAcpLoadReplayBySessionMock(app, { [MAIN_SESSION_KEY]: [[]], [awayKey]: [[]] });
-      const page = await openChat(app);
+      const page = await openChat(app, MAIN_SESSION_KEY);
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();
       await page.getByTestId('chat-composer-input').fill(NATIVE_MULTI_STAGE.request);
       await page.getByTestId('chat-composer-send').click();
@@ -663,7 +663,7 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();
       await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
       await assertStories();
-      await page.reload();
+      await openChat(app, MAIN_SESSION_KEY);
       await assertStories();
     } finally { await closeElectronApp(app); }
   });

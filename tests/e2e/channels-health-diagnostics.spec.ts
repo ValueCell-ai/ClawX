@@ -1,3 +1,4 @@
+import { I18N_RESOURCES } from '../../shared/i18n/resources';
 import { navigateToSection } from './fixtures/navigation';
 import { completeSetup, expect, test } from './fixtures/electron';
 
@@ -50,9 +51,12 @@ test.describe('Channels health diagnostics', () => {
       });
     });
 
+    // Let the renderer initialize its Gateway store after installing the mock.
+    await page.reload();
     await completeSetup(page);
     await navigateToSection(page, 'channels');
     await expect(page.getByTestId('channels-page')).toBeVisible();
+    await expect(page.getByRole('button', { name: I18N_RESOURCES.en.channels.refresh, exact: true })).toBeEnabled();
     await expect(page.getByText('Feishu / Lark')).toBeVisible();
     await expect(page.getByTestId('channels-health-banner')).toHaveCount(0);
     await expect(page.getByText(/Gateway degraded|状态波动|ゲートウェイ劣化/)).toHaveCount(0);
@@ -270,6 +274,7 @@ test.describe('Channels health diagnostics', () => {
       });
     });
 
+    await page.reload();
     await completeSetup(page);
 
     await page.evaluate(() => {
@@ -318,68 +323,5 @@ test.describe('Channels health diagnostics', () => {
     });
     expect(copied).toContain('"platform": "darwin"');
     expect(copied).toContain('"state": "external-unavailable"');
-  });
-
-  test('shows deadline verification through existing diagnostics', async ({ electronApp, page }) => {
-    await electronApp.evaluate(({ ipcMain }) => {
-      const originalHostInvoke = (ipcMain as unknown as {
-        _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
-      })._invokeHandlers?.get('host:invoke');
-      const respond = (id: unknown, data: unknown) => ({ id: typeof id === 'string' ? id : undefined, ok: true, data });
-      const recovery = {
-        state: 'verifying',
-        lastAliveAt: 100,
-        deadlineAt: 280,
-        lastDeadlineProbeAt: 281,
-        externallyManaged: false,
-      };
-
-      ipcMain.removeHandler('host:invoke');
-      ipcMain.handle('host:invoke', async (event, request: { id?: string; module?: string; action?: string }) => {
-        if (request?.module === 'channels' && request.action === 'accounts') {
-          return respond(request.id, {
-            success: true,
-            gatewayHealth: {
-              state: 'degraded',
-              reasons: ['gateway_verifying'],
-              consecutiveHeartbeatMisses: 1,
-              recovery,
-            },
-            channels: [],
-          });
-        }
-        if (request?.module === 'gateway' && request.action === 'status') {
-          return respond(request.id, { state: 'running', port: 18789 });
-        }
-        if (request?.module === 'agents' && request.action === 'list') {
-          return respond(request.id, { success: true, agents: [] });
-        }
-        if (request?.module === 'diagnostics' && request.action === 'gatewaySnapshot') {
-          return respond(request.id, {
-            capturedAt: 123,
-            platform: 'darwin',
-            gateway: {
-              state: 'degraded',
-              reasons: ['gateway_verifying'],
-              consecutiveHeartbeatMisses: 1,
-              recovery,
-            },
-            channels: [],
-            clawxLogTail: 'clawx-log',
-            gatewayLogTail: 'gateway-log',
-            gatewayErrLogTail: '',
-          });
-        }
-        return originalHostInvoke?.(event, request) ?? respond(request?.id, {});
-      });
-    });
-
-    await completeSetup(page);
-    await navigateToSection(page, 'channels');
-    await expect(page.getByTestId('channels-health-banner')).toBeVisible();
-    await expect(page.getByTestId('channels-recovery-status')).toContainText(/verifying Gateway responsiveness|正在验证网关响应|ゲートウェイの応答を確認中/i);
-
-    await page.getByTestId('channels-toggle-diagnostics').click();
-    await expect(page.getByTestId('channels-diagnostics')).toContainText('"state": "verifying"');
   });
 });

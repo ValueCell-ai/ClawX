@@ -1,4 +1,5 @@
 import { completeSetup, expect, getRecordedHostInvocations, installIpcMocks, test } from './fixtures/electron';
+import { selectValue } from './fixtures/radix-select';
 
 function stableStringify(value: unknown): string {
   if (value == null || typeof value !== 'object') return JSON.stringify(value);
@@ -63,31 +64,37 @@ test('creates a WeChat task with account-scoped recipients from real SQLite meta
       } },
     },
   });
+  await page.reload();
   await completeSetup(page);
   await page.getByTestId('sidebar-nav-cron').click();
   await page.getByTestId('cron-new-task-button').click();
   const dialog = page.getByTestId('cron-task-dialog');
   await dialog.locator('#name').fill(input.name);
   await dialog.locator('#message').fill(input.message);
-  await page.getByTestId('cron-recurrence-select').selectOption('custom');
+  await selectValue(page.getByTestId('cron-recurrence-select'), 'custom');
   await page.getByTestId('cron-custom-input').fill(input.schedule);
-  await dialog.getByRole('button', { name: 'External channel', exact: false }).click();
-  await expect(dialog.locator('#delivery-channel')).toHaveValue('wechat');
+  await dialog.getByRole('button', { name: 'Messaging app', exact: true }).click();
+  await expect(dialog.getByRole('combobox', { name: 'Channel', exact: true })).toHaveText('WeChat');
   const account = dialog.locator('#delivery-account');
   const target = dialog.locator('#delivery-target-select');
-  await expect(target.locator('option[value="PrimaryPeer@im.wechat"]')).toHaveCount(1);
-  await expect(target.locator('option[value="SecondaryPeer@im.wechat"]')).toHaveCount(0);
-  await target.selectOption('PrimaryPeer@im.wechat');
-  await account.selectOption('wx-empty');
-  await expect(target).toHaveValue('');
+  const recipientList = page.getByRole('listbox');
+  const primaryRecipient = recipientList.locator('[data-value="PrimaryPeer@im.wechat"]');
+  const secondaryRecipient = recipientList.locator('[data-value="SecondaryPeer@im.wechat"]');
+  await target.click();
+  await expect(primaryRecipient).toBeVisible();
+  await expect(secondaryRecipient).toHaveCount(0);
+  await primaryRecipient.click();
+  await selectValue(account, 'wx-empty');
   await expect(target).toBeDisabled();
+  await expect(target).toHaveText('Select a delivery target');
   await expect(dialog.getByText('No delivery targets are available for the selected WeChat account.')).toBeVisible();
-  await account.selectOption('wx-secondary');
-  await expect(target.locator('option[value="SecondaryPeer@im.wechat"]')).toHaveCount(1);
-  await expect(target.locator('option[value="PrimaryPeer@im.wechat"]')).toHaveCount(0);
-  await target.selectOption('SecondaryPeer@im.wechat');
+  await selectValue(account, 'wx-secondary');
+  await target.click();
+  await expect(secondaryRecipient).toBeVisible();
+  await expect(primaryRecipient).toHaveCount(0);
+  await secondaryRecipient.click();
   await dialog.getByRole('button', { name: 'Create Task', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
   const calls = await getRecordedHostInvocations(electronApp);
   expect(calls.find((call) => call.module === 'cron' && call.action === 'create')?.payload).toEqual(input);
-  await expect(dialog).toHaveCount(0);
 });

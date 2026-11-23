@@ -25,26 +25,29 @@ test('utility CLI completion reports migration refusal and Doctor success after 
   await build({ entryPoints: ['electron/utils/openclaw-utility-process.ts'], outfile: launcher,
     bundle: true, platform: 'node', format: 'cjs', external: ['electron'] });
   const entry = join(homeDir, 'deferred-exit.mjs');
-  await writeFile(entry, `await new Promise(resolve => setTimeout(resolve, 50));
-process.stdout.write('cleanup completed\\n');
+  await writeFile(entry, `import { writeFile } from 'node:fs/promises';
+await new Promise(resolve => setTimeout(resolve, 50));
+await writeFile(process.argv[3], 'cleanup completed');
 process.exitCode = Number(process.argv[2]);
 `);
   const app = await launchElectronApp({ skipSetup: true });
   try {
     for (const code of [78, 0]) {
-      const result = await app.evaluate(async (_electron, params) => {
+      const cleanupFile = join(homeDir, `cleanup-${code}.txt`);
+      const exitCode = await app.evaluate(async (_electron, params) => {
         const { forkOpenClawUtilityProcess } = process.mainModule!.require(params.launcher);
-        return await new Promise<{ code: number; output: string }>((resolve, reject) => {
-          const child = forkOpenClawUtilityProcess(params.entry, [String(params.code)], { stdio: 'pipe' },
+        return await new Promise<number>((resolve, reject) => {
+          const child = forkOpenClawUtilityProcess(params.entry, [String(params.code), params.cleanupFile], { stdio: 'ignore' },
             { gatewayShutdownControl: params.code === 78 });
-          let output = '';
-          child.stdout.on('data', (data: Buffer) => { output += data.toString(); });
           const timeout = setTimeout(() => { child.kill(); reject(new Error('Deferred CLI exit stalled')); }, 10000);
-          child.on('exit', (exitCode: number) => { clearTimeout(timeout); resolve({ code: exitCode, output }); });
+          child.once('exit', (exitCode: number) => {
+            clearTimeout(timeout);
+            resolve(exitCode);
+          });
         });
-      }, { launcher, entry, code });
-      expect(result.code).toBe(code);
-      expect(result.output).toContain('cleanup completed');
+      }, { launcher, entry, code, cleanupFile });
+      expect(exitCode).toBe(code);
+      expect(await readFile(cleanupFile, 'utf8')).toBe('cleanup completed');
     }
   } finally { await closeElectronApp(app); }
 });

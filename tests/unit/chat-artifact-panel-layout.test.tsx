@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { Chat } from '@/pages/Chat';
 
@@ -62,11 +62,11 @@ vi.mock('@/stores/artifact-panel', () => ({
 }));
 
 vi.mock('@/components/file-preview/ArtifactPanel', () => ({
-  ArtifactPanel: () => <div data-testid="artifact-panel" />,
+  default: () => <div data-testid="artifact-panel" />,
 }));
 
 vi.mock('@/components/file-preview/PanelResizeDivider', () => ({
-  PanelResizeDivider: () => <div data-testid="panel-resize-divider" />,
+  default: () => <div data-testid="panel-resize-divider" />,
 }));
 
 vi.mock('@/hooks/use-stick-to-bottom-instant', () => ({
@@ -87,9 +87,20 @@ vi.mock('@/pages/Chat/ChatToolbar', () => ({
 }));
 
 describe('Chat artifact panel layout', () => {
-  it('keeps the chat toolbar background draggable while actions remain clickable', async () => {
+  beforeEach(() => {
     window.electron.platform = 'darwin';
+    const matchMedia = window.matchMedia;
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      ...matchMedia(query),
+      matches: query === '(min-width: 1024px)',
+    }));
+  });
 
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('keeps the chat toolbar background draggable while actions remain clickable', async () => {
     render(<Chat />);
 
     const dragRegion = await screen.findByTestId('chat-toolbar-drag-region');
@@ -100,8 +111,6 @@ describe('Chat artifact panel layout', () => {
   });
 
   it('stacks the chat page above the macOS main drag strip', async () => {
-    window.electron.platform = 'darwin';
-
     render(<Chat />);
 
     const chatPage = await screen.findByTestId('chat-page');
@@ -109,8 +118,6 @@ describe('Chat artifact panel layout', () => {
   });
 
   it('layers the right artifact panel above the macOS drag strip', async () => {
-    window.electron.platform = 'darwin';
-
     render(<Chat />);
 
     const panel = await screen.findByTestId('artifact-panel');

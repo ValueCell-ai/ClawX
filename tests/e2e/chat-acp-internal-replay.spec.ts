@@ -74,6 +74,7 @@ test('hides native ACP control-user replay while retaining quoted text, assistan
       const previousInvocations = (await getRecordedHostInvocations(app)).length;
       await page.reload();
       await expect(page.getByTestId('main-layout')).toBeVisible();
+      await page.getByTestId(`sidebar-session-${NATIVE_REPLAY_SESSION_KEY}`).click();
       const chat = page.getByTestId('acp-chat-timeline');
       await expect(chat).toBeVisible({ timeout: 30_000 });
       const users = chat.getByTestId('acp-user-message');
