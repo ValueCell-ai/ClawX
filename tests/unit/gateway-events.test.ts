@@ -145,7 +145,10 @@ describe('gateway store event wiring', () => {
       expect(hostApiMock.gateway.rpc.mock.calls.filter(
         ([method]) => method === 'sessions.list',
       )).toHaveLength(initialListCalls + 1);
+      expect(useGatewayStore.getState().sessionCatalogAttempted).toBe(true);
     });
+    handlers.get('gateway:status')?.({ ...firstEpoch, gatewayReady: false });
+    expect(useGatewayStore.getState().sessionCatalogAttempted).toBe(false);
   });
 
   it('routes sessions.changed through the generic notification handler', async () => {
@@ -283,9 +286,11 @@ describe('gateway store event wiring', () => {
     const { useGatewayStore } = await import('@/stores/gateway');
     await useGatewayStore.getState().init();
 
+    expect(useGatewayStore.getState().sessionCatalogAttempted).toBe(false);
     firstList.resolve({ ts: 10, sessions: [{ key: 'agent:main:old', status: 'running' }] });
     await ordinaryLoad;
     await vi.waitFor(() => expect(listCalls).toBe(2));
+    await vi.waitFor(() => expect(useGatewayStore.getState().sessionCatalogAttempted).toBe(true));
     expect(useChatStore.getState().sessions).toEqual([
       expect.objectContaining({ key: 'agent:main:main', status: 'done' }),
     ]);

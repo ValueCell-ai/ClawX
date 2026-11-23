@@ -63,6 +63,7 @@ conditionalProfiles:
     when:
       - renderer extension route registration or startup lifecycle changes
       - user-visible gateway status changes
+      - automatic chat history and ACP session-family loads across an upgrade readiness transition
       - user-visible chat send/receive behavior changes
       - channels/agents/settings UI depends on new backend response shape
       - Web Browser guest, navigation, session, permission, or data policy changes

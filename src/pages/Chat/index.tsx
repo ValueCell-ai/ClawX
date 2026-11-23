@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/badge';
 import { useAgentsStore } from '@/stores/agents';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import { useChatStore } from '@/stores/chat';
+import { useGatewayStore } from '@/stores/gateway';
 import { useComposerDraftStore } from '@/stores/composer-drafts';
 import { useSessionAttentionStore } from '@/stores/session-attention';
 import { useSettingsStore } from '@/stores/settings';
@@ -229,12 +230,13 @@ export function Chat() {
   const { t } = useTranslation('chat');
 
   const currentSessionKey = useChatStore((s) => s.currentSessionKey);
+  const gatewayReady = useGatewayStore(({ status }) => status.state === 'running' && status.gatewayReady !== false);
   const sessions = useChatStore((s) => s.sessions);
   const sessionLabels = useChatStore((s) => s.sessionLabels);
   const currentAgentId = useChatStore((s) => s.currentAgentId);
   const composerDraft = useComposerDraftStore((s) => s.drafts[currentSessionKey] ?? '');
   const setComposerDraft = useComposerDraftStore((s) => s.setDraft);
-  const loadSessions = useChatStore((s) => s.loadSessions);
+  const sessionDiscoveryAttempted = useGatewayStore((s) => s.sessionCatalogAttempted);
   const switchSession = useChatStore((s) => s.switchSession);
   const selectAcpSession = useChatStore((s) => s.selectAcpSession);
   const acknowledgeAcpSessionCreated = useChatStore((s) => s.acknowledgeAcpSessionCreated);
@@ -248,7 +250,6 @@ export function Chat() {
   const removeWorkspace = useSettingsStore((s) => s.removeWorkspace);
   const fetchAgents = useAgentsStore((s) => s.fetchAgents);
   const agents = useAgentsStore((s) => s.agents);
-  const [sessionDiscoveryAttempted, setSessionDiscoveryAttempted] = useState(false);
   const [lastPromptAttemptSessionKey, setLastPromptAttemptSessionKey] = useState<string | null>(null);
   const [questionDirectoryOpenSessionKey, setQuestionDirectoryOpenSessionKey] = useState<string | null>(null);
   const [resolvedWorkspaceContext, setResolvedWorkspaceContext] = useState<{
@@ -398,6 +399,7 @@ export function Chat() {
   selectedFamilySessionKeyRef.current = currentSessionKey;
 
   const loadCurrentSessionFamily = useCallback((sessionKey: string) => {
+    if (!gatewayReady) return;
     const requestId = ++familyRequestIdRef.current;
     void hostApi.chat.getAcpSessionFamily({ sessionKey }).then((result) => {
       if (
@@ -407,7 +409,7 @@ export function Chat() {
       ) return;
       setLoadedSessionFamily({ sessionKey, result });
     }).catch(() => undefined);
-  }, []);
+  }, [gatewayReady]);
 
   useEffect(() => {
     familyRequestIdRef.current += 1;
@@ -479,19 +481,6 @@ export function Chat() {
   );
 
   useEffect(() => {
-    if (currentSessionKey !== DEFAULT_SESSION_KEY || sessions.length > 0 || sessionDiscoveryAttempted) return;
-    let cancelled = false;
-    void loadSessions()
-      .finally(() => {
-        if (!cancelled) setSessionDiscoveryAttempted(true);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [currentSessionKey, loadSessions, sessionDiscoveryAttempted, sessions.length]);
-
-  useEffect(() => {
     if (!currentSessionKey || !cwd || !currentSession?.createdLocally || promptOrigin === currentSessionKey) return;
     acpLoadInFlightKeyRef.current = null;
     const hasStaleTimeline = acpTimeline.sessionId !== currentSessionKey || acpTimeline.itemOrder.length > 0;
@@ -500,8 +489,8 @@ export function Chat() {
   }, [acpActiveSessionKey, acpCwd, acpTimeline.itemOrder.length, acpTimeline.sessionId, acpWorkspaceRoot, currentSession, currentSessionKey, cwd, prepareLocalAcpSession, promptOrigin]);
 
   useEffect(() => {
-    if (!currentSessionKey || !cwd || !workspaceContextAvailable || promptOrigin === currentSessionKey) return;
-    if (currentSessionKey === DEFAULT_SESSION_KEY && sessions.length === 0 && acpActiveSessionKey == null && !sessionDiscoveryAttempted) return;
+    if (!gatewayReady || !currentSessionKey || !cwd || !workspaceContextAvailable || promptOrigin === currentSessionKey) return;
+    if (currentSessionKey === DEFAULT_SESSION_KEY && sessions.length === 0 && !sessionDiscoveryAttempted) return;
     if (acpActiveSessionKey === currentSessionKey && acpWorkspaceRoot === cwd && acpCwd === cwd) return;
     const acpLoadKey = `${currentSessionKey}\0${cwd}`;
     if (acpLoadInFlightKeyRef.current === acpLoadKey) return;
@@ -522,7 +511,7 @@ export function Chat() {
         acpLoadInFlightKeyRef.current = null;
       }
     });
-  }, [acpActiveSessionKey, acpCwd, acpWorkspaceRoot, currentSessionKey, cwd, loadAcpSession, promptOrigin, selectAcpSession, sessionDiscoveryAttempted, sessions, workspaceContextAvailable]);
+  }, [acpActiveSessionKey, acpCwd, acpWorkspaceRoot, currentSessionKey, cwd, gatewayReady, loadAcpSession, promptOrigin, selectAcpSession, sessionDiscoveryAttempted, sessions, workspaceContextAvailable]);
 
   const platform = window.electron?.platform;
   const isMac = platform === 'darwin';

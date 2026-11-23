@@ -17,6 +17,7 @@ let gatewaySessionGeneration = 0;
 
 interface GatewayState {
   status: GatewayStatus;
+  sessionCatalogAttempted: boolean;
   health: GatewayHealth | null;
   isInitialized: boolean;
   lastError: string | null;
@@ -48,12 +49,14 @@ function getGatewayRuntimeIdentity(status: GatewayStatus): string {
 function synchronizeGatewaySessionCatalog(status: GatewayStatus): void {
   if (status.state !== 'running' || status.gatewayReady === false) {
     lastSynchronizedRuntimeIdentity = null;
+    if (useGatewayStore.getState().sessionCatalogAttempted) useGatewayStore.setState({ sessionCatalogAttempted: false });
     return;
   }
 
   const identity = getGatewayRuntimeIdentity(status);
   if (identity === lastSynchronizedRuntimeIdentity) return;
   lastSynchronizedRuntimeIdentity = identity;
+  useGatewayStore.setState({ sessionCatalogAttempted: false });
   gatewaySessionGeneration += 1;
   const generation = gatewaySessionGeneration;
 
@@ -79,6 +82,10 @@ function synchronizeGatewaySessionCatalog(status: GatewayStatus): void {
         });
       } catch (error) {
         console.warn('Failed to hydrate Gateway session catalog:', error);
+      } finally {
+        if (generation === gatewaySessionGeneration && identity === lastSynchronizedRuntimeIdentity) {
+          useGatewayStore.setState({ sessionCatalogAttempted: true });
+        }
       }
     }
   })();
@@ -143,6 +150,7 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
     port: 18789,
   },
   health: null,
+  sessionCatalogAttempted: false,
   isInitialized: false,
   lastError: null,
 

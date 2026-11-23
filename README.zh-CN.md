@@ -163,7 +163,7 @@ ClawX 支持从官方 0.6.1（OpenClaw `2026.7.1-2`）或使用 `2026.10.5` 的 
 
 需要回退时，先退出所有 ClawX、Gateway 和 Doctor 进程，再用 Node 24.16+（24.x）或 26.1+ 执行 `node <应用资源目录>/cli/restore-openclaw-upgrade.mjs <快照目录> --confirm-stopped`。恢复工具验证文件哈希，一并恢复配置、数据库和插件文件，并通过恢复日志保留被替换的新版数据；恢复中断后，在当前配置可读的前提下再次执行会先撤销未完成的恢复。工具按 JSON5 解析当前配置，同时检查当前、快照和默认端口；配置缺失、不可读或无效时拒绝恢复。如果中断时配置已被移走，须先按下方说明手工恢复当前配置。请保留工具旁的 OpenClaw 资源目录，其中包含 JSON5 解析依赖。恢复后请先安装对应的旧版 ClawX 再启动，否则新版应用会再次迁移旧数据库。详见[升级和恢复说明](harness/reference/openclaw-2026-10-10-upgrade.md)。 Windows 可使用安装目录内的 `resources/bin/node.exe`，恢复前须退出托盘中的 ClawX，并沿用原 Windows 用户配置目录。
 
-Windows 版从 0.6.1 直接升级时，如果需要迁移数据库，ClawX 会自动使用随附的 Node.js 运行 Doctor。迁移完成后，Gateway 启动，原有定时任务恢复调度，用户也可以继续之前的对话。
+Windows 版从 0.6.1 直接升级时，如果需要迁移数据库，ClawX 会自动使用随附的 Node.js 运行 Doctor。即使迁移超过五分钟，聊天页也会等到 Gateway 确认会话数据库就绪后再加载历史对话。Gateway 启动后，原有定时任务恢复调度。
 
 Windows 上清理 SQLite 临时快照和旧会话导入目录时，会先释放父进程保留的文件身份校验句柄，再删除临时数据库，避免 Doctor 自身的句柄导致升级检查或会话迁移报 `EPERM`、`ENOTEMPTY`。详见[本机升级验证记录](harness/reference/windows-sqlite-upgrade-validation-20261109.md)。
 

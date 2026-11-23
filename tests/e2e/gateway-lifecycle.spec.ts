@@ -1,4 +1,4 @@
-import { completeSetup, expect, installIpcMocks, test } from './fixtures/electron';
+import { completeSetup, expect, getRecordedHostInvocations, installIpcMocks, test } from './fixtures/electron';
 
 function stableStringify(value: unknown): string {
   if (value == null || typeof value !== 'object') return JSON.stringify(value);
@@ -271,6 +271,7 @@ test.describe('ClawX gateway lifecycle resilience', () => {
 
   test('chat sidebar session catalog reloads when gateway becomes ready after restart', async ({ electronApp, page }) => {
     await installIpcMocks(electronApp, {
+      recordHostInvocations: true,
       gatewayStatus: { state: 'running', port: 18789, pid: 100, connectedAt: 1, gatewayReady: false },
       hostApi: {
         [stableStringify(['/api/gateway/status', 'GET'])]: {
@@ -305,8 +306,14 @@ test.describe('ClawX gateway lifecycle resilience', () => {
     await completeSetup(page);
     await expect(page.getByTestId('sidebar-gateway-restarting')).toHaveAttribute('data-state', 'visible');
     await expect(page.getByText('history after ready')).toHaveCount(0);
+    const chatReads = async () => (await getRecordedHostInvocations(electronApp))
+      .filter(({ module, action }) => module === 'chat' && ['getAcpSessionFamily', 'loadAcpSession'].includes(action ?? ''))
+      .map(({ action }) => action);
+    await expect(page.getByTestId('chat-composer-input')).toBeVisible();
+    expect(await chatReads()).toEqual([]);
 
     await installIpcMocks(electronApp, {
+      recordHostInvocations: true,
       gatewayStatus: { state: 'running', port: 18789, pid: 200, connectedAt: 2, gatewayReady: true },
       hostApi: {
         [stableStringify(['/api/gateway/status', 'GET'])]: {
@@ -356,6 +363,7 @@ test.describe('ClawX gateway lifecycle resilience', () => {
     });
 
     await expect(page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`)).toContainText('history after ready', { timeout: 10_000 });
+    await expect.poll(chatReads).toEqual(expect.arrayContaining(['getAcpSessionFamily', 'loadAcpSession']));
     await expect(page.getByTestId('sidebar-gateway-restarting')).toHaveAttribute('data-state', 'hidden');
   });
 
