@@ -107,6 +107,44 @@ describe('gateway store event wiring', () => {
     expect(useGatewayStore.getState().health?.presence).toEqual([{ mode: 'gateway', ts: 2 }]);
   });
 
+  it.each([
+    ['readiness', { gatewayReady: false }, { gatewayReady: true }],
+    ['runtime identity', { pid: 10, connectedAt: 100 }, { pid: 11, connectedAt: 200 }],
+  ] as const)('publishes a change in %s during listener registration', async (_change, before, after) => {
+    const initial = { state: 'running', port: 18789, gatewayReady: false, ...before };
+    const refreshed = { ...initial, ...after };
+    hostApiMock.gateway.status.mockResolvedValueOnce(initial).mockResolvedValue(refreshed);
+    const { useGatewayStore } = await import('@/stores/gateway');
+    await useGatewayStore.getState().init();
+
+    expect(useGatewayStore.getState().status).toEqual(refreshed);
+    if (refreshed.gatewayReady) {
+      await vi.dynamicImportSettled();
+      await vi.waitFor(() => expect(useGatewayStore.getState().sessionCatalogAttempted).toBe(true));
+    }
+  });
+
+  it('preserves a newer status event while the post-subscription refresh is in flight', async () => {
+    const initial = { state: 'running', port: 18789, gatewayReady: false };
+    const refreshStarted = deferred<void>();
+    const refresh = deferred<typeof initial>();
+    hostApiMock.gateway.status.mockResolvedValueOnce(initial).mockImplementationOnce(() => {
+      refreshStarted.resolve();
+      return refresh.promise;
+    });
+    const { useGatewayStore } = await import('@/stores/gateway');
+    const initialization = useGatewayStore.getState().init();
+    await refreshStarted.promise;
+    const statusListener = hostEventSubscriptionMock.mock.calls.find(([event]) => event === 'gateway:status')![1];
+    const stopped = { ...initial, state: 'stopped' };
+    statusListener(stopped);
+    refresh.resolve({ ...initial, gatewayReady: true });
+    await initialization;
+
+    expect(useGatewayStore.getState().status).toEqual(stopped);
+    expect(hostApiMock.gateway.rpc).not.toHaveBeenCalled();
+  });
+
   it('subscribes and force-hydrates once for each ready runtime identity', async () => {
     const handlers = new Map<string, (payload: unknown) => void>();
     hostEventSubscriptionMock.mockImplementation((eventName: string, handler: (payload: unknown) => void) => {
@@ -145,7 +183,10 @@ describe('gateway store event wiring', () => {
       expect(hostApiMock.gateway.rpc.mock.calls.filter(
         ([method]) => method === 'sessions.list',
       )).toHaveLength(initialListCalls + 1);
+      expect(useGatewayStore.getState().sessionCatalogAttempted).toBe(true);
     });
+    handlers.get('gateway:status')?.({ ...firstEpoch, gatewayReady: false });
+    expect(useGatewayStore.getState().sessionCatalogAttempted).toBe(false);
   });
 
   it('routes sessions.changed through the generic notification handler', async () => {
@@ -283,9 +324,11 @@ describe('gateway store event wiring', () => {
     const { useGatewayStore } = await import('@/stores/gateway');
     await useGatewayStore.getState().init();
 
+    expect(useGatewayStore.getState().sessionCatalogAttempted).toBe(false);
     firstList.resolve({ ts: 10, sessions: [{ key: 'agent:main:old', status: 'running' }] });
     await ordinaryLoad;
     await vi.waitFor(() => expect(listCalls).toBe(2));
+    await vi.waitFor(() => expect(useGatewayStore.getState().sessionCatalogAttempted).toBe(true));
     expect(useChatStore.getState().sessions).toEqual([
       expect.objectContaining({ key: 'agent:main:main', status: 'done' }),
     ]);

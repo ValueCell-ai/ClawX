@@ -91,6 +91,9 @@ The ACP child is a Gateway client that also opens OpenClaw shared state. Main fo
 it only after the managed Gateway reports a connection, with a finite wait that fails
 the ACP request clearly instead of starting ACP against a Gateway that never came up.
 The startup Doctor repair stops any running ACP child before it migrates shared state.
+The Chat page defers automatic ACP session loads, session-family reads and initial
+session discovery until the running Gateway admits agent databases. An upgrade can
+outlast the ACP connection timeout. Readiness must resume loading the current selection.
 
 Doctor's exit status is not a readiness signal: it exits non-zero for any unhealthy
 plugin even after its migrations succeed. After every startup Doctor run, Main relaunches
