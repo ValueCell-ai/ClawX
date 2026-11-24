@@ -153,11 +153,22 @@ test.describe('ACP media attachments', () => {
       await fixture.setTranscriptResponses(MAIN_SESSION_KEY, [[]]);
 
       const page = await openChat(app);
-      await page.evaluate((path) => {
+      // Electron resolves the native path from a disk-backed File.
+      await page.evaluate(() => {
+        const picker = document.createElement('input');
+        picker.type = 'file';
+        picker.id = 'clawx-e2e-drop-source';
+        picker.hidden = true;
+        document.body.append(picker);
+      });
+      await page.locator('#clawx-e2e-drop-source').setInputFiles(sourcePath);
+      await page.evaluate(() => {
         const target = document.querySelector('[data-testid="chat-composer-input"]');
         if (!target) throw new Error('Missing chat composer input');
-        const file = new File(['synthetic drag metadata'], 'direct-source.png', { type: 'image/png' });
-        Object.defineProperty(file, 'path', { value: path });
+        const picker = document.querySelector<HTMLInputElement>('#clawx-e2e-drop-source');
+        const file = picker?.files?.[0];
+        if (!picker || !file) throw new Error('Missing native drop source');
+        picker.remove();
         const dataTransfer = new DataTransfer();
         dataTransfer.items.add(file);
         target.dispatchEvent(new DragEvent('drop', {
@@ -165,7 +176,7 @@ test.describe('ACP media attachments', () => {
           cancelable: true,
           dataTransfer,
         }));
-      }, sourcePath);
+      });
 
       await expect(page.getByAltText('direct-source.png', { exact: true })).toBeVisible();
       await page.getByTestId('chat-composer-input').fill('Read this source directly');
