@@ -122,7 +122,8 @@ with the desktop stopped. Enterprise services and provider traffic were
 simulated. The NSIS installer wizard, registry integration and live channel
 delivery were outside the test scope.
 
-All 467 tests in 35 targeted test files passed. An offline frozen install
+All 462 tests in the PR's 35 targeted test files passed on Windows. The
+installer-script tests loaded the NSIS patch helper as native ESM. An offline frozen install
 reproduced all 31 runtime files used for the desktop comparison. Both
 TypeScript checks, lint on the 25 changed TypeScript files, 23 harness
 checks and 44 communication thresholds across six scenarios passed.
