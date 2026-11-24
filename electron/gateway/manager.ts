@@ -36,7 +36,7 @@ import {
 import { dispatchJsonRpcNotification, dispatchProtocolEvent } from './event-dispatch';
 import { GatewayStateController } from './state';
 import { prepareGatewayLaunchContext } from './config-sync';
-import { connectGatewaySocket, waitForGatewayReady } from './ws-client';
+import { connectGatewaySocket, GATEWAY_READY_MAX_TIMEOUT_MS, waitForGatewayReady } from './ws-client';
 import {
   findExistingGatewayProcess,
   runOpenClawDoctorRepair,
@@ -178,6 +178,7 @@ function classifyCapabilityMethod(method: string): GatewayCapabilityName | null 
   return null;
 }
 
+const DEFAULT_GATEWAY_RPC_TIMEOUT_MS = 30_000;
 const GATEWAY_SHUTDOWN_RPC_TIMEOUT_MS = 5_000;
 const GATEWAY_DIAGNOSTIC_INTERVAL_MS = 30_000;
 
@@ -221,6 +222,7 @@ export class GatewayManager extends EventEmitter {
   private processExitCode: number | null = null; // set by exit event, replaces exitCode/signalCode
   private ownsProcess = false;
   private ws: WebSocket | null = null;
+  private signedSocket: WebSocket | null = null;
   private status: GatewayStatus = { state: 'stopped', port: PORTS.OPENCLAW_GATEWAY };
   private readonly stateController: GatewayStateController;
   private reconnectTimer: NodeJS.Timeout | null = null;
@@ -239,7 +241,7 @@ export class GatewayManager extends EventEmitter {
   private lastHeartbeatDiagnosticAt: number | undefined;
   private diagnosticProcessGeneration = 0;
   private diagnosticResourceSample: ReturnType<typeof collectGatewayProcessDiagnostics> | null = null;
-  private pendingRequests: Map<string, PendingGatewayRequest> = new Map();
+  private pendingRequests = new Map<string, PendingGatewayRequest & { startupConfigSocket?: WebSocket }>();
   private deviceIdentity: DeviceIdentity | null = null;
   private restartInFlight: Promise<void> | null = null;
   private readonly connectionMonitor = new GatewayConnectionMonitor();
@@ -1062,7 +1064,7 @@ export class GatewayManager extends EventEmitter {
    * pending admission answers sessions.list with an empty catalog.
    */
   private markGatewayReady(): void {
-    if (this.status.state !== 'running' || this.status.gatewayReady) {
+    if (!this.shouldReconnect || this.status.state !== 'running' || this.status.gatewayReady) {
       return;
     }
     if (this.gatewayReadyAdmissionGate?.connectedAt === this.status.connectedAt) {
@@ -1259,26 +1261,37 @@ export class GatewayManager extends EventEmitter {
    * Make an RPC call to the Gateway
    * Uses OpenClaw protocol format: { type: "req", id: "...", method: "...", params: {...} }
    */
-  async rpc<T>(method: string, params?: unknown, timeoutMs = 30000): Promise<T> {
+  async rpc<T>(method: string, params?: unknown, timeoutMs?: number): Promise<T> {
     const startedAt = Date.now();
     return await new Promise<T>((resolve, reject) => {
-      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      const socket = this.ws;
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
         reject(new Error('Gateway not connected'));
         return;
       }
 
       const id = crypto.randomUUID();
 
-      // Set timeout for request
+      // A signed startup read can wait at the server's admission gate for the
+      // entire startup budget before its ordinary response is delivered.
+      const startupConfigRead = method === 'config.get'
+        && timeoutMs === undefined
+        && this.signedSocket === socket
+        && this.status.state === 'running'
+        && this.status.gatewayReady === false;
+      const responseTimeoutMs = timeoutMs ?? (startupConfigRead
+        ? GATEWAY_READY_MAX_TIMEOUT_MS + DEFAULT_GATEWAY_RPC_TIMEOUT_MS
+        : DEFAULT_GATEWAY_RPC_TIMEOUT_MS);
       const timeout = setTimeout(() => {
         rejectPendingGatewayRequest(this.pendingRequests, id, new Error(`RPC timeout: ${method}`));
-      }, timeoutMs);
+      }, responseTimeoutMs);
 
       // Store pending request
       this.pendingRequests.set(id, {
         resolve: resolve as (value: unknown) => void,
         reject,
         timeout,
+        ...(startupConfigRead ? { startupConfigSocket: socket } : {}),
       });
 
       // Send request using OpenClaw protocol format
@@ -1296,7 +1309,7 @@ export class GatewayManager extends EventEmitter {
             frame: redactGatewayFrameForTrace(request),
           });
         }
-        this.ws.send(JSON.stringify(request));
+        socket.send(JSON.stringify(request));
       } catch (error) {
         rejectPendingGatewayRequest(this.pendingRequests, id, new Error(`Failed to send RPC request: ${error}`));
       }
@@ -1569,18 +1582,31 @@ export class GatewayManager extends EventEmitter {
     this.lastSpawnSummary = lastSpawnSummary;
   }
 
+  private cancelStartupConfigReads(socket: WebSocket, reason: string): void {
+    for (const [id, request] of this.pendingRequests) {
+      if (request.startupConfigSocket === socket) {
+        rejectPendingGatewayRequest(this.pendingRequests, id, new Error(reason));
+      }
+    }
+  }
+
   /**
    * Connect WebSocket to Gateway
    */
   private async connect(port: number, _externalToken?: string): Promise<void> {
     let connectedSocket: WebSocket | null = null;
+    const deviceIdentity = this.deviceIdentity;
     this.ws = await connectGatewaySocket({
       port,
-      deviceIdentity: this.deviceIdentity,
+      deviceIdentity,
       platform: process.platform,
       pendingRequests: this.pendingRequests,
       getToken: async () => await import('../utils/store').then(({ getSetting }) => getSetting('gatewayToken')),
       onHandshakeComplete: (ws) => {
+        if (this.signedSocket) {
+          this.cancelStartupConfigReads(this.signedSocket, 'Gateway connection replaced during startup config read');
+        }
+        this.signedSocket = deviceIdentity ? ws : null;
         connectedSocket = ws;
         this.ws = ws;
         ws.on('pong', () => {
@@ -1602,9 +1628,14 @@ export class GatewayManager extends EventEmitter {
         scheduleLocalDeviceAutoApproval(this);
       },
       onMessage: (message) => {
-        this.handleMessage(message);
+        if (connectedSocket !== null && this.ws === connectedSocket) this.handleMessage(message);
       },
       onCloseAfterHandshake: (closeCode) => {
+        if (connectedSocket && this.signedSocket === connectedSocket) {
+          const reason = closeCode === 1012 ? 'Gateway service restart' : 'Gateway connection closed during startup config read';
+          this.cancelStartupConfigReads(connectedSocket, reason);
+          this.signedSocket = null;
+        }
         // A replacement path clears this.ws before terminating its old socket.
         // Ignore that intentional stale close so it cannot schedule a gateway
         // lifecycle reconnect or erase external-unavailable diagnostics.

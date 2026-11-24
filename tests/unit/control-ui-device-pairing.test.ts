@@ -1,4 +1,24 @@
+// @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFile } from 'fs/promises';
+import { getSetting } from '@electron/utils/store';
+import { getUvMirrorEnv } from '@electron/utils/uv-env';
+import { forkOpenClawUtilityProcess } from '@electron/utils/openclaw-utility-process';
+
+vi.mock('fs/promises', async (importOriginal) => ({
+  ...await importOriginal<typeof import('fs/promises')>(),
+  readFile: vi.fn(async () => '{}'),
+}));
+
+vi.mock('@electron/utils/uv-env', () => ({ getUvMirrorEnv: vi.fn(async () => ({})) }));
+vi.mock('@electron/utils/openclaw-utility-process', async () => {
+  const { EventEmitter } = await import('node:events');
+  return { forkOpenClawUtilityProcess: vi.fn(() => {
+    const child = new EventEmitter();
+    queueMicrotask(() => child.emit('exit', 0));
+    return child;
+  }) };
+});
 
 vi.mock('electron', () => ({
   app: { isPackaged: false },
@@ -12,7 +32,7 @@ vi.mock('@electron/utils/store', () => ({
 vi.mock('@electron/utils/paths', () => ({
   getOpenClawConfigDir: () => '/tmp/openclaw',
   getOpenClawDir: () => '/tmp/openclaw/pkg',
-  getOpenClawEntryPath: () => '/tmp/openclaw/pkg/openclaw.mjs',
+  getOpenClawEntryPath: () => import.meta.filename,
 }));
 
 import {
@@ -25,8 +45,73 @@ import {
 } from '@electron/utils/control-ui-device-pairing';
 
 describe('control-ui-device-pairing', () => {
+  it('waits for desktop readiness before polling or approving a pending device', async () => {
+    const rpc = vi.fn().mockResolvedValue({ pending: [] });
+    const status = { state: 'running', gatewayReady: false };
+    const gateway = { isConnected: () => true, getStatus: () => status, rpc };
+    expect(await approvePendingLocalDeviceRequests(gateway)).toEqual([]);
+    expect(rpc).not.toHaveBeenCalled();
+    status.gatewayReady = true;
+    await approvePendingLocalDeviceRequests(gateway);
+    expect(rpc).toHaveBeenCalledWith('device.pair.list', {}, expect.any(Number));
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it.each(['disconnect', 'replacement', 'startup'])('abandons listed requests after %s', async (change) => {
+    let connected = true;
+    const status = { state: 'running', gatewayReady: true, connectedAt: 100 };
+    const rpc = vi.fn().mockImplementationOnce(async () => {
+      if (change === 'disconnect') connected = false;
+      if (change === 'replacement') status.connectedAt++;
+      if (change === 'startup') status.gatewayReady = false;
+      return { pending: [{ requestId: 'previous-poll', clientId: CONTROL_UI_BROWSER_CLIENT_ID }] };
+    });
+    expect(await approvePendingLocalDeviceRequests({ isConnected: () => connected, getStatus: () => status, rpc })).toEqual([]);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(getSetting).not.toHaveBeenCalled();
+    expect(forkOpenClawUtilityProcess).not.toHaveBeenCalled();
+  });
+
+  it('does not fall back to the CLI when an approval RPC loses its connection', async () => {
+    let connected = true;
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ pending: [{ requestId: 'lost', clientId: OPENCLAW_CLI_CLIENT_ID }] })
+      .mockImplementationOnce(async () => {
+        connected = false;
+        throw new Error('closed');
+      });
+    const getStatus = () => ({ state: 'running', gatewayReady: true, connectedAt: 100 });
+    expect(await approvePendingLocalDeviceRequests({ isConnected: () => connected, getStatus, rpc })).toEqual([]);
+    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(getSetting).not.toHaveBeenCalled();
+    expect(forkOpenClawUtilityProcess).not.toHaveBeenCalled();
+  });
+
+  it('checks the original connection again after asynchronously preparing the CLI environment', async () => {
+    const status = { state: 'running', gatewayReady: true, connectedAt: 100 };
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ pending: [{ requestId: 'stale', clientId: OPENCLAW_CLI_CLIENT_ID }] })
+      .mockRejectedValueOnce(new Error('approval RPC unavailable'));
+    vi.mocked(getUvMirrorEnv).mockImplementationOnce(async () => {
+      status.connectedAt++;
+      return {};
+    });
+    expect(await approvePendingLocalDeviceRequests({ isConnected: () => true, getStatus: () => status, rpc })).toEqual([]);
+    expect(getUvMirrorEnv).toHaveBeenCalledOnce();
+    expect(forkOpenClawUtilityProcess).not.toHaveBeenCalled();
+  });
+
+  it('keeps local CLI approval for an offline poll with no gateway status', async () => {
+    vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify({
+      offline: { requestId: 'offline', clientId: OPENCLAW_CLI_CLIENT_ID },
+    }));
+    const rpc = vi.fn();
+    expect(await approvePendingLocalDeviceRequests({ isConnected: () => false, rpc })).toEqual(['offline']);
+    expect(rpc).not.toHaveBeenCalled();
+    expect(forkOpenClawUtilityProcess).toHaveBeenCalledOnce();
   });
 
   it('detects Control UI browser pairing requests', () => {

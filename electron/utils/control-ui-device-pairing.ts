@@ -43,7 +43,7 @@ export type DevicePairingList = {
 
 export type GatewayPairingRpcClient = {
   isConnected: () => boolean;
-  getStatus?: () => { port?: number };
+  getStatus?: () => { port?: number; state?: string; gatewayReady?: boolean; connectedAt?: number };
   rpc: <T>(method: string, params?: unknown, timeoutMs?: number) => Promise<T>;
 };
 
@@ -75,10 +75,6 @@ function parseDevicePairingList(value: unknown): DevicePairingList {
   };
 }
 
-function resolveGatewayPort(gateway: GatewayPairingRpcClient): number {
-  return gateway.getStatus?.()?.port ?? PORTS.OPENCLAW_GATEWAY;
-}
-
 function resolveWatchTimeoutMs(explicit?: number): number {
   return typeof explicit === 'number' ? explicit : DEFAULT_WATCH_TIMEOUT_MS;
 }
@@ -96,7 +92,10 @@ export async function readLocalPendingPairingRequests(): Promise<PendingDevicePa
   }
 }
 
-async function listPendingPairingRequests(gateway: GatewayPairingRpcClient): Promise<PendingDevicePairingRequest[]> {
+async function listPendingPairingRequests(
+  gateway: GatewayPairingRpcClient,
+  isCurrent: () => boolean,
+): Promise<PendingDevicePairingRequest[]> {
   const merged = new Map<string, PendingDevicePairingRequest>();
 
   for (const request of await readLocalPendingPairingRequests()) {
@@ -104,7 +103,7 @@ async function listPendingPairingRequests(gateway: GatewayPairingRpcClient): Pro
     if (requestId) merged.set(requestId, request);
   }
 
-  if (gateway.isConnected()) {
+  if (isCurrent() && gateway.isConnected()) {
     try {
       const list = parseDevicePairingList(
         await gateway.rpc<unknown>('device.pair.list', {}, LIST_RPC_TIMEOUT_MS),
@@ -132,7 +131,7 @@ function getBundledBinPath(): string {
  * Run `openclaw devices approve` in-process (not shown to the user).
  * OpenClaw falls back to local pending.json on loopback when RPC is unavailable.
  */
-async function approveViaOpenClawCli(requestId: string, _port: number): Promise<boolean> {
+async function approveViaOpenClawCli(requestId: string, _port: number, isCurrent: () => boolean): Promise<boolean> {
   const entryScript = getOpenClawEntryPath();
   const openclawDir = getOpenClawDir();
   if (!existsSync(entryScript)) {
@@ -149,6 +148,7 @@ async function approveViaOpenClawCli(requestId: string, _port: number): Promise<
     ? prependPathEntry(process.env as Record<string, string | undefined>, binPath).env
     : process.env) as Record<string, string | undefined>;
   const uvEnv = await getUvMirrorEnv();
+  if (!isCurrent()) return false;
 
   return await new Promise<boolean>((resolve) => {
     const child = forkOpenClawUtilityProcess(entryScript, args, {
@@ -196,19 +196,21 @@ async function approvePairingRequest(
   gateway: GatewayPairingRpcClient,
   requestId: string,
   port: number,
+  isCurrent: () => boolean,
 ): Promise<boolean> {
   if (gateway.isConnected()) {
     try {
       await gateway.rpc('device.pair.approve', { requestId }, APPROVE_RPC_TIMEOUT_MS);
       return true;
     } catch (error) {
+      if (!isCurrent()) return false;
       logger.debug(
         `[control-ui] device.pair.approve RPC failed for ${requestId}, trying CLI fallback: ${String(error)}`,
       );
     }
   }
 
-  return approveViaOpenClawCli(requestId, port);
+  return approveViaOpenClawCli(requestId, port, isCurrent);
 }
 
 function sleep(ms: number, signal: { cancelled: boolean }): Promise<void> {
@@ -232,19 +234,29 @@ export async function approvePendingLocalDeviceRequests(
   gateway: GatewayPairingRpcClient,
   options?: { approvedRequestIds?: Set<string> },
 ): Promise<string[]> {
-  const port = resolveGatewayPort(gateway);
+  const initial = gateway.getStatus?.();
+  const connectedAt = gateway.isConnected() ? initial?.connectedAt : undefined;
+  const isCurrent = (status = gateway.getStatus?.()) => {
+    if (status?.state === 'running' && status.gatewayReady === false) return false;
+    // Offline polls can repair pairing locally. Connected polls belong to the socket that listed the requests.
+    return connectedAt === undefined || (gateway.isConnected() && status?.state === 'running'
+      && status.gatewayReady === true && status.connectedAt === connectedAt);
+  };
+  if (!isCurrent(initial)) return [];
+  const port = initial?.port ?? PORTS.OPENCLAW_GATEWAY;
   const approvedRequestIds = options?.approvedRequestIds ?? new Set<string>();
-  const pending = await listPendingPairingRequests(gateway);
+  const pending = await listPendingPairingRequests(gateway, isCurrent);
 
   const approved: string[] = [];
   for (const request of pending) {
+    if (!isCurrent()) break;
     if (!isLocalLoopbackDeviceAutoApprovalRequest(request)) continue;
 
     const requestId = typeof request.requestId === 'string' ? request.requestId.trim() : '';
     if (!requestId || approvedRequestIds.has(requestId)) continue;
 
     try {
-      const ok = await approvePairingRequest(gateway, requestId, port);
+      const ok = await approvePairingRequest(gateway, requestId, port, isCurrent);
       if (!ok) continue;
       approvedRequestIds.add(requestId);
       approved.push(requestId);

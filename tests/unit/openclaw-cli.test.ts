@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { EventEmitter } from 'node:events';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -61,6 +62,8 @@ vi.mock('@electron/utils/openclaw-utility-process', () => ({
   ensureOpenClawRuntimeCompat: () => '/tmp/clawx-user-data/openclaw-runtime-compat.mjs',
   forkOpenClawUtilityProcess: mockUtilityFork,
 }));
+
+vi.mock('@electron/utils/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 
 function setResourcesPath(resourcesPath: string | undefined) {
   Object.defineProperty(process, 'resourcesPath', {
@@ -234,7 +237,8 @@ describe('getOpenClawCliSpawnSpec', () => {
   });
 });
 
-describe('offline Doctor process', () => {
+describe('OpenClaw command process', () => {
+  const consentArgs = ['plugins', 'enable', 'dingtalk', 'wecom', '--accept-capabilities'];
   const options = {
     cwd: '/test/openclaw',
     env: { OPENCLAW_STATE_DIR: 'fixture', HTTPS_PROXY: '', ELECTRON_RUN_AS_NODE: '1' },
@@ -280,6 +284,70 @@ describe('offline Doctor process', () => {
     launchOpenClawCommandProcess(mockedEntryPath, [...command], options);
     expect(mockUtilityFork).toHaveBeenCalledWith(mockedEntryPath, command, options);
     expect(mockSpawn).not.toHaveBeenCalled();
+  });
+
+  it('uses bundled Node for opted-in Windows consent and forwards a failed command without replaying it', async () => {
+    setPlatform('win32');
+    mockIsPackagedGetter.value = true;
+    setResourcesPath('C:/ClawX/resources');
+    const node = join(process.resourcesPath, 'bin', 'node.exe');
+    mockExistsSync.mockImplementation(file => file === node);
+    const native = Object.assign(new EventEmitter(), { pid: 123 });
+    mockSpawn.mockReturnValueOnce(native);
+    const { launchOpenClawCommandProcess } = await import('@electron/utils/openclaw-cli');
+    const child = launchOpenClawCommandProcess(mockedEntryPath, consentArgs, { ...options, preferPackagedWindowsNode: true });
+    expect(mockSpawn).toHaveBeenCalledWith(node, [
+      '--import', pathToFileURL('/tmp/clawx-user-data/openclaw-runtime-compat.mjs').href, mockedEntryPath, ...consentArgs,
+    ], {
+      cwd: options.cwd,
+      env: expect.objectContaining({ OPENCLAW_STATE_DIR: 'fixture', HTTPS_PROXY: '', OPENCLAW_NO_RESPAWN: '1', OPENCLAW_DEBUG: '1' }),
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+    expect(mockSpawn.mock.calls[0][2].env).not.toHaveProperty('ELECTRON_RUN_AS_NODE');
+    const onExit = vi.fn();
+    child.on('exit', onExit);
+    native.emit('exit', 1);
+    expect(onExit).toHaveBeenCalledWith(1);
+    expect(mockUtilityFork).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['win32', true, true, false],
+    ['win32', true, false, true],
+    ['win32', false, true, true],
+    ['darwin', true, true, true],
+    ['linux', true, true, true],
+  ] as const)('uses the utility for %s packaged=%s bundled=%s optedIn=%s', async (platform, packaged, bundled, optedIn) => {
+    setPlatform(platform);
+    mockIsPackagedGetter.value = packaged;
+    setResourcesPath('C:/ClawX/resources');
+    mockExistsSync.mockReturnValue(bundled);
+    const { launchOpenClawCommandProcess } = await import('@electron/utils/openclaw-cli');
+    launchOpenClawCommandProcess(mockedEntryPath, consentArgs, { ...options, preferPackagedWindowsNode: optedIn });
+    expect(mockUtilityFork).toHaveBeenCalledWith(mockedEntryPath, consentArgs, options);
+    expect(mockSpawn).not.toHaveBeenCalled();
+  });
+
+  it.each(['throws', 'emits error'] as const)('falls back once when bundled Node %s before launching', async (failure) => {
+    setPlatform('win32');
+    mockIsPackagedGetter.value = true;
+    setResourcesPath('C:/ClawX/resources');
+    mockExistsSync.mockReturnValue(true);
+    const unavailable = new Error('cannot spawn');
+    const unstarted = new EventEmitter();
+    mockSpawn.mockImplementationOnce(() => {
+      if (failure === 'throws') throw unavailable;
+      return unstarted;
+    });
+    const utility = new EventEmitter();
+    mockUtilityFork.mockReturnValueOnce(utility);
+    const { launchOpenClawCommandProcess } = await import('@electron/utils/openclaw-cli');
+    const child = launchOpenClawCommandProcess(mockedEntryPath, consentArgs, { ...options, preferPackagedWindowsNode: true });
+    if (failure === 'emits error') unstarted.emit('error', unavailable);
+    expect(child).toBe(utility);
+    expect(mockUtilityFork).toHaveBeenCalledTimes(1);
+    expect(mockUtilityFork).toHaveBeenCalledWith(mockedEntryPath, consentArgs, options);
   });
 });
 

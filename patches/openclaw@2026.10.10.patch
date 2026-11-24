@@ -341,9 +341,40 @@ diff --git a/dist/exec-approval-DuJx32oo.mjs b/dist/exec-approval-DuJx32oo.mjs
  				turnSourceChannel: trustedAgentRuntime ? trustedAgentRuntime.turnSourceChannel ?? null : normalizeOptionalString(p.turnSourceChannel) ?? null,
  				turnSourceTo: trustedAgentRuntime ? trustedAgentRuntime.turnSourceTo ?? null : normalizeOptionalString(p.turnSourceTo) ?? null,
 diff --git a/dist/infra/sqlite-readonly-location.worker.js b/dist/infra/sqlite-readonly-location.worker.js
+index 60287df..3e67635 100644
 --- a/dist/infra/sqlite-readonly-location.worker.js
 +++ b/dist/infra/sqlite-readonly-location.worker.js
-@@ -20213,6 +20213,12 @@
+@@ -14245,10 +14245,13 @@
+ 	if (options?.requireRequested && !owner.retirementStarted) throw new SqliteSnapshotCleanupError("SQLite snapshot is still owned; cleanup has not been requested");
+ 	assertSnapshotReadersRetired(owner);
+ 	owner.retirementStarted = true;
++	// ClawX: the host retains identity descriptors that a cleanup child cannot close.
++	for (const location of owner.admissionLocations ?? []) retireSqliteDatabaseAdmissionForPath(location);
+ }
+ function adoptPreparedLocation(location, ownedRoot, requireCleanup = false, onCleanupFailure) {
+ 	const tempDir = ownedRoot ?? path.dirname(location);
+ 	registerSnapshotTempDirectory(tempDir);
++	(snapshotDirectory(tempDir).admissionLocations ??= new Set()).add(location);
+ 	let active = true;
+ 	let pending;
+ 	let retainedCleanup;
+@@ -19486,6 +19489,15 @@
+ 	const owner = GatewayProcessNamespaceSchema.safeParse(value).data;
+ 	const ownerHost = owner?.host ?? options.ownerHost;
+ 	const foreignHost = ownerHost !== void 0 && ownerHost !== os.hostname();
++	if (process.platform === "win32") {
++		// Only qualify a local PID. Even an expired heartbeat cannot revoke a
++		// foreign holder. Old files have no outer ownerHost; SQLite supplies both.
++		if (foreignHost || (options.ownerHost !== void 0 && options.ownerHost !== ownerHost)) return "unknown";
++		if (!owner) return value == null ? "same" : "unknown";
++		if (owner.platform !== "win32") return "unknown";
++		// A 0.7.1 record can lack a process start time. Keep the original OS
++		// boot comparison below so PID reuse across boots is still detectable.
++	}
+ 	if (value === void 0 && !foreignHost) return "same";
+ 	const current = readGatewayLockProcessNamespace();
+ 	if (owner && current) {
+@@ -20213,6 +20225,12 @@
  function inspectStaleLockOwner(params) {
  	const payload = readLockFileOwnerPayload(params.payload);
  	if (!payload?.pid) return null;
@@ -421,9 +452,26 @@ diff --git a/dist/legacy-webhook-pins-kZ3wrtWe.mjs b/dist/legacy-webhook-pins-kZ
 -export { createHistoricalWebhookPinMigration as n, recordUnwrittenWebhookCompletion as r, HISTORICAL_WEBHOOK_CHANNELS as t };
 +export { shouldRunHistoricalWebhookMigration as s, readHistoricalWebhookCompletion as i, createHistoricalWebhookPinMigration as n, recordUnwrittenWebhookCompletion as r, HISTORICAL_WEBHOOK_CHANNELS as t };
 diff --git a/dist/managed-handoff-runtime.mjs b/dist/managed-handoff-runtime.mjs
+index b3910e8..9f24684 100644
 --- a/dist/managed-handoff-runtime.mjs
 +++ b/dist/managed-handoff-runtime.mjs
-@@ -45298,6 +45298,12 @@
+@@ -44083,6 +44083,15 @@
+ 	const owner = GatewayProcessNamespaceSchema.safeParse(value).data;
+ 	const ownerHost = owner?.host ?? options.ownerHost;
+ 	const foreignHost = ownerHost !== void 0 && ownerHost !== os.hostname();
++	if (process.platform === "win32") {
++		// Only qualify a local PID. Even an expired heartbeat cannot revoke a
++		// foreign holder. Old files have no outer ownerHost; SQLite supplies both.
++		if (foreignHost || (options.ownerHost !== void 0 && options.ownerHost !== ownerHost)) return "unknown";
++		if (!owner) return value == null ? "same" : "unknown";
++		if (owner.platform !== "win32") return "unknown";
++		// A 0.7.1 record can lack a process start time. Keep the original OS
++		// boot comparison below so PID reuse across boots is still detectable.
++	}
+ 	if (value === void 0 && !foreignHost) return "same";
+ 	const current = readGatewayLockProcessNamespace();
+ 	if (owner && current) {
+@@ -45298,6 +45307,12 @@
  function inspectStaleLockOwner(params) {
  	const payload = readLockFileOwnerPayload(params.payload);
  	if (!payload?.pid) return null;
@@ -436,10 +484,41 @@ diff --git a/dist/managed-handoff-runtime.mjs b/dist/managed-handoff-runtime.mjs
  	const observedStarttime = payload.starttime === void 0 ? null : (params.getProcessStartTime ?? getFileLockProcessStartTime)(payload.pid);
  	const identity = {
  		pid: payload.pid,
+@@ -69225,10 +69240,13 @@
+ 	if (options?.requireRequested && !owner.retirementStarted) throw new SqliteSnapshotCleanupError("SQLite snapshot is still owned; cleanup has not been requested");
+ 	assertSnapshotReadersRetired(owner);
+ 	owner.retirementStarted = true;
++	// ClawX: the host retains identity descriptors that a cleanup child cannot close.
++	for (const location of owner.admissionLocations ?? []) retireSqliteDatabaseAdmissionForPath(location);
+ }
+ function adoptPreparedLocation(location, ownedRoot, requireCleanup = false, onCleanupFailure) {
+ 	const tempDir = ownedRoot ?? path.dirname(location);
+ 	registerSnapshotTempDirectory(tempDir);
++	(snapshotDirectory(tempDir).admissionLocations ??= new Set()).add(location);
+ 	let active = true;
+ 	let pending;
+ 	let retainedCleanup;
 diff --git a/dist/native-hook-relay/worker-task-pool-DUF3lmpK.mjs b/dist/native-hook-relay/worker-task-pool-DUF3lmpK.mjs
+index 7980feb..c0e6e56 100644
 --- a/dist/native-hook-relay/worker-task-pool-DUF3lmpK.mjs
 +++ b/dist/native-hook-relay/worker-task-pool-DUF3lmpK.mjs
-@@ -6002,6 +6002,12 @@
+@@ -5637,6 +5637,15 @@
+ 	const owner = GatewayProcessNamespaceSchema.safeParse(value).data;
+ 	const ownerHost = owner?.host ?? options.ownerHost;
+ 	const foreignHost = ownerHost !== void 0 && ownerHost !== os.hostname();
++	if (process.platform === "win32") {
++		// Only qualify a local PID. Even an expired heartbeat cannot revoke a
++		// foreign holder. Old files have no outer ownerHost; SQLite supplies both.
++		if (foreignHost || (options.ownerHost !== void 0 && options.ownerHost !== ownerHost)) return "unknown";
++		if (!owner) return value == null ? "same" : "unknown";
++		if (owner.platform !== "win32") return "unknown";
++		// A 0.7.1 record can lack a process start time. Keep the original OS
++		// boot comparison below so PID reuse across boots is still detectable.
++	}
+ 	if (value === void 0 && !foreignHost) return "same";
+ 	const current = readGatewayLockProcessNamespace();
+ 	if (owner && current) {
+@@ -6002,6 +6011,12 @@
  function inspectStaleLockOwner(params) {
  	const payload = readLockFileOwnerPayload(params.payload);
  	if (!payload?.pid) return null;
@@ -453,9 +532,40 @@ diff --git a/dist/native-hook-relay/worker-task-pool-DUF3lmpK.mjs b/dist/native-
  	const identity = {
  		pid: payload.pid,
 diff --git a/dist/package-update-activation-recovery.mjs b/dist/package-update-activation-recovery.mjs
+index 5b070bc..5a3520b 100644
 --- a/dist/package-update-activation-recovery.mjs
 +++ b/dist/package-update-activation-recovery.mjs
-@@ -78161,6 +78161,12 @@
+@@ -69571,10 +69571,13 @@
+ 	if (options?.requireRequested && !owner.retirementStarted) throw new SqliteSnapshotCleanupError("SQLite snapshot is still owned; cleanup has not been requested");
+ 	assertSnapshotReadersRetired(owner);
+ 	owner.retirementStarted = true;
++	// ClawX: the host retains identity descriptors that a cleanup child cannot close.
++	for (const location of owner.admissionLocations ?? []) retireSqliteDatabaseAdmissionForPath(location);
+ }
+ function adoptPreparedLocation(location, ownedRoot, requireCleanup = false, onCleanupFailure) {
+ 	const tempDir = ownedRoot ?? path.dirname(location);
+ 	registerSnapshotTempDirectory(tempDir);
++	(snapshotDirectory(tempDir).admissionLocations ??= new Set()).add(location);
+ 	let active = true;
+ 	let pending;
+ 	let retainedCleanup;
+@@ -77494,6 +77497,15 @@
+ 	const owner = GatewayProcessNamespaceSchema.safeParse(value).data;
+ 	const ownerHost = owner?.host ?? options.ownerHost;
+ 	const foreignHost = ownerHost !== void 0 && ownerHost !== os.hostname();
++	if (process.platform === "win32") {
++		// Only qualify a local PID. Even an expired heartbeat cannot revoke a
++		// foreign holder. Old files have no outer ownerHost; SQLite supplies both.
++		if (foreignHost || (options.ownerHost !== void 0 && options.ownerHost !== ownerHost)) return "unknown";
++		if (!owner) return value == null ? "same" : "unknown";
++		if (owner.platform !== "win32") return "unknown";
++		// A 0.7.1 record can lack a process start time. Keep the original OS
++		// boot comparison below so PID reuse across boots is still detectable.
++	}
+ 	if (value === void 0 && !foreignHost) return "same";
+ 	const current = readGatewayLockProcessNamespace();
+ 	if (owner && current) {
+@@ -78161,6 +78173,12 @@
  function inspectStaleLockOwner(params) {
  	const payload = readLockFileOwnerPayload(params.payload);
  	if (!payload?.pid) return null;
@@ -507,9 +617,26 @@ diff --git a/dist/plugin-generation-source-lookup-EtpFx0hb.mjs b/dist/plugin-gen
  						const target = fs.readlinkSync(from);
  						const relative = path.isAbsolute(target) ? relativePluginPathInsideRootSync(boundaryRoot, target) : void 0;
 diff --git a/dist/process/supervisor/service-child-group-anchor.js b/dist/process/supervisor/service-child-group-anchor.js
+index 319136e..2c82729 100644
 --- a/dist/process/supervisor/service-child-group-anchor.js
 +++ b/dist/process/supervisor/service-child-group-anchor.js
-@@ -37694,6 +37694,12 @@
+@@ -37048,6 +37048,15 @@
+ 	const owner = GatewayProcessNamespaceSchema.safeParse(value).data;
+ 	const ownerHost = owner?.host ?? options.ownerHost;
+ 	const foreignHost = ownerHost !== void 0 && ownerHost !== os.hostname();
++	if (process.platform === "win32") {
++		// Only qualify a local PID. Even an expired heartbeat cannot revoke a
++		// foreign holder. Old files have no outer ownerHost; SQLite supplies both.
++		if (foreignHost || (options.ownerHost !== void 0 && options.ownerHost !== ownerHost)) return "unknown";
++		if (!owner) return value == null ? "same" : "unknown";
++		if (owner.platform !== "win32") return "unknown";
++		// A 0.7.1 record can lack a process start time. Keep the original OS
++		// boot comparison below so PID reuse across boots is still detectable.
++	}
+ 	if (value === void 0 && !foreignHost) return "same";
+ 	const current = readGatewayLockProcessNamespace();
+ 	if (owner && current) {
+@@ -37694,6 +37703,12 @@
  function inspectStaleLockOwner(params) {
  	const payload = readLockFileOwnerPayload(params.payload);
  	if (!payload?.pid) return null;
@@ -522,6 +649,20 @@ diff --git a/dist/process/supervisor/service-child-group-anchor.js b/dist/proces
  	const observedStarttime = payload.starttime === void 0 ? null : (params.getProcessStartTime ?? getFileLockProcessStartTime)(payload.pid);
  	const identity = {
  		pid: payload.pid,
+@@ -39718,10 +39733,13 @@
+ 	if (options?.requireRequested && !owner.retirementStarted) throw new SqliteSnapshotCleanupError("SQLite snapshot is still owned; cleanup has not been requested");
+ 	assertSnapshotReadersRetired(owner);
+ 	owner.retirementStarted = true;
++	// ClawX: the host retains identity descriptors that a cleanup child cannot close.
++	for (const location of owner.admissionLocations ?? []) retireSqliteDatabaseAdmissionForPath(location);
+ }
+ function adoptPreparedLocation(location, ownedRoot, requireCleanup = false, onCleanupFailure) {
+ 	const tempDir = ownedRoot ?? path.dirname(location);
+ 	registerSnapshotTempDirectory(tempDir);
++	(snapshotDirectory(tempDir).admissionLocations ??= new Set()).add(location);
+ 	let active = true;
+ 	let pending;
+ 	let retainedCleanup;
 diff --git a/dist/sdk-B0aTjN8h.mjs b/dist/sdk-B0aTjN8h.mjs
 --- a/dist/sdk-B0aTjN8h.mjs
 +++ b/dist/sdk-B0aTjN8h.mjs
@@ -2513,9 +2654,40 @@ diff --git a/dist/startup-config-preflight-DHWKqSAo.mjs b/dist/startup-config-pr
  				const { applyPluginDoctorCompatibilityMigrations } = await import("./doctor-contract-registry-DZgGuyBC.mjs");
  				return applyPluginDoctorCompatibilityMigrations(read.snapshot.sourceConfig, {
 diff --git a/dist/state/openclaw-state-lease-heartbeat.worker.js b/dist/state/openclaw-state-lease-heartbeat.worker.js
+index 5fcef5e..81ed7ab 100644
 --- a/dist/state/openclaw-state-lease-heartbeat.worker.js
 +++ b/dist/state/openclaw-state-lease-heartbeat.worker.js
-@@ -12976,6 +12976,12 @@
+@@ -1,3 +1,4 @@
++import { readClawxBootIdentityFromMainThread } from "../clawx-windows-gateway-boot-identity.mjs";
+ import { createRequire } from "node:module";
+ import { MessageChannel, Worker, getEnvironmentData, isMainThread, parentPort, receiveMessageOnPort, setEnvironmentData, threadId, workerData } from "node:worker_threads";
+ import { AsyncLocalStorage, AsyncResource } from "node:async_hooks";
+@@ -12579,7 +12580,7 @@
+ function readGatewayLockProcessNamespace() {
+ 	if (processNamespace?.platform === process.platform && (processNamespace.value !== null || process.platform !== "linux")) return processNamespace.value;
+ 	try {
+-		const boot = createManagedHandoffBootIdentityReader(process.env)();
++		const boot = readClawxBootIdentityFromMainThread() ?? createManagedHandoffBootIdentityReader(process.env)();
+ 		const value = GatewayProcessNamespaceSchema.parse({
+ 			host: os.hostname(),
+ 			...boot,
+@@ -12625,6 +12626,15 @@
+ 	const owner = GatewayProcessNamespaceSchema.safeParse(value).data;
+ 	const ownerHost = owner?.host ?? options.ownerHost;
+ 	const foreignHost = ownerHost !== void 0 && ownerHost !== os.hostname();
++	if (process.platform === "win32") {
++		// Only qualify a local PID. Even an expired heartbeat cannot revoke a
++		// foreign holder. Old files have no outer ownerHost; SQLite supplies both.
++		if (foreignHost || (options.ownerHost !== void 0 && options.ownerHost !== ownerHost)) return "unknown";
++		if (!owner) return value == null ? "same" : "unknown";
++		if (owner.platform !== "win32") return "unknown";
++		// A 0.7.1 record can lack a process start time. Keep the original OS
++		// boot comparison below so PID reuse across boots is still detectable.
++	}
+ 	if (value === void 0 && !foreignHost) return "same";
+ 	const current = readGatewayLockProcessNamespace();
+ 	if (owner && current) {
+@@ -12976,6 +12986,12 @@
  function inspectStaleLockOwner(params) {
  	const payload = readLockFileOwnerPayload(params.payload);
  	if (!payload?.pid) return null;
@@ -2574,31 +2746,11 @@ diff --git a/dist/sqlite-readonly-location-cleanup-Cck2PywQ.mjs b/dist/sqlite-re
  	registerSnapshotTempDirectory(tempDir);
 +	(snapshotDirectory(tempDir).admissionLocations ??= new Set()).add(location);
  	let active = true;
-diff --git a/dist/infra/sqlite-readonly-location.worker.js b/dist/infra/sqlite-readonly-location.worker.js
---- a/dist/infra/sqlite-readonly-location.worker.js
-+++ b/dist/infra/sqlite-readonly-location.worker.js
-@@ -14242,11 +14242,14 @@
- function sealRetainedSnapshotTempDirectory(directory, options) {
- 	const owner = snapshotDirectories.get(directory);
- 	if (!owner?.releaseRetained) throw new SqliteSnapshotCleanupError("SQLite snapshot has no retained cleanup owner");
- 	if (options?.requireRequested && !owner.retirementStarted) throw new SqliteSnapshotCleanupError("SQLite snapshot is still owned; cleanup has not been requested");
- 	assertSnapshotReadersRetired(owner);
- 	owner.retirementStarted = true;
-+	// ClawX: the host retains identity descriptors that a cleanup child cannot close.
-+	for (const location of owner.admissionLocations ?? []) retireSqliteDatabaseAdmissionForPath(location);
- }
- function adoptPreparedLocation(location, ownedRoot, requireCleanup = false, onCleanupFailure) {
- 	const tempDir = ownedRoot ?? path.dirname(location);
- 	registerSnapshotTempDirectory(tempDir);
-+	(snapshotDirectory(tempDir).admissionLocations ??= new Set()).add(location);
- 	let active = true;
 diff --git a/dist/config-doctor/openclaw-state-db-cache-BBhRV-OR.js b/dist/config-doctor/openclaw-state-db-cache-BBhRV-OR.js
+index e35ef04..ef466e4 100644
 --- a/dist/config-doctor/openclaw-state-db-cache-BBhRV-OR.js
 +++ b/dist/config-doctor/openclaw-state-db-cache-BBhRV-OR.js
-@@ -4357,11 +4357,14 @@
- function sealRetainedSnapshotTempDirectory(directory, options) {
- 	const owner = snapshotDirectories.get(directory);
- 	if (!owner?.releaseRetained) throw new SqliteSnapshotCleanupError("SQLite snapshot has no retained cleanup owner");
+@@ -4360,10 +4360,13 @@
  	if (options?.requireRequested && !owner.retirementStarted) throw new SqliteSnapshotCleanupError("SQLite snapshot is still owned; cleanup has not been requested");
  	assertSnapshotReadersRetired(owner);
  	owner.retirementStarted = true;
@@ -2610,24 +2762,24 @@ diff --git a/dist/config-doctor/openclaw-state-db-cache-BBhRV-OR.js b/dist/confi
  	registerSnapshotTempDirectory(tempDir);
 +	(snapshotDirectory(tempDir).admissionLocations ??= new Set()).add(location);
  	let active = true;
-diff --git a/dist/managed-handoff-runtime.mjs b/dist/managed-handoff-runtime.mjs
---- a/dist/managed-handoff-runtime.mjs
-+++ b/dist/managed-handoff-runtime.mjs
-@@ -69228,11 +69228,14 @@
- function sealRetainedSnapshotTempDirectory(directory, options) {
- 	const owner = snapshotDirectories.get(directory);
- 	if (!owner?.releaseRetained) throw new SqliteSnapshotCleanupError("SQLite snapshot has no retained cleanup owner");
- 	if (options?.requireRequested && !owner.retirementStarted) throw new SqliteSnapshotCleanupError("SQLite snapshot is still owned; cleanup has not been requested");
- 	assertSnapshotReadersRetired(owner);
- 	owner.retirementStarted = true;
-+	// ClawX: the host retains identity descriptors that a cleanup child cannot close.
-+	for (const location of owner.admissionLocations ?? []) retireSqliteDatabaseAdmissionForPath(location);
- }
- function adoptPreparedLocation(location, ownedRoot, requireCleanup = false, onCleanupFailure) {
- 	const tempDir = ownedRoot ?? path.dirname(location);
- 	registerSnapshotTempDirectory(tempDir);
-+	(snapshotDirectory(tempDir).admissionLocations ??= new Set()).add(location);
- 	let active = true;
+ 	let pending;
+ 	let retainedCleanup;
+@@ -7501,6 +7504,15 @@
+ 	const owner = GatewayProcessNamespaceSchema.safeParse(value).data;
+ 	const ownerHost = owner?.host ?? options.ownerHost;
+ 	const foreignHost = ownerHost !== void 0 && ownerHost !== os.hostname();
++	if (process.platform === "win32") {
++		// Only qualify a local PID. Even an expired heartbeat cannot revoke a
++		// foreign holder. Old files have no outer ownerHost; SQLite supplies both.
++		if (foreignHost || (options.ownerHost !== void 0 && options.ownerHost !== ownerHost)) return "unknown";
++		if (!owner) return value == null ? "same" : "unknown";
++		if (owner.platform !== "win32") return "unknown";
++		// A 0.7.1 record can lack a process start time. Keep the original OS
++		// boot comparison below so PID reuse across boots is still detectable.
++	}
+ 	if (value === void 0 && !foreignHost) return "same";
+ 	const current = readGatewayLockProcessNamespace();
+ 	if (owner && current) {
 diff --git a/dist/native-hook-relay/sqlite-snapshot-staging-owner-DhKDO7I3.mjs b/dist/native-hook-relay/sqlite-snapshot-staging-owner-DhKDO7I3.mjs
 --- a/dist/native-hook-relay/sqlite-snapshot-staging-owner-DhKDO7I3.mjs
 +++ b/dist/native-hook-relay/sqlite-snapshot-staging-owner-DhKDO7I3.mjs
@@ -2646,49 +2798,11 @@ diff --git a/dist/native-hook-relay/sqlite-snapshot-staging-owner-DhKDO7I3.mjs b
  	registerSnapshotTempDirectory(tempDir);
 +	(snapshotDirectory(tempDir).admissionLocations ??= new Set()).add(location);
  	let active = true;
-diff --git a/dist/package-update-activation-recovery.mjs b/dist/package-update-activation-recovery.mjs
---- a/dist/package-update-activation-recovery.mjs
-+++ b/dist/package-update-activation-recovery.mjs
-@@ -69568,11 +69568,14 @@
- function sealRetainedSnapshotTempDirectory(directory, options) {
- 	const owner = snapshotDirectories.get(directory);
- 	if (!owner?.releaseRetained) throw new SqliteSnapshotCleanupError("SQLite snapshot has no retained cleanup owner");
- 	if (options?.requireRequested && !owner.retirementStarted) throw new SqliteSnapshotCleanupError("SQLite snapshot is still owned; cleanup has not been requested");
- 	assertSnapshotReadersRetired(owner);
- 	owner.retirementStarted = true;
-+	// ClawX: the host retains identity descriptors that a cleanup child cannot close.
-+	for (const location of owner.admissionLocations ?? []) retireSqliteDatabaseAdmissionForPath(location);
- }
- function adoptPreparedLocation(location, ownedRoot, requireCleanup = false, onCleanupFailure) {
- 	const tempDir = ownedRoot ?? path.dirname(location);
- 	registerSnapshotTempDirectory(tempDir);
-+	(snapshotDirectory(tempDir).admissionLocations ??= new Set()).add(location);
- 	let active = true;
-diff --git a/dist/process/supervisor/service-child-group-anchor.js b/dist/process/supervisor/service-child-group-anchor.js
---- a/dist/process/supervisor/service-child-group-anchor.js
-+++ b/dist/process/supervisor/service-child-group-anchor.js
-@@ -39721,11 +39721,14 @@
- function sealRetainedSnapshotTempDirectory(directory, options) {
- 	const owner = snapshotDirectories.get(directory);
- 	if (!owner?.releaseRetained) throw new SqliteSnapshotCleanupError("SQLite snapshot has no retained cleanup owner");
- 	if (options?.requireRequested && !owner.retirementStarted) throw new SqliteSnapshotCleanupError("SQLite snapshot is still owned; cleanup has not been requested");
- 	assertSnapshotReadersRetired(owner);
- 	owner.retirementStarted = true;
-+	// ClawX: the host retains identity descriptors that a cleanup child cannot close.
-+	for (const location of owner.admissionLocations ?? []) retireSqliteDatabaseAdmissionForPath(location);
- }
- function adoptPreparedLocation(location, ownedRoot, requireCleanup = false, onCleanupFailure) {
- 	const tempDir = ownedRoot ?? path.dirname(location);
- 	registerSnapshotTempDirectory(tempDir);
-+	(snapshotDirectory(tempDir).admissionLocations ??= new Set()).add(location);
- 	let active = true;
 diff --git a/dist/state-retention/openclaw-state-db-cache-R82_ufLk.js b/dist/state-retention/openclaw-state-db-cache-R82_ufLk.js
+index 9dd4936..508b981 100644
 --- a/dist/state-retention/openclaw-state-db-cache-R82_ufLk.js
 +++ b/dist/state-retention/openclaw-state-db-cache-R82_ufLk.js
-@@ -4884,11 +4884,14 @@
- function sealRetainedSnapshotTempDirectory(directory, options) {
- 	const owner = snapshotDirectories.get(directory);
- 	if (!owner?.releaseRetained) throw new SqliteSnapshotCleanupError("SQLite snapshot has no retained cleanup owner");
+@@ -4887,10 +4887,13 @@
  	if (options?.requireRequested && !owner.retirementStarted) throw new SqliteSnapshotCleanupError("SQLite snapshot is still owned; cleanup has not been requested");
  	assertSnapshotReadersRetired(owner);
  	owner.retirementStarted = true;
@@ -2700,6 +2814,24 @@ diff --git a/dist/state-retention/openclaw-state-db-cache-R82_ufLk.js b/dist/sta
  	registerSnapshotTempDirectory(tempDir);
 +	(snapshotDirectory(tempDir).admissionLocations ??= new Set()).add(location);
  	let active = true;
+ 	let pending;
+ 	let retainedCleanup;
+@@ -13304,6 +13307,15 @@
+ 	const owner = GatewayProcessNamespaceSchema.safeParse(value).data;
+ 	const ownerHost = owner?.host ?? options.ownerHost;
+ 	const foreignHost = ownerHost !== void 0 && ownerHost !== os.hostname();
++	if (process.platform === "win32") {
++		// Only qualify a local PID. Even an expired heartbeat cannot revoke a
++		// foreign holder. Old files have no outer ownerHost; SQLite supplies both.
++		if (foreignHost || (options.ownerHost !== void 0 && options.ownerHost !== ownerHost)) return "unknown";
++		if (!owner) return value == null ? "same" : "unknown";
++		if (owner.platform !== "win32") return "unknown";
++		// A 0.7.1 record can lack a process start time. Keep the original OS
++		// boot comparison below so PID reuse across boots is still detectable.
++	}
+ 	if (value === void 0 && !foreignHost) return "same";
+ 	const current = readGatewayLockProcessNamespace();
+ 	if (owner && current) {
 diff --git a/dist/state/openclaw-state-read-sqlite-snapshot-staging-owner-DazbInYM.mjs b/dist/state/openclaw-state-read-sqlite-snapshot-staging-owner-DazbInYM.mjs
 --- a/dist/state/openclaw-state-read-sqlite-snapshot-staging-owner-DazbInYM.mjs
 +++ b/dist/state/openclaw-state-read-sqlite-snapshot-staging-owner-DazbInYM.mjs
@@ -3139,16 +3271,19 @@ diff --git a/dist/authorization-DKL02XyX.mjs b/dist/authorization-DKL02XyX.mjs
  				await execution.prepare({
  					assertCurrent,
 diff --git a/dist/postinstall-inventory.json b/dist/postinstall-inventory.json
-index fa0d799..480999e 100644
+index fa0d799..6bdf743 100644
 --- a/dist/postinstall-inventory.json
 +++ b/dist/postinstall-inventory.json
-@@ -1118,6 +1118,9 @@
+@@ -1118,6 +1118,12 @@
    "dist/claws-removal-journal-DnhsGbTc.mjs",
    "dist/claws-update-cli.runtime-CjtDlU-J.mjs",
    "dist/claws-update-cli.runtime.js",
 +  "dist/clawx-cron-inference-migration.mjs",
 +  "dist/clawx-cron-run-context.mjs",
 +  "dist/clawx-cron-timeout-migration.mjs",
++  "dist/clawx-user-channel-policy-store.mjs",
++  "dist/clawx-user-channel-policy.worker.mjs",
++  "dist/clawx-windows-gateway-boot-identity.mjs",
    "dist/cleanup-DW96Zyc2.mjs",
    "dist/cleanup-DsPdoD3K.mjs",
    "dist/cleanup-JDubYhxM.mjs",
@@ -3734,3 +3869,1418 @@ diff --git a/dist/plugin-sdk/config-contracts.d.ts b/dist/plugin-sdk/config-cont
 @@ -3,1 +3,2 @@
  import { EA as resolveGatewayPublicOrigin, Uy as SessionResetMode, _A as ChannelGroupPolicy } from "../config-contracts-CaROPwlH.js";
 +export declare function resolveClawXConfigIncludes(config: unknown, configPath: string): unknown;
+diff --git a/dist/gateway-state-owner-record-iGXCdOwF.mjs b/dist/gateway-state-owner-record-iGXCdOwF.mjs
+index 7da4c9a..b2eb296 100644
+--- a/dist/gateway-state-owner-record-iGXCdOwF.mjs
++++ b/dist/gateway-state-owner-record-iGXCdOwF.mjs
+@@ -1,3 +1,4 @@
++import { createClawxBootIdentityResponder, readClawxBootIdentityFromMainThread } from "./clawx-windows-gateway-boot-identity.mjs";
+ import { a as extractErrorCode } from "./error-coercion-BwMr25F8.mjs";
+ import { a as resolveGlobalSingleton } from "./global-singleton-DrXvEBww.mjs";
+ import { c as isRecord } from "./record-coerce-TIsquoVR.mjs";
+@@ -212,7 +213,7 @@
+ function readGatewayLockProcessNamespace() {
+ 	if (processNamespace?.platform === process.platform && (processNamespace.value !== null || process.platform !== "linux")) return processNamespace.value;
+ 	try {
+-		const boot = createManagedHandoffBootIdentityReader(process.env)();
++		const boot = readClawxBootIdentityFromMainThread() ?? createManagedHandoffBootIdentityReader(process.env)();
+ 		const value = GatewayProcessNamespaceSchema.parse({
+ 			host: os.hostname(),
+ 			...boot,
+@@ -222,6 +223,12 @@
+ 			platform: value.platform,
+ 			value
+ 		};
++		try {
++			const responder = createClawxBootIdentityResponder(value);
++			if (responder) process.on("workerMessage", responder);
++		} catch {
++			// The local OS result remains valid when worker messaging is unavailable.
++		}
+ 		return value;
+ 	} catch {
+ 		processNamespace = {
+@@ -258,6 +265,15 @@
+ 	const owner = GatewayProcessNamespaceSchema.safeParse(value).data;
+ 	const ownerHost = owner?.host ?? options.ownerHost;
+ 	const foreignHost = ownerHost !== void 0 && ownerHost !== os.hostname();
++	if (process.platform === "win32") {
++		// Only qualify a local PID. Even an expired heartbeat cannot revoke a
++		// foreign holder. Old files have no outer ownerHost; SQLite supplies both.
++		if (foreignHost || (options.ownerHost !== void 0 && options.ownerHost !== ownerHost)) return "unknown";
++		if (!owner) return value == null ? "same" : "unknown";
++		if (owner.platform !== "win32") return "unknown";
++		// A 0.7.1 record can lack a process start time. Keep the original OS
++		// boot comparison below so PID reuse across boots is still detectable.
++	}
+ 	if (value === void 0 && !foreignHost) return "same";
+ 	const current = readGatewayLockProcessNamespace();
+ 	if (owner && current) {
+diff --git a/dist/state/openclaw-state-read-worker-cpu-Bm2AUN4y.mjs b/dist/state/openclaw-state-read-worker-cpu-Bm2AUN4y.mjs
+index 26773cd..dbf9d33 100644
+--- a/dist/state/openclaw-state-read-worker-cpu-Bm2AUN4y.mjs
++++ b/dist/state/openclaw-state-read-worker-cpu-Bm2AUN4y.mjs
+@@ -1,3 +1,4 @@
++import { readClawxBootIdentityFromMainThread } from "../clawx-windows-gateway-boot-identity.mjs";
+ import { d as extractErrorCode, s as resolveGlobalSingleton } from "./openclaw-state-read-listeners-C6ALBiqg.mjs";
+ import { At as normalizeDatabasePath, It as SQLITE_DATABASE_ADMISSIONS_KEY } from "./openclaw-state-read-sqlite-database-admission-CIXrLw_5.mjs";
+ import "./openclaw-state-read-sqlite-reader-lifecycle-CGTFS3iz.mjs";
+@@ -611,7 +612,7 @@
+ function readGatewayLockProcessNamespace() {
+ 	if (processNamespace?.platform === process.platform && (processNamespace.value !== null || process.platform !== "linux")) return processNamespace.value;
+ 	try {
+-		const boot = createManagedHandoffBootIdentityReader(process.env)();
++		const boot = readClawxBootIdentityFromMainThread() ?? createManagedHandoffBootIdentityReader(process.env)();
+ 		const value = GatewayProcessNamespaceSchema.parse({
+ 			host: os.hostname(),
+ 			...boot,
+@@ -657,6 +658,15 @@
+ 	const owner = GatewayProcessNamespaceSchema.safeParse(value).data;
+ 	const ownerHost = owner?.host ?? options.ownerHost;
+ 	const foreignHost = ownerHost !== void 0 && ownerHost !== os.hostname();
++	if (process.platform === "win32") {
++		// Only qualify a local PID. Even an expired heartbeat cannot revoke a
++		// foreign holder. Old files have no outer ownerHost; SQLite supplies both.
++		if (foreignHost || (options.ownerHost !== void 0 && options.ownerHost !== ownerHost)) return "unknown";
++		if (!owner) return value == null ? "same" : "unknown";
++		if (owner.platform !== "win32") return "unknown";
++		// A 0.7.1 record can lack a process start time. Keep the original OS
++		// boot comparison below so PID reuse across boots is still detectable.
++	}
+ 	if (value === void 0 && !foreignHost) return "same";
+ 	const current = readGatewayLockProcessNamespace();
+ 	if (owner && current) {
+diff --git a/dist/clawx-windows-gateway-boot-identity.mjs b/dist/clawx-windows-gateway-boot-identity.mjs
+new file mode 100644
+--- /dev/null
++++ b/dist/clawx-windows-gateway-boot-identity.mjs
+@@ -0,0 +1,91 @@
++import * as workerThreads from "node:worker_threads";
++
++const gatewayHint = "clawx.gateway.windowsBootIdentity.v1";
++const requestKind = "clawx.gateway.readWindowsBootIdentity.v1";
++const windowsBootIdentity = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{7}Z$/;
++const headerBytes = Int32Array.BYTES_PER_ELEMENT;
++const replyBytes = headerBytes + 28;
++const timeoutMs = 35;
++
++function canQueryGateway() {
++	return process.platform === "win32" && workerThreads.getEnvironmentData?.(gatewayHint) === true && typeof workerThreads.postMessageToThread === "function";
++}
++
++let bootQueryStarted = false;
++let pendingBootQuery;
++let preparedIdentity;
++
++function cancelPendingBootQuery() {
++	if (!pendingBootQuery) return;
++	const child = pendingBootQuery;
++	pendingBootQuery = void 0;
++	process.removeListener("exit", cancelPendingBootQuery);
++	try { child.kill(); } catch { /* Its original five-second timeout also bounds the query. */ }
++}
++
++// The Windows lock writer keeps its original wire format for older readers.
++// Start the same local OS query while the managed gateway imports its CLI.
++export function prepareClawxWindowsBootIdentity() {
++	if (bootQueryStarted || !workerThreads.isMainThread || !canQueryGateway() || !process.parentPort || process.argv[2] !== "gateway") return;
++	bootQueryStarted = true;
++	try {
++		const child = process.getBuiltinModule("node:child_process").execFile("powershell.exe", [
++			"-NoProfile", "-NonInteractive", "-Command",
++			"(Get-CimInstance -ClassName Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().ToString('o')"
++		], { encoding: "utf8", windowsHide: true, timeout: 5e3, killSignal: "SIGKILL", maxBuffer: 4096 }, (err, stdout) => {
++			if (pendingBootQuery !== child) return;
++			pendingBootQuery = void 0;
++			process.removeListener("exit", cancelPendingBootQuery);
++			if (err || typeof stdout !== "string") return;
++			const identity = stdout.trim();
++			if (windowsBootIdentity.test(identity)) preparedIdentity = identity;
++		});
++		pendingBootQuery = child;
++		process.once("exit", cancelPendingBootQuery);
++	} catch {
++		// The synchronous OS reader stays available if preparation cannot start.
++	}
++}
++
++// Only the gateway's private lock reader installs this listener, after its own
++// OS query and namespace validation. Capture the result before returning it to callers.
++export function createClawxBootIdentityResponder(namespace) {
++	if (!workerThreads.isMainThread || !canQueryGateway() || !process.parentPort || process.argv[2] !== "gateway") return;
++	if (namespace.platform !== "win32" || !windowsBootIdentity.test(namespace.identity)) return;
++	const identity = Buffer.from(namespace.identity, "ascii");
++	return (request, source) => {
++		if (!(source > 0) || request?.kind !== requestKind) return;
++		const reply = request.reply;
++		if (!(reply instanceof SharedArrayBuffer) || reply.byteLength !== replyBytes) return;
++		new Uint8Array(reply, headerBytes).set(identity);
++		const state = new Int32Array(reply, 0, 1);
++		Atomics.store(state, 0, 1);
++		Atomics.notify(state, 0);
++	};
++}
++
++export function readClawxBootIdentityFromMainThread() {
++	try {
++		if (!canQueryGateway()) return;
++		if (workerThreads.isMainThread) {
++			if (pendingBootQuery) {
++				// The query has not finished by the first write. The original reader
++				// now owns this observation; ignore any late asynchronous result.
++				cancelPendingBootQuery();
++			}
++			if (preparedIdentity) return { platform: "win32", identity: preparedIdentity };
++			return;
++		}
++		// Worker-controlled hints never carry identity. Only thread zero receives
++		// this worker's new reply buffer, even when a nested worker makes the call.
++		const reply = new SharedArrayBuffer(replyBytes);
++		const state = new Int32Array(reply, 0, 1);
++		void workerThreads.postMessageToThread(0, { kind: requestKind, reply }, [], timeoutMs).catch(() => {});
++		Atomics.wait(state, 0, 0, timeoutMs);
++		if (Atomics.load(state, 0) !== 1) return;
++		const identity = Buffer.from(reply, headerBytes).toString("ascii");
++		if (windowsBootIdentity.test(identity)) return { platform: "win32", identity };
++	} catch {
++		// A busy, missing, or closing main thread uses the existing local OS read.
++	}
++}
+diff --git a/dist/clawx-user-channel-policy-store.mjs b/dist/clawx-user-channel-policy-store.mjs
+new file mode 100644
+--- /dev/null
++++ b/dist/clawx-user-channel-policy-store.mjs
+@@ -0,0 +1,57 @@
++import { c as isRecord } from "./record-coerce-TIsquoVR.mjs";
++import { Jn as string, lr as uuid, qn as strictObject } from "./schemas-BOYIvvln.mjs";
++import { i as getAdmittedSqliteSchemaFacts } from "./sqlite-schema-facts-DKLcM7oX.mjs";
++import { i as executeSqliteQuerySync } from "./kysely-sync-B4IoHDWv.mjs";
++import { d as publishUserProfileAuthorityChange, l as publishUserChannelIdentityAuthorityChange } from "./user-profile-events-Cd6Wpwwl.mjs";
++import { i as updateConfigMachineStateInDatabase } from "./config-machine-state-write-DFAKCbek.mjs";
++import { a as generateSecureUuid } from "./secure-random-s1KT-8w1.mjs";
++import { S as userProfilesDb } from "./user-profiles-internal-CrPFdeEA.mjs";
++import { isDeepStrictEqual } from "node:util";
++const CHANNEL_IDENTITY_PROVIDER = "channel.identity";
++const POLICY_KEY = "operator.channelPolicy";
++const configuredPolicySchema = strictObject({
++	fingerprint: string().length(43),
++	id: uuid()
++});
++function splitPolicy(value) {
++	const { configuredOwnerPolicy, ...policy } = isRecord(value) ? value : {};
++	return {
++		policy,
++		configured: configuredPolicySchema.safeParse(configuredOwnerPolicy).data
++	};
++}
++/** Activation and rollback retire old references before their exact authorization policy is published. */
++function publishUserChannelPolicyInDatabase(db, policy, configuredOwnersHash) {
++	let profiles = [];
++	const channels = [];
++	updateConfigMachineStateInDatabase(db, POLICY_KEY, (current) => {
++		const previous = splitPolicy(current);
++		if (!isDeepStrictEqual(previous.policy, policy) && getAdmittedSqliteSchemaFacts(db)?.tables.has("user_profile_identities")) {
++			profiles = executeSqliteQuerySync(db, userProfilesDb(db).selectFrom("user_profile_identities").select("profile_id").distinct().where("provider", "=", CHANNEL_IDENTITY_PROVIDER)).rows.map((row) => row.profile_id);
++			publishUserProfileAuthorityChange(db, ...profiles);
++		}
++		const configured = configuredOwnersHash ? {
++			fingerprint: configuredOwnersHash,
++			id: previous.configured?.fingerprint === configuredOwnersHash ? previous.configured.id : generateSecureUuid()
++		} : void 0;
++		if (!isDeepStrictEqual(previous.configured, configured)) {
++			channels.push(POLICY_KEY);
++			publishUserChannelIdentityAuthorityChange(db, POLICY_KEY);
++		}
++		return {
++			...policy,
++			...configured ? { configuredOwnerPolicy: configured } : {}
++		};
++	}, Date.now());
++	return {
++		profiles,
++		channels
++	};
++}
++var UserChannelIdentityConflictError = class extends Error {
++	constructor() {
++		super("channel identity is linked to another profile; unlink it from that profile first");
++		this.name = "UserChannelIdentityConflictError";
++	}
++};
++export { CHANNEL_IDENTITY_PROVIDER, POLICY_KEY, UserChannelIdentityConflictError, publishUserChannelPolicyInDatabase, splitPolicy };
+diff --git a/dist/user-channel-identities-CPNsazJx.mjs b/dist/user-channel-identities-CPNsazJx.mjs
+index 2de51fc..4e6d9cb 100644
+--- a/dist/user-channel-identities-CPNsazJx.mjs
++++ b/dist/user-channel-identities-CPNsazJx.mjs
+@@ -1,4 +1,3 @@
+-import { c as isRecord } from "./record-coerce-TIsquoVR.mjs";
+ import { t as safeParseJson } from "./json-coercion-pfKbZnCJ.mjs";
+ import { l as normalizeSortedUniqueStringEntries } from "./string-normalization-D6DKCpwE.mjs";
+ import { Jn as string, lr as uuid, or as union, qn as strictObject, xn as literal } from "./schemas-BOYIvvln.mjs";
+@@ -13,14 +12,14 @@
+ import "./user-profile-constants-DfyZS95p.mjs";
+ import { a as UserChannelIdentitySchema } from "./users-Dl5mHzAH.mjs";
+ import { u as runOpenClawStateWriteTransaction } from "./openclaw-state-db-BF5xXouY.mjs";
+-import { d as publishUserProfileAuthorityChange, l as publishUserChannelIdentityAuthorityChange, u as publishUserProfileAliasChange } from "./user-profile-events-Cd6Wpwwl.mjs";
+-import { i as updateConfigMachineStateInDatabase } from "./config-machine-state-write-DFAKCbek.mjs";
++import { l as publishUserChannelIdentityAuthorityChange, u as publishUserProfileAliasChange } from "./user-profile-events-Cd6Wpwwl.mjs";
+ import { a as generateSecureUuid } from "./secure-random-s1KT-8w1.mjs";
+ import { D as ensureUserProfilesSchema, S as userProfilesDb, T as UserProfileOwnerError, _ as selectUserProfileEmails, h as selectResolvedUserProfileMetadataById, u as requireResolvedUserProfileMetadataById } from "./user-profiles-internal-CrPFdeEA.mjs";
+ import { _ as selectStoredGitHubIdentities } from "./user-profile-identity.read-DNCDdNQT.mjs";
+ import { u as publishUserProfilesChange } from "./user-profile-list-k-ICsZt4.mjs";
+ import { isDeepStrictEqual } from "node:util";
+ import { Check } from "typebox/value";
++import { CHANNEL_IDENTITY_PROVIDER, POLICY_KEY, UserChannelIdentityConflictError, publishUserChannelPolicyInDatabase, splitPolicy } from "./clawx-user-channel-policy-store.mjs";
+ //#region src/state/user-profiles-tailscale-login.ts
+ /** Classify Tailscale's documented email or email-ish LoginName representation. */
+ function classifyTailscaleLogin(login) {
+@@ -40,17 +39,11 @@
+ }
+ //#endregion
+ //#region src/state/user-channel-identities.ts
+-const CHANNEL_IDENTITY_PROVIDER = "channel.identity";
+-const POLICY_KEY = "operator.channelPolicy";
+ const referenceSchema = strictObject({
+ 	version: literal(1),
+ 	id: uuid()
+ });
+ const configuredReferenceSchema = referenceSchema.extend({ version: literal(2) });
+-const configuredPolicySchema = strictObject({
+-	fingerprint: string().length(43),
+-	id: uuid()
+-});
+ const commandReferenceSchema = union([referenceSchema, configuredReferenceSchema]);
+ function parseCommandOwnerReference(value) {
+ 	return commandReferenceSchema.safeParse(value).data;
+@@ -58,13 +51,6 @@
+ function configuredCommandOwnerPolicyFingerprint(owners) {
+ 	const entries = normalizeSortedUniqueStringEntries(owners);
+ 	return entries.length ? sha256Base64Url(JSON.stringify(entries)) : void 0;
+-}
+-function splitPolicy(value) {
+-	const { configuredOwnerPolicy, ...policy } = isRecord(value) ? value : {};
+-	return {
+-		policy,
+-		configured: configuredPolicySchema.safeParse(configuredOwnerPolicy).data
+-	};
+ }
+ function readConfiguredCommandOwnerPolicy(value, fingerprint) {
+ 	const { configured } = splitPolicy(value);
+@@ -89,34 +75,6 @@
+ function matchesPolicy(db, policy) {
+ 	const row = readConfigMachineStateRowInDatabase(db, POLICY_KEY);
+ 	return row !== void 0 && isDeepStrictEqual(splitPolicy(JSON.parse(row.value_json)).policy, policy);
+-}
+-/** Activation and rollback retire old references before their exact authorization policy is published. */
+-function publishUserChannelPolicyInDatabase(db, policy, configuredOwnersHash) {
+-	let profiles = [];
+-	const channels = [];
+-	updateConfigMachineStateInDatabase(db, POLICY_KEY, (current) => {
+-		const previous = splitPolicy(current);
+-		if (!isDeepStrictEqual(previous.policy, policy) && getAdmittedSqliteSchemaFacts(db)?.tables.has("user_profile_identities")) {
+-			profiles = executeSqliteQuerySync(db, userProfilesDb(db).selectFrom("user_profile_identities").select("profile_id").distinct().where("provider", "=", CHANNEL_IDENTITY_PROVIDER)).rows.map((row) => row.profile_id);
+-			publishUserProfileAuthorityChange(db, ...profiles);
+-		}
+-		const configured = configuredOwnersHash ? {
+-			fingerprint: configuredOwnersHash,
+-			id: previous.configured?.fingerprint === configuredOwnersHash ? previous.configured.id : generateSecureUuid()
+-		} : void 0;
+-		if (!isDeepStrictEqual(previous.configured, configured)) {
+-			channels.push(POLICY_KEY);
+-			publishUserChannelIdentityAuthorityChange(db, POLICY_KEY);
+-		}
+-		return {
+-			...policy,
+-			...configured ? { configuredOwnerPolicy: configured } : {}
+-		};
+-	}, Date.now());
+-	return {
+-		profiles,
+-		channels
+-	};
+ }
+ /** The reference names this uninterrupted channel link; it carries no permission by itself. */
+ function authorizeUserChannelIdentityInDatabase(db, input) {
+@@ -154,12 +112,6 @@
+ 		grant: grant.data
+ 	} : void 0;
+ }
+-var UserChannelIdentityConflictError = class extends Error {
+-	constructor() {
+-		super("channel identity is linked to another profile; unlink it from that profile first");
+-		this.name = "UserChannelIdentityConflictError";
+-	}
+-};
+ function userChannelIdentitySubject(identity) {
+ 	if (!Check(UserChannelIdentitySchema, identity)) throw new TypeError("invalid channel identity");
+ 	return JSON.stringify([
+diff --git a/dist/clawx-user-channel-policy.worker.mjs b/dist/clawx-user-channel-policy.worker.mjs
+new file mode 100644
+--- /dev/null
++++ b/dist/clawx-user-channel-policy.worker.mjs
+@@ -0,0 +1,90 @@
++import { a as deferSqliteWorkerCommitReceipt, f as requestSqliteWorkerOperationAdmission } from "./sqlite-worker-operation-admission-BxR5yjM3.mjs";
++import { u as runOpenClawStateWriteTransaction } from "./openclaw-state-db-BF5xXouY.mjs";
++import { D as ensureUserProfilesSchema, T as UserProfileOwnerError, w as UserProfileNotFoundError } from "./user-profiles-internal-CrPFdeEA.mjs";
++import { n as retrySqliteWorkerAdmission, t as SQLITE_WORKER_ADMISSION_DEADLINE_MS } from "./sqlite-worker-admission-retry-tDS2yCO7.mjs";
++import { UserChannelIdentityConflictError, publishUserChannelPolicyInDatabase } from "./clawx-user-channel-policy-store.mjs";
++//#region src/state/user-channel-identities.worker.ts
++const CHANNEL_IDENTITY_ADMISSION_ATTEMPTS = 3;
++function readUserChannelIdentityResult(operation) {
++	try {
++		return {
++			ok: true,
++			value: operation()
++		};
++	} catch (error) {
++		if (error instanceof UserChannelIdentityConflictError) return {
++			ok: false,
++			kind: "conflict"
++		};
++		if (error instanceof UserProfileNotFoundError) return {
++			ok: false,
++			kind: "not-found"
++		};
++		if (error instanceof UserProfileOwnerError) return {
++			ok: false,
++			kind: "owner",
++			code: error.code
++		};
++		throw error;
++	}
++}
++function executeUserChannelIdentityChange(input, options, identities) {
++	const subject = "identity" in input ? identities.userChannelIdentitySubject(input.identity) : void 0;
++	if (input.action !== "policy") ensureUserProfilesSchema(options);
++	return retrySqliteWorkerAdmission(() => {
++		const facts = {
++			kind: "channel-identity",
++			action: input.action,
++			subject,
++			profiles: [],
++			channels: subject === void 0 ? [] : [subject]
++		};
++		let changed = false;
++		const mutationOptions = {
++			...options,
++			beforeChange() {
++				changed = true;
++			}
++		};
++		requestSqliteWorkerOperationAdmission({
++			stage: "transaction",
++			facts,
++			deadlineMs: SQLITE_WORKER_ADMISSION_DEADLINE_MS
++		});
++		return readUserChannelIdentityResult(() => runOpenClawStateWriteTransaction(({ db }) => {
++			if (input.action === "policy" || input.action === "authorize") mutationOptions.beforeChange();
++			if (input.action === "policy") Object.assign(facts, publishUserChannelPolicyInDatabase(db, input.policy, input.configuredOwnersHash));
++			const value = input.action === "policy" ? { kind: "policy" } : input.action === "authorize" ? {
++				kind: "authorized",
++				reference: identities.authorizeUserChannelIdentityInDatabase(db, input)
++			} : input.action === "link" ? {
++				kind: "linked",
++				link: identities.linkUserChannelIdentity(input.profileId, input.identity, mutationOptions)
++			} : {
++				kind: "unlinked",
++				removed: identities.unlinkUserChannelIdentity(input.profileId, input.identity, mutationOptions)
++			};
++			if (changed) {
++				requestSqliteWorkerOperationAdmission({
++					stage: "commit",
++					facts,
++					deadlineMs: SQLITE_WORKER_ADMISSION_DEADLINE_MS
++				});
++				deferSqliteWorkerCommitReceipt(db, facts);
++			}
++			return value;
++		}, options, { operationLabel: "user-profiles.channel-identity-change" }));
++	}, {
++		maxAttempts: CHANNEL_IDENTITY_ADMISSION_ATTEMPTS,
++		database: options.database.db,
++		exhaustedMessage: `Channel identity ${input.action} could not obtain database admission after ${CHANNEL_IDENTITY_ADMISSION_ATTEMPTS} attempts. Check \`openclaw gateway status --deep\`, then retry the operation.`
++	});
++}
++//#endregion
++const channelPolicyOperations = {
++	"userProfiles.channelPolicy.publish": (input, { open, stateOptions }) => {
++		if (input?.action !== "policy" || "identity" in input) throw new Error("Invalid channel policy publication");
++		return executeUserChannelIdentityChange(input, { ...stateOptions(), database: open() });
++	}
++};
++export { channelPolicyOperations, executeUserChannelIdentityChange };
+diff --git a/dist/user-profiles.worker-D_T6hArA.mjs b/dist/user-profiles.worker-D_T6hArA.mjs
+index dd28491..5a006d2 100644
+--- a/dist/user-profiles.worker-D_T6hArA.mjs
++++ b/dist/user-profiles.worker-D_T6hArA.mjs
+@@ -14,91 +14,14 @@
+ import { C as UserProfileMergeError, D as ensureUserProfilesSchema, E as ensureUserProfileRoleSchema, S as userProfilesDb, T as UserProfileOwnerError, _ as selectUserProfileEmails, a as inspectProfileAvatarInDatabase, b as userProfileAvatarPresence, c as projectUserProfileDisplay, g as selectUserProfileEmailAlias, i as insertUserProfile, k as runUserProfileWriteTransaction, l as requireResolvedUserProfileById, m as selectResolvedUserProfileById, u as requireResolvedUserProfileMetadataById, v as setUserProfileEmailBinding, w as UserProfileNotFoundError, y as toUserProfile } from "./user-profiles-internal-CrPFdeEA.mjs";
+ import { _ as selectStoredGitHubIdentities, a as readUserProfileSnapshotSync, f as githubAuthenticationSubject, g as selectProfileAccessEntries, i as readUserProfileEmailBindings, m as prepareUserProfileGitHubMerge, u as applyVerifiedGitHubIdentity, v as selectUserProfileGitHubIdentities, y as selectUserProfileRoleAuthority } from "./user-profile-identity.read-DNCDdNQT.mjs";
+ import { b as stageUserProfileCatalogChange, u as publishUserProfilesChange } from "./user-profile-list-k-ICsZt4.mjs";
+-import { a as linkUserChannelIdentity, c as publishUserChannelPolicyInDatabase, f as unlinkUserChannelIdentity, n as UserChannelIdentityConflictError, p as userChannelIdentitySubject, r as authorizeUserChannelIdentityInDatabase, t as CHANNEL_IDENTITY_PROVIDER } from "./user-channel-identities-CPNsazJx.mjs";
++import { a as linkUserChannelIdentity, f as unlinkUserChannelIdentity, p as userChannelIdentitySubject, r as authorizeUserChannelIdentityInDatabase, t as CHANNEL_IDENTITY_PROVIDER } from "./user-channel-identities-CPNsazJx.mjs";
+ import { i as mergeUserGitHubConnection } from "./user-github-connections.kernel-yNXU9gbQ.mjs";
+ import { a as listUserModelAccounts, c as mergeUserModelAccounts, h as setUserProfileAuthLink, i as enrollPersonalAuthProfileAuthorizationInDatabase, n as connectUserModelAccount, t as clearUserProfileAuthLink, u as readSelectedUserModelAccount } from "./user-model-accounts-D_mmEKkQ.mjs";
+ import { n as normalizeProfileEmail } from "./user-profile-email.kernel-CGwyQUco.mjs";
+ import { i as normalizeInitialDisplayName, n as ensureProfileForEmail, r as ensureProfileForTailscaleIdentity, t as ensureGatewayOwnerProfile } from "./user-profiles-DJqk-CQF.mjs";
+-import { n as retrySqliteWorkerAdmission, t as SQLITE_WORKER_ADMISSION_DEADLINE_MS } from "./sqlite-worker-admission-retry-tDS2yCO7.mjs";
+ import { createHash } from "node:crypto";
+-//#region src/state/user-channel-identities.worker.ts
+-const CHANNEL_IDENTITY_ADMISSION_ATTEMPTS = 3;
+-function readUserChannelIdentityResult(operation) {
+-	try {
+-		return {
+-			ok: true,
+-			value: operation()
+-		};
+-	} catch (error) {
+-		if (error instanceof UserChannelIdentityConflictError) return {
+-			ok: false,
+-			kind: "conflict"
+-		};
+-		if (error instanceof UserProfileNotFoundError) return {
+-			ok: false,
+-			kind: "not-found"
+-		};
+-		if (error instanceof UserProfileOwnerError) return {
+-			ok: false,
+-			kind: "owner",
+-			code: error.code
+-		};
+-		throw error;
+-	}
+-}
+-function executeUserChannelIdentityChange(input, options) {
+-	const subject = "identity" in input ? userChannelIdentitySubject(input.identity) : void 0;
+-	if (input.action !== "policy") ensureUserProfilesSchema(options);
+-	return retrySqliteWorkerAdmission(() => {
+-		const facts = {
+-			kind: "channel-identity",
+-			action: input.action,
+-			subject,
+-			profiles: [],
+-			channels: subject === void 0 ? [] : [subject]
+-		};
+-		let changed = false;
+-		const mutationOptions = {
+-			...options,
+-			beforeChange() {
+-				changed = true;
+-			}
+-		};
+-		requestSqliteWorkerOperationAdmission({
+-			stage: "transaction",
+-			facts,
+-			deadlineMs: SQLITE_WORKER_ADMISSION_DEADLINE_MS
+-		});
+-		return readUserChannelIdentityResult(() => runOpenClawStateWriteTransaction(({ db }) => {
+-			if (input.action === "policy" || input.action === "authorize") mutationOptions.beforeChange();
+-			if (input.action === "policy") Object.assign(facts, publishUserChannelPolicyInDatabase(db, input.policy, input.configuredOwnersHash));
+-			const value = input.action === "policy" ? { kind: "policy" } : input.action === "authorize" ? {
+-				kind: "authorized",
+-				reference: authorizeUserChannelIdentityInDatabase(db, input)
+-			} : input.action === "link" ? {
+-				kind: "linked",
+-				link: linkUserChannelIdentity(input.profileId, input.identity, mutationOptions)
+-			} : {
+-				kind: "unlinked",
+-				removed: unlinkUserChannelIdentity(input.profileId, input.identity, mutationOptions)
+-			};
+-			if (changed) {
+-				requestSqliteWorkerOperationAdmission({
+-					stage: "commit",
+-					facts,
+-					deadlineMs: SQLITE_WORKER_ADMISSION_DEADLINE_MS
+-				});
+-				deferSqliteWorkerCommitReceipt(db, facts);
+-			}
+-			return value;
+-		}, options, { operationLabel: "user-profiles.channel-identity-change" }));
+-	}, {
+-		maxAttempts: CHANNEL_IDENTITY_ADMISSION_ATTEMPTS,
+-		database: options.database.db,
+-		exhaustedMessage: `Channel identity ${input.action} could not obtain database admission after ${CHANNEL_IDENTITY_ADMISSION_ATTEMPTS} attempts. Check \`openclaw gateway status --deep\`, then retry the operation.`
+-	});
+-}
+-//#endregion
++import { executeUserChannelIdentityChange } from "./clawx-user-channel-policy.worker.mjs";
++const channelIdentities = { userChannelIdentitySubject, authorizeUserChannelIdentityInDatabase, linkUserChannelIdentity, unlinkUserChannelIdentity };
+ //#region src/state/user-profiles-merge.ts
+ function mergeUserProfiles(db, sourceProfileId, targetProfileId, now, mutation) {
+ 	if (sourceProfileId === targetProfileId) return;
+@@ -578,7 +501,7 @@
+ 	"userProfiles.channelIdentity.change": (input, { open, stateOptions }) => executeUserChannelIdentityChange(input, {
+ 		...stateOptions(),
+ 		database: open()
+-	}),
++	}, channelIdentities),
+ 	"userProfiles.avatar.inspect": ({ profileId }, { open }) => inspectProfileAvatarInDatabase(open().db, profileId),
+ 	"userProfiles.avatar.adopt": (input, { open, stateOptions }) => {
+ 		const sha256 = createHash("sha256").update(input.bytes).digest("hex");
+diff --git a/dist/state/openclaw-state.worker.js b/dist/state/openclaw-state.worker.js
+index 6e47eda..55639c1 100644
+--- a/dist/state/openclaw-state.worker.js
++++ b/dist/state/openclaw-state.worker.js
+@@ -35,6 +35,7 @@
+ 	userGitHubConnections: () => import("../user-github-connections.worker-DN1o5Ex8.mjs").then((m) => m.userGitHubConnectionOperations),
+ 	githubPublications: () => import("../github-publication.worker-BNPX0phN.mjs").then((m) => m.publicationOperations),
+ 	userBackground: async () => (await import("../user-background.worker-DzpMxAPH.mjs")).userBackgroundOperations,
++	"userProfiles.channelPolicy.publish": () => import("../clawx-user-channel-policy.worker.mjs").then((m) => m.channelPolicyOperations),
+ 	userProfiles: () => import("../user-profiles.worker-D_T6hArA.mjs").then((m) => m.userProfileOperations),
+ 	githubSecrets: () => import("../secret-store-github-handoff.worker-D6VRCozG.mjs").then((m) => m.githubSetupOperations),
+ 	githubSetup: () => import("../secret-store-github-handoff.worker-D6VRCozG.mjs").then((m) => m.githubSetupOperations),
+diff --git a/dist/user-channel-identity-operations-CQ0oFkTe.mjs b/dist/user-channel-identity-operations-CQ0oFkTe.mjs
+index d2359e9..ed420d4 100644
+--- a/dist/user-channel-identity-operations-CQ0oFkTe.mjs
++++ b/dist/user-channel-identity-operations-CQ0oFkTe.mjs
+@@ -35,7 +35,7 @@
+ 	const assertCurrent = options.assertCurrent;
+ 	const context = captureOpenClawStateWorkerContext(options);
+ 	return unwrapIdentityResult(await runOpenClawStateWorkerOperation(context, (scope) => scope.execute({
+-		type: "userProfiles.channelIdentity.change",
++		type: captured.action === "policy" && !("identity" in captured) ? "userProfiles.channelPolicy.publish" : "userProfiles.channelIdentity.change",
+ 		input: captured
+ 	}), {
+ 		assertCurrent,
+diff --git a/dist/device-pairing-core.worker-CvwvCBkl.mjs b/dist/device-pairing-core.worker-CvwvCBkl.mjs
+index 7d4f01d..1221a99 100644
+--- a/dist/device-pairing-core.worker-CvwvCBkl.mjs
++++ b/dist/device-pairing-core.worker-CvwvCBkl.mjs
+@@ -649,6 +649,7 @@
+ 				allowedScopes: existing.scopes
+ 			})) return { value: existing };
+ 		}
++		if (params.reuseOnly) return { value: null };
+ 		const now = params.nowMs;
+ 		const next = createDeviceAuthToken({
+ 			role,
+diff --git a/dist/gateway-boot-lifecycle-DaWhpNgC.mjs b/dist/gateway-boot-lifecycle-DaWhpNgC.mjs
+index 4950431..93fc094 100644
+--- a/dist/gateway-boot-lifecycle-DaWhpNgC.mjs
++++ b/dist/gateway-boot-lifecycle-DaWhpNgC.mjs
+@@ -4,14 +4,12 @@
+ import { r as captureOpenClawStateWorkerContext } from "./openclaw-state-worker-context-BghQKrmb.mjs";
+ import { t as executeExistingOpenClawStateRead, u as withExistingOpenClawStateDatabaseReadOnly } from "./openclaw-state-db-readonly-BNpLj8XQ.mjs";
+ import { t as formatCliCommand } from "./command-format-CYoE8cOC.mjs";
+-import { i as openOpenClawStateDatabase, u as runOpenClawStateWriteTransaction } from "./openclaw-state-db-BF5xXouY.mjs";
++import { u as runOpenClawStateWriteTransaction } from "./openclaw-state-db-BF5xXouY.mjs";
+ import { n as createSqliteWorkerWriteAdmission } from "./sqlite-worker-store-C_JyOg8R.mjs";
+ import { i as runOpenClawStateWorkerOperation } from "./openclaw-state-worker-store-1zOYxW7q.mjs";
+ import { t as pathMayExistSync } from "./path-existence-O1bMV6vh.mjs";
+-import { a as inspectGatewayCrashLoopBreakerInDatabase, i as buildGatewayCrashLoopBreakerDecision, o as maintenanceStartupReasons } from "./gateway-boot-lifecycle.kernel-nFEOTWBW.mjs";
+-import { randomUUID } from "node:crypto";
++import { i as buildGatewayCrashLoopBreakerDecision, o as maintenanceStartupReasons } from "./gateway-boot-lifecycle.kernel-nFEOTWBW.mjs";
+ //#region src/infra/gateway-boot-lifecycle.ts
+-const GATEWAY_BOOT_LIFECYCLE_RETENTION_MS = 864e5;
+ function formatGatewayRepeatedSignalHint(signal, count, observation = "received") {
+ 	return `${observation} ${signal} ${count} times in 5 min: another supervisor may be managing this Gateway — see \`openclaw gateway status --deep\``;
+ }
+@@ -53,13 +51,16 @@
+ 		completedAtMs: lastShutdown.completedAtMs
+ 	};
+ }
+-function inspectGatewayCrashLoopBreaker(env = process.env, nowMs = Date.now()) {
++async function beginGatewayBootLifecycle(env = process.env, nowMs = Date.now()) {
+ 	try {
+-		const { db } = openOpenClawStateDatabase({ env });
+-		return inspectGatewayCrashLoopBreakerInDatabase(db, nowMs);
++		const context = captureOpenClawStateWorkerContext({ env });
++		return await runOpenClawStateWorkerOperation(context, (scope) => scope.execute({
++			type: "gatewayBoot.begin",
++			input: nowMs
++		}));
+ 	} catch (err) {
+ 		gatewayLifecycleLog.warn(`crash-loop breaker state unavailable; fail-open: ${String(err)}`);
+-		return buildGatewayCrashLoopBreakerDecision({ uncleanBoots: 0 });
++		return { decision: buildGatewayCrashLoopBreakerDecision({ uncleanBoots: 0 }), id: void 0 };
+ 	}
+ }
+ /** Runtime readers share the boot owner's decision without opening SQLite on the main thread. */
+@@ -71,28 +72,6 @@
+ 		signal,
+ 		current: true
+ 	}))?.decision ?? buildGatewayCrashLoopBreakerDecision({ uncleanBoots: 0 });
+-}
+-function recordGatewayBootStart(env = process.env, nowMs = Date.now(), reason) {
+-	const bootId = randomUUID();
+-	try {
+-		runOpenClawStateWriteTransaction(({ db }) => {
+-			const kysely = getNodeSqliteKysely(db);
+-			executeSqliteQuerySync(db, kysely.deleteFrom("gateway_boot_lifecycle").where("started_at_ms", "<", nowMs - GATEWAY_BOOT_LIFECYCLE_RETENTION_MS));
+-			executeSqliteQuerySync(db, kysely.insertInto("gateway_boot_lifecycle").values({
+-				boot_id: bootId,
+-				pid: process.pid,
+-				started_at_ms: nowMs,
+-				completed_at_ms: null,
+-				outcome: null,
+-				startup_reason: reason ?? null,
+-				reason: null
+-			}));
+-		}, { env });
+-		return bootId;
+-	} catch (err) {
+-		gatewayLifecycleLog.warn(`failed to persist gateway boot start; fail-open: ${String(err)}`);
+-		return;
+-	}
+ }
+ /**
+ * Split a stable safe-mode lifetime before channel autostart resumes. A fresh
+@@ -153,4 +132,4 @@
+ 	}
+ }
+ //#endregion
+-export { inspectGatewayCrashLoopBreakerAsync as a, recordGatewayBootStart as c, inspectGatewayCrashLoopBreaker as i, recordGatewayCrashLoopRecovery as l, formatGatewayCrashLoopManualChannelStartHint as n, readGatewayLastInstallationReplacement as o, formatGatewayRepeatedSignalHint as r, readGatewayLastShutdown as s, completeGatewayBootLifecycle as t, repairGatewayMaintenanceStartupFailures as u };
++export { inspectGatewayCrashLoopBreakerAsync as a, beginGatewayBootLifecycle as c, recordGatewayCrashLoopRecovery as l, formatGatewayCrashLoopManualChannelStartHint as n, readGatewayLastInstallationReplacement as o, formatGatewayRepeatedSignalHint as r, readGatewayLastShutdown as s, completeGatewayBootLifecycle as t, repairGatewayMaintenanceStartupFailures as u };
+diff --git a/dist/gateway-boot-lifecycle.worker-S1z2_FB_.mjs b/dist/gateway-boot-lifecycle.worker-S1z2_FB_.mjs
+index 1ad7360..cd74a86 100644
+--- a/dist/gateway-boot-lifecycle.worker-S1z2_FB_.mjs
++++ b/dist/gateway-boot-lifecycle.worker-S1z2_FB_.mjs
+@@ -1,9 +1,43 @@
++import { t as createSubsystemLogger } from "./subsystem-ChoY_Ru5.mjs";
+ import { a as executeSqliteQueryTakeFirstSync, i as executeSqliteQuerySync, o as getNodeSqliteKysely } from "./kysely-sync-B4IoHDWv.mjs";
+ import { u as runOpenClawStateWriteTransaction } from "./openclaw-state-db-BF5xXouY.mjs";
+-import { a as inspectGatewayCrashLoopBreakerInDatabase, n as GATEWAY_CRASH_LOOP_RECOVERED_REASON, r as GATEWAY_SIGNAL_REPEAT_WINDOW_MS } from "./gateway-boot-lifecycle.kernel-nFEOTWBW.mjs";
++import { a as inspectGatewayCrashLoopBreakerInDatabase, i as buildGatewayCrashLoopBreakerDecision, t as GATEWAY_CRASH_LOOP_BREAKER_REASON, n as GATEWAY_CRASH_LOOP_RECOVERED_REASON, r as GATEWAY_SIGNAL_REPEAT_WINDOW_MS } from "./gateway-boot-lifecycle.kernel-nFEOTWBW.mjs";
+ import { randomUUID } from "node:crypto";
+ //#region src/infra/gateway-boot-lifecycle.worker.ts
++const GATEWAY_BOOT_LIFECYCLE_RETENTION_MS = 864e5;
++const gatewayLifecycleLog = createSubsystemLogger("gateway/lifecycle");
+ const gatewayBootOperations = {
++	"gatewayBoot.begin": (nowMs, context) => {
++		let decision = buildGatewayCrashLoopBreakerDecision({ uncleanBoots: 0 });
++		try {
++			decision = inspectGatewayCrashLoopBreakerInDatabase(context.open().db, nowMs);
++		} catch (err) {
++			gatewayLifecycleLog.warn(`crash-loop breaker state unavailable; fail-open: ${String(err)}`);
++		}
++		const reason = decision.tripped
++			? decision.shouldWriteStabilityBundle ? GATEWAY_CRASH_LOOP_BREAKER_REASON : void 0
++			: decision.recovered ? GATEWAY_CRASH_LOOP_RECOVERED_REASON : void 0;
++		const id = randomUUID();
++		try {
++			runOpenClawStateWriteTransaction(({ db }) => {
++				const kysely = getNodeSqliteKysely(db);
++				executeSqliteQuerySync(db, kysely.deleteFrom("gateway_boot_lifecycle").where("started_at_ms", "<", nowMs - GATEWAY_BOOT_LIFECYCLE_RETENTION_MS));
++				executeSqliteQuerySync(db, kysely.insertInto("gateway_boot_lifecycle").values({
++					boot_id: id,
++					pid: process.pid,
++					started_at_ms: nowMs,
++					completed_at_ms: null,
++					outcome: null,
++					startup_reason: reason ?? null,
++					reason: null
++				}));
++			}, context.stateOptions());
++			return { decision, id };
++		} catch (err) {
++			gatewayLifecycleLog.warn(`failed to persist gateway boot start; fail-open: ${String(err)}`);
++			return { decision, id: void 0 };
++		}
++	},
+ 	"gatewayBoot.complete": (input, context) => runOpenClawStateWriteTransaction(({ db }) => {
+ 		const { bootId, completion, nowMs } = input;
+ 		const kysely = getNodeSqliteKysely(db);
+diff --git a/dist/gateway-prewarm.js b/dist/gateway-prewarm.js
+index 0ede829a..e8920e98 100644
+--- a/dist/gateway-prewarm.js
++++ b/dist/gateway-prewarm.js
+@@ -75,6 +75,7 @@ import "./sessions-D1v--wwY.mjs";
+ import { W as isUserModelAuthProfileId } from "./user-model-account-authority-DDshPgqM.mjs";
+ import { d as getGatewaySuspendAdmissionPhase, h as isGatewayWorkAdmissionClosed, p as isGatewayRestartDraining, s as getActiveGatewayRootWorkCount } from "./gateway-work-admission-kHo3f3-G.mjs";
+ import { i as hashConfigRaw } from "./io.read-helpers-Bf4Vt_cJ.mjs";
++import { createClawXStartupOperatorAdmission } from "./startup-unavailable-D0-EeFjq.mjs";
+ import { m as listAgentDatabaseAdmissionRefusals, r as canIsolateAgentDatabase } from "./agent-database-admission-C8VLVraH.mjs";
+ import { i as onInternalSessionTranscriptUpdate } from "./transcript-events-D3brcRJS.mjs";
+ import { v as resolveAuthProfileDatabasePath } from "./sqlite-w71zhKwV.mjs";
+@@ -4409,6 +4410,7 @@ const EVENT_SCOPE_GUARDS = {
+ 	presence: [READ_SCOPE],
+ 	shutdown: [],
+ 	"gateway.suspension": [],
++	"gateway.ready": [READ_SCOPE],
+ 	tick: [],
+ 	"talk.event": [READ_SCOPE],
+ 	"talk.mode": [TALK_SCOPE],
+@@ -4631,6 +4633,7 @@ function createGatewayBroadcaster(params) {
+ 		const recipients = retained ? [retained.client] : targetConnIds ? params.clients.getByConnectionIds(targetConnIds) : params.clients;
+ 		for (const c of recipients) {
+ 			if (!params.clients.has(c) || retained && c.socket !== retained.socket || c.invalidated === true || c.socket.readyState !== 1 || opts?.excludeClientCapability && hasGatewayClientCap(c.connect.caps, opts.excludeClientCapability)) continue;
++			if (event === "gateway.ready" && (targetConnIds?.size !== 1 || !c.internal?.operatorStartup || c.internal.operatorStartup.unavailable() !== void 0)) continue;
+ 			const questionRecipient = event === "question.requested" || event === "question.resolved" ? opts?.questionRecipient : void 0;
+ 			if (!hasEventScope(c, event, explicitPluginScope, questionRecipient !== void 0 && !operatorScopeSatisfied("operator.questions", c.connect.scopes ?? []), hasSessionReadContext)) continue;
+ 			if (event === "chat.metadata.changed" && !operatorScopeSatisfied("operator.read", c.connect.scopes ?? []) && metadataInvalidation === void 0) continue;
+@@ -8538,7 +8541,7 @@ function activateGatewayAgentDatabaseStartup(params) {
+ 		}),
+ 		publishAgent: ({ agentId, paths, env, signal, assertCurrent, phase }) => runWithSpawnBroker(broker, async () => {
+ 			phase("secrets");
+-			const [{ refreshPreparedModelRuntimeSnapshots, getPreparedModelRuntimeSnapshot }, { listConfiguredOwnerInputs }, { getActiveSecretsRuntimeSnapshot, getActiveSecretsRuntimeSnapshotRevision, refreshActiveSecretsRuntimeSnapshotForConfig }] = await Promise.all([
++			const [{ refreshPreparedModelRuntimeSnapshots, getPreparedModelRuntimeSnapshot, getPendingPreparedModelRuntimeReplacement }, { listConfiguredOwnerInputs }, { getActiveSecretsRuntimeSnapshot, getActiveSecretsRuntimeSnapshotRevision, refreshActiveSecretsRuntimeSnapshotForConfig }] = await Promise.all([
+ 				import("./prepared-model-runtime-Doyjzmdg.mjs"),
+ 				import("./prepared-model-runtime.configured-CRCwNWKT.mjs"),
+ 				import("./runtime-YatGqIPh.mjs")
+@@ -8564,12 +8567,10 @@ function activateGatewayAgentDatabaseStartup(params) {
+ 			const secrets = getActiveSecretsRuntimeSnapshot();
+ 			const authDatabasePath = resolveAuthProfileDatabasePath(resolveAgentDir(cfg, agentId, env));
+ 			if (secretsRevision !== previousSecretsRevision + 1 || !secrets?.authStores.some((entry) => isSameOpenClawAgentDatabasePath(entry.databasePath, authDatabasePath))) throw new Error(`Agent ${agentId} secrets preparation has not published its auth store`);
+-			let preparedInput = void 0;
+ 			const assertPreparationCurrent = () => {
+ 				signal.throwIfAborted();
+ 				assertCurrent();
+ 				if (!params.isCurrent() || params.getConfig() !== cfg || getActiveSecretsRuntimeSnapshotRevision() !== secretsRevision) throw new AgentDatabaseStartupSupersededError(agentId, "startup");
+-				if (preparedInput && !getPreparedModelRuntimeSnapshot(preparedInput)) throw new Error(`Agent ${agentId} model preparation has not published`);
+ 			};
+ 			const agentIds = /* @__PURE__ */ new Set([agentId]);
+ 			assertPreparationCurrent();
+@@ -8588,10 +8589,23 @@ function activateGatewayAgentDatabaseStartup(params) {
+ 						return false;
+ 					}
+ 				}
+-			}));
+-			preparedInput = listConfiguredOwnerInputs(cfg, void 0, true).find((input) => input.agentId === agentId);
+-			if (!preparedInput) throw new Error(`Agent ${agentId} model preparation is no longer configured`);
++			})).catch(async (error) => {
++				const { c: isPreparedModelRuntimePluginLifecycleFailure } = await import("./prepared-model-runtime.errors-MeOTZhu4.mjs");
++				if (!isPreparedModelRuntimePluginLifecycleFailure(error)) throw error;
++				await getPendingPreparedModelRuntimeReplacement();
++				throw new AgentDatabaseStartupSupersededError(agentId, "startup");
++			});
+ 			assertPreparationCurrent();
++			const preparedInput = listConfiguredOwnerInputs(cfg, void 0, true).find((input) => input.agentId === agentId);
++			if (!preparedInput) throw new Error(`Agent ${agentId} model preparation is no longer configured`);
++			if (!getPreparedModelRuntimeSnapshot(preparedInput)) {
++				const replacement = getPendingPreparedModelRuntimeReplacement();
++				if (replacement) {
++					await replacement;
++					throw new AgentDatabaseStartupSupersededError(agentId, "startup");
++				}
++				throw new Error(`Agent ${agentId} model preparation has not published`);
++			}
+ 		})
+ 	});
+ }
+@@ -8709,6 +8723,12 @@ async function finishGatewayStartup(params) {
+ 	const startupPluginRuntimeClaim = kernel.pluginRuntimeGeneration.currentClaim();
+ 	const databaseStartupAdmission = getAgentDatabaseStartupAdmission();
+ 	const databasePreparationReady = createDeferredCore();
++	const operatorStartup = createClawXStartupOperatorAdmission({
++		dispatchReady: () => !opts.updateCanary && startupState.dispatchReady,
++		isClosing: () => lifecycle.closePreludeStarted,
++		isPending: isGatewayStartupPending,
++		agentDataReady: () => startupPluginRuntimeClaim?.isCurrent() !== false && !databaseStartupAdmission?.hasPendingAgents && listAgentDatabaseAdmissionRefusals().length === 0
++	});
+ 	const getReadiness = runtime.createHttpTransportOptions().getReadiness;
+ 	const { attachGatewayWsConnectionHandler } = await startupTrace.measure("gateway.ws-imports", () => import("./ws-connection-CC3x9JyN.mjs"));
+ 	if (workerEnvironmentService) await startWorkerHumanPresence({
+@@ -8733,6 +8753,7 @@ async function finishGatewayStartup(params) {
+ 		browserRateLimiter: browserAuthRateLimiter,
+ 		nodeReapprovalCoordinator,
+ 		isStartupPending: isGatewayStartupPending,
++		operatorStartup,
+ 		isPendingWorkerNodeSetup: workerEnvironmentService?.hasPendingNodeEnrollmentSetup,
+ 		admitsNodeSetupCompletion: workerEnvironmentService?.admitsNodeSetupCompletion,
+ 		gatewayMethods: runtimeState.gatewayMethods,
+@@ -8835,6 +8856,7 @@ async function finishGatewayStartup(params) {
+ 		logHooks,
+ 		logChannels,
+ 		unlockStartupMethods: kernel.unlockStartupMethods,
++		onStartupSessionReadsReady: operatorStartup.markSessionReadsReady,
+ 		refreshChatMetadata: chatMetadataLifecycle.refresh,
+ 		loadStartupPlugins: async () => {
+ 			const { loadGatewayStartupPluginRuntime } = await import("./server-startup-plugins-BzsXtwFs.mjs");
+@@ -8892,6 +8914,7 @@ async function finishGatewayStartup(params) {
+ 		onSidecarsReady: () => {
+ 			postAttachSidecarsReady = true;
+ 			if (sidecarStartup === "defer" || postAttachSpanSettled) kernel.markSidecarsReady();
++			operatorStartup.updateReady();
+ 			databasePreparationReady.resolve();
+ 			activateScheduledServicesWhenReady();
+ 		},
+@@ -8906,6 +8929,7 @@ async function finishGatewayStartup(params) {
+ 	postAttachSpanSettled = true;
+ 	startupState.postAttachSettled = true;
+ 	if (postAttachSidecarsReady && sidecarStartup !== "defer") kernel.markSidecarsReady();
++	operatorStartup.updateReady();
+ 	kernel.setPostAttachHandles(postAttachHandles);
+ 	if (minimalTestGateway) databasePreparationReady.resolve();
+ 	startupTrace.detail("memory.ready", [...collectGatewayProcessMemoryUsageMb(), ...minimalTestGateway ? [] : await startupTrace.measure("runtime.worker-pool-metrics", collectGatewayWorkerPoolMetrics)]);
+diff --git a/dist/message-handler-DSPg7e4A.mjs b/dist/message-handler-DSPg7e4A.mjs
+index 5e53f306..e6f014dd 100644
+--- a/dist/message-handler-DSPg7e4A.mjs
++++ b/dist/message-handler-DSPg7e4A.mjs
+@@ -84,7 +84,7 @@ import { i as classifyGatewayStaleInstall } from "./stale-install-cQYOrvoC.mjs";
+ import { a as resolveBrowserAuthOrigin } from "./provider-browser-auth-BLztkd0F.mjs";
+ import { t as resolveLocalNodeId } from "./local-id-H7qktDal.mjs";
+ import { t as deriveDeviceIdFromPublicKey } from "./device-identity-CMXJpIhP.mjs";
+-import { i as gatewayStartupUnavailableDetails, n as GATEWAY_STARTUP_CLOSE_REASON, r as GATEWAY_STARTUP_PENDING_CLOSE_CAUSE, t as GATEWAY_STARTUP_CLOSE_CODE } from "./startup-unavailable-D0-EeFjq.mjs";
++import { isClawXStartupOperatorFrame, i as gatewayStartupUnavailableDetails, n as GATEWAY_STARTUP_CLOSE_REASON, r as GATEWAY_STARTUP_PENDING_CLOSE_CAUSE, t as GATEWAY_STARTUP_CLOSE_CODE } from "./startup-unavailable-D0-EeFjq.mjs";
+ import { r as normalizeDeviceMetadataForAuth } from "./device-auth-BT2rF0Jc.mjs";
+ import { t as rawDataToString } from "./websocket-data-2vBvd4uX.mjs";
+ import { t as resolveGatewayClientPlatformIdentity } from "./gateway-client-platform-h2QbDjYZ.mjs";
+@@ -93,7 +93,7 @@ import { i as verifyAgentRuntimeIdentityToken } from "./agent-runtime-identity-t
+ import { n as isOperatorApprovalRuntimeToken } from "./operator-approval-runtime-token-BfPhcXF-.mjs";
+ import { n as resolveControlUiLinkLocation } from "./control-ui-link-base-C4cbCE5S.mjs";
+ import { r as bindWebSocketRequestMutationAuthority } from "./session-mutation-guards-yn40v7UO.mjs";
+-import { n as ensureCanonicalUserProfileForEmail, r as ensureCanonicalUserProfileForTailscaleIdentity, t as ensureCanonicalGatewayOwnerProfile } from "./user-profile-writes-CuERyiG4.mjs";
++import { readExistingGatewayOwnerProfile, n as ensureCanonicalUserProfileForEmail, r as ensureCanonicalUserProfileForTailscaleIdentity, t as ensureCanonicalGatewayOwnerProfile } from "./user-profile-writes-CuERyiG4.mjs";
+ import { t as createAuthenticatedGitHubIdentitySync } from "./github-user-identity-BGiiwFfr.mjs";
+ import { i as TALK_PTT_COMMANDS, n as IOS_WATCH_RELAY_COMMANDS, r as PLATFORM_DEFAULTS, t as DEFAULT_DANGEROUS_NODE_COMMANDS } from "./node-command-policy-CCKsZy54.mjs";
+ import { i as prepareGatewayLocalUserIngress, t as attachGatewayLocalUserIngress } from "./local-user-ingress-CA2xbjpX.mjs";
+@@ -170,12 +170,30 @@ const MAX_STARTS_PER_TURN = 64;
+ const START_WORK_BUDGET_MS = 12;
+ const MAX_CONCURRENT_PREPARATIONS = 4;
+ const MAX_QUEUE_WAIT_MS = 3e4;
++// Match ClawX's maximum managed Gateway startup window for an already-authenticated read.
++const MAX_STARTUP_CONFIG_WAIT_MS = 10 * 60_000;
+ let preparations = 0;
+ let notifyQueueChanged;
++const watchedConfigStartup = new WeakSet();
++const wakeRequestStartQueue = () => notifyQueueChanged?.();
++function watchConfigStartup(startup, signal) {
++	if (!watchedConfigStartup.has(startup)) {
++		watchedConfigStartup.add(startup);
++		startup.ready.then(wakeRequestStartQueue);
++	}
++	signal?.addEventListener("abort", wakeRequestStartQueue, { once: true });
++}
++function isCoreConfigRead(registry) {
++	const descriptor = registry?.descriptors().find((entry) => entry.name === "config.get");
++	return descriptor?.owner.kind === "core" && descriptor.scope === "operator.read" &&
++		descriptor.controlPlaneWrite !== true && registry.getHandler("config.get") !== void 0;
++}
+ let active = false;
+ var GatewayRequestStartTimeoutError = class extends Error {
+-	constructor() {
+-		super("The server could not start the request within 30 seconds. Please try again.");
++	constructor(configStartup) {
++		super(configStartup
++			? "The Gateway could not admit the startup config read within 10 minutes. Please try again."
++			: "The server could not start the request within 30 seconds. Please try again.");
+ 	}
+ };
+ async function grantStarts() {
+@@ -186,6 +204,7 @@ async function grantStarts() {
+ 		const blockedConnections = /* @__PURE__ */ new Set();
+ 		const index = pending.findIndex((work) => {
+ 			if (work.signal?.aborted || now >= work.expiresAt) return true;
++			if (work.configStartup?.unavailable() === true) return false;
+ 			if (work.preparation && preparations >= MAX_CONCURRENT_PREPARATIONS || !work.independentRead && blockedConnections.has(work.connection.id)) {
+ 				blockedConnections.add(work.connection.id);
+ 				return false;
+@@ -195,13 +214,15 @@ async function grantStarts() {
+ 		if (index === -1) {
+ 			const changed = createDeferredCore();
+ 			notifyQueueChanged = changed.resolve;
+-			const timeout = setTimeout(changed.resolve, Math.max(0, pending[0].expiresAt - performance.now()));
++			const earliestExpiry = pending.reduce((earliest, work) => Math.min(earliest, work.expiresAt), Infinity);
++			const timeout = setTimeout(changed.resolve, Math.max(0, earliestExpiry - performance.now()));
+ 			await racePromiseWithAbortSignal(changed.promise, pending[0].signal).catch(() => {});
+ 			clearTimeout(timeout);
+ 			notifyQueueChanged = void 0;
+ 			continue;
+ 		}
+ 		const current = pending.splice(index, 1)[0];
++		if (current.configStartup) current.signal?.removeEventListener("abort", wakeRequestStartQueue);
+ 		current.budget.count--;
+ 		current.budget.bytes -= current.frameBytes;
+ 		current.connection.count--;
+@@ -213,7 +234,7 @@ async function grantStarts() {
+ 		}
+ 		turnStarts++;
+ 		if (performance.now() >= current.expiresAt) {
+-			current.reject(new GatewayRequestStartTimeoutError());
++			current.reject(new GatewayRequestStartTimeoutError(current.configStartup));
+ 			continue;
+ 		}
+ 		if (current.preparation && !current.signal?.aborted) {
+@@ -229,7 +250,7 @@ async function grantStarts() {
+ 	active = false;
+ }
+ /** Park saturated preparations; preserve connection order except for independent reads. */
+-function scheduleGatewayRequestStart(frameBytes, request, connId, settled, signal) {
++function scheduleGatewayRequestStart(frameBytes, request, connId, settled, signal, configStartup) {
+ 	return runOutsideGatewayRootWorkAdmission(() => {
+ 		const preparation = request.method === "sessions.subscribe" || request.method === "models.list" || request.method === "sessions.messages.subscribe" && asOptionalRecord(request.params)?.includeApprovals === true;
+ 		const lifecycle = frameBytes <= MAX_CONTROL_FRAME_BYTES && (request.method === "gateway.suspend.prepare" || request.method === "gateway.suspend.status" || request.method === "gateway.suspend.resume" || request.method === "gateway.suspend.handoff" || request.method === "gateway.restart.request" || request.method === "update.status" || request.method === "update.run");
+@@ -247,10 +268,12 @@ function scheduleGatewayRequestStart(frameBytes, request, connId, settled, signa
+ 		queuedConnection.count++;
+ 		budget.connections.set(connId, queuedConnection);
+ 		const insertion = lifecycle ? pending.findLastIndex((work) => work.lifecycle || !independentRead && work.connection.id === connId) + 1 : pending.length;
++		if (configStartup) watchConfigStartup(configStartup, signal);
+ 		pending.splice(insertion, 0, {
++			configStartup,
+ 			grant,
+ 			reject,
+-			expiresAt: performance.now() + MAX_QUEUE_WAIT_MS,
++			expiresAt: performance.now() + (configStartup ? MAX_STARTUP_CONFIG_WAIT_MS : MAX_QUEUE_WAIT_MS),
+ 			preparation,
+ 			independentRead,
+ 			lifecycle,
+@@ -509,9 +532,15 @@ function createGatewayAuthenticatedRequestDispatcher(params) {
+ 					if (!hasCurrentClientAuthority() || !hasCurrentRuntimeAuthority()) return;
+ 					const { handleGatewayRequest } = await loadGatewayServerMethods();
+ 					entry?.assertOpen();
++					let configStartup;
++					let queueSignal = context.requestEntryLifetime?.signal;
+ 					if (client.connect.role === "operator") {
++						if (req.method === "config.get" && client.internal?.operatorStartup?.unavailable() === true && isCoreConfigRead(getMethodRegistry?.())) {
++							configStartup = client.internal.operatorStartup;
++							queueSignal = AbortSignal.any([queueSignal, signal, client.connectionSignal, params.handler.connectionWork.signal].filter(Boolean));
++						}
+ 						diagnostics?.startQueue();
+-						const start = scheduleGatewayRequestStart(frameBytes, req, connId, settled.promise, context.requestEntryLifetime?.signal);
++						const start = scheduleGatewayRequestStart(frameBytes, req, connId, settled.promise, queueSignal, configStartup);
+ 						if (!start) {
+ 							respondWithAuthority(false, void 0, errorShape(ErrorCodes.UNAVAILABLE, "The server is busy. Please try again in a moment.", { retryable: true }));
+ 							return;
+@@ -524,6 +553,12 @@ function createGatewayAuthenticatedRequestDispatcher(params) {
+ 					}
+ 					entry?.assertOpen();
+ 					if (signal?.aborted || !hasCurrentClientAuthority() || !hasCurrentRuntimeAuthority()) return;
++					if (configStartup && (queueSignal.aborted || params.handler.getClient() !== client || isClosed())) return;
++					const methodRegistry = getMethodRegistry?.();
++					if (configStartup && (configStartup.unavailable() === true || !isCoreConfigRead(methodRegistry))) {
++						respondWithAuthority(false, void 0, errorShape(ErrorCodes.UNAVAILABLE, "Gateway config read is unavailable", { retryable: true }));
++						return;
++					}
+ 					await runOutsideGatewayRootWorkAdmission(() => handleGatewayRequest(bindWebSocketRequestMutationAuthority({
+ 						req,
+ 						respond: respondWithAuthority,
+@@ -533,7 +568,7 @@ function createGatewayAuthenticatedRequestDispatcher(params) {
+ 						hasCurrentClientAuthority,
+ 						expectedProfileBinding,
+ 						extraHandlers,
+-						methodRegistry: getMethodRegistry?.(),
++						methodRegistry,
+ 						context,
+ 						...admission ? { admission } : {},
+ 						requestEntry: entry,
+@@ -664,7 +699,9 @@ async function admitGatewayConnect(context) {
+ 	const { connectParams, configSnapshot, peerLabel, browserOrigin, clientLabel, markHandshakeFailure, sendHandshakeErrorResponse, isWebchatConnect } = context;
+ 	const isNodeClient = isStartupNodeConnect(connectParams);
+ 	const startupPending = isStartupPending?.() === true;
+-	if (startupPending && !isNodeClient) {
++	const earlyOperator = startupPending && !isNodeClient && context.handler.operatorStartup?.canConnect() === true &&
++		isClawXStartupOperatorFrame(connectParams, context.isLocalClient && isLoopbackAddress(remoteAddr) && !context.hasProxyHeaders && !context.hasBrowserOriginHeader && !getRemoteControlUiIngressContext(context.handler.upgradeReq));
++	if (startupPending && !isNodeClient && !earlyOperator) {
+ 		await rejectGatewayStartupConnect(context);
+ 		return;
+ 	}
+@@ -767,7 +804,8 @@ async function admitGatewayConnect(context) {
+ 		isBrowserOperatorUi,
+ 		isWebchat,
+ 		isNativeAppUi,
+-		startupPending
++		earlyOperator,
++		startupPending: startupPending && isNodeClient
+ 	};
+ }
+ //#endregion
+@@ -1233,6 +1271,11 @@ async function authenticateGatewayConnectCore(context) {
+ 		await settleRejectedSharedAuthFailure();
+ 		return;
+ 	}
++	if (admission.earlyOperator && !(sharedAuthOk && authOk && authMethod === "token" && device)) {
++		await settleRejectedSharedAuthFailure();
++		await rejectGatewayStartupConnect(context);
++		return;
++	}
+ 	const deviceProof = verifyGatewayConnectDeviceProof(context, {
+ 		device,
+ 		resolvedAuth,
+@@ -1489,6 +1532,7 @@ async function issueGatewayConnectDeviceTokens(params) {
+ 		role,
+ 		scopes,
+ 		issuer: sharedGatewayAuthIssuer,
++		...state.earlyOperator ? { reuseOnly: true } : {},
+ 		isIssuanceCurrent: params.isIssuanceCurrent
+ 	}) : null;
+ 	const bootstrapDeviceTokens = [];
+@@ -1606,7 +1650,11 @@ async function authorizeExistingGatewayDevice(params) {
+ 			profile: retryBootstrapHandoffProfile
+ 		}, ["operator"])) handoffBootstrapProfile = retryBootstrapHandoffProfile;
+ 	}
+-	if (device) await updatePairedDeviceMetadata(device.id, {
++	if (state.earlyOperator && metadataPinning.refreshPairedPlatform) {
++		await rejectGatewayStartupConnect(context);
++		return { ok: false };
++	}
++	if (device && !state.earlyOperator) await updatePairedDeviceMetadata(device.id, {
+ 		...clientAccessMetadata,
+ 		...metadataPinning.refreshPairedPlatform ? { platform: metadataPinning.refreshPairedPlatform } : {}
+ 	});
+@@ -1996,6 +2044,10 @@ async function authorizeGatewayConnectDevice(context, state) {
+ 	let { scopes } = state;
+ 	let { handoffBootstrapProfile } = state;
+ 	const { role, device, devicePublicKey, authMethod, authResult, hasRequestedScopes, skipLocalBackendSelfPairing, controlUiPairingKind } = state;
++	if (state.earlyOperator && !(device && devicePublicKey && authMethod === "token" && role === "operator" && !skipLocalBackendSelfPairing && controlUiPairingKind === null)) {
++		await rejectGatewayStartupConnect(context);
++		return;
++	}
+ 	const isConnectAuthorizationCurrent = () => resolveGatewayConnectPolicyFailure(context, state) === void 0;
+ 	const failPairingHandshake = (params) => {
+ 		const { message, details, closeCause, closeReason } = params;
+@@ -2038,6 +2090,10 @@ async function authorizeGatewayConnectDevice(context, state) {
+ 			lastSeenReason: "connect"
+ 		};
+ 		const requirePairing = async (reason, existingPairedDevice = null) => {
++			if (state.earlyOperator) {
++				await rejectGatewayStartupConnect(context);
++				return false;
++			}
+ 			const pairingStateAllowsRequestedAccess = (pairedCandidate, requestedScopes = scopes) => pairedCandidate?.publicKey === devicePublicKey && hasEffectivePairedDeviceRole(pairedCandidate, role) && roleScopesAllow({
+ 				role,
+ 				requestedScopes,
+@@ -2257,6 +2313,10 @@ async function authorizeGatewayConnectDevice(context, state) {
+ 		};
+ 		const paired = await getPairedDevice(device.id);
+ 		const isPaired = paired?.publicKey === devicePublicKey;
++		if (state.earlyOperator && !(isPaired && paired.clientId === connectParams.client.id && paired.clientMode === connectParams.client.mode)) {
++			await rejectGatewayStartupConnect(context);
++			return;
++		}
+ 		if (paired && !isPaired && state.remoteIngressPrincipal) {
+ 			failPairingHandshake({ message: "Remote Control UI device key does not match the paired device; remove the stale device in Devices and reconnect with a fresh browser identity." });
+ 			return;
+@@ -2314,6 +2374,10 @@ async function authorizeGatewayConnectDevice(context, state) {
+ 		hasApprovedDeviceBaseline: hasServerApprovedDeviceTokenBaseline,
+ 		isIssuanceCurrent: isConnectAuthorizationCurrent
+ 	});
++	if (state.earlyOperator && !deviceToken) {
++		await rejectGatewayStartupConnect(context);
++		return;
++	}
+ 	return {
+ 		...state,
+ 		scopes,
+@@ -2329,6 +2393,7 @@ async function publishConnectModelCatalog(handler, dispatcher) {
+ 	const client = handler.getClient();
+ 	const requestedScope = client?.connect.modelCatalog;
+ 	if (client?.connect.client.id !== GATEWAY_CLIENT_IDS.CONTROL_UI || !hasGatewayClientCap(client.connect.caps, GATEWAY_CLIENT_CAPS.MODEL_CATALOG_SNAPSHOT) || !requestedScope) return;
++	if (handler.operatorStartup) await racePromiseWithAbortSignal(handler.operatorStartup.ready, client.connectionSignal);
+ 	let scope;
+ 	if ("shortId" in requestedScope) {
+ 		const resolveRequest = {
+@@ -2397,6 +2462,20 @@ function resolveControlUiIdentity(cfg, auth) {
+ }
+ //#endregion
+ //#region src/gateway/server/ws-connection/connect-hello.ts
++async function publishClawXStartupReady(context, state, client) {
++	const { handler } = context;
++	const startup = client.internal.operatorStartup;
++	const signal = AbortSignal.any([client.connectionSignal, handler.connectionWork.signal]);
++	try {
++		await racePromiseWithAbortSignal(startup.ready, signal);
++	} catch (error) {
++		if (!signal.aborted) throw error;
++		return;
++	}
++	if (signal.aborted || handler.isClosed() || handler.getClient() !== client || !hasCurrentGatewayPolicyClientSource(client) ||
++		startup.unavailable() !== void 0 || resolveGatewayConnectPolicyFailure(context, state)) return;
++	handler.buildRequestContext().broadcastToConnIds("gateway.ready", {}, new Set([client.connId]));
++}
+ async function sendGatewayHello(context, state, pluginSurfaceUrls, authenticatedUserProfileId) {
+ 	const { connId, bootId, nodeReapprovalCoordinator, gatewayMethods, events, buildRequestContext, refreshHealthSnapshot, close, advanceHandshakePhase, setCloseCause, logGateway, logHealth } = context.handler;
+ 	const { frame, connectParams, sendFrame, onHelloDelivered, pendingNodePairingCleanup, releasePendingNodePairingCleanup } = context;
+@@ -2449,7 +2528,7 @@ async function sendGatewayHello(context, state, pluginSurfaceUrls, authenticated
+ 		},
+ 		features: {
+ 			methods: resolveBrowserAuthOrigin(context.browserOrigin, new AbortController().signal) ? gatewayMethods : gatewayMethods.filter((method) => method !== "mcp.authLogin"),
+-			events,
++			events: state.earlyOperator ? [...events, "gateway.ready"] : events,
+ 			capabilities: [
+ 				GATEWAY_SERVER_CAPS.AGENT_SESSION_ID_CREATE,
+ 				SYSTEM_RUN_EXECUTION_CONTEXT_CAPABILITY,
+@@ -2608,6 +2687,13 @@ async function sendGatewayHello(context, state, pluginSurfaceUrls, authenticated
+ 		return;
+ 	}
+ 	onHelloDelivered();
++	if (state.earlyOperator) {
++		const client = context.handler.getClient();
++		if (client?.internal?.operatorStartup) context.runDetachedConnectWork(
++			() => publishClawXStartupReady(context, state, client),
++			(error) => logGateway.debug("Desktop startup notification failed: " + formatForLog(error))
++		);
++	}
+ 	try {
+ 		const client = context.handler.getClient();
+ 		if (client?.presenceKey && !client.invalidated && client.socket.readyState === 1 && !context.handler.isClosed()) commitPresence(client.presenceKey, connId);
+@@ -2989,8 +3075,12 @@ async function resolveGatewayConnectProfileAdmission(params) {
+ 	try {
+ 		params.assertCurrent?.();
+ 		const options = { assertCurrent: params.assertCurrent };
+-		const profile = ownerProfileExpected ? await ensureCanonicalGatewayOwnerProfile(resolveHostAccountName, options) : params.resolveAuthenticatedGitHubIdentity ? await params.resolveAuthenticatedGitHubIdentity() : state.authResult.tailscaleIdentity ? await ensureCanonicalUserProfileForTailscaleIdentity(state.authResult.tailscaleIdentity, options) : await ensureCanonicalUserProfileForEmail(authenticatedUserId, options);
++		const profile = state.earlyOperator ? await readExistingGatewayOwnerProfile(options) : ownerProfileExpected ? await ensureCanonicalGatewayOwnerProfile(resolveHostAccountName, options) : params.resolveAuthenticatedGitHubIdentity ? await params.resolveAuthenticatedGitHubIdentity() : state.authResult.tailscaleIdentity ? await ensureCanonicalUserProfileForTailscaleIdentity(state.authResult.tailscaleIdentity, options) : await ensureCanonicalUserProfileForEmail(authenticatedUserId, options);
+ 		params.assertCurrent?.();
++		if (state.earlyOperator && !profile) {
++			await rejectGatewayStartupConnect(context);
++			return { ok: false };
++		}
+ 		const prepared = await resolveAuthenticatedProfile("profileId" in profile ? profile.profileId : profile.id, profile.updatedAt, params.assertCurrent);
+ 		params.assertCurrent?.();
+ 		if (!prepared.authority.isCurrent()) throw new Error("Gateway profile changed during acquisition");
+@@ -3000,6 +3090,10 @@ async function resolveGatewayConnectProfileAdmission(params) {
+ 		};
+ 	} catch (error) {
+ 		context.handler.logWsControl.warn(`user profile resolution failed conn=${context.handler.connId} user=${formatForLog(authenticatedUserId)}: ${formatForLog(error)}`);
++		if (state.earlyOperator) {
++			await rejectGatewayStartupConnect(context);
++			return { ok: false };
++		}
+ 		if (!ownerProfileExpected && profileRequired && state.role === "operator" && state.authMethod !== "token" && state.authMethod !== "password") {
+ 			await rejectUnavailableProfileConnect(context, error);
+ 			return { ok: false };
+@@ -3102,6 +3196,12 @@ async function attachAuthenticatedGatewayConnect(context, state) {
+ 		assertCurrent: profileLifecycle.assertCurrent
+ 	});
+ 	if (!profileAdmission.ok) return;
++	if (state.earlyOperator) await updatePairedDeviceMetadata(device.id, {
++		displayName: connectParams.client.displayName,
++		remoteIp: reportedClientIp,
++		lastSeenAtMs: Date.now(),
++		lastSeenReason: "connect"
++	});
+ 	const preparedProfile = profileAdmission.prepared;
+ 	const authenticatedUserProfile = remoteIngressPrincipal?.authenticatedUserProfile ?? preparedProfile?.profile;
+ 	const effectiveScopes = remoteIngressPrincipal ? {
+@@ -3204,6 +3304,7 @@ async function attachAuthenticatedGatewayConnect(context, state) {
+ 	const authenticatedControlUi = authenticatedOperator && connectParams.client.id === GATEWAY_CLIENT_IDS.CONTROL_UI;
+ 	const controlUiAdmin = authenticatedControlUi && scopes.includes("operator.admin");
+ 	const internal = {
++		...state.earlyOperator ? { operatorStartup: context.handler.operatorStartup } : {},
+ 		...isLocalClient ? { isLocalClient: true } : {},
+ 		...authenticatedOperator ? { authenticatedOperator: true } : {},
+ 		...authenticatedControlUi ? { authenticatedControlUi: true } : {},
+@@ -3341,6 +3442,7 @@ async function attachAuthenticatedGatewayConnect(context, state) {
+ 	setHandshakeState("connected");
+ 	advanceHandshakePhase("session_attached");
+ 	if (role === "operator" && !isEphemeralGatewayClient(connectParams.client)) runDetachedConnectWork(async () => {
++		if (state.earlyOperator) await racePromiseWithAbortSignal(context.handler.operatorStartup.ready, nextClient.connectionSignal);
+ 		const { prewarmGatewaySessionHistory } = await import("./server-history-prewarm-UxSAXXNz.mjs");
+ 		await prewarmGatewaySessionHistory(readRuntimeConfig(), {
+ 			onlyIfCold: true,
+diff --git a/dist/plugin-node-capability-3KBblmAq.mjs b/dist/plugin-node-capability-3KBblmAq.mjs
+index 6e3a72d..67c5cf7 100644
+--- a/dist/plugin-node-capability-3KBblmAq.mjs
++++ b/dist/plugin-node-capability-3KBblmAq.mjs
+@@ -146,6 +146,7 @@
+ }
+ /** Check whether a client's current scoped surface URL still has live authorization. */
+ function hasAuthorizedClientPluginNodeCapabilityUrl(params) {
++	if (params.client.internal?.operatorStartup?.unavailable()) return false;
+ 	const storageKey = resolvePluginNodeCapabilityStorageKey(params.surface);
+ 	const capability = pluginNodeCapabilityFromScopedHostUrl(params.url);
+ 	if (!storageKey || !capability) return false;
+@@ -243,7 +244,7 @@
+ 	const nextExpiresAtMs = resolvePluginNodeCapabilityExpiresAtMs(params.surface, nowMs);
+ 	if (nextExpiresAtMs === void 0) return false;
+ 	for (const client of params.clients) {
+-		if (client.invalidated) continue;
++		if (client.invalidated || client.internal?.operatorStartup?.unavailable()) continue;
+ 		const entry = client.pluginNodeCapabilities?.[storageKey];
+ 		if (!entry || !isFutureDateTimestampMs(entry.expiresAtMs, { nowMs })) continue;
+ 		if (safeEqualSecret(entry.capability, params.capability)) {
+diff --git a/dist/request-authorization-BYKNh-jj.mjs b/dist/request-authorization-BYKNh-jj.mjs
+index 6cd74a7..63b3c47 100644
+--- a/dist/request-authorization-BYKNh-jj.mjs
++++ b/dist/request-authorization-BYKNh-jj.mjs
+@@ -388,7 +388,7 @@
+ 	}
+ 	params.markSessionSubscribePhase?.("accessFacts");
+ 	const authorizeMethod = () => withPluginRuntimeRegistryScope(params.methodRegistry.pluginRegistry, () => authorizeGatewayMethod(params.method, params.client, params.requestParams, params.methodRegistry, params.context));
+-	const startupError = () => params.context.unavailableGatewayMethods?.has(params.method) ? errorShape(ErrorCodes.UNAVAILABLE, `${params.method} unavailable during gateway startup`, {
++	const startupError = () => (params.client?.internal?.operatorStartup?.unavailable(params.method, params.methodRegistry) ?? params.context.unavailableGatewayMethods?.has(params.method)) ? errorShape(ErrorCodes.UNAVAILABLE, `${params.method} unavailable during gateway startup`, {
+ 		retryable: true,
+ 		retryAfterMs: 500,
+ 		details: {
+diff --git a/dist/run-CMHDD-T7.mjs b/dist/run-CMHDD-T7.mjs
+index c7f4638..ed8ee0e 100644
+--- a/dist/run-CMHDD-T7.mjs
++++ b/dist/run-CMHDD-T7.mjs
+@@ -72,8 +72,8 @@
+ import { t as printClawBanner } from "./claw-banner-CoHvs-i6.mjs";
+ import { r as isTerminalInteractive, t as NON_INTERACTIVE_GATEWAY_RUN_FORCE_MESSAGE } from "./terminal-interactivity-D92bdO16.mjs";
+ import { r as withProgress } from "./progress-BIOeyA3T.mjs";
+-import { n as GATEWAY_CRASH_LOOP_RECOVERED_REASON, r as GATEWAY_SIGNAL_REPEAT_WINDOW_MS, t as GATEWAY_CRASH_LOOP_BREAKER_REASON } from "./gateway-boot-lifecycle.kernel-nFEOTWBW.mjs";
+-import { a as inspectGatewayCrashLoopBreakerAsync, c as recordGatewayBootStart, i as inspectGatewayCrashLoopBreaker, l as recordGatewayCrashLoopRecovery, n as formatGatewayCrashLoopManualChannelStartHint, r as formatGatewayRepeatedSignalHint, t as completeGatewayBootLifecycle } from "./gateway-boot-lifecycle-DaWhpNgC.mjs";
++import { r as GATEWAY_SIGNAL_REPEAT_WINDOW_MS, t as GATEWAY_CRASH_LOOP_BREAKER_REASON } from "./gateway-boot-lifecycle.kernel-nFEOTWBW.mjs";
++import { a as inspectGatewayCrashLoopBreakerAsync, c as beginGatewayBootLifecycle, l as recordGatewayCrashLoopRecovery, n as formatGatewayCrashLoopManualChannelStartHint, r as formatGatewayRepeatedSignalHint, t as completeGatewayBootLifecycle } from "./gateway-boot-lifecycle-DaWhpNgC.mjs";
+ import { l as enforceGatewayRunFutureConfigGuard, r as getGatewayStartGuardErrors } from "./pre-bootstrap-DYWMay-F.mjs";
+ import { r as rethrowStartupConfigFailure } from "./doctor-startup-migration-refusal-BymLmsyB.mjs";
+ import { n as scheduleSafeGatewayRestart } from "./restart-coordinator-DsGONrf9.mjs";
+@@ -3133,9 +3133,9 @@
+ 		return await triageGatewayStartupFailure(defaultRuntime, error, signal);
+ 	};
+ 	const beginBoot = async (startedAtMs) => {
+-		crashLoopDecision = inspectGatewayCrashLoopBreaker(process.env, startedAtMs);
+-		const bootStartReason = crashLoopDecision.tripped ? crashLoopDecision.shouldWriteStabilityBundle ? GATEWAY_CRASH_LOOP_BREAKER_REASON : void 0 : crashLoopDecision.recovered ? GATEWAY_CRASH_LOOP_RECOVERED_REASON : void 0;
+-		activeBootId = recordGatewayBootStart(process.env, startedAtMs, bootStartReason);
++		const boot = await beginGatewayBootLifecycle(process.env, startedAtMs);
++		crashLoopDecision = boot.decision;
++		activeBootId = boot.id;
+ 		bootRecorded = activeBootId !== void 0;
+ 		channelAutostartSuppression = void 0;
+ 		tryRecoverChannelAutostartSuppression = void 0;
+diff --git a/dist/server-startup-post-attach-1eiNR_w5.mjs b/dist/server-startup-post-attach-1eiNR_w5.mjs
+index a6dbe4d..7a8822f 100644
+--- a/dist/server-startup-post-attach-1eiNR_w5.mjs
++++ b/dist/server-startup-post-attach-1eiNR_w5.mjs
+@@ -251,15 +251,16 @@
+ const loadMainSessionRestartRecoveryMarkingModule = createLazyRuntimeModule(() => import("./main-session-restart-recovery-marking--s8GrhDd.mjs"));
+ /** Mark predecessors before channels admit work, independently of plugin registration. */
+ async function markGatewayStartupMainSessionOrphans(params, startupCheckedStorePaths) {
+-	await measureStartup(params.startupTrace, "sidecars.main-session-recovery", async () => {
++	return await measureStartup(params.startupTrace, "sidecars.main-session-recovery", async () => {
+ 		try {
+ 			if (params.scheduler.signal.aborted || params.isRestartRecoverySuppressed()) return;
+ 			const { markStartupOrphanedMainSessionsForRecovery } = await measureStartup(params.startupTrace, "sidecars.main-session-recovery-load", loadMainSessionRestartRecoveryMarkingModule);
+ 			if (params.scheduler.signal.aborted || params.isRestartRecoverySuppressed()) return;
+-			await measureStartup(params.startupTrace, "sidecars.main-session-recovery-scan", () => markStartupOrphanedMainSessionsForRecovery({
++			const recovery = await measureStartup(params.startupTrace, "sidecars.main-session-recovery-scan", () => markStartupOrphanedMainSessionsForRecovery({
+ 				cfg: params.gatewayPluginConfigAtStart,
+ 				startupCheckedStorePaths
+ 			}));
++			return !recovery.failedTargets?.length;
+ 		} catch (err) {
+ 			params.log.warn(`main-session startup orphan marking failed before channel startup: ${String(err)}`);
+ 		}
+@@ -946,7 +947,7 @@
+ 	if (!params.minimalTestGateway) await measureStartup(params.startupTrace, "post-attach.system-ca", () => runtimeDeps.warmSystemCa({ log: params.log }));
+ 	let pluginRegistry = params.pluginRegistry;
+ 	const loadStartupPluginsIfNeeded = async () => {
+-		if (params.minimalTestGateway || !params.loadStartupPlugins) return;
++		if (params.minimalTestGateway || !params.loadStartupPlugins) return true;
+ 		params.onStartupPluginsLoading?.();
+ 		const { disposePluginRegistryInstances } = await import("./runtime-BgOi9ZCn.mjs");
+ 		const loaded = await measureStartup(params.startupTrace, "plugins.runtime-post-bind", () => params.loadStartupPlugins());
+@@ -973,6 +974,7 @@
+ 		pluginRegistry = loaded.pluginRegistry;
+ 		params.broadcast?.("plugins.changed", { generation: getPluginRegistryVersion(pluginRegistry) }, { dropIfSlow: true });
+ 		params.startupTrace?.detail("plugins.runtime-post-bind", [["loadedPluginCount", pluginRegistry.plugins.filter((plugin) => plugin.status === "loaded").length], ["gatewayMethodCount", loaded.gatewayMethods.length]]);
++		return true;
+ 	};
+ 	let startupLogPromise;
+ 	const startupLogSettled = createDeferredCore();
+@@ -1029,7 +1031,8 @@
+ 			skipStartupLog();
+ 			return pluginRegistry;
+ 		}
+-		const failed = (await Promise.allSettled([candidateCanary ? Promise.resolve() : markGatewayStartupMainSessionOrphans(params, mainSessionRecoveryStartupCheckedStorePaths), loadStartupPluginsIfNeeded()])).find((outcome) => outcome.status === "rejected");
++		const preparation = await Promise.allSettled([candidateCanary ? Promise.resolve() : markGatewayStartupMainSessionOrphans(params, mainSessionRecoveryStartupCheckedStorePaths), loadStartupPluginsIfNeeded()]);
++		const failed = preparation.find((outcome) => outcome.status === "rejected");
+ 		if (failed?.status === "rejected") throw failed.reason;
+ 		if (params.isClosing?.()) {
+ 			skipStartupLog();
+@@ -1044,6 +1047,7 @@
+ 			logGatewayReady(params, "candidate gateway ready; autonomous sidecars suppressed");
+ 			return pluginRegistry;
+ 		}
++		if (preparation.every((outcome) => outcome.status === "fulfilled" && outcome.value === true)) params.onStartupSessionReadsReady?.();
+ 		const internalHookSelection = await resolveInternalHookSelection(params.gatewayPluginConfigAtStart);
+ 		const startupOutcomes = createGatewayStartupOutcomeRecorder({
+ 			cfg: params.gatewayPluginConfigAtStart,
+diff --git a/dist/startup-unavailable-D0-EeFjq.mjs b/dist/startup-unavailable-D0-EeFjq.mjs
+index bc176f8..1fe00fc 100644
+--- a/dist/startup-unavailable-D0-EeFjq.mjs
++++ b/dist/startup-unavailable-D0-EeFjq.mjs
+@@ -28,5 +28,33 @@
+ 	const retryAfterMs = error.retryAfterMs;
+ 	return Math.min(Math.max(Math.floor(typeof retryAfterMs === "number" && Number.isFinite(retryAfterMs) ? retryAfterMs : 500), GATEWAY_STARTUP_RETRY_MIN_MS), GATEWAY_STARTUP_RETRY_MAX_MS);
+ }
++/** An already-paired desktop can authenticate once dispatch is attached. Reads also
++ * require successful recovery, the attached registry and admitted agent databases. */
++function createClawXStartupOperatorAdmission(options) {
++	const ready = Promise.withResolvers();
++	let sessionReadsReady = false;
++	return {
++		ready: ready.promise,
++		canConnect: () => options.dispatchReady() && !options.isClosing(),
++		markSessionReadsReady() { sessionReadsReady = true; },
++		updateReady() {
++			if (!options.isClosing() && !options.isPending()) ready.resolve();
++		},
++		unavailable(method, registry) {
++			if (options.isClosing()) return true;
++			if (!options.isPending()) return;
++			if (!sessionReadsReady || (method !== "chat.history" && method !== "sessions.list")) return true;
++			if (!options.agentDataReady()) return true;
++			const descriptor = registry.descriptors().find((entry) => entry.name === method);
++			return descriptor?.owner.kind !== "core" || descriptor.scope !== "operator.read" || descriptor.controlPlaneWrite === true;
++		}
++	};
++}
++/** The normal nonce/signature, shared-token, live pairing and scope checks still run. */
++function isClawXStartupOperatorFrame(params, directLocal) {
++	return directLocal && params.role === "operator" && params.client.id === "gateway-client" && params.client.mode === "ui" &&
++		params.client.displayName === "ClawX" && params.scopes?.length === 1 && params.scopes[0] === "operator.admin" &&
++		Boolean(params.device) && typeof params.auth?.token === "string" && params.auth.token.length > 0 && Object.keys(params.auth).length === 1;
++}
+ //#endregion
+-export { isRetryableGatewayStartupUnavailableError as a, gatewayStartupUnavailableDetails as i, GATEWAY_STARTUP_CLOSE_REASON as n, resolveGatewayStartupRetryAfterMs as o, GATEWAY_STARTUP_PENDING_CLOSE_CAUSE as r, GATEWAY_STARTUP_CLOSE_CODE as t };
++export { createClawXStartupOperatorAdmission, isClawXStartupOperatorFrame, isRetryableGatewayStartupUnavailableError as a, gatewayStartupUnavailableDetails as i, GATEWAY_STARTUP_CLOSE_REASON as n, resolveGatewayStartupRetryAfterMs as o, GATEWAY_STARTUP_PENDING_CLOSE_CAUSE as r, GATEWAY_STARTUP_CLOSE_CODE as t };
+diff --git a/dist/user-profile-writes-CuERyiG4.mjs b/dist/user-profile-writes-CuERyiG4.mjs
+index a3c21bd..ffeee4c 100644
+--- a/dist/user-profile-writes-CuERyiG4.mjs
++++ b/dist/user-profile-writes-CuERyiG4.mjs
+@@ -5,7 +5,7 @@
+ import { i as emitUserProfilesChanged, o as fenceUserProfileMutationAuthority, u as publishUserProfileAliasChange } from "./user-profile-events-Cd6Wpwwl.mjs";
+ import { i as runOpenClawStateWorkerOperation } from "./openclaw-state-worker-store-1zOYxW7q.mjs";
+ import { C as UserProfileMergeError, O as isUserProfileMutationPublication, T as UserProfileOwnerError, w as UserProfileNotFoundError } from "./user-profiles-internal-CrPFdeEA.mjs";
+-import { d as readResidentGatewayOwnerProfile, y as retainUserProfileMutationPublication } from "./user-profile-list-k-ICsZt4.mjs";
++import { c as prepareUserProfileCatalog, d as readResidentGatewayOwnerProfile, y as retainUserProfileMutationPublication } from "./user-profile-list-k-ICsZt4.mjs";
+ import { i as publishUserGitHubConnectionCommit } from "./user-github-connection-events-Ba3Mhvsu.mjs";
+ import { isDeepStrictEqual } from "node:util";
+ //#region src/state/user-profile-writes.ts
+@@ -143,6 +143,21 @@
+ async function syncCanonicalGitHubIdentity(input, options = {}) {
+ 	return unwrap(await write("userProfiles.syncGitHub", input, options));
+ }
++async function readExistingGatewayOwnerProfile(options) {
++	const pathname = resolveDatabasePath(options);
++	const cached = readResidentGatewayOwnerProfile(pathname);
++	if (cached) {
++		options.assertCurrent?.();
++		return cached;
++	}
++	const catalog = await prepareUserProfileCatalog(options);
++	try {
++		options.assertCurrent?.();
++		return readResidentGatewayOwnerProfile(pathname);
++	} finally {
++		catalog.release();
++	}
++}
+ async function ensureCanonicalGatewayOwnerProfile(displayName, options = {}) {
+ 	const owner = readResidentGatewayOwnerProfile(resolveDatabasePath(options));
+ 	if (owner && (owner.displayName?.trim() || typeof displayName !== "function" && !displayName?.trim())) {
+@@ -153,4 +168,4 @@
+ 	return unwrap(await write("userProfiles.ensureOwner", { displayName }, options));
+ }
+ //#endregion
+-export { mergeCanonicalUserProfiles as a, setCanonicalUserProfileRole as c, linkCanonicalUserProfileEmail as i, syncCanonicalGitHubIdentity as l, ensureCanonicalUserProfileForEmail as n, setCanonicalUserProfileAvatar as o, ensureCanonicalUserProfileForTailscaleIdentity as r, setCanonicalUserProfileDisplayName as s, ensureCanonicalGatewayOwnerProfile as t };
++export { readExistingGatewayOwnerProfile, mergeCanonicalUserProfiles as a, setCanonicalUserProfileRole as c, linkCanonicalUserProfileEmail as i, syncCanonicalGitHubIdentity as l, ensureCanonicalUserProfileForEmail as n, setCanonicalUserProfileAvatar as o, ensureCanonicalUserProfileForTailscaleIdentity as r, setCanonicalUserProfileDisplayName as s, ensureCanonicalGatewayOwnerProfile as t };
+diff --git a/dist/ws-connection-CC3x9JyN.mjs b/dist/ws-connection-CC3x9JyN.mjs
+index befdf39..7fb238d 100644
+--- a/dist/ws-connection-CC3x9JyN.mjs
++++ b/dist/ws-connection-CC3x9JyN.mjs
+@@ -484,6 +484,7 @@
+ 		connectionWork,
+ 		connId,
+ 		isStartupPending,
++		operatorStartup: params.operatorStartup,
+ 		send,
+ 		close,
+ 		isClosed: () => closed || !hasCurrentRemoteControlUiIngress(remoteIngress),
+diff --git a/openclaw.mjs b/openclaw.mjs
+index 8d35684..2f6ccaa 100644
+--- a/openclaw.mjs
++++ b/openclaw.mjs
+@@ -702,6 +702,10 @@
+   }
+ 
+   if (!waitingForCompileCacheRespawn) {
++    if (foregroundGateway && process.platform === "win32" && process.parentPort) {
++      const { prepareClawxWindowsBootIdentity } = await import("./dist/clawx-windows-gateway-boot-identity.mjs");
++      prepareClawxWindowsBootIdentity();
++    }
+     if (!isHelpFastPathDisabled() && (await tryOutputBareRootHelp())) {
+       if (currentNodeRuntimeFailure) {
+         process.stderr.write(`${formatUnsupportedNodeDiagnosticWarning(process.versions.node)}\n`);

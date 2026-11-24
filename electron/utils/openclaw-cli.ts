@@ -254,26 +254,49 @@ interface OpenClawCommandProcess extends Pick<Electron.UtilityProcess, 'stdout' 
   on(event: 'exit', listener: (code: number | null) => void): void;
 }
 
-/** Offline Windows Doctor must release the SQLite staging files before the Gateway starts. */
 export function launchOpenClawCommandProcess(
   entry: string,
   args: string[],
-  options: { cwd: string; env: NodeJS.ProcessEnv; stdio: 'pipe' },
+  { preferPackagedWindowsNode, ...options }: {
+    cwd: string;
+    env: NodeJS.ProcessEnv;
+    stdio: 'pipe';
+    preferPackagedWindowsNode?: boolean;
+  },
 ): OpenClawCommandProcess {
-  if (process.platform !== 'win32' || args[0] !== 'doctor' || !args.includes('--fix')) {
-    return forkOpenClawUtilityProcess(entry, args, options);
+  const spawnNode = (execPath: string, electronRunAsNode: boolean, env = options.env) => {
+    const argv = [...getOpenClawRuntimeCompatExecArgv(), entry, ...args];
+    return spawn(execPath, argv, {
+      cwd: options.cwd,
+      env: getEmbeddedNodeEnv(env, electronRunAsNode),
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+  };
+
+  if (process.platform === 'win32' && args[0] === 'doctor' && args.includes('--fix')) {
+    // Electron utility processes can leave owner.sqlite locked during snapshot retirement.
+    const { execPath, electronRunAsNode } = getOpenClawEmbeddedExecPath();
+    logger.info(`Running Windows Doctor repair with Node runtime: ${execPath}`);
+    return spawnNode(execPath, electronRunAsNode);
   }
 
-  // Electron utility processes can leave owner.sqlite locked during snapshot retirement.
-  // Use the same Node executable and child-process compatibility preload as embedded ACP.
-  const { execPath, electronRunAsNode } = getOpenClawEmbeddedExecPath();
-  logger.info(`Running Windows Doctor repair with Node runtime: ${execPath}`);
-  return spawn(execPath, [...getOpenClawRuntimeCompatExecArgv(), entry, ...args], {
-    cwd: options.cwd,
-    env: getEmbeddedNodeEnv(options.env, electronRunAsNode),
-    stdio: ['ignore', 'pipe', 'pipe'],
-    windowsHide: true,
-  });
+  const bundledNode = preferPackagedWindowsNode && getPackagedWindowsNodePath();
+  if (bundledNode) {
+    const logFailure = (error: unknown) => {
+      logger.warn('Bundled Node could not start the OpenClaw command, using the Electron utility process:', error);
+    };
+    try {
+      const child = spawnNode(bundledNode, false, { ...options.env, OPENCLAW_DEBUG: '1' });
+      // Node returns a PID for a successful spawn. Without one it emits an
+      // asynchronous error and the command never ran, so retrying is safe.
+      if (child.pid !== undefined) return child;
+      child.once('error', logFailure);
+    } catch (error) {
+      logFailure(error);
+    }
+  }
+  return forkOpenClawUtilityProcess(entry, args, options);
 }
 
 export function getOpenClawEmbeddedForkSpec(args: string[] = []): OpenClawEmbeddedForkSpec {

@@ -185,7 +185,9 @@ Doctor 也识别已验证的 `2026.10.5`/schema 25 情况：首次启动 Gateway
 
 OpenClaw 2026.10.5 更换了两个渠道插件，ClawX 会在首次启动 Gateway 前完成迁移。QQ 机器人从 `@openclaw/qqbot` 切换到腾讯 QQBot 2.0（`@tencent-connect/openclaw-qqbot`，插件 id `openclaw-qqbot`），默认账号移到 `channels.qqbot` 顶层，原本开放的私聊保持开放（使用审批标记 `openclaw:approval-disabled`）。带审批、密钥文件或群命令策略的 QQ 机器人配置交给 OpenClaw Doctor 处理。飞书从 `@larksuite/openclaw-lark` 切换到官方 `@openclaw/feishu`，应用凭据保持不变；官方插件提供 14 个飞书工具（原为 39 个），不再提供日历、任务、用户 OAuth、表格和搜索类工具。
 
-OpenClaw 2026.10 要求对非官方安装的插件授权其能力。对于 ClawX 自带且已启用的插件（钉钉、企业微信、飞书、QQ 机器人和 OpenAI 图片中转），ClawX 会在 Gateway 启动前执行 `openclaw plugins enable --accept-capabilities` 完成授权。这只在这些插件安装或升级后发生，当次启动每个插件约多花 10 秒。ClawX 不会启用你关闭的插件，也不会替你自己安装的插件授权。
+OpenClaw 2026.10 要求对非官方安装的插件授权其能力。ClawX 会为自带且已启用的插件（钉钉、企业微信、飞书、QQ 机器人和 OpenAI 图片中转）记录授权。升级 OpenClaw 后，新版 Gateway 需要先成功启动一次。下次启动时，ClawX 会在 Gateway 启动前执行 `openclaw plugins enable --accept-capabilities`，批量处理待授权的插件，因此这次启动可能较慢。后续启动会复用结果，直到插件安装记录或 OpenClaw 版本发生变化。ClawX 不会启用你关闭的插件，也不会替你自己安装的插件授权。
+
+重开 ClawX 或在设置里手动重启网关时，已配对的桌面端可以在网关启动期间提前连接。网关确认 Agent 数据库可用后，聊天页面才会加载已有会话。覆盖升级后的首次启动可能需要迁移数据库和频道插件。如果还有待处理的插件授权，升级后第一次手动重启网关也会包含这段时间。
 
 ### 本机 Computer Use
 

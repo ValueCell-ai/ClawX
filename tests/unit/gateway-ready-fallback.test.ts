@@ -68,6 +68,14 @@ describe('GatewayManager gatewayReady fallback', () => {
     vi.useRealTimers();
   });
 
+  it('ignores a late ready event while a graceful stop is waiting for the child', async () => {
+    const { internals, signalReady, readyUpdates } = await createManager(true);
+    internals.shouldReconnect = false;
+    await signalReady();
+    expect(admissionProbe).not.toHaveBeenCalled();
+    expect(readyUpdates()).toEqual([]);
+  });
+
   it('keeps starting unready and admits after a ready event', async () => {
     const { manager, internals, setRunning, signalReady, readyUpdates } = await createManager();
     internals.stateController.setStatus({ state: 'starting', gatewayReady: false });

@@ -1,6 +1,8 @@
 import WebSocket from 'ws';
+import { randomUUID } from 'node:crypto';
 import type { DeviceIdentity } from '../utils/device-identity';
-import type { PendingGatewayRequest } from './request-store';
+import { isResponse } from './protocol';
+import { rejectPendingGatewayRequest, resolvePendingGatewayRequest, type PendingGatewayRequest } from './request-store';
 import {
   buildDeviceAuthPayload,
   publicKeyRawBase64UrlFromPem,
@@ -151,7 +153,7 @@ export function buildGatewayConnectFrame(options: {
   deviceIdentity: DeviceIdentity | null;
   platform: string;
 }): { connectId: string; frame: Record<string, unknown> } {
-  const connectId = `connect-${Date.now()}`;
+  const connectId = `connect-${randomUUID()}`;
   const role = 'operator';
   const scopes = ['operator.admin'];
   const signedAtMs = Date.now();
@@ -278,6 +280,7 @@ export async function connectGatewaySocket(options: {
       logger.debug('Sending connect handshake with challenge nonce');
 
       const currentToken = await options.getToken();
+      if (settled) return;
       const connectPayload = buildGatewayConnectFrame({
         challengeNonce,
         token: currentToken,
@@ -355,10 +358,28 @@ export async function connectGatewaySocket(options: {
             return;
           }
           logger.debug('Received connect.challenge, sending handshake');
-          void sendConnectHandshake(nonce);
+          void sendConnectHandshake(nonce).catch(rejectOnce);
           return;
         }
 
+        // Until this socket authenticates, only its own connect response belongs
+        // to it. Gateway events and ordinary RPC responses require the active socket.
+        const wireResponse = message?.type === 'res';
+        const legacyResponse = message?.type === undefined && isResponse(message);
+        if (!handshakeComplete) {
+          if (settled || !connectId || !(wireResponse || legacyResponse) || message.id !== connectId) return;
+          if (message.ok === false || message.error) {
+            const reason = message.error?.message || (typeof message.error === 'string'
+              ? message.error : JSON.stringify(message.error)) || 'Gateway connect rejected';
+            rejectPendingGatewayRequest(options.pendingRequests, connectId, new Error(reason));
+          } else if (message.ok === true || legacyResponse) {
+            resolvePendingGatewayRequest(options.pendingRequests, connectId, wireResponse ? message.payload : message.result);
+          }
+          return;
+        }
+        // Manager RPCs use UUIDs. Connect responses are owned by the socket
+        // that sent the request, including while a replacement authenticates.
+        if ((wireResponse || legacyResponse) && typeof message.id === 'string' && message.id.startsWith('connect-')) return;
         options.onMessage(message);
       } catch (error) {
         logger.debug('Failed to parse Gateway WebSocket message:', error);

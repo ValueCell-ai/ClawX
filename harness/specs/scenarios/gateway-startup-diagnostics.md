@@ -5,6 +5,7 @@ type: runtime-diagnostics
 ownedPaths:
   - electron/gateway/**
   - electron/utils/openclaw-auth.ts
+  - electron/utils/plugin-capability-consent.ts
   - electron/utils/paths.ts
   - src/stores/gateway.ts
 requiredProfiles:
@@ -38,6 +39,25 @@ wait after handshake for Agent database admission. Failed or superseded
 attempts must remain distinguishable from successful readiness. The existing
 `gateway.startup` metric ends at handshake and must not be interpreted as the
 complete user wait.
+
+For a Windows enterprise app reopen, also time desktop process launch to
+Agent readiness. A direct upgrade can spend time in offline Doctor. On the
+first eligible reopen, `[metric] gateway.prelaunch` includes
+`pluginCapabilityConsentMs` for enabled, ClawX-owned plugin mirrors. Check
+whether the consent CLI ran, its completion marker and exit, and whether the
+next reopen skipped it. If startup remains slow after spawn, compare
+`process.bootstrap` and the subsequent OpenClaw stages across runs of the
+same profile. Measure Windows boot queries across worker threads as well as
+the main thread. Count each query once and compare its wall-clock interval
+with the startup milestones. An official npm CLI comparison uses its own
+state directory, the same Node version on both CLI arms, and an authenticated
+handshake measured from process launch. See the [Windows enterprise measurements](../../reference/windows-enterprise-gateway-reopen-20261124.md).
+
+For a long `config.auth.secrets-activate`, time the state worker's first
+command import separately from transaction admission, policy SQL and commit.
+Policy publication can run with zero configured channels. Verify that the
+worker still revokes old grants after policy changes and validates actual
+channel identities against the OpenClaw schema.
 
 During slow startup, Main records progress at most once every 30 seconds,
 including the latest observed phase and time since progress. Heartbeat misses
@@ -78,11 +98,17 @@ Treat these as the same incident family until proven otherwise:
 Important distinction:
 
 - **Port ready** only means the process is listening.
-- **Handshake ready** only means ClawX connected to the Gateway socket.
+- **Handshake ready** means the desktop received the authenticated Gateway hello. A first WebSocket challenge is an earlier, separate measurement.
 - **RPC ready** means a cheap call such as `system-presence` succeeds.
 - **Agent ready** additionally means the readiness policy has completed Agent database admission; handshake and core RPC can succeed before this.
 
 UI features that depend on Gateway runtime data must prefer RPC-ready evidence over port-ready evidence.
+
+For an upgrade or reopen, record the source package, first authenticated hello,
+first successful read of a known retained conversation, and final Agent-ready
+event as separate observations. Preserve the original data and paired device
+across reopens. Fresh pairing and the first post-upgrade consent batch can add
+work that a returning paired desktop skips.
 
 Capability failures are not Gateway core failures:
 

@@ -46,7 +46,7 @@ const {
   mockUpsertPluginInstallRecordsIntoSqlite: vi.fn(() => true),
   mockRemovePluginInstallRecordsFromSqlite: vi.fn(() => true),
   mockMutateOpenClawConfig: vi.fn(),
-  mockHomedir: vi.fn(() => '/home/test'),
+  mockHomedir: vi.fn<() => string>(),
   mockApp: {
     isPackaged: true,
     getAppPath: vi.fn(() => '/mock/app'),
@@ -56,6 +56,8 @@ const {
   },
 }));
 
+const testHome = path.resolve('/home/test');
+const extensionsDir = path.join(testHome, '.openclaw', 'extensions');
 const ORIGINAL_PLATFORM_DESCRIPTOR = Object.getOwnPropertyDescriptor(process, 'platform');
 
 vi.mock('node:fs', async () => {
@@ -140,7 +142,7 @@ describe('plugin installer diagnostics', () => {
     vi.resetModules();
     vi.clearAllMocks();
     mockApp.isPackaged = true;
-    mockHomedir.mockReturnValue('/home/test');
+    mockHomedir.mockReturnValue(testHome);
     setPlatform('linux');
 
     mockExistsSync.mockReturnValue(false);
@@ -176,16 +178,16 @@ describe('plugin installer diagnostics', () => {
   });
 
   it('remaps official DingTalk connector onto the dingtalk channel identity', async () => {
-    const targetDir = '/home/test/.openclaw/extensions/dingtalk';
-    const entryPath = `${targetDir}/dist/index.mjs`;
+    const targetDir = path.join(extensionsDir, 'dingtalk');
+    const entryPath = path.join(targetDir, 'dist/index.mjs');
     mockExistsSync.mockImplementation((input: string) => [
-      `${targetDir}/openclaw.plugin.json`,
-      `${targetDir}/package.json`,
-      `${targetDir}/dist`,
+      path.join(targetDir, 'openclaw.plugin.json'),
+      path.join(targetDir, 'package.json'),
+      path.join(targetDir, 'dist'),
       entryPath,
     ].includes(String(input)));
     mockReaddirSync.mockImplementation((input: string) => {
-      if (String(input) === `${targetDir}/dist`) {
+      if (String(input) === path.join(targetDir, 'dist')) {
         return [{ name: 'index.mjs', isDirectory: () => false, isFile: () => true }];
       }
       return [];
@@ -215,7 +217,7 @@ describe('plugin installer diagnostics', () => {
           },
         });
       }
-      if (value.endsWith('dist/index.mjs')) {
+      if (value === entryPath) {
         return [
           'export const CHANNEL_ID = "dingtalk-connector";',
           'api.registerGatewayMethod("dingtalk-connector.docs.create", handler);',
@@ -240,7 +242,7 @@ describe('plugin installer diagnostics', () => {
     expect(pkgWrite?.[1]).toContain('"id": "dingtalk"');
 
     const jsWrite = mockWriteFileSync.mock.calls
-      .filter((call) => String(call[0]).endsWith('dist/index.mjs'))
+      .filter((call) => String(call[0]) === entryPath)
       .at(-1);
     expect(jsWrite?.[1]).toContain('CHANNEL_ID = "dingtalk"');
     expect(jsWrite?.[1]).toContain('dingtalk-connector.docs.create');
@@ -248,16 +250,16 @@ describe('plugin installer diagnostics', () => {
   });
 
   it('declares the installed ws package as a direct DingTalk dependency', async () => {
-    const targetDir = '/home/test/.openclaw/extensions/dingtalk';
-    const wsManifest = `${targetDir}/node_modules/ws/package.json`;
+    const targetDir = path.join(extensionsDir, 'dingtalk');
+    const wsManifest = path.join(targetDir, 'node_modules/ws/package.json');
     mockExistsSync.mockImplementation((input: string) => {
       const value = String(input);
-      return value === `${targetDir}/package.json` || value === wsManifest;
+      return value === path.join(targetDir, 'package.json') || value === wsManifest;
     });
     mockReadFileSync.mockImplementation((input: string) => {
       const value = String(input);
       if (value === wsManifest) return JSON.stringify({ name: 'ws', version: '8.21.0' });
-      if (value === `${targetDir}/package.json`) {
+      if (value === path.join(targetDir, 'package.json')) {
         return JSON.stringify({
           name: '@dingtalk-real-ai/dingtalk-connector',
           version: '0.8.26',
@@ -273,7 +275,7 @@ describe('plugin installer diagnostics', () => {
     const { fixupPluginManifest } = await import('@electron/utils/plugin-install');
     fixupPluginManifest(targetDir);
 
-    const pkgWrite = mockWriteFileSync.mock.calls.find((call) => String(call[0]) === `${targetDir}/package.json`);
+    const pkgWrite = mockWriteFileSync.mock.calls.find((call) => String(call[0]) === path.join(targetDir, 'package.json'));
     const written = JSON.parse(String(pkgWrite?.[1])) as { dependencies: Record<string, string> };
     expect(written.dependencies.ws).toBe('8.21.0');
     expect(written.dependencies['dingtalk-stream']).toBe('2.1.4');
@@ -281,20 +283,20 @@ describe('plugin installer diagnostics', () => {
   });
 
   it('replaces a community DingTalk mirror even when versions look equal', async () => {
-    const targetDir = '/home/test/.openclaw/extensions/dingtalk';
-    const sourceDir = '/bundle/dingtalk';
+    const targetDir = path.join(extensionsDir, 'dingtalk');
+    const sourceDir = path.resolve('/bundle/dingtalk');
     mockExistsSync.mockImplementation((input: string) => [
-      `${sourceDir}/openclaw.plugin.json`,
-      `${sourceDir}/package.json`,
-      `${targetDir}/openclaw.plugin.json`,
-      `${targetDir}/package.json`,
-    ].includes(String(input)) || /\/\.clawx-plugin-staging\/dingtalk-[^/]+\/next\/openclaw\.plugin\.json$/.test(String(input)));
+      path.join(sourceDir, 'openclaw.plugin.json'),
+      path.join(sourceDir, 'package.json'),
+      path.join(targetDir, 'openclaw.plugin.json'),
+      path.join(targetDir, 'package.json'),
+    ].includes(String(input)) || /[\\/]\.clawx-plugin-staging[\\/]dingtalk-[^\\/]+[\\/]next[\\/]openclaw\.plugin\.json$/.test(String(input)));
     mockReadFileSync.mockImplementation((input: string) => {
       const value = String(input);
-      if (value === `${targetDir}/package.json`) {
+      if (value === path.join(targetDir, 'package.json')) {
         return JSON.stringify({ name: '@soimy/dingtalk', version: '0.8.25' });
       }
-      if (value === `${sourceDir}/package.json` || value === `${targetDir}/package.json`) {
+      if (value === path.join(sourceDir, 'package.json') || value === path.join(targetDir, 'package.json')) {
         return JSON.stringify({ name: '@dingtalk-real-ai/dingtalk-connector', version: '0.8.25' });
       }
       if (value.endsWith('openclaw.plugin.json')) {
@@ -314,18 +316,18 @@ describe('plugin installer diagnostics', () => {
     expect(result.installed).toBe(true);
     expect(mockCpSync).toHaveBeenCalledWith(
       sourceDir,
-      expect.stringMatching(/\/\.openclaw\/\.clawx-plugin-staging\/dingtalk-[^/]+\/next$/),
+      expect.stringMatching(/[\\/]\.openclaw[\\/]\.clawx-plugin-staging[\\/]dingtalk-[^\\/]+[\\/]next$/),
       expect.anything(),
     );
     expect(mockRenameSync).toHaveBeenCalledWith(
-      expect.stringMatching(/\/\.clawx-plugin-staging\/dingtalk-[^/]+\/next$/),
+      expect.stringMatching(/[\\/]\.clawx-plugin-staging[\\/]dingtalk-[^\\/]+[\\/]next$/),
       targetDir,
     );
   });
 
   it('removes a legacy official directory only after the remapped official mirror exists', async () => {
-    const targetDir = '/home/test/.openclaw/extensions/dingtalk';
-    const legacyDir = '/home/test/.openclaw/extensions/dingtalk-connector';
+    const targetDir = path.join(extensionsDir, 'dingtalk');
+    const legacyDir = path.join(extensionsDir, 'dingtalk-connector');
     mockExistsSync.mockImplementation((input: string) => String(input) === legacyDir);
 
     const { removeLegacyOfficialDingTalkExtension } = await import('@electron/utils/plugin-install');
@@ -334,10 +336,10 @@ describe('plugin installer diagnostics', () => {
 
     mockExistsSync.mockImplementation((input: string) => {
       const value = String(input);
-      return value === legacyDir || value === `${targetDir}/package.json`;
+      return value === legacyDir || value === path.join(targetDir, 'package.json');
     });
     mockReadFileSync.mockImplementation((input: string) => (
-      String(input) === `${targetDir}/package.json`
+      String(input) === path.join(targetDir, 'package.json')
         ? JSON.stringify({ name: '@dingtalk-real-ai/dingtalk-connector' })
         : '{}'
     ));
@@ -351,14 +353,14 @@ describe('plugin installer diagnostics', () => {
   });
 
   it('writes a path-owned DingTalk install record and removes the official legacy id', async () => {
-    const targetDir = '/home/test/.openclaw/extensions/dingtalk';
+    const targetDir = path.join(extensionsDir, 'dingtalk');
     mockExistsSync.mockImplementation((input: string) => {
       const value = String(input);
-      return value === `${targetDir}/openclaw.plugin.json`
-        || value === `${targetDir}/package.json`;
+      return value === path.join(targetDir, 'openclaw.plugin.json')
+        || value === path.join(targetDir, 'package.json');
     });
     mockReadFileSync.mockImplementation((input: string) => {
-      if (String(input) === `${targetDir}/package.json`) {
+      if (String(input) === path.join(targetDir, 'package.json')) {
         return JSON.stringify({ name: '@dingtalk-real-ai/dingtalk-connector', version: '0.8.25' });
       }
       return JSON.stringify({ id: 'dingtalk' });
@@ -379,11 +381,11 @@ describe('plugin installer diagnostics', () => {
   });
 
   it('adds the WeCom channel descriptor while preserving valid upstream npm metadata', async () => {
-    const targetDir = '/home/test/.openclaw/extensions/wecom';
+    const targetDir = path.join(extensionsDir, 'wecom');
     mockExistsSync.mockImplementation((input: string) => [
-      `${targetDir}/openclaw.plugin.json`,
-      `${targetDir}/package.json`,
-      `${targetDir}/dist/index.js`,
+      path.join(targetDir, 'openclaw.plugin.json'),
+      path.join(targetDir, 'package.json'),
+      path.join(targetDir, 'dist/index.js'),
     ].includes(String(input)));
     mockReadFileSync.mockImplementation((input: string) => {
       const value = String(input);
@@ -398,7 +400,7 @@ describe('plugin installer diagnostics', () => {
           openclaw: { install: { npmSpec: '@wecom/wecom', localPath: 'extensions/wecom' } },
         });
       }
-      if (value.endsWith('dist/index.js')) {
+      if (value === path.join(targetDir, 'dist/index.js')) {
         return 'export default { id: "wecom-openclaw-plugin" };';
       }
       return '{}';
@@ -408,25 +410,25 @@ describe('plugin installer diagnostics', () => {
     fixupPluginManifest(targetDir);
 
     expect(mockWriteFileSync).toHaveBeenCalledWith(
-      `${targetDir}/openclaw.plugin.json`,
+      path.join(targetDir, 'openclaw.plugin.json'),
       expect.stringContaining('"channelConfigs"'),
       'utf-8',
     );
     expect(mockWriteFileSync).toHaveBeenCalledWith(
-      `${targetDir}/openclaw.plugin.json`,
+      path.join(targetDir, 'openclaw.plugin.json'),
       expect.stringContaining('"id": "wecom"'),
       'utf-8',
     );
     expect(mockWriteFileSync).toHaveBeenCalledWith(
-      `${targetDir}/package.json`,
+      path.join(targetDir, 'package.json'),
       expect.stringContaining('"name": "@wecom/wecom-openclaw-plugin"'),
       'utf-8',
     );
   });
 
   it('patches WeCom 2026.8.17 to allow account-less desktop chat with one account', async () => {
-    const targetDir = '/home/test/.openclaw/extensions/wecom';
-    const toolPath = `${targetDir}/dist/src/cli/tool.js`;
+    const targetDir = path.join(extensionsDir, 'wecom');
+    const toolPath = path.join(targetDir, 'dist/src/cli/tool.js');
     const upstreamTool = [
       'import { hasMultiAccounts, resolveWeComAccountMulti } from "../accounts.js";',
       'function resolveBot(accountId) {',
@@ -462,9 +464,9 @@ describe('plugin installer diagnostics', () => {
   });
 
   it('repairs an already-installed same-version WeCom mirror', async () => {
-    const targetDir = '/home/test/.openclaw/extensions/wecom';
-    const sourceDir = '/bundle/wecom';
-    const toolPath = `${targetDir}/dist/src/cli/tool.js`;
+    const targetDir = path.join(extensionsDir, 'wecom');
+    const sourceDir = path.resolve('/bundle/wecom');
+    const toolPath = path.join(targetDir, 'dist/src/cli/tool.js');
     const upstreamTool = [
       'import { hasMultiAccounts, resolveWeComAccountMulti } from "../accounts.js";',
       '    const multi = hasMultiAccounts(cfg);',
@@ -473,10 +475,10 @@ describe('plugin installer diagnostics', () => {
     ].join('\n');
 
     mockExistsSync.mockImplementation((input: string) => [
-      `${sourceDir}/openclaw.plugin.json`,
-      `${sourceDir}/package.json`,
-      `${targetDir}/openclaw.plugin.json`,
-      `${targetDir}/package.json`,
+      path.join(sourceDir, 'openclaw.plugin.json'),
+      path.join(sourceDir, 'package.json'),
+      path.join(targetDir, 'openclaw.plugin.json'),
+      path.join(targetDir, 'package.json'),
       toolPath,
     ].includes(String(input)));
     mockReadFileSync.mockImplementation((input: string) => {
@@ -597,7 +599,7 @@ describe('plugin installer diagnostics', () => {
       '[plugin] Bundled mirror install failed for WeCom',
       expect.objectContaining({
         sourceDir,
-        targetDir: expect.stringContaining('.openclaw/extensions/wecom'),
+        targetDir: expect.stringContaining(path.join('.openclaw', 'extensions', 'wecom')),
         platform: 'win32',
         attempts: [
           expect.objectContaining({ attempt: 1, code: 'EPERM' }),
@@ -608,14 +610,14 @@ describe('plugin installer diagnostics', () => {
   });
 
   it('writes trusted SQLite metadata for mirrored official whatsapp plugin', async () => {
-    const targetDir = '/home/test/.openclaw/extensions/whatsapp';
-    const sourceDir = '/bundle/whatsapp';
+    const targetDir = path.join(extensionsDir, 'whatsapp');
+    const sourceDir = path.resolve('/bundle/whatsapp');
 
     mockExistsSync.mockImplementation((input: string) => {
       const value = String(input);
       return value.includes('openclaw.plugin.json')
-        || value.includes('/bundle/whatsapp/package.json')
-        || value.includes(`${targetDir}/package.json`);
+        || value.includes(path.join(sourceDir, 'package.json'))
+        || value.includes(path.join(targetDir, 'package.json'));
     });
     mockReadFileSync.mockImplementation((input: string) => {
       if (String(input).endsWith('package.json')) {
@@ -647,9 +649,8 @@ describe('plugin installer diagnostics', () => {
   });
 
   it('skips CUA install and trust repair at startup while retaining the OpenAI image mirror', async () => {
-    const extensions = '/home/test/.openclaw/extensions';
-    const retiredDir = `${extensions}/clawx-cua-computer`;
-    const imageDir = `${extensions}/clawx-openai-image`;
+    const retiredDir = path.join(extensionsDir, 'clawx-cua-computer');
+    const imageDir = path.join(extensionsDir, 'clawx-openai-image');
     configState.authoritative = { plugins: {
       allow: ['clawx-cua-computer'],
       entries: { 'clawx-cua-computer': { enabled: false } },
@@ -682,15 +683,15 @@ describe('plugin installer diagnostics', () => {
   });
 
   it('reports a failed OpenClaw peer link repair for an installed mirror', async () => {
-    const targetDir = '/home/test/.openclaw/extensions/qqbot';
+    const targetDir = path.join(extensionsDir, 'qqbot');
 
     mockExistsSync.mockImplementation((input: string) => {
       const value = String(input);
-      return value === `${targetDir}/openclaw.plugin.json`
-        || value === `${targetDir}/package.json`;
+      return value === path.join(targetDir, 'openclaw.plugin.json')
+        || value === path.join(targetDir, 'package.json');
     });
     mockReadFileSync.mockImplementation((input: string) => {
-      if (String(input) === `${targetDir}/package.json`) {
+      if (String(input) === path.join(targetDir, 'package.json')) {
         return JSON.stringify({
           name: '@tencent-connect/openclaw-qqbot',
           version: '2.0.3',
@@ -710,7 +711,7 @@ describe('plugin installer diagnostics', () => {
   });
 
   it('removes WeCom updater metadata for the patched legacy-compatible plugin id', async () => {
-    const targetDir = '/home/test/.openclaw/extensions/wecom';
+    const targetDir = path.join(extensionsDir, 'wecom');
     configState.authoritative = {
       gatewayOnly: true,
       plugins: {
@@ -726,11 +727,11 @@ describe('plugin installer diagnostics', () => {
 
     mockExistsSync.mockImplementation((input: string) => {
       const value = String(input);
-      return value === `${targetDir}/openclaw.plugin.json`
-        || value === `${targetDir}/package.json`;
+      return value === path.join(targetDir, 'openclaw.plugin.json')
+        || value === path.join(targetDir, 'package.json');
     });
     mockReadFileSync.mockImplementation((input: string) => {
-      if (String(input) === `${targetDir}/package.json`) {
+      if (String(input) === path.join(targetDir, 'package.json')) {
         return JSON.stringify({ name: '@wecom/wecom-openclaw-plugin', version: '2026.8.17' });
       }
       return JSON.stringify({ id: 'wecom' });
@@ -754,7 +755,7 @@ describe('plugin installer diagnostics', () => {
   });
 
   it('replaces legacy Feishu npm ownership with the ClawX path mirror', async () => {
-    const targetDir = '/home/test/.openclaw/extensions/feishu-openclaw-plugin';
+    const targetDir = path.join(extensionsDir, 'feishu-openclaw-plugin');
     configState.authoritative = {
       gatewayOnly: true,
       plugins: {
@@ -767,11 +768,11 @@ describe('plugin installer diagnostics', () => {
 
     mockExistsSync.mockImplementation((input: string) => {
       const value = String(input);
-      return value === `${targetDir}/openclaw.plugin.json`
-        || value === `${targetDir}/package.json`;
+      return value === path.join(targetDir, 'openclaw.plugin.json')
+        || value === path.join(targetDir, 'package.json');
     });
     mockReadFileSync.mockImplementation((input: string) => {
-      if (String(input) === `${targetDir}/package.json`) {
+      if (String(input) === path.join(targetDir, 'package.json')) {
         return JSON.stringify({ name: '@openclaw/feishu', version: '2026.10.5' });
       }
       return JSON.stringify({ id: 'feishu' });
@@ -798,18 +799,18 @@ describe('plugin installer diagnostics', () => {
   });
 
   it('records the Tencent QQBot mirror as path-owned openclaw-qqbot and drops the legacy qqbot record', async () => {
-    const targetDir = '/home/test/.openclaw/extensions/qqbot';
+    const targetDir = path.join(extensionsDir, 'qqbot');
     configState.authoritative = {
       plugins: { installs: { qqbot: { source: 'npm', spec: '@openclaw/qqbot', version: '2026.7.1' } } },
     };
 
     mockExistsSync.mockImplementation((input: string) => {
       const value = String(input);
-      return value === `${targetDir}/openclaw.plugin.json`
-        || value === `${targetDir}/package.json`;
+      return value === path.join(targetDir, 'openclaw.plugin.json')
+        || value === path.join(targetDir, 'package.json');
     });
     mockReadFileSync.mockImplementation((input: string) => {
-      if (String(input) === `${targetDir}/package.json`) {
+      if (String(input) === path.join(targetDir, 'package.json')) {
         return JSON.stringify({ name: '@tencent-connect/openclaw-qqbot', version: '2.0.3' });
       }
       return JSON.stringify({ id: 'openclaw-qqbot' });
@@ -840,15 +841,15 @@ describe('plugin installer diagnostics', () => {
   });
 
   it('links a mirrored plugin openclaw peer to the bundled runtime', async () => {
-    const targetDir = '/home/test/.openclaw/extensions/qqbot';
-    const openclawDir = '/app/resources/openclaw';
-    const nodeModulesDir = `${targetDir}/node_modules`;
-    const linkPath = `${nodeModulesDir}/openclaw`;
+    const targetDir = path.join(extensionsDir, 'qqbot');
+    const openclawDir = path.resolve('/app/resources/openclaw');
+    const nodeModulesDir = path.join(targetDir, 'node_modules');
+    const linkPath = path.join(nodeModulesDir, 'openclaw');
     let linked = false;
 
-    mockExistsSync.mockImplementation((input: string) => String(input) === `${openclawDir}/package.json`);
+    mockExistsSync.mockImplementation((input: string) => String(input) === path.join(openclawDir, 'package.json'));
     mockReadFileSync.mockImplementation((input: string) => {
-      if (String(input) === `${targetDir}/package.json`) {
+      if (String(input) === path.join(targetDir, 'package.json')) {
         return JSON.stringify({ peerDependencies: { openclaw: '>=2026.7.1' } });
       }
       return '{}';
