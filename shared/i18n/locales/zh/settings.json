@@ -9,6 +9,11 @@
     "dark": "深色",
     "system": "跟随系统",
     "language": "语言",
+    "replyDisplay": {
+      "title": "回复展示",
+      "concise": "简练",
+      "detailed": "详细"
+    },
     "menuLanguageUpdated": "菜单语言已更新",
     "launchAtStartup": "登录时启动 ClawX",
     "launchAtStartupDesc": "登录系统后自动启动 ClawX"

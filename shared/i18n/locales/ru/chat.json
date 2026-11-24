@@ -121,6 +121,7 @@
         "copied": "Скопировано",
         "turnDuration": "Заняло {{duration}}",
         "turnElapsed": "Прошло {{duration}}",
+        "viewTurnProcess": "Ход выполнения",
         "compaction": {
             "inProgress": "Сжатие контекста",
             "completed": "История сжата",

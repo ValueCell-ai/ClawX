@@ -9,6 +9,11 @@
     "dark": "Тёмная",
     "system": "Системная",
     "language": "Язык",
+    "replyDisplay": {
+      "title": "Отображение ответов",
+      "concise": "Кратко",
+      "detailed": "Подробно"
+    },
     "menuLanguageUpdated": "Язык меню обновлён",
     "launchAtStartup": "Запускать ClawX при входе",
     "launchAtStartupDesc": "Автоматически запускать ClawX при входе в систему"

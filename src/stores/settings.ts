@@ -16,6 +16,7 @@ import {
 
 type Theme = 'light' | 'dark' | 'system';
 type UpdateChannel = 'stable' | 'beta' | 'dev';
+type ChatReplyDisplayMode = 'concise' | 'detailed';
 
 interface SettingsState {
   // General
@@ -40,6 +41,7 @@ interface SettingsState {
   autoCheckUpdate: boolean;
 
   // UI State
+  chatReplyDisplayMode: ChatReplyDisplayMode;
   sidebarCollapsed: boolean;
   sidebarWidth: number;
   pinnedSessionKeys: string[];
@@ -68,6 +70,7 @@ interface SettingsState {
   setProxyBypassRules: (value: string) => void;
   setUpdateChannel: (channel: UpdateChannel) => void;
   setAutoCheckUpdate: (value: boolean) => void;
+  setChatReplyDisplayMode: (mode: ChatReplyDisplayMode) => void;
   setSidebarCollapsed: (value: boolean) => void;
   setSidebarWidth: (value: number) => void;
   toggleSessionPin: (key: string) => Promise<void>;
@@ -96,6 +99,7 @@ const defaultSettings = {
   proxyBypassRules: '<local>;localhost;127.0.0.1;::1',
   updateChannel: 'stable' as UpdateChannel,
   autoCheckUpdate: true,
+  chatReplyDisplayMode: 'concise' as ChatReplyDisplayMode,
   sidebarCollapsed: false,
   sidebarWidth: 280,
   pinnedSessionKeys: [] as string[],
@@ -207,6 +211,7 @@ export const useSettingsStore = create<SettingsState>()(
         set({ pinnedSessionKeys: next });
         await savePins(next);
       },
+      setChatReplyDisplayMode: (chatReplyDisplayMode) => set({ chatReplyDisplayMode }),
       setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
       setSidebarWidth: (sidebarWidth) => set({ sidebarWidth: clampSidebarWidth(sidebarWidth) }),
       setDevModeUnlocked: (devModeUnlocked) => {

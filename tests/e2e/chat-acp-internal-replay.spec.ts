@@ -97,6 +97,7 @@ test('hides native ACP control-user replay while retaining quoted text, assistan
       await expect(chat.getByText('INTERNAL_HIDDEN_CAPTION', { exact: false })).toHaveCount(0);
       await expect(chat.getByText(NATIVE_REPLAY_TEXT.reply, { exact: true })).toBeVisible();
       await expect(chat.getByText(NATIVE_REPLAY_TEXT.explanation, { exact: true })).toBeVisible();
+      await chat.getByRole('button', { name: 'View process', exact: true }).click();
       await expect(chat.getByTestId('acp-thought-block')).toContainText(NATIVE_REPLAY_TEXT.thought);
       const tool = chat.getByTestId('acp-tool-call-card');
       await expect(tool).toBeVisible();

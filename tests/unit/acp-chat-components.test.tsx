@@ -83,6 +83,7 @@ vi.mock('react-i18next', () => ({
         'acp.unsupportedContent': 'Unsupported content',
         'acp.turnDuration': 'Took {{duration}}',
         'acp.turnElapsed': '{{duration}} elapsed',
+        'acp.viewTurnProcess': 'View process',
         'acp.compaction.inProgress': 'Compacting context',
         'acp.compaction.completed': 'Compacted history',
         'acp.compaction.continuing': 'Context compacted and continuing',
@@ -573,7 +574,40 @@ describe('ACP chat timeline components', () => {
     expect(screen.getByTestId('acp-turn-duration')).toHaveTextContent('Took 6 sec');
   });
 
-  it('floors Chinese whole-turn seconds, spaces the unit, and uses processing/completed copy', () => {
+  it('keeps active activity inline and offers a disclosure on settled history without timing', () => {
+    const state = snapshot({
+      itemOrder: ['user-a:0', 'tool:read-file', 'assistant-a:0'],
+      itemsById: {
+        'user-a:0': {
+          kind: 'message-segment', id: 'user-a:0', role: 'user', messageId: 'user-a', segmentIndex: 0,
+          parts: [{ kind: 'markdown', text: 'Read the file' }],
+        },
+        'tool:read-file': toolCallItem({ historical: true }),
+        'assistant-a:0': {
+          kind: 'message-segment', id: 'assistant-a:0', role: 'assistant', messageId: 'assistant-a', segmentIndex: 0,
+          parts: [{ kind: 'markdown', text: 'The file contains three entries.' }],
+        },
+      },
+    });
+
+    const { rerender } = render(<AcpTimeline snapshot={state} conciseReplies isStreaming />);
+    expect(screen.getByTestId('acp-tool-call-card')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'View process' })).not.toBeInTheDocument();
+
+    rerender(<AcpTimeline snapshot={state} conciseReplies keepLatestTurnExpanded />);
+    expect(screen.getByTestId('acp-tool-call-card')).toBeVisible();
+
+    rerender(<AcpTimeline snapshot={state} conciseReplies />);
+    const toggle = screen.getByRole('button', { name: 'View process' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByTestId('acp-tool-call-card')).not.toBeInTheDocument();
+    expect(screen.getByText('The file contains three entries.')).toBeVisible();
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByTestId('acp-tool-call-card')).toBeVisible();
+  });
+
+  it('formats Chinese whole-turn minutes and seconds with processing and completed copy', () => {
     vi.useFakeTimers();
     vi.setSystemTime(20_000);
     i18nLanguage.value = 'zh';
@@ -602,19 +636,19 @@ describe('ACP chat timeline components', () => {
     render(<AcpTimeline
       snapshot={state}
       turnTimingsByUserMessageId={{
-        'user-a': { source: 'transcript', status: 'complete', durationMs: 23_600 },
+        'user-a': { source: 'transcript', status: 'complete', durationMs: 83_600 },
         'user-b': { source: 'live', status: 'running', startedAtMs: 600 },
       }}
     />);
 
-    expect(screen.getByText('用时 23 秒')).toBeVisible();
+    expect(screen.getByText('用时 1 分钟 23 秒')).toBeVisible();
     expect(screen.getByText('已处理 19 秒')).toBeVisible();
     vi.useRealTimers();
   });
 
-  it('updates a running whole-turn elapsed duration from its original start time', () => {
+  it('carries a running whole-turn elapsed duration into minutes', () => {
     vi.useFakeTimers();
-    vi.setSystemTime(10_000);
+    vi.setSystemTime(66_999);
     const state = snapshot({
       itemOrder: ['user-a:0', 'tool:read-file'],
       itemsById: {
@@ -632,10 +666,14 @@ describe('ACP chat timeline components', () => {
         'user-a': { source: 'live', status: 'running', startedAtMs: 7_000 },
       }}
     />);
-    expect(screen.getByTestId('acp-turn-duration')).toHaveTextContent('3 sec elapsed');
+    const duration = screen.getByTestId('acp-turn-duration');
+    expect(duration).toHaveTextContent('59 sec elapsed');
 
     act(() => vi.advanceTimersByTime(1_000));
-    expect(screen.getByTestId('acp-turn-duration')).toHaveTextContent('4 sec elapsed');
+    expect(duration).toHaveTextContent('1 min elapsed');
+
+    act(() => vi.advanceTimersByTime(1_000));
+    expect(duration).toHaveTextContent('1 min 1 sec elapsed');
     vi.useRealTimers();
   });
 
@@ -789,7 +827,7 @@ describe('ACP chat timeline components', () => {
     const message = screen.getByTestId('acp-assistant-message');
     const duration = screen.getByTestId('acp-turn-duration');
     expect(screen.queryByTestId('acp-turn-file-activity')).not.toBeInTheDocument();
-    expect(message.nextElementSibling).toBe(duration.parentElement);
+    expect(message.previousElementSibling).toBe(duration.parentElement);
   });
 
   it('routes deleted path-only activity to Changes without rendering counts', () => {

@@ -9,6 +9,11 @@
     "dark": "ダーク",
     "system": "システム",
     "language": "言語",
+    "replyDisplay": {
+      "title": "返信の表示",
+      "concise": "簡潔",
+      "detailed": "詳細"
+    },
     "menuLanguageUpdated": "メニューの言語を更新しました",
     "launchAtStartup": "ログイン時に ClawX を起動",
     "launchAtStartupDesc": "ログイン時に ClawX を自動的に起動します"

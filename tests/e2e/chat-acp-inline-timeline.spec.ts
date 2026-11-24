@@ -9,6 +9,7 @@ import {
 } from './fixtures/electron';
 import { expandAcpToolCallsGroup } from './fixtures/acp-timeline';
 import { collectNativeMultiStageTurn, NATIVE_MULTI_STAGE } from './fixtures/acp-native-replay';
+import { navigateToSection } from './fixtures/navigation';
 
 const MAIN_SESSION_KEY = 'agent:main:main';
 const MAIN_WORKSPACE = '/workspace';
@@ -634,6 +635,9 @@ test.describe('ClawX ACP inline timeline', () => {
       await installAcpPromptDeferredMock(app);
       await installAcpLoadReplayBySessionMock(app, { [MAIN_SESSION_KEY]: [[]], [awayKey]: [[]] });
       const page = await openChat(app, MAIN_SESSION_KEY);
+      await navigateToSection(page, 'general');
+      await page.getByRole('group', { name: 'Reply display' }).getByRole('button', { name: 'Detailed' }).click();
+      await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();
       await page.getByTestId('chat-composer-input').fill(NATIVE_MULTI_STAGE.request);
       await page.getByTestId('chat-composer-send').click();
@@ -1120,7 +1124,7 @@ test.describe('ClawX ACP inline timeline', () => {
     }
   });
 
-  test('supplements an ACP-replayed assistant turn with historical duration', async ({ launchElectronApp }) => {
+  test('folds completed activity under the duration and remembers Detailed reply display', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -1130,6 +1134,18 @@ test.describe('ClawX ACP inline timeline', () => {
           sessionUpdate: 'user_message_chunk',
           messageId: 'timed-history-user',
           content: { type: 'text', text: 'Measure this historical turn' },
+        },
+        {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'timed-history-progress',
+          content: { type: 'text', text: 'I will read the activity log.' },
+        },
+        {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'timed-history-tool',
+          title: 'Read the activity log',
+          kind: 'read',
+          status: 'completed',
         },
         {
           sessionUpdate: 'agent_message_chunk',
@@ -1143,8 +1159,61 @@ test.describe('ClawX ACP inline timeline', () => {
       }]);
 
       const page = await openChat(app, MAIN_SESSION_KEY);
-      await expect(page.getByText('Historical turn measured')).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByTestId('acp-turn-duration')).toHaveText('Took 6 sec');
+      const turn = page.getByTestId('acp-assistant-turn');
+      const duration = turn.getByTestId('acp-turn-duration');
+      const separator = turn.getByTestId('acp-turn-duration-separator');
+      const tool = turn.getByTestId('acp-tool-call-card');
+      const progress = turn.getByText('I will read the activity log.', { exact: true });
+      const reply = turn.getByTestId('acp-assistant-message').filter({ hasText: 'Historical turn measured' });
+      const toggle = turn.getByRole('button', { name: 'Took 6 sec', exact: true });
+      await expect(reply.getByText('Historical turn measured', { exact: true })).toHaveCSS('font-size', '16px');
+      await expect(duration).toHaveText('Took 6 sec');
+      await expect(duration).toHaveCSS('font-size', '14px');
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      await expect(progress).toHaveCount(0);
+      await expect(tool).toHaveCount(0);
+      await toggle.press('Enter');
+      await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      await expect(progress).toBeVisible();
+      await expect(tool).toBeVisible();
+      await expect.poll(async () => {
+        const [toggleBounds, separatorBounds, progressBounds, toolBounds, replyBounds] = await Promise.all([
+          toggle.boundingBox(),
+          separator.boundingBox(),
+          progress.boundingBox(),
+          tool.boundingBox(),
+          reply.boundingBox(),
+        ]);
+        const textRight = await duration.evaluate((element) => {
+          const range = document.createRange();
+          range.selectNodeContents(element);
+          return range.getBoundingClientRect().right;
+        });
+        return !!toggleBounds && !!separatorBounds && !!progressBounds && !!toolBounds && !!replyBounds
+          && separatorBounds.x === toggleBounds.x
+          && separatorBounds.width === toggleBounds.width
+          && separatorBounds.width < replyBounds.width
+          && separatorBounds.x + separatorBounds.width > textRight
+          && toggleBounds.y + toggleBounds.height < separatorBounds.y
+          && separatorBounds.y + separatorBounds.height < progressBounds.y
+          && progressBounds.y < toolBounds.y && toolBounds.y < replyBounds.y;
+      }).toBe(true);
+      await toggle.click();
+      await expect(progress).toHaveCount(0);
+      await expect(reply).toBeVisible();
+
+      await navigateToSection(page, 'general');
+      const display = page.getByRole('group', { name: 'Reply display' });
+      await expect(display.getByRole('button', { name: 'Concise' })).toHaveAttribute('aria-pressed', 'true');
+      const detailed = display.getByRole('button', { name: 'Detailed' });
+      await detailed.click();
+      await page.reload();
+      await expect(detailed).toHaveAttribute('aria-pressed', 'true');
+      await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
+      await expect(progress).toBeVisible();
+      await expect(tool).toBeVisible();
+      await expect(reply).toBeVisible();
+      await expect(toggle).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }
@@ -1174,7 +1243,7 @@ test.describe('ClawX ACP inline timeline', () => {
 
       const page = await openChat(app, MAIN_SESSION_KEY);
       await expect(page.getByText('Recovered turn completed')).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByTestId('acp-turn-duration')).toHaveText('Took 280 sec');
+      await expect(page.getByTestId('acp-turn-duration')).toHaveText('Took 4 min 40 sec');
     } finally {
       await closeElectronApp(app);
     }
@@ -1190,20 +1259,38 @@ test.describe('ClawX ACP inline timeline', () => {
         normalizedUserText: prompt,
         durationMs: 6_400,
       });
+      await installAcpPromptDeferredMock(app);
       const page = await openChat(app, MAIN_SESSION_KEY);
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
 
       await page.getByTestId('chat-composer-input').fill(prompt);
       await page.getByTestId('chat-composer-send').click();
-      await emitAcpSessionUpdates(app, [{
-        sessionUpdate: 'agent_message_chunk',
-        messageId: 'timed-live-assistant',
-        content: { type: 'text', text: 'Live turn measured' },
-      }]);
+      await emitAcpSessionUpdates(app, [
+        {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'timed-live-tool',
+          title: 'Read the live activity log',
+          kind: 'read',
+          status: 'completed',
+        },
+        {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'timed-live-assistant',
+          content: { type: 'text', text: 'Live turn measured' },
+        },
+      ]);
 
       await expect(page.getByText('Live turn measured')).toBeVisible();
+      const tool = page.getByTestId('acp-tool-call-card');
+      await expect(tool).toBeVisible();
+      await expect(page.getByTestId('acp-turn-duration')).toContainText('elapsed');
+      await resolveDeferredAcpPrompt(app);
       await expect(page.getByTestId('acp-turn-duration')).toHaveText('Took 6 sec');
+      await expect(page.getByRole('button', { name: 'Took 6 sec', exact: true })).toHaveAttribute('aria-expanded', 'false');
+      await expect(tool).toHaveCount(0);
+      await expect(page.getByText('Live turn measured')).toBeVisible();
     } finally {
+      await resolveDeferredAcpPrompt(app);
       await closeElectronApp(app);
     }
   });
@@ -1738,6 +1825,7 @@ test.describe('ClawX ACP inline timeline', () => {
       const page = await openChat(app, MAIN_SESSION_KEY);
 
       await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
+      await page.getByRole('button', { name: 'View process', exact: true }).click();
       const card = page.getByTestId('acp-tool-call-card');
       await expect(card).toContainText('Historical tool');
       await expect(card).toHaveAttribute('data-expanded', 'false');
@@ -1868,13 +1956,14 @@ test.describe('ClawX ACP inline timeline', () => {
         },
       ], [{
         normalizedUserText: 'Check weather',
-        userOccurrenceFromTail: 0,
+        userOccurrenceFromTail: 1,
         durationMs: 12_000,
       }]);
 
       const page = await openChat(app, MAIN_SESSION_KEY);
 
       await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
+      await page.getByRole('button', { name: 'Took 12 sec', exact: true }).click();
       const group = page.getByTestId('acp-tool-calls-group');
       await expect(group).toBeVisible();
       await expect(group).toHaveAttribute('data-collapsed', 'true');
@@ -2037,11 +2126,13 @@ test.describe('ClawX ACP inline timeline', () => {
       });
 
       await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByTestId('acp-tool-call-card')).toContainText('Generate image');
       const imagePart = page.getByTestId('acp-image-part');
       const image = imagePart.locator('img');
       await expect(image).toBeVisible();
       await expect(image).toHaveAttribute('src', GENERATED_IMAGE_PREVIEW);
+      const process = page.getByRole('button', { name: 'View process', exact: true });
+      await expect(process).toHaveAttribute('aria-expanded', 'false');
+      await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(0);
       await imagePart.hover();
       await expect(page.getByTestId('acp-image-copy')).toBeVisible();
       await expect(page.getByTestId('acp-image-save')).toBeVisible();
@@ -2055,6 +2146,8 @@ test.describe('ClawX ACP inline timeline', () => {
         mimeType: 'image/png',
         defaultFileName: 'generated-image.png',
       }]);
+      await process.click();
+      await expect(page.getByTestId('acp-tool-call-card')).toContainText('Generate image');
     } finally {
       await closeElectronApp(app);
     }

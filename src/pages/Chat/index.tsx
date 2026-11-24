@@ -226,6 +226,7 @@ export function Chat() {
   const setVisibleSession = useSessionAttentionStore((s) => s.setVisibleSession);
   const sessionAttentionByKey = useSessionAttentionStore((s) => s.bySessionKey);
   const markSessionRead = useSessionAttentionStore((s) => s.markRead);
+  const conciseReplies = useSettingsStore((s) => s.chatReplyDisplayMode === 'concise');
   const chatWorkspacePath = useSettingsStore((s) => s.chatWorkspacePath);
   const recentWorkspacePaths = useSettingsStore((s) => s.recentWorkspacePaths ?? []);
   const workspaceLabels = useSettingsStore((s) => s.workspaceLabels);
@@ -785,6 +786,8 @@ export function Chat() {
                         <AcpTimeline
                           snapshot={visibleAcpTimeline}
                           isStreaming={acpSending || acpCancelling || currentSubagentBusy}
+                          conciseReplies={conciseReplies}
+                          keepLatestTurnExpanded={imageGenerationPending || !!visibleAcpError}
                           turnTimingsByUserMessageId={visibleTurnTimings}
                           fileActivity={fileActivity}
                           workspaceRoot={resolvedWorkspaceContext?.key === workspaceContextKey

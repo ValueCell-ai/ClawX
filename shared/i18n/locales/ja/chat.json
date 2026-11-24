@@ -121,6 +121,7 @@
         "copied": "コピーしました",
         "turnDuration": "所要時間 {{duration}}",
         "turnElapsed": "経過時間 {{duration}}",
+        "viewTurnProcess": "処理の詳細",
         "compaction": {
             "inProgress": "コンテキストを圧縮中",
             "completed": "履歴を圧縮しました",

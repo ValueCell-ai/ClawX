@@ -22,7 +22,9 @@ ownedPaths:
   - src/lib/generated-files.ts
   - src/components/file-preview/**
   - src/stores/acp-chat-session.ts
+  - src/stores/settings.ts
   - src/pages/Chat/**
+  - src/pages/Settings/Preferences.tsx
   - tests/unit/acp-*.test.ts
   - tests/unit/acp-*.test.tsx
   - tests/unit/sessions-api-workspace.test.ts
@@ -32,6 +34,7 @@ ownedPaths:
   - tests/e2e/chat-acp-internal-replay.spec.ts
   - tests/e2e/fixtures/acp-native-replay.ts
   - tests/e2e/chat-acp-attachments.spec.ts
+  - tests/e2e/chat-file-changes.spec.ts
   - tests/e2e/chat-run-state-events.spec.ts
   - tests/e2e/chat-streamdown-rendering.spec.ts
   - tests/e2e/chat-markdown-file-links.spec.ts
@@ -108,6 +111,8 @@ a localized explanation. See
 [ACP connection readiness](../../reference/acp-chat.md#gateway-reconnect-admission-and-errors).
 
 Main owns ACP transport, routing, transcript retrieval and timing extraction, workspace grants, and session/generation-scoped attachment authorization. Timing extraction treats trusted internal inter-session and restart-recovery user records as control metadata, not visible turn boundaries. Renderer owns the in-memory timeline, bounded compatibility and timing alignment, attachment presentation, and display grouping, including user-image thumbnails and user-selected source-path labels. The composer plan indicator is a Renderer-only projection of replayed structured `update_plan` `ToolCallItem.input` values in the active timeline. ACP replay remains authoritative for historical turns and content; transcript-derived timing may only annotate an unambiguously matched ACP turn. Standard ACP content remains preferred over compatibility projections, and incidental tool paths never enter the attachment pipeline.
+
+Completed replies follow the [Conversation replies design rules](../../../DESIGN.md#conversation-replies). Validate the default collapse, the per-turn disclosure, the Detailed preference after a renderer reload, and inline fallbacks during execution and for turns without trailing reply text.
 
 Explicit local file links in assistant Markdown are clickable in live and replayed messages. They remain presentation-only links, not synthesized ACP resource blocks or attachment recovery evidence. Only a user click invokes `hostApi.files.resolveAttachment` with the current session key and generation. A successful Main resolution permits the existing scoped Preview or system-open flow; stale results are discarded. Remote file authorities and unsafe protocols remain filtered, ordinary web links remain inert, and neither code examples nor bare paths become file actions.
 

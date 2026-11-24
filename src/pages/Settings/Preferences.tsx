@@ -69,6 +69,8 @@ export function SettingsPreferences({ section }: { section: 'general' | 'advance
     setTheme,
     language,
     setLanguage,
+    chatReplyDisplayMode,
+    setChatReplyDisplayMode,
     launchAtStartup,
     setLaunchAtStartup,
     gatewayAutoStart,
@@ -501,6 +503,23 @@ export function SettingsPreferences({ section }: { section: 'general' | 'advance
                   onClick={() => handleLanguageChange(lang.code)}
                 >
                   {lang.label}
+                </Button>
+              ))}
+            </div>
+          </SettingsRow>
+          <SettingsRow title={t('appearance.replyDisplay.title')}>
+            <div role="group" aria-label={t('appearance.replyDisplay.title')} className="flex flex-wrap gap-1">
+              {(['concise', 'detailed'] as const).map((mode) => (
+                <Button
+                  key={mode}
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-pressed={chatReplyDisplayMode === mode}
+                  className={cn('text-muted-foreground', chatReplyDisplayMode === mode && 'bg-black/5 text-foreground dark:bg-white/10')}
+                  onClick={() => setChatReplyDisplayMode(mode)}
+                >
+                  {t(`appearance.replyDisplay.${mode}`)}
                 </Button>
               ))}
             </div>

@@ -488,6 +488,25 @@ modes rather than adding a new color for each page:
   padding. Preserve the full meaning for assistive technology and long locales;
   truncate visually only where an alternative way to read the text remains.
 
+### Conversation replies
+
+**Settings → General → Reply display** offers **Concise** by default and
+**Detailed** for the inline timeline. This local preference applies to replies
+throughout the app, including reopened conversations.
+
+- In Concise mode, a settled turn with assistant text after its last tool call
+  puts the process through that call behind the duration label. Use the tool's
+  position in the rendered timeline. A provisional image receipt alone is
+  insufficient to identify a reply. Turns with no tool or no trailing reply
+  keep their inline content.
+- Keep active work, turns awaiting confirmation and turns with a current run error inline.
+  Keep images, attachment previews, file activity and actionable errors directly
+  available in the turn. Fold only when a reply stays on screen.
+- The duration label becomes a disclosure with a chevron when there is a
+  process to show. Use **View process** when timing is unavailable. Expanding
+  shows the original items in order. Detailed mode uses the existing inline
+  timeline and its tool controls.
+
 ### Interaction and reuse
 
 - Use shared Radix Dialog, DropdownMenu, Select, Popover, Tooltip and Tabs wrappers.

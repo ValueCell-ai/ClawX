@@ -80,6 +80,8 @@ The task home uses soft neutral surfaces, a simple task heading, colored skill s
 
 ClawX’s sidebar exposes new tasks, separate Skills and Assistants pages, AI models, messaging remote control, scheduled tasks, computer operation, and conversations. Skills and Assistants use the same title, subtitle and action layout as other management pages, without duplicate in-page navigation. **Settings** uses horizontal tabs for **General**, **Advanced**, and **About & help**. Advanced separates local service, privacy and developer tools. Developer mode and the OpenClaw console remain in Advanced. Old settings capability URLs redirect to the corresponding sidebar pages and retain model tab parameters.
 
+**Settings → General → Reply display** defaults to **Concise**. When a completed reply follows a tool call, select its duration to see the earlier activity. Choose **Detailed** to keep activity inline.
+
 Scheduled Tasks shows a compact summary above the task cards, with Run Now always available on each card. Create and edit keep save and cancel visible while the form scrolls. Computer operation separates driver status from system permissions and shows the request button and guidance when access is missing.
 
 In **Messaging remote**, add accounts and assign assistants from the connected app card. Each account’s menu contains its configuration and removal actions. The app menu removes the app and all its accounts. Feishu setup starts with the app credentials, while WhatsApp shows the phone pairing steps once its QR code is ready.

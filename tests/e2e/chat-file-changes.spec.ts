@@ -633,8 +633,11 @@ test.describe('ClawX chat file changes', () => {
     const app = await launchElectronApp({ skipSetup: true });
     try {
       await installFileActivityMocks(app, {
-        liveByPrompt: {
-          'Create aligned file': [
+        sessions: [{
+          key: MAIN_SESSION_KEY,
+          title: 'Aligned file activity',
+          updates: [
+            user('align-user', 'Create aligned file'),
             ...writeSequence('write-align', 'src/aligned.ts', 'one\ntwo\n'),
             {
               sessionUpdate: 'agent_message_chunk',
@@ -653,17 +656,20 @@ test.describe('ClawX chat file changes', () => {
               },
             },
           ],
-        },
+        }],
       });
       const page = await openChat(app);
       await page.setViewportSize({ width: 1600, height: 900 });
-      await sendPrompt(page, 'Create aligned file');
 
       const turn = page.getByTestId('acp-assistant-turn');
       const message = turn.getByTestId('acp-assistant-message');
       const files = turn.getByTestId('acp-turn-file-activity');
+      const process = turn.getByRole('button', { name: 'View process', exact: true });
       await expect(message).toContainText('The write finished successfully.', { timeout: 30_000 });
+      await expect(process).toHaveAttribute('aria-expanded', 'false');
       await expect(files).toBeVisible();
+      await expect(turn.getByTestId('acp-tool-call-card')).toHaveCount(0);
+      await process.click();
       await expectVisibleToolCallCards(page, 1);
       const tool = turn.getByTestId('acp-tool-call-card');
 

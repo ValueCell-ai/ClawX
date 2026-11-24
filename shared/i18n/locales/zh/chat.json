@@ -121,6 +121,7 @@
         "copied": "已复制",
         "turnDuration": "用时 {{duration}}",
         "turnElapsed": "已处理 {{duration}}",
+        "viewTurnProcess": "查看过程",
         "compaction": {
             "inProgress": "正在压缩上下文",
             "completed": "已压缩历史上下文",

@@ -121,6 +121,7 @@
         "copied": "Copied",
         "turnDuration": "Took {{duration}}",
         "turnElapsed": "{{duration}} elapsed",
+        "viewTurnProcess": "View process",
         "compaction": {
             "inProgress": "Compacting context",
             "completed": "Compacted history",

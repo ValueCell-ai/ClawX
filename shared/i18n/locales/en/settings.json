@@ -9,6 +9,11 @@
     "dark": "Dark",
     "system": "System",
     "language": "Language",
+    "replyDisplay": {
+      "title": "Reply display",
+      "concise": "Concise",
+      "detailed": "Detailed"
+    },
     "menuLanguageUpdated": "Menu language updated",
     "launchAtStartup": "Launch ClawX at login",
     "launchAtStartupDesc": "Automatically launch ClawX when you log in"

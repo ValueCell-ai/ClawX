@@ -1,4 +1,5 @@
 import { imageGenerationTaskIdFromToolOutput } from './image-generation-compat';
+import type { AcpTurnTiming } from './turn-timings';
 import type {
   AcpTimelineSnapshot,
   AttachmentRenderPart,
@@ -24,6 +25,39 @@ export type AcpAssistantTurnDisplayGroup = {
 };
 
 export type AcpTimelineDisplayGroup = AcpUserDisplayGroup | AcpAssistantTurnDisplayGroup;
+
+function isPendingActivity(item: TimelineItem): boolean {
+  if (item.kind === 'tool-call') return item.status === 'pending' || item.status === 'running';
+  if (item.kind === 'permission') return item.status === 'pending';
+  return item.kind === 'compaction' && item.status === 'in_progress';
+}
+
+function keepProcessItemVisible(item: TimelineItem): boolean {
+  if (item.kind === 'compaction') return item.status === 'failed';
+  if (item.kind === 'message-segment' && item.compat?.source === 'image-generation' && !item.compat.provisionalText) {
+    return true;
+  }
+  const parts = item.kind === 'tool-call' ? item.outputParts : 'parts' in item ? item.parts : [];
+  return parts.some((part) => part.kind === 'attachment' || part.kind === 'image' || part.kind === 'error');
+}
+
+export function conciseAssistantTurnItems(items: TimelineItem[], status?: AcpTurnTiming['status']): TimelineItem[] {
+  if (status === 'running' || items.some(isPendingActivity)) return items;
+
+  // Tool updates reuse the original timeline item. Find the boundary in display order.
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const tool = items[index];
+    if (tool.kind !== 'tool-call') continue;
+    if (status !== 'complete' && !tool.historical) return items;
+
+    const hasReply = items.slice(index + 1).some((item) => (
+      item.kind === 'message-segment' && item.role === 'assistant' && !item.compat?.provisionalText
+      && item.parts.some((part) => part.kind === 'markdown' && part.text.trim().length > 0)
+    ));
+    return hasReply ? items.filter((item, itemIndex) => itemIndex > index || keepProcessItemVisible(item)) : items;
+  }
+  return items;
+}
 
 function isUserMessageSegment(item: TimelineItem): item is MessageSegmentItem & { role: 'user' } {
   return item.kind === 'message-segment' && item.role === 'user';
