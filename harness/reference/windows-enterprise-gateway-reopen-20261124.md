@@ -91,7 +91,10 @@ worst-case full desktop reopen.
   identity and approved scope before early authentication. Initial pairing,
   mutations, plugin operations and model publication retain their admission
   gates. A startup configuration read waits for normal dispatch on the same
-  socket. The desktop verifies Agent readiness on its current connection.
+  socket. During a slow upgrade, that read has up to ten minutes to start,
+  and the desktop's default RPC deadline allows time for the reply. Other
+  requests keep their ordinary deadlines. The desktop verifies Agent
+  readiness on its current connection.
   [Upstream operator admission](https://github.com/openclaw/openclaw/pull/185732)
 - Windows lock handling retains the authoritative boot identity read by
   older releases, together with host, PID and available process creation
@@ -122,8 +125,15 @@ with the desktop stopped. Enterprise services and provider traffic were
 simulated. The NSIS installer wizard, registry integration and live channel
 delivery were outside the test scope.
 
-All 462 tests in the PR's 35 targeted test files passed on Windows. The
-installer-script tests loaded the NSIS patch helper as native ESM. An offline frozen install
-reproduced all 31 runtime files used for the desktop comparison. Both
-TypeScript checks, lint on the 25 changed TypeScript files, 23 harness
-checks and 44 communication thresholds across six scenarios passed.
+At the time of the manual restart measurements, all 462 tests in the 35
+targeted test files passed on Windows. The installer-script tests loaded
+the NSIS patch helper as native ESM. An offline frozen install reproduced
+all 31 runtime files used for the desktop comparison. Both TypeScript
+checks, lint on the 25 changed TypeScript files, 23 harness checks and
+44 communication thresholds across six scenarios passed.
+
+A follow-up regression check used a signed loopback WebSocket and advanced
+a controlled clock by 61 seconds before opening the startup gate. The pending
+config read then returned both Agent IDs on the original connection. An
+explicit 1.5-second timeout and the ordinary 30-second RPC timeout both
+expired on schedule.

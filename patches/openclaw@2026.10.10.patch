@@ -4703,10 +4703,10 @@ index 0ede829a..e8920e98 100644
  	if (minimalTestGateway) databasePreparationReady.resolve();
  	startupTrace.detail("memory.ready", [...collectGatewayProcessMemoryUsageMb(), ...minimalTestGateway ? [] : await startupTrace.measure("runtime.worker-pool-metrics", collectGatewayWorkerPoolMetrics)]);
 diff --git a/dist/message-handler-DSPg7e4A.mjs b/dist/message-handler-DSPg7e4A.mjs
-index 5e53f30..b3b68ab 100644
+index 5e53f306..e6f014dd 100644
 --- a/dist/message-handler-DSPg7e4A.mjs
 +++ b/dist/message-handler-DSPg7e4A.mjs
-@@ -84,7 +84,7 @@
+@@ -84,7 +84,7 @@ import { i as classifyGatewayStaleInstall } from "./stale-install-cQYOrvoC.mjs";
  import { a as resolveBrowserAuthOrigin } from "./provider-browser-auth-BLztkd0F.mjs";
  import { t as resolveLocalNodeId } from "./local-id-H7qktDal.mjs";
  import { t as deriveDeviceIdFromPublicKey } from "./device-identity-CMXJpIhP.mjs";
@@ -4715,7 +4715,7 @@ index 5e53f30..b3b68ab 100644
  import { r as normalizeDeviceMetadataForAuth } from "./device-auth-BT2rF0Jc.mjs";
  import { t as rawDataToString } from "./websocket-data-2vBvd4uX.mjs";
  import { t as resolveGatewayClientPlatformIdentity } from "./gateway-client-platform-h2QbDjYZ.mjs";
-@@ -93,7 +93,7 @@
+@@ -93,7 +93,7 @@ import { i as verifyAgentRuntimeIdentityToken } from "./agent-runtime-identity-t
  import { n as isOperatorApprovalRuntimeToken } from "./operator-approval-runtime-token-BfPhcXF-.mjs";
  import { n as resolveControlUiLinkLocation } from "./control-ui-link-base-C4cbCE5S.mjs";
  import { r as bindWebSocketRequestMutationAuthority } from "./session-mutation-guards-yn40v7UO.mjs";
@@ -4724,8 +4724,12 @@ index 5e53f30..b3b68ab 100644
  import { t as createAuthenticatedGitHubIdentitySync } from "./github-user-identity-BGiiwFfr.mjs";
  import { i as TALK_PTT_COMMANDS, n as IOS_WATCH_RELAY_COMMANDS, r as PLATFORM_DEFAULTS, t as DEFAULT_DANGEROUS_NODE_COMMANDS } from "./node-command-policy-CCKsZy54.mjs";
  import { i as prepareGatewayLocalUserIngress, t as attachGatewayLocalUserIngress } from "./local-user-ingress-CA2xbjpX.mjs";
-@@ -172,6 +172,20 @@
+@@ -170,12 +170,30 @@ const MAX_STARTS_PER_TURN = 64;
+ const START_WORK_BUDGET_MS = 12;
+ const MAX_CONCURRENT_PREPARATIONS = 4;
  const MAX_QUEUE_WAIT_MS = 3e4;
++// Match ClawX's maximum managed Gateway startup window for an already-authenticated read.
++const MAX_STARTUP_CONFIG_WAIT_MS = 10 * 60_000;
  let preparations = 0;
  let notifyQueueChanged;
 +const watchedConfigStartup = new WeakSet();
@@ -4744,8 +4748,16 @@ index 5e53f30..b3b68ab 100644
 +}
  let active = false;
  var GatewayRequestStartTimeoutError = class extends Error {
- 	constructor() {
-@@ -186,6 +200,7 @@
+-	constructor() {
+-		super("The server could not start the request within 30 seconds. Please try again.");
++	constructor(configStartup) {
++		super(configStartup
++			? "The Gateway could not admit the startup config read within 10 minutes. Please try again."
++			: "The server could not start the request within 30 seconds. Please try again.");
+ 	}
+ };
+ async function grantStarts() {
+@@ -186,6 +204,7 @@ async function grantStarts() {
  		const blockedConnections = /* @__PURE__ */ new Set();
  		const index = pending.findIndex((work) => {
  			if (work.signal?.aborted || now >= work.expiresAt) return true;
@@ -4753,7 +4765,16 @@ index 5e53f30..b3b68ab 100644
  			if (work.preparation && preparations >= MAX_CONCURRENT_PREPARATIONS || !work.independentRead && blockedConnections.has(work.connection.id)) {
  				blockedConnections.add(work.connection.id);
  				return false;
-@@ -202,6 +217,7 @@
+@@ -195,13 +214,15 @@ async function grantStarts() {
+ 		if (index === -1) {
+ 			const changed = createDeferredCore();
+ 			notifyQueueChanged = changed.resolve;
+-			const timeout = setTimeout(changed.resolve, Math.max(0, pending[0].expiresAt - performance.now()));
++			const earliestExpiry = pending.reduce((earliest, work) => Math.min(earliest, work.expiresAt), Infinity);
++			const timeout = setTimeout(changed.resolve, Math.max(0, earliestExpiry - performance.now()));
+ 			await racePromiseWithAbortSignal(changed.promise, pending[0].signal).catch(() => {});
+ 			clearTimeout(timeout);
+ 			notifyQueueChanged = void 0;
  			continue;
  		}
  		const current = pending.splice(index, 1)[0];
@@ -4761,7 +4782,16 @@ index 5e53f30..b3b68ab 100644
  		current.budget.count--;
  		current.budget.bytes -= current.frameBytes;
  		current.connection.count--;
-@@ -229,7 +245,7 @@
+@@ -213,7 +234,7 @@ async function grantStarts() {
+ 		}
+ 		turnStarts++;
+ 		if (performance.now() >= current.expiresAt) {
+-			current.reject(new GatewayRequestStartTimeoutError());
++			current.reject(new GatewayRequestStartTimeoutError(current.configStartup));
+ 			continue;
+ 		}
+ 		if (current.preparation && !current.signal?.aborted) {
+@@ -229,7 +250,7 @@ async function grantStarts() {
  	active = false;
  }
  /** Park saturated preparations; preserve connection order except for independent reads. */
@@ -4770,7 +4800,7 @@ index 5e53f30..b3b68ab 100644
  	return runOutsideGatewayRootWorkAdmission(() => {
  		const preparation = request.method === "sessions.subscribe" || request.method === "models.list" || request.method === "sessions.messages.subscribe" && asOptionalRecord(request.params)?.includeApprovals === true;
  		const lifecycle = frameBytes <= MAX_CONTROL_FRAME_BYTES && (request.method === "gateway.suspend.prepare" || request.method === "gateway.suspend.status" || request.method === "gateway.suspend.resume" || request.method === "gateway.suspend.handoff" || request.method === "gateway.restart.request" || request.method === "update.status" || request.method === "update.run");
-@@ -247,7 +263,9 @@
+@@ -247,10 +268,12 @@ function scheduleGatewayRequestStart(frameBytes, request, connId, settled, signa
  		queuedConnection.count++;
  		budget.connections.set(connId, queuedConnection);
  		const insertion = lifecycle ? pending.findLastIndex((work) => work.lifecycle || !independentRead && work.connection.id === connId) + 1 : pending.length;
@@ -4779,8 +4809,12 @@ index 5e53f30..b3b68ab 100644
 +			configStartup,
  			grant,
  			reject,
- 			expiresAt: performance.now() + MAX_QUEUE_WAIT_MS,
-@@ -509,9 +527,15 @@
+-			expiresAt: performance.now() + MAX_QUEUE_WAIT_MS,
++			expiresAt: performance.now() + (configStartup ? MAX_STARTUP_CONFIG_WAIT_MS : MAX_QUEUE_WAIT_MS),
+ 			preparation,
+ 			independentRead,
+ 			lifecycle,
+@@ -509,9 +532,15 @@ function createGatewayAuthenticatedRequestDispatcher(params) {
  					if (!hasCurrentClientAuthority() || !hasCurrentRuntimeAuthority()) return;
  					const { handleGatewayRequest } = await loadGatewayServerMethods();
  					entry?.assertOpen();
@@ -4797,7 +4831,7 @@ index 5e53f30..b3b68ab 100644
  						if (!start) {
  							respondWithAuthority(false, void 0, errorShape(ErrorCodes.UNAVAILABLE, "The server is busy. Please try again in a moment.", { retryable: true }));
  							return;
-@@ -524,6 +548,12 @@
+@@ -524,6 +553,12 @@ function createGatewayAuthenticatedRequestDispatcher(params) {
  					}
  					entry?.assertOpen();
  					if (signal?.aborted || !hasCurrentClientAuthority() || !hasCurrentRuntimeAuthority()) return;
@@ -4810,7 +4844,7 @@ index 5e53f30..b3b68ab 100644
  					await runOutsideGatewayRootWorkAdmission(() => handleGatewayRequest(bindWebSocketRequestMutationAuthority({
  						req,
  						respond: respondWithAuthority,
-@@ -533,7 +563,7 @@
+@@ -533,7 +568,7 @@ function createGatewayAuthenticatedRequestDispatcher(params) {
  						hasCurrentClientAuthority,
  						expectedProfileBinding,
  						extraHandlers,
@@ -4819,7 +4853,7 @@ index 5e53f30..b3b68ab 100644
  						context,
  						...admission ? { admission } : {},
  						requestEntry: entry,
-@@ -664,7 +694,9 @@
+@@ -664,7 +699,9 @@ async function admitGatewayConnect(context) {
  	const { connectParams, configSnapshot, peerLabel, browserOrigin, clientLabel, markHandshakeFailure, sendHandshakeErrorResponse, isWebchatConnect } = context;
  	const isNodeClient = isStartupNodeConnect(connectParams);
  	const startupPending = isStartupPending?.() === true;
@@ -4830,7 +4864,7 @@ index 5e53f30..b3b68ab 100644
  		await rejectGatewayStartupConnect(context);
  		return;
  	}
-@@ -767,7 +799,8 @@
+@@ -767,7 +804,8 @@ async function admitGatewayConnect(context) {
  		isBrowserOperatorUi,
  		isWebchat,
  		isNativeAppUi,
@@ -4840,7 +4874,7 @@ index 5e53f30..b3b68ab 100644
  	};
  }
  //#endregion
-@@ -1233,6 +1266,11 @@
+@@ -1233,6 +1271,11 @@ async function authenticateGatewayConnectCore(context) {
  		await settleRejectedSharedAuthFailure();
  		return;
  	}
@@ -4852,7 +4886,7 @@ index 5e53f30..b3b68ab 100644
  	const deviceProof = verifyGatewayConnectDeviceProof(context, {
  		device,
  		resolvedAuth,
-@@ -1489,6 +1527,7 @@
+@@ -1489,6 +1532,7 @@ async function issueGatewayConnectDeviceTokens(params) {
  		role,
  		scopes,
  		issuer: sharedGatewayAuthIssuer,
@@ -4860,7 +4894,7 @@ index 5e53f30..b3b68ab 100644
  		isIssuanceCurrent: params.isIssuanceCurrent
  	}) : null;
  	const bootstrapDeviceTokens = [];
-@@ -1606,7 +1645,11 @@
+@@ -1606,7 +1650,11 @@ async function authorizeExistingGatewayDevice(params) {
  			profile: retryBootstrapHandoffProfile
  		}, ["operator"])) handoffBootstrapProfile = retryBootstrapHandoffProfile;
  	}
@@ -4873,7 +4907,7 @@ index 5e53f30..b3b68ab 100644
  		...clientAccessMetadata,
  		...metadataPinning.refreshPairedPlatform ? { platform: metadataPinning.refreshPairedPlatform } : {}
  	});
-@@ -1996,6 +2039,10 @@
+@@ -1996,6 +2044,10 @@ async function authorizeGatewayConnectDevice(context, state) {
  	let { scopes } = state;
  	let { handoffBootstrapProfile } = state;
  	const { role, device, devicePublicKey, authMethod, authResult, hasRequestedScopes, skipLocalBackendSelfPairing, controlUiPairingKind } = state;
@@ -4884,7 +4918,7 @@ index 5e53f30..b3b68ab 100644
  	const isConnectAuthorizationCurrent = () => resolveGatewayConnectPolicyFailure(context, state) === void 0;
  	const failPairingHandshake = (params) => {
  		const { message, details, closeCause, closeReason } = params;
-@@ -2038,6 +2085,10 @@
+@@ -2038,6 +2090,10 @@ async function authorizeGatewayConnectDevice(context, state) {
  			lastSeenReason: "connect"
  		};
  		const requirePairing = async (reason, existingPairedDevice = null) => {
@@ -4895,7 +4929,7 @@ index 5e53f30..b3b68ab 100644
  			const pairingStateAllowsRequestedAccess = (pairedCandidate, requestedScopes = scopes) => pairedCandidate?.publicKey === devicePublicKey && hasEffectivePairedDeviceRole(pairedCandidate, role) && roleScopesAllow({
  				role,
  				requestedScopes,
-@@ -2257,6 +2308,10 @@
+@@ -2257,6 +2313,10 @@ async function authorizeGatewayConnectDevice(context, state) {
  		};
  		const paired = await getPairedDevice(device.id);
  		const isPaired = paired?.publicKey === devicePublicKey;
@@ -4906,7 +4940,7 @@ index 5e53f30..b3b68ab 100644
  		if (paired && !isPaired && state.remoteIngressPrincipal) {
  			failPairingHandshake({ message: "Remote Control UI device key does not match the paired device; remove the stale device in Devices and reconnect with a fresh browser identity." });
  			return;
-@@ -2314,6 +2369,10 @@
+@@ -2314,6 +2374,10 @@ async function authorizeGatewayConnectDevice(context, state) {
  		hasApprovedDeviceBaseline: hasServerApprovedDeviceTokenBaseline,
  		isIssuanceCurrent: isConnectAuthorizationCurrent
  	});
@@ -4917,7 +4951,7 @@ index 5e53f30..b3b68ab 100644
  	return {
  		...state,
  		scopes,
-@@ -2329,6 +2388,7 @@
+@@ -2329,6 +2393,7 @@ async function publishConnectModelCatalog(handler, dispatcher) {
  	const client = handler.getClient();
  	const requestedScope = client?.connect.modelCatalog;
  	if (client?.connect.client.id !== GATEWAY_CLIENT_IDS.CONTROL_UI || !hasGatewayClientCap(client.connect.caps, GATEWAY_CLIENT_CAPS.MODEL_CATALOG_SNAPSHOT) || !requestedScope) return;
@@ -4925,7 +4959,7 @@ index 5e53f30..b3b68ab 100644
  	let scope;
  	if ("shortId" in requestedScope) {
  		const resolveRequest = {
-@@ -2397,6 +2457,20 @@
+@@ -2397,6 +2462,20 @@ function resolveControlUiIdentity(cfg, auth) {
  }
  //#endregion
  //#region src/gateway/server/ws-connection/connect-hello.ts
@@ -4946,7 +4980,7 @@ index 5e53f30..b3b68ab 100644
  async function sendGatewayHello(context, state, pluginSurfaceUrls, authenticatedUserProfileId) {
  	const { connId, bootId, nodeReapprovalCoordinator, gatewayMethods, events, buildRequestContext, refreshHealthSnapshot, close, advanceHandshakePhase, setCloseCause, logGateway, logHealth } = context.handler;
  	const { frame, connectParams, sendFrame, onHelloDelivered, pendingNodePairingCleanup, releasePendingNodePairingCleanup } = context;
-@@ -2449,7 +2523,7 @@
+@@ -2449,7 +2528,7 @@ async function sendGatewayHello(context, state, pluginSurfaceUrls, authenticated
  		},
  		features: {
  			methods: resolveBrowserAuthOrigin(context.browserOrigin, new AbortController().signal) ? gatewayMethods : gatewayMethods.filter((method) => method !== "mcp.authLogin"),
@@ -4955,7 +4989,7 @@ index 5e53f30..b3b68ab 100644
  			capabilities: [
  				GATEWAY_SERVER_CAPS.AGENT_SESSION_ID_CREATE,
  				SYSTEM_RUN_EXECUTION_CONTEXT_CAPABILITY,
-@@ -2608,6 +2682,13 @@
+@@ -2608,6 +2687,13 @@ async function sendGatewayHello(context, state, pluginSurfaceUrls, authenticated
  		return;
  	}
  	onHelloDelivered();
@@ -4969,7 +5003,7 @@ index 5e53f30..b3b68ab 100644
  	try {
  		const client = context.handler.getClient();
  		if (client?.presenceKey && !client.invalidated && client.socket.readyState === 1 && !context.handler.isClosed()) commitPresence(client.presenceKey, connId);
-@@ -2989,8 +3070,12 @@
+@@ -2989,8 +3075,12 @@ async function resolveGatewayConnectProfileAdmission(params) {
  	try {
  		params.assertCurrent?.();
  		const options = { assertCurrent: params.assertCurrent };
@@ -4983,7 +5017,7 @@ index 5e53f30..b3b68ab 100644
  		const prepared = await resolveAuthenticatedProfile("profileId" in profile ? profile.profileId : profile.id, profile.updatedAt, params.assertCurrent);
  		params.assertCurrent?.();
  		if (!prepared.authority.isCurrent()) throw new Error("Gateway profile changed during acquisition");
-@@ -3000,6 +3085,10 @@
+@@ -3000,6 +3090,10 @@ async function resolveGatewayConnectProfileAdmission(params) {
  		};
  	} catch (error) {
  		context.handler.logWsControl.warn(`user profile resolution failed conn=${context.handler.connId} user=${formatForLog(authenticatedUserId)}: ${formatForLog(error)}`);
@@ -4994,7 +5028,7 @@ index 5e53f30..b3b68ab 100644
  		if (!ownerProfileExpected && profileRequired && state.role === "operator" && state.authMethod !== "token" && state.authMethod !== "password") {
  			await rejectUnavailableProfileConnect(context, error);
  			return { ok: false };
-@@ -3102,6 +3191,12 @@
+@@ -3102,6 +3196,12 @@ async function attachAuthenticatedGatewayConnect(context, state) {
  		assertCurrent: profileLifecycle.assertCurrent
  	});
  	if (!profileAdmission.ok) return;
@@ -5007,7 +5041,7 @@ index 5e53f30..b3b68ab 100644
  	const preparedProfile = profileAdmission.prepared;
  	const authenticatedUserProfile = remoteIngressPrincipal?.authenticatedUserProfile ?? preparedProfile?.profile;
  	const effectiveScopes = remoteIngressPrincipal ? {
-@@ -3204,6 +3299,7 @@
+@@ -3204,6 +3304,7 @@ async function attachAuthenticatedGatewayConnect(context, state) {
  	const authenticatedControlUi = authenticatedOperator && connectParams.client.id === GATEWAY_CLIENT_IDS.CONTROL_UI;
  	const controlUiAdmin = authenticatedControlUi && scopes.includes("operator.admin");
  	const internal = {
@@ -5015,7 +5049,7 @@ index 5e53f30..b3b68ab 100644
  		...isLocalClient ? { isLocalClient: true } : {},
  		...authenticatedOperator ? { authenticatedOperator: true } : {},
  		...authenticatedControlUi ? { authenticatedControlUi: true } : {},
-@@ -3341,6 +3437,7 @@
+@@ -3341,6 +3442,7 @@ async function attachAuthenticatedGatewayConnect(context, state) {
  	setHandshakeState("connected");
  	advanceHandshakePhase("session_attached");
  	if (role === "operator" && !isEphemeralGatewayClient(connectParams.client)) runDetachedConnectWork(async () => {

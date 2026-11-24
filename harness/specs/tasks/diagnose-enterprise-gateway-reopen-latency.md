@@ -9,6 +9,7 @@ touchedAreas:
   - electron/gateway/ws-client.ts
   - tests/unit/gateway-manager-handshake-wire.test.ts
   - electron/gateway/manager.ts
+  - electron/main/ipc-handlers.ts
   - tests/unit/gateway-manager-diagnostics.test.ts
   - tests/unit/gateway-ready-fallback.test.ts
   - electron/gateway/startup-orchestrator.ts
@@ -103,7 +104,7 @@ acceptance:
   - Compare the reduction in child-spawn-to-signed-handshake time against the roughly nine-second improvement measured with the official CLI. Measure time to retained session history and Agent readiness independently, and report run-to-run variation.
   - Exercise both an original 0.6.1 profile and a profile that has run the original 0.7.1 build. Verify first launch and subsequent reopen, real signed RPC, old messages, previous model, WeCom and DingTalk state and grants, SQLite integrity, and clean shutdown. Retain the zero-valued legacy compaction setting.
   - Preserve the ownership contract in a mixed-version transition. Early authentication must retain the existing node and operator identity checks, recovery-sensitive RPC gates, per-agent database admission, and initial model publication on early connections.
-  - A signed desktop may request config.get during startup to discover Agent IDs for provider-auth synchronization. Deliver the committed configuration after full readiness, rechecking normal authorization, and cancel on disconnect or shutdown. A multi-Agent upgrade must retain its original roster.
+  - A signed desktop config.get issued while startup is pending must survive a 61-second wait and return the complete Agent roster on the same connection. Use a bounded startup budget at both ends, honor explicit client deadlines, recheck authorization at dispatch and cancel on disconnect or shutdown. Ordinary RPCs retain their existing timeout.
   - Wait for Agent readiness on the original connection before the automatic provider-auth sync. An explicitly pending desktop must not approve a pending device through the CLI fallback. Keep the existing retry for local approvals after startup and legacy behavior with an unspecified ready flag.
 docs:
   required: true

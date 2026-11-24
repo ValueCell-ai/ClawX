@@ -702,7 +702,7 @@ function registerGatewayHandlers(gatewayManager: GatewayManager): void {
       const result = await gatewayManager.rpc(method, params, timeoutMs);
       return { success: true, result };
     } catch (error) {
-      logger.warn(`[gateway:rpc] ${method} failed (timeoutMs=${timeoutMs ?? 30000}): ${String(error)}`);
+      logger.warn(`[gateway:rpc] ${method} failed (timeoutMs=${timeoutMs ?? 'default'}): ${String(error)}`);
       return { success: false, error: String(error) };
     }
   });

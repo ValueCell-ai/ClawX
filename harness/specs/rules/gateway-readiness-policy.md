@@ -46,7 +46,9 @@ on disconnect or shutdown. Keep the fallback probe for other Gateways and for
 lost notifications.
 
 An early desktop's core `config.get` may wait in the bounded read queue for
-full startup. Recheck the current registry, authorization and connection
+full startup. Its default client and queue deadlines must accommodate a slow
+upgrade. Preserve explicit client deadlines and the ordinary 30-second
+queue limit for other requests. Recheck the current registry, authorization and connection
 before dispatch. Resolve the full configured roster before syncing provider
 credentials. Defer the automatic sync until the original connection has
 Agent admission, while independent desktop initialization can continue.
