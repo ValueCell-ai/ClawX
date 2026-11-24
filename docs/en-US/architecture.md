@@ -137,3 +137,4 @@ Gateway liveness is decided in Electron Main. WebSocket pong frames are useful t
   - macOS/Linux: `lsof -nP -iTCP:18789 -sTCP:LISTEN`
   - Windows (PowerShell): `Get-NetTCPConnection -LocalPort 18789 -State Listen`
 - Clicking the window close button (`X`) hides ClawX to the tray; it does not fully quit the app. Use **Quit ClawX** in the tray menu for a complete shutdown.
+- The date in `clawx-YYYY-MM-DD.log` is the UTC date when ClawX started. If the session crosses midnight UTC, later events still go into that file. Use the timestamps inside the log to find the event.

@@ -134,3 +134,4 @@ Gateway 的存活状态由 Electron 主进程判断。WebSocket pong 是有价�
   - macOS/Linux：`lsof -nP -iTCP:18789 -sTCP:LISTEN`
   - Windows（PowerShell）：`Get-NetTCPConnection -LocalPort 18789 -State Listen`
 - 点击窗口关闭按钮（`X`）默认只是最小化到托盘，并不会完全退出应用。请在托盘菜单中选择 **Quit ClawX** 执行完整退出。
+- `clawx-YYYY-MM-DD.log` 的日期是 ClawX 启动时的 UTC 日期。会话跨过 UTC 午夜后，后续事件仍写入同一个文件。请按日志内的时间戳查找事件。
