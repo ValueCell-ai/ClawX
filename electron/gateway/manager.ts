@@ -1062,7 +1062,7 @@ export class GatewayManager extends EventEmitter {
    * pending admission answers sessions.list with an empty catalog.
    */
   private markGatewayReady(): void {
-    if (this.status.state !== 'running' || this.status.gatewayReady) {
+    if (!this.shouldReconnect || this.status.state !== 'running' || this.status.gatewayReady) {
       return;
     }
     if (this.gatewayReadyAdmissionGate?.connectedAt === this.status.connectedAt) {
@@ -1602,7 +1602,7 @@ export class GatewayManager extends EventEmitter {
         scheduleLocalDeviceAutoApproval(this);
       },
       onMessage: (message) => {
-        this.handleMessage(message);
+        if (connectedSocket !== null && this.ws === connectedSocket) this.handleMessage(message);
       },
       onCloseAfterHandshake: (closeCode) => {
         // A replacement path clears this.ws before terminating its old socket.

@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
 import { runGatewayStartupSequence, startGatewayAndSyncAuth } from '@electron/gateway/startup-orchestrator';
 import { GatewayStartupPreparations, GatewayStartupPreparationError, GatewayStartupMigrationRequiredError } from '@electron/gateway/startup-preparation';
@@ -31,9 +32,32 @@ function harness() {
 }
 
 describe('startup migration preparation orchestration', () => {
+  it.each(['ready', 'replaced', 'stopped'])('waits for admission on the original socket before auth sync (%s)', async (outcome) => {
+    const events = new EventEmitter();
+    const status = { state: 'running', connectedAt: 7, gatewayReady: false };
+    const syncAuth = vi.fn(async () => {});
+    const started = startGatewayAndSyncAuth({
+      start: async () => {},
+      getStatus: () => ({ ...status }),
+      on: events.on.bind(events),
+      off: events.off.bind(events),
+    }, syncAuth);
+    expect(await started).toBe(true);
+    events.emit('status', { ...status, gatewayReady: false });
+    await Promise.resolve();
+    expect(events.listenerCount('status')).toBe(1);
+    expect(syncAuth).not.toHaveBeenCalled();
+    if (outcome === 'replaced') status.connectedAt++;
+    if (outcome === 'stopped') status.state = 'stopped';
+    status.gatewayReady = true;
+    events.emit('status', status);
+    expect(syncAuth).toHaveBeenCalledTimes(outcome === 'ready' ? 1 : 0);
+    expect(events.listenerCount('status')).toBe(0);
+  });
+
   it.each(['error', 'stopped', 'starting'])('does not sync auth after start returns with %s status', async (state) => {
     const syncAuth = vi.fn();
-    expect(await startGatewayAndSyncAuth({ start: async () => {}, getStatus: () => ({ state }) }, syncAuth)).toBe(false);
+    expect(await startGatewayAndSyncAuth({ start: async () => {}, getStatus: () => ({ state }), on: vi.fn(), off: vi.fn() }, syncAuth)).toBe(false);
     expect(syncAuth).not.toHaveBeenCalled();
   });
 
@@ -43,6 +67,8 @@ describe('startup migration preparation orchestration', () => {
     const gateway = {
       start: async () => { await Promise.resolve(); state = 'running'; order.push('started'); },
       getStatus: () => ({ state }),
+      on: vi.fn(),
+      off: vi.fn(),
     };
     expect(await startGatewayAndSyncAuth(gateway, async () => { order.push('sync'); })).toBe(true);
     expect(order).toEqual(['started', 'sync']);
@@ -51,7 +77,7 @@ describe('startup migration preparation orchestration', () => {
   it('does not sync auth when start rejects', async () => {
     const syncAuth = vi.fn();
     const failure = new Error('backup failed');
-    await expect(startGatewayAndSyncAuth({ start: async () => { throw failure; }, getStatus: () => ({ state: 'running' }) }, syncAuth)).rejects.toBe(failure);
+    await expect(startGatewayAndSyncAuth({ start: async () => { throw failure; }, getStatus: () => ({ state: 'running' }), on: vi.fn(), off: vi.fn() }, syncAuth)).rejects.toBe(failure);
     expect(syncAuth).not.toHaveBeenCalled();
   });
 

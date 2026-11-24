@@ -9,13 +9,36 @@ import {
 
 const MAX_DOCTOR_REPAIRS = 2;
 
-/** start() reports some failures through status; they must not trigger auth writes. */
+type PostStartStatus = { state: string; connectedAt?: number; gatewayReady?: boolean };
+
+/** Return whether startup connected. A still-migrating Gateway syncs auth on admission. */
 export async function startGatewayAndSyncAuth(
-  gateway: { start(): Promise<void>; getStatus(): { state: string } },
+  gateway: {
+    start(): Promise<void>;
+    getStatus(): PostStartStatus;
+    on(event: 'status', listener: (status: PostStartStatus) => void): unknown;
+    off(event: 'status', listener: (status: PostStartStatus) => void): unknown;
+  },
   syncAuth: () => Promise<void>,
 ): Promise<boolean> {
   await gateway.start();
-  if (gateway.getStatus().state !== 'running') return false;
+  const status = gateway.getStatus();
+  if (status.state !== 'running') return false;
+  // Auth synchronization discovers the live roster and writes per-Agent credentials.
+  // A paired desktop can authenticate while its Agent databases are still pending.
+  if (status.gatewayReady === false) {
+    const connectedAt = status.connectedAt;
+    const onStatus = (next: PostStartStatus) => {
+      const sameConnection = next.state === 'running' && next.connectedAt === connectedAt;
+      if (sameConnection && next.gatewayReady === false) return;
+      gateway.off('status', onStatus);
+      if (sameConnection && next.gatewayReady === true) {
+        void syncAuth().catch((error) => logger.warn('Post-start Gateway provider auth sync failed:', error));
+      }
+    };
+    gateway.on('status', onStatus);
+    return true;
+  }
   await syncAuth();
   return true;
 }

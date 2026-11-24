@@ -24,6 +24,47 @@ permission-denied or unknown process state. A confirmed dead owner can take a
 fast path; unknown ownership must never be treated as death for performance.
 See `harness/reference/windows-gateway-restart-latency.md` for measured evidence.
 
+Windows lock writers preserve the OS-reported boot identity consumed by older
+readers. The managed Gateway can start the original Windows query while its CLI
+loads and share the verified result with its workers. If the result is
+unavailable, the writer uses the original synchronous OS query. On Windows
+the host scopes the PID namespace. Verify liveness and process creation time
+before reclaiming a local owner. A foreign or conflicting host is unverifiable
+even if its heartbeat is old. Preserve the legacy namespace-less record path.
+
+The managed desktop can reconnect an already paired operator after dispatch is
+attached. Validate the nonce, signature, token, pairing and approved scope. A
+new pairing, token rotation or privilege change must wait for full startup.
+Keep mutations and plugin RPCs gated. To serve retained history during startup,
+wait for session recovery, the active plugin generation and Agent database
+admission, and apply normal per-request authorization. Publish the initial
+model snapshot after startup or cancel it if the socket closes. Keep the
+desktop's Agent admission and Renderer hydration criteria. The Gateway
+delivers one scoped ready event to a still-authorized early socket once its
+hello is delivered and full native startup completes. Cancel the notification
+on disconnect or shutdown. Keep the fallback probe for other Gateways and for
+lost notifications.
+
+An early desktop's core `config.get` may wait in the bounded read queue for
+full startup. Recheck the current registry, authorization and connection
+before dispatch. Resolve the full configured roster before syncing provider
+credentials. Defer the automatic sync until the original connection has
+Agent admission, while independent desktop initialization can continue.
+During explicit startup, a pending pairing request must wait for the next
+poll. An approval begun on one connection must not use the local CLI to act
+on a replacement connection.
+
+Persist boot history through the existing state writer after the startup guards.
+If the append fails, retain the previously computed crash-loop decision and
+roll back pruning in the same transaction.
+
+Publishing the canonical channel policy is part of activating the Gateway
+config, including rollback. A worker may load just the policy handler for
+that operation. It must use the same transaction and commit admission,
+authority invalidation and post-commit receipt as the channel identity
+handler. Link, unlink and sender authorization continue validating the
+original identity schema.
+
 Owned Gateway shutdown uses an explicitly enabled private utility-process
 channel, independent of WebSocket readiness. Acknowledgement is not completion:
 wait for process exit, distinguish clean from abnormal exit, and retain a bounded

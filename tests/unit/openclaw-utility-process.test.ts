@@ -567,6 +567,25 @@ describe('OpenClaw utility-process bootstrap', () => {
     },
   );
 
+  it.each([
+    ['win32', true, true, true],
+    ['win32', true, false, false],
+    ['win32', false, true, false],
+    ['linux', true, true, false],
+  ] as const)('gates Windows boot identity requests for %s, owned=%s, parentPort=%s', async (platform, owned, hasPort, expected) => {
+    const { OPENCLAW_GATEWAY_CONTROL_SOURCE, OPENCLAW_GATEWAY_CONTROL_ENV } =
+      await import('@electron/utils/openclaw-utility-process');
+    const setEnvironmentData = vi.fn();
+    const child = {
+      platform,
+      env: owned ? { [OPENCLAW_GATEWAY_CONTROL_ENV]: '1' } : {},
+      parentPort: hasPort ? new EventEmitter() : undefined,
+    };
+    runInNewContext(OPENCLAW_GATEWAY_CONTROL_SOURCE, { process: child, setEnvironmentData });
+    expect(setEnvironmentData.mock.calls).toEqual(expected ? [['clawx.gateway.windowsBootIdentity.v1', true]] : []);
+    expect(child.env).not.toHaveProperty(OPENCLAW_GATEWAY_CONTROL_ENV);
+  });
+
   it('dispatches the private parent-port request to SIGTERM handlers only once', async () => {
     const {
       OPENCLAW_GATEWAY_CONTROL_SOURCE, OPENCLAW_GATEWAY_CONTROL_ENV,

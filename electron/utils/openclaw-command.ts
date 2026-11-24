@@ -26,6 +26,7 @@ export interface OpenClawCommandOptions {
   /** Used in log lines, e.g. `doctor`. */
   label: string;
   timeoutMs: number;
+  preferPackagedWindowsNode?: boolean;
   /**
    * Returns true once stdout shows the command's work is persisted. Some
    * OpenClaw commands keep the process alive afterwards, so a process still
@@ -119,6 +120,7 @@ export async function runOpenClawCommand(
     const child = launchOpenClawCommandProcess(entryScript, args, {
       cwd: openclawDir,
       stdio: 'pipe',
+      preferPackagedWindowsNode: options.preferPackagedWindowsNode,
       env: {
         ...process.env,
         ...uvEnv,

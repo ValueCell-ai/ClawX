@@ -50,7 +50,8 @@ For OpenClaw capability consent:
 
 - ClawX records consent only for its own path-owned mirrors, and only for ids that are already explicitly enabled and allowed; consent must never enable a plugin
 - consent must go through OpenClaw (`openclaw plugins enable <ids...> --accept-capabilities`) offline before Gateway start. ClawX must not compute or write `acceptedSurface*` fields itself, because the hash covers OpenClaw's normalized manifest metadata
-- the consent CLI must be cached per install-record fingerprint and attempted once per fingerprint, so its per-plugin cost (about 9s) is paid only after an install, upgrade, or runtime change
+- defer consent until a managed Gateway has reached readiness on the installed OpenClaw version. On the next eligible launch, batch the pending plugin IDs and retain the per-install-record fingerprint cache. An unchanged fingerprint skips the CLI
+- for this offline command, packaged Windows prefers the bundled Node executable with the embedded environment and runtime compatibility preload. A missing or unlaunchable Node executable uses the Electron utility process. Once the command starts, its normal exit, failure, timeout and completion grace remain authoritative. Preserve per-ID stored acceptance checks and partial-batch recovery. The [Windows enterprise reopen measurements](../../reference/windows-enterprise-gateway-reopen-20261124.md) cover the first eligible launch and the next cache hit
 
 For plugin loading on Windows:
 

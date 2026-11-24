@@ -269,6 +269,7 @@ describe('GatewayManager diagnostics', () => {
     startProcess: () => Promise<void>;
     connect: (port: number) => Promise<void>;
     restartDiagnosticAttempt: Attempt | null;
+    shouldReconnect: boolean;
     process: Electron.UtilityProcess | null;
     ownsProcess: boolean;
     ws: unknown;
@@ -514,6 +515,9 @@ describe('GatewayManager diagnostics', () => {
     expect(child.postMessage).toHaveBeenCalledOnce();
     expect(rpc).not.toHaveBeenCalled();
     expect(records('ready')).toHaveLength(0);
+    // The fixture drives startProcess/connect separately. start() normally re-enables
+    // reconnect here after stop() invalidates ready events from the old child.
+    internals.shouldReconnect = true;
     internals.startDiagnosticTimer();
     const launching = internals.startProcess();
     await vi.advanceTimersByTimeAsync(1_000);

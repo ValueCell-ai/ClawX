@@ -189,7 +189,9 @@ Windows でのアップグレード時に、ClawX は現在使用中のタスク
 
 OpenClaw 2026.10.5 では 2 つのチャネルプラグインの提供元が変わり、ClawX は最初の Gateway 起動前に両方を移行します。QQ ボットは `@openclaw/qqbot` から Tencent QQBot 2.0（`@tencent-connect/openclaw-qqbot`、プラグイン id `openclaw-qqbot`）に切り替わり、デフォルトアカウントは `channels.qqbot` の最上位に移動します。開放されていた DM は承認マーカー `openclaw:approval-disabled` を使って開放のまま維持されます。承認、シークレットファイル、グループコマンドのポリシーを含む QQ ボット設定は OpenClaw Doctor に任せます。Feishu は `@larksuite/openclaw-lark` から公式の `@openclaw/feishu` に切り替わり、アプリの認証情報はそのまま使えます。公式プラグインの Feishu ツールは 39 個から 14 個になり、カレンダー、タスク、ユーザー OAuth、シート、検索のツールは使えなくなります。
 
-OpenClaw 2026.10 は、公式インストールではないプラグインの機能について同意を求めます。ClawX は同梱プラグイン（DingTalk、WeCom、Feishu、QQ ボット、OpenAI 画像リレー）が有効な場合、Gateway 起動前に `openclaw plugins enable --accept-capabilities` を実行して同意を記録します。これはこれらのプラグインのインストールまたはアップグレード後にのみ行われ、その起動はプラグインごとに約 10 秒長くなります。ClawX は無効にしたプラグインを有効にせず、ユーザーが自分でインストールしたプラグインの機能には同意しません。
+OpenClaw 2026.10 は、公式インストールではないプラグインの機能について同意を求めます。ClawX は有効な同梱プラグイン（DingTalk、WeCom、Feishu、QQ ボット、OpenAI 画像リレー）の同意を記録します。OpenClaw のアップグレード後は、新しい Gateway が一度利用可能になるまで待ちます。次回の起動時に、ClawX は Gateway の起動前に `openclaw plugins enable --accept-capabilities` を実行し、同意が必要なプラグインをまとめて処理するため、その回は起動に時間がかかる場合があります。以降はプラグインのインストール情報または OpenClaw のバージョンが変わるまで結果を再利用します。ClawX は無効にしたプラグインを有効にせず、ユーザーが自分でインストールしたプラグインの機能には同意しません。
+
+ClawX を開き直すときや設定から Gateway を再起動するとき、ペアリング済みのデスクトップは Gateway の起動中に再接続できます。チャット画面は Gateway が Agent データベースを利用できることを確認してから、既存の会話を読み込みます。アップグレード直後はデータベースやチャンネルプラグインの移行に時間がかかる場合があります。プラグインの同意が保留中の場合、初回の手動再起動にはその記録にかかる時間も含まれます。
 
 ### ローカルComputer Use
 

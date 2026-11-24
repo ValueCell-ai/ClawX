@@ -222,6 +222,9 @@ let releaseGatewayControl = () => {};
 const gatewayControlEnabled = process.env.${OPENCLAW_GATEWAY_CONTROL_ENV} === '1';
 delete process.env.${OPENCLAW_GATEWAY_CONTROL_ENV};
 if (gatewayControlEnabled && process.parentPort) {
+  // Workers may ask this Gateway's main thread for its verified Windows boot
+  // identity. The hint carries no identity and cannot cross a process boundary.
+  if (process.platform === 'win32') setEnvironmentData('clawx.gateway.windowsBootIdentity.v1', true);
   const parentPort = process.parentPort;
   let shutdownRequested = false;
   let shutdownError;
@@ -263,6 +266,7 @@ if (gatewayControlEnabled && process.parentPort) {
 export const OPENCLAW_UTILITY_BOOTSTRAP_SOURCE = [
   `import './${OPENCLAW_RUNTIME_COMPAT_FILE}';`,
   "import { pathToFileURL } from 'node:url';",
+  "import { setEnvironmentData } from 'node:worker_threads';",
   `const entry = process.env.${OPENCLAW_UTILITY_ENTRY_ENV};`,
   `delete process.env.${OPENCLAW_UTILITY_ENTRY_ENV};`,
   'if (!entry) {',

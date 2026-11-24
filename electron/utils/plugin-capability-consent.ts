@@ -136,6 +136,8 @@ export function hasEnabledEveryPlugin(stdout: string, pluginIds: string[]): bool
 async function enableWithConsent(pluginIds: string[]): Promise<{ success: boolean; timedOut: boolean }> {
   const result = await runOpenClawCommand(['plugins', 'enable', ...pluginIds, '--accept-capabilities'], {
     label: 'plugin capability consent',
+    // A packaged Node CLI exits naturally once the accepted surfaces are persisted.
+    preferPackagedWindowsNode: true,
     timeoutMs: BASE_TIMEOUT_MS + PER_PLUGIN_TIMEOUT_MS * pluginIds.length,
     completeWhen: (stdout) => hasEnabledEveryPlugin(stdout, pluginIds),
   });

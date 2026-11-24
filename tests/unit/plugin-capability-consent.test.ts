@@ -93,7 +93,7 @@ describe('ClawX plugin capability consent', () => {
     expect(mocks.runCommand).toHaveBeenCalledTimes(1);
     expect(mocks.runCommand).toHaveBeenCalledWith(
       ['plugins', 'enable', 'wecom', 'openclaw-qqbot', '--accept-capabilities'],
-      expect.objectContaining({ timeoutMs: expect.any(Number) }),
+      expect.objectContaining({ timeoutMs: expect.any(Number), preferPackagedWindowsNode: true }),
     );
 
     const second = await ensureClawXPluginCapabilityConsent(enabledConfig(['wecom', 'openclaw-qqbot']), { cachePath });
