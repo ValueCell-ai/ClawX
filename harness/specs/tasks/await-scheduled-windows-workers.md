@@ -9,6 +9,7 @@ touchedAreas:
   - pnpm-lock.yaml
   - tests/unit/openclaw-*cron*.test.ts
   - tests/fixtures/openclaw-windows-cron-descendants.mjs
+  - tests/e2e/chat-scroll-to-latest.spec.ts
   - scripts/test-windows-cron-worker.mjs
   - harness/specs/tasks/await-scheduled-windows-workers.md
   - harness/specs/scenarios/gateway-backend-communication.md
@@ -29,9 +30,11 @@ requiredTests:
   - tests/unit/openclaw-cron-run-context.test.ts
   - tests/unit/openclaw-windows-cron-descendants.test.ts
   - node scripts/test-windows-cron-worker.mjs (Windows)
+  - tests/e2e/chat-scroll-to-latest.spec.ts
 acceptance:
   - Exercise a new isolated job with an explicit skill workdir, a short launcher and a worker writing a local receipt after launcher exit on Windows.
   - Verify scheduled, interactive, cancellation, timeout and legacy migration cases against the pinned runtime.
+  - Verify the scroll-to-latest CI regression with wheel input and viewport assertions in Electron.
 docs:
   required: true
 ---

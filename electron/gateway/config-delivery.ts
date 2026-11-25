@@ -9,7 +9,8 @@ import { applyProviderModelCompatibility } from '../shared/providers/model-compa
 import { isRecord } from '../services/payload-utils';
 import { withConfigLock } from '../utils/config-mutex';
 import { logger } from '../utils/logger';
-import { resolveOpenClawConfigPath } from '../utils/paths';
+import { resolveOpenClawConfigPath, resolveOpenClawStateDir } from '../utils/paths';
+import { prepareConfigMigrationReceipt } from '../utils/config-migration-receipt';
 
 export type OpenClawConfig = Record<string, unknown>;
 /** Mutators may be replayed after a compare-and-swap conflict and must not perform external writes. */
@@ -55,6 +56,18 @@ let gatewayManager: ConfigDeliveryGatewayManager | undefined;
 let transactionTail: Promise<void> = Promise.resolve();
 let pendingRead: PendingConfigRead | undefined;
 const activeMutation = new AsyncLocalStorage<ActiveMutationContext>();
+const prelaunchMigration = new AsyncLocalStorage<{ active: boolean }>();
+
+/** Only awaited work in Gateway prelaunch may attest offline migration writes. */
+export async function withPrelaunchConfigMigration<T>(sync: () => Promise<T>): Promise<T> {
+  const scope = { active: true };
+  try {
+    return await prelaunchMigration.run(scope, sync);
+  } finally {
+    // A detached callback can inherit the async-local store beyond prelaunch.
+    scope.active = false;
+  }
+}
 
 /** Placeholder OpenClaw substitutes for sensitive values in `config.get` snapshots. */
 export const OPENCLAW_REDACTED_SENTINEL = '__OPENCLAW_REDACTED__';
@@ -330,7 +343,8 @@ async function mutateFileConfig(
 
       await mkdir(dirname(configPath), { recursive: true });
       const temporaryPath = `${configPath}.${process.pid}.${randomUUID()}.tmp`;
-      await writeFile(temporaryPath, serializeConfig(snapshot.config), {
+      const serialized = serializeConfig(snapshot.config);
+      await writeFile(temporaryPath, serialized, {
         encoding: 'utf8',
         flag: 'wx',
         mode: 0o600,
@@ -341,6 +355,10 @@ async function mutateFileConfig(
           return await mutateRunningConfig(manager, mutator, options);
         }
 
+        const scope = prelaunchMigration.getStore();
+        if (scope?.active && snapshot.raw !== undefined) {
+          await prepareConfigMigrationReceipt(configPath, resolveOpenClawStateDir(), snapshot.raw, serialized, () => scope.active);
+        }
         const currentRaw = await readFileRaw(configPath);
         if (manager?.getStatus().state === 'running') {
           return await mutateRunningConfig(manager, mutator, options);
