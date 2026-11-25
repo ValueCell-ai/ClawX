@@ -294,8 +294,8 @@ importers:
         specifier: ^5.7.284
         version: 5.7.284
       playwright-core:
-        specifier: 1.59.1
-        version: 1.59.1
+        specifier: 1.63.0
+        version: 1.63.0
       png2icons:
         specifier: ^2.0.1
         version: 2.0.1
@@ -6110,11 +6110,6 @@ packages:
 
   playwright-core@1.59.0:
     resolution: {integrity: sha512-PW/X/IoZ6BMUUy8rpwHEZ8Kc0IiLIkgKYGNFaMs5KmQhcfLILNx9yCQD0rnWeWfz1PNeqcFP1BsihQhDOBCwZw==}
-    engines: {node: '>=18'}
-    hasBin: true
-
-  playwright-core@1.59.1:
-    resolution: {integrity: sha512-HBV/RJg81z5BiiZ9yPzIiClYV/QMsDCKUyogwH9p3MCP6IYjUFu/MActgYAvK0oWyV9NlwM3GLBjADyWgydVyg==}
     engines: {node: '>=18'}
     hasBin: true
 
@@ -13982,8 +13977,6 @@ snapshots:
       tslib: 2.8.1
 
   playwright-core@1.59.0: {}
-
-  playwright-core@1.59.1: {}
 
   playwright-core@1.63.0: {}
 
