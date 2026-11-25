@@ -113,20 +113,19 @@ test.describe('ClawX chat scroll-to-latest affordance', () => {
       await expect(page.getByTestId('main-layout')).toBeVisible();
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
       await emitAcpSessionUpdates(app, seededUpdates);
-      await expect(page.getByText('Chat history message 36')).toBeVisible({ timeout: 30_000 });
-
+      const latestMessage = page.getByText('Chat history message 36');
       const scrollContainer = page.getByTestId('chat-scroll-container');
-      await scrollContainer.evaluate((element) => {
-        element.scrollTop = 0;
-        element.dispatchEvent(new Event('scroll', { bubbles: true }));
-      });
+      await expect(latestMessage).toBeInViewport({ timeout: 30_000 });
+      await scrollContainer.hover();
+      await page.mouse.wheel(0, -600);
+      await expect(latestMessage).not.toBeInViewport();
 
       const jumpButton = page.getByTestId('chat-scroll-to-latest');
       await expect(jumpButton).toBeVisible();
       await jumpButton.click();
 
       await expect(jumpButton).toBeHidden({ timeout: 10_000 });
-      await expect(page.getByText('Chat history message 36')).toBeVisible();
+      await expect(latestMessage).toBeInViewport();
     } finally {
       await closeElectronApp(app);
     }
