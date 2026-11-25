@@ -462,7 +462,7 @@ export async function syncGatewayConfigBeforeLaunch(
   resetExtensionDepsLinked();
 
   await measureAsync(timingsMs, 'proxySyncMs', async () => {
-    await syncProxyConfigToOpenClaw(appSettings, { preserveExistingWhenDisabled: true });
+    await syncProxyConfigToOpenClaw(appSettings, { preserveExistingWhenDisabled: true, prelaunchMigration: true });
   });
 
   try {

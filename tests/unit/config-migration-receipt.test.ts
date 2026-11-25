@@ -6,6 +6,8 @@ import { basename, join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mutateOpenClawConfig, resetOpenClawConfigCoordinatorForTests } from '@electron/gateway/config-delivery';
 import { prepareConfigMigrationReceipt } from '@electron/utils/config-migration-receipt';
+import { syncProxyConfigToOpenClaw } from '@electron/utils/openclaw-proxy';
+import { sanitizeOpenClawConfig } from '@electron/utils/openclaw-auth';
 
 const { lstatMock } = vi.hoisted(() => ({ lstatMock: vi.fn() }));
 vi.mock('node:fs/promises', async importOriginal => {
@@ -51,6 +53,8 @@ beforeEach(async () => {
   snapshot = join(state, 'backups', 'clawx-openclaw-2026.10.10-pre-migration');
   vi.stubEnv('OPENCLAW_STATE_DIR', state);
   vi.stubEnv('OPENCLAW_CONFIG_PATH', config);
+  vi.stubEnv('USERPROFILE', state);
+  vi.stubEnv('HOME', state);
 });
 afterEach(async () => {
   resetOpenClawConfigCoordinatorForTests();
@@ -83,6 +87,37 @@ it('can retry a prepared write after a crash before either config rename', async
   const alternative = encode({ ...good, browser: { enabled: true } });
   await prepareConfigMigrationReceipt(config, state, first, alternative);
   expect(JSON.parse(await readFile(receipt, 'utf8'))).toMatchObject({ previousMigratedHash: sha(first), migratedHash: sha(alternative) });
+});
+
+it.each(['preserved', 'changed', 'removed'])('protects a mixed catalog only if user model aliases are preserved: %s', async variant => {
+  const foreign = { 'local/user': { alias: 'u' } };
+  const sourceAliases = variant === 'preserved' ? foreign : variant === 'changed' ? { 'local/user': { alias: 'new' } } : {};
+  const mixed = encode({ ...good, agents: { ...good.agents, defaults: { ...good.agents.defaults, models: { ...good.agents.defaults.models, ...foreign } } } });
+  const source = encode({ ...old, agents: { ...old.agents, defaults: { models: sourceAliases } } });
+  await installSnapshot(source, mixed);
+  await prepareConfigMigrationReceipt(config, state, source, oldRaw);
+  if (variant === 'preserved') expect(JSON.parse(await readFile(receipt, 'utf8')).sourceHash).toBe(sha(source));
+  else await expect(readFile(receipt)).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
+it.each(['prelaunch', 'settings'])('scopes a Telegram proxy write before the actual sanitizer: %s', async origin => {
+  const telegram = { enabled: true };
+  const source = encode({ ...old, channels: { ...old.channels, telegram } });
+  const healthy = encode({ ...good, channels: { ...good.channels, telegram } });
+  await installSnapshot(source, healthy);
+  await syncProxyConfigToOpenClaw({
+    proxyEnabled: true, proxyServer: '127.0.0.1:8123', proxyHttpServer: '', proxyHttpsServer: '', proxyAllServer: '', proxyBypassRules: '',
+  }, origin === 'prelaunch' ? { preserveExistingWhenDisabled: true, prelaunchMigration: true } : { preserveExistingWhenDisabled: false });
+  const beforeSanitize = await readFile(config, 'utf8');
+  expect(JSON.parse(beforeSanitize).channels.telegram.proxy).toBe('http://127.0.0.1:8123');
+  await sanitizeOpenClawConfig();
+  const next = await readFile(config, 'utf8');
+  expect(JSON.parse(next).channels.dingtalk.accounts.default).toEqual(old.channels['dingtalk-connector'].accounts.default);
+  if (origin === 'prelaunch') {
+    expect(JSON.parse(await readFile(receipt, 'utf8'))).toMatchObject({
+      sourceHash: sha(source), lastGoodHash: sha(healthy), previousMigratedHash: sha(beforeSanitize), migratedHash: sha(next),
+    });
+  } else await expect(readFile(receipt)).rejects.toMatchObject({ code: 'ENOENT' });
 });
 
 it('can begin a fresh proven migration over a stale receipt for a custom config basename', async () => {

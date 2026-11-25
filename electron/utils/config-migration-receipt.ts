@@ -68,8 +68,12 @@ function isHealthySource(source: Config, good: Config): boolean {
     const goodAgents = child(good, 'agents'), sourceAgents = child(source, 'agents');
     const goodDefaults = child(goodAgents, 'defaults'), sourceDefaults = child(sourceAgents, 'defaults');
     const allowed = child(goodDefaults, 'models');
-    if (allowed && goodDefaults && sourceDefaults && !Object.hasOwn(sourceDefaults, 'models')
-      && Object.keys(allowed).length === catalog.size && Object.keys(allowed).every(key => catalog.has(key))) delete goodDefaults.models;
+    const retained = child(sourceDefaults, 'models') ?? {};
+    if (allowed && goodDefaults && sourceDefaults && catalog.size
+      && [...catalog].every(ref => Object.hasOwn(allowed, ref) && !Object.hasOwn(retained, ref))) {
+      for (const ref of catalog) delete allowed[ref];
+      if (Object.keys(allowed).length === 0) delete goodDefaults.models;
+    }
     const stripSelection = (left: unknown, right: unknown) => {
       if (isRecord(left) && isRecord(right) && !Object.hasOwn(left, 'model') && isGeneratedSelection(right.model, catalog)) delete right.model;
     };
