@@ -4,10 +4,10 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { mutateOpenClawConfig, resetOpenClawConfigCoordinatorForTests } from '@electron/gateway/config-delivery';
+import { mutateOpenClawConfig, resetOpenClawConfigCoordinatorForTests, withPrelaunchConfigMigration } from '@electron/gateway/config-delivery';
 import { prepareConfigMigrationReceipt } from '@electron/utils/config-migration-receipt';
 import { syncProxyConfigToOpenClaw } from '@electron/utils/openclaw-proxy';
-import { sanitizeOpenClawConfig } from '@electron/utils/openclaw-auth';
+import { sanitizeOpenClawConfig, syncFeishuPluginRegistrationWithInstalledPlugin } from '@electron/utils/openclaw-auth';
 
 const { lstatMock } = vi.hoisted(() => ({ lstatMock: vi.fn() }));
 vi.mock('node:fs/promises', async importOriginal => {
@@ -64,16 +64,16 @@ afterEach(async () => {
 
 it('attests the exact committed bytes of marked offline transactions and refuses an ordinary write as a successor', async () => {
   await installSnapshot();
-  await mutateOpenClawConfig(c => { c.plugins = good.plugins; c.channels = good.channels; }, { prelaunchMigration: true });
+  await withPrelaunchConfigMigration(() => mutateOpenClawConfig(c => { c.plugins = good.plugins; c.channels = good.channels; }));
   const first = await readFile(config, 'utf8');
   expect(JSON.parse(await readFile(receipt, 'utf8'))).toEqual({
     configPath: config, lastGoodHash: sha(goodRaw), sourceBytes: Buffer.byteLength(oldRaw), sourceHash: sha(oldRaw), migratedHash: sha(first),
   });
-  await mutateOpenClawConfig(c => { c.browser = { enabled: true }; }, { prelaunchMigration: true });
+  await withPrelaunchConfigMigration(() => mutateOpenClawConfig(c => { c.browser = { enabled: true }; }));
   const second = await readFile(config, 'utf8'), proven = await readFile(receipt, 'utf8');
   expect(JSON.parse(proven)).toMatchObject({ previousMigratedHash: sha(first), migratedHash: sha(second) });
   await mutateOpenClawConfig(c => { c.authoredSetting = 'user changed'; });
-  await mutateOpenClawConfig(c => { c.browser = { enabled: false }; }, { prelaunchMigration: true });
+  await withPrelaunchConfigMigration(() => mutateOpenClawConfig(c => { c.browser = { enabled: false }; }));
   expect(await readFile(receipt, 'utf8')).toBe(proven);
 });
 
@@ -105,12 +105,14 @@ it.each(['prelaunch', 'settings'])('scopes a Telegram proxy write before the act
   const source = encode({ ...old, channels: { ...old.channels, telegram } });
   const healthy = encode({ ...good, channels: { ...good.channels, telegram } });
   await installSnapshot(source, healthy);
-  await syncProxyConfigToOpenClaw({
+  const proxy = () => syncProxyConfigToOpenClaw({
     proxyEnabled: true, proxyServer: '127.0.0.1:8123', proxyHttpServer: '', proxyHttpsServer: '', proxyAllServer: '', proxyBypassRules: '',
-  }, origin === 'prelaunch' ? { preserveExistingWhenDisabled: true, prelaunchMigration: true } : { preserveExistingWhenDisabled: false });
+  }, { preserveExistingWhenDisabled: origin === 'prelaunch' });
+  if (origin === 'prelaunch') await withPrelaunchConfigMigration(proxy);
+  else await proxy();
   const beforeSanitize = await readFile(config, 'utf8');
   expect(JSON.parse(beforeSanitize).channels.telegram.proxy).toBe('http://127.0.0.1:8123');
-  await sanitizeOpenClawConfig();
+  await withPrelaunchConfigMigration(sanitizeOpenClawConfig);
   const next = await readFile(config, 'utf8');
   expect(JSON.parse(next).channels.dingtalk.accounts.default).toEqual(old.channels['dingtalk-connector'].accounts.default);
   if (origin === 'prelaunch') {
@@ -118,6 +120,49 @@ it.each(['prelaunch', 'settings'])('scopes a Telegram proxy write before the act
       sourceHash: sha(source), lastGoodHash: sha(healthy), previousMigratedHash: sha(beforeSanitize), migratedHash: sha(next),
     });
   } else await expect(readFile(receipt)).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
+it('continues the same offline prelaunch scope across Feishu mirror replacement and plugin registration', async () => {
+  const feishu = { enabled: true, appId: 'upgraded-fixture', appSecret: 'test-only' };
+  const plugins = { allow: ['openclaw-lark'], entries: { 'openclaw-lark': { enabled: true } } };
+  const source = encode({ ...old, channels: { ...old.channels, feishu }, plugins });
+  const healthy = encode({ ...good, channels: { ...good.channels, feishu }, plugins });
+  await installSnapshot(source, healthy);
+  const mirror = join(state, '.openclaw', 'extensions', 'feishu-openclaw-plugin');
+  await mkdir(mirror, { recursive: true });
+  await writeFile(join(mirror, 'openclaw.plugin.json'), encode({ id: 'openclaw-lark' }));
+  await withPrelaunchConfigMigration(async () => {
+    await sanitizeOpenClawConfig();
+    const normalized = await readFile(config, 'utf8');
+    expect(JSON.parse(normalized).plugins.allow).toContain('openclaw-lark');
+    await writeFile(join(mirror, 'openclaw.plugin.json'), encode({ id: 'feishu' }));
+    await syncFeishuPluginRegistrationWithInstalledPlugin();
+    const repaired = await readFile(config, 'utf8');
+    expect(JSON.parse(repaired).plugins.allow).toContain('feishu');
+    expect(JSON.parse(repaired).plugins.allow).not.toContain('openclaw-lark');
+    expect(JSON.parse(await readFile(receipt, 'utf8'))).toMatchObject({ sourceHash: sha(source), previousMigratedHash: sha(normalized), migratedHash: sha(repaired) });
+  });
+});
+
+it('excludes independent concurrent settings and detached work that resumes after prelaunch completes', async () => {
+  await installSnapshot();
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let detached!: Promise<boolean>, resume!: () => void;
+  const later = new Promise<void>(resolve => { resume = resolve; });
+  const startup = withPrelaunchConfigMigration(async () => {
+    detached = later.then(() => mutateOpenClawConfig(c => { c.browser = { enabled: true }; }));
+    await gate;
+  });
+  await mutateOpenClawConfig(c => { c.authoredSetting = 'settings changed'; });
+  await expect(readFile(receipt)).rejects.toMatchObject({ code: 'ENOENT' });
+  release();
+  await startup;
+  // Restore the original fixture bytes so even an eligible source cannot be signed by expired work.
+  await writeFile(config, oldRaw);
+  resume();
+  expect(await detached).toBe(true);
+  await expect(readFile(receipt)).rejects.toMatchObject({ code: 'ENOENT' });
 });
 
 it('can begin a fresh proven migration over a stale receipt for a custom config basename', async () => {
@@ -134,7 +179,7 @@ it('commits normal prelaunch configuration while optional evidence is inaccessib
   await installSnapshot();
   lstatMock.mockRejectedValueOnce(Object.assign(new Error('denied'), { code: 'EACCES' }))
     .mockRejectedValueOnce(Object.assign(new Error('denied'), { code: 'EACCES' }));
-  await mutateOpenClawConfig(c => { c.browser = { enabled: true }; }, { prelaunchMigration: true });
+  await withPrelaunchConfigMigration(() => mutateOpenClawConfig(c => { c.browser = { enabled: true }; }));
   expect(JSON.parse(await readFile(config, 'utf8')).browser.enabled).toBe(true);
   await expect(readFile(receipt)).rejects.toMatchObject({ code: 'ENOENT' });
 });

@@ -4,8 +4,6 @@ import { resolveProxySettings, type ProxySettings } from './proxy';
 import { logger } from './logger';
 
 interface SyncProxyOptions {
-  /** Only the Gateway prelaunch call participates in the offline migration transaction chain. */
-  prelaunchMigration?: boolean;
   /**
    * When true, keep an existing channels.telegram.proxy value if proxy is
    * currently disabled in ClawX settings.
@@ -63,7 +61,7 @@ export async function syncProxyConfigToOpenClaw(
     }
 
     syncState.result = 'updated';
-  }, { prelaunchMigration: options.prelaunchMigration });
+  });
 
   if (syncState.result === 'preserved') {
     logger.info('Skipped Telegram proxy sync because ClawX proxy is disabled and preserve mode is enabled');

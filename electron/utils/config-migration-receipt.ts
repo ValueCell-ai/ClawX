@@ -132,18 +132,18 @@ async function verifiedOrigin(configPath: string, stateDir: string) {
   if (source && good && isHealthySource(source, good)) return { configPath, sourceBytes, sourceHash, lastGoodHash };
 }
 
-async function publish(path: string, receipt: Receipt): Promise<void> {
+async function publish(path: string, receipt: Receipt, active: () => boolean): Promise<void> {
   const temp = path + '.' + randomUUID() + '.tmp';
   try {
     await writeFile(temp, JSON.stringify(receipt), { mode: 0o600, flag: 'wx' });
-    await rename(temp, path);
+    if (active()) await rename(temp, path);
   } finally {
     await rm(temp, { force: true });
   }
 }
 
 /** Called only for offline prelaunch transactions, before their final config-byte comparison and rename. */
-export async function prepareConfigMigrationReceipt(configPath: string, stateDir: string, before: string, after: string): Promise<void> {
+export async function prepareConfigMigrationReceipt(configPath: string, stateDir: string, before: string, after: string, active = () => true): Promise<void> {
   if (configPath !== resolve(configPath) || stateDir !== resolve(stateDir)) return;
   const receiptPath = configPath + '.clawx-2026.10.10-migration.json';
   const current = parse(await regularText(receiptPath, 4096));
@@ -163,5 +163,5 @@ export async function prepareConfigMigrationReceipt(configPath: string, stateDir
     && current.sourceBytes === origin.sourceBytes && current.lastGoodHash === origin.lastGoodHash) return;
   // Publish before the config rename. A crash between renames leaves the
   // preceding proven bytes live; both heads can then resume this migration.
-  await publish(receiptPath, { ...origin, migratedHash, ...(!firstWrite && { previousMigratedHash: beforeHash }) });
+  await publish(receiptPath, { ...origin, migratedHash, ...(!firstWrite && { previousMigratedHash: beforeHash }) }, active);
 }

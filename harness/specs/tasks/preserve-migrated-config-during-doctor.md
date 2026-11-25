@@ -7,8 +7,6 @@ intent: Keep a valid migrated enterprise configuration when a known prelaunch mi
 touchedAreas:
   - electron/gateway/config-delivery.ts
   - electron/gateway/config-sync.ts
-  - electron/utils/openclaw-auth.ts
-  - electron/utils/openclaw-proxy.ts
   - electron/utils/config-migration-receipt.ts
   - patches/openclaw@2026.10.10.patch
   - pnpm-lock.yaml
@@ -37,7 +35,7 @@ requiredTests:
   - tests/unit/gateway-config-delivery.test.ts
 acceptance:
   - Reject stale evidence, paths for a different config and unrecognized changes. Preserve the native validation and recovery checks.
-  - Preserve independently configured model aliases alongside enterprise models, including when startup synchronizes a Telegram proxy before migrating the config.
+  - Preserve independently configured model aliases alongside enterprise models, including when startup synchronizes a Telegram proxy or updates Feishu registration. A concurrent Settings write must break the migration chain.
   - Build the enterprise Windows installer and test 0.6.1 with stock and historical channel keys, and 0.7.1 with stock keys.
   - Check channel accounts, model selections and fallbacks, scheduled jobs and their execution history, and time three actual Settings restarts per configuration.
 docs:
