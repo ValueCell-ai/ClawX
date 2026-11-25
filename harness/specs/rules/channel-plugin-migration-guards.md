@@ -8,6 +8,11 @@ appliesTo:
 
 When channel plugin ownership changes between bundled OpenClaw extensions and external `~/.openclaw/extensions/*` installs, ClawX must normalize configuration to one active plugin identity per channel.
 
+For an offline 0.6.1 overwrite, test the first Doctor read with a rolling backup
+that predates one configured channel. Verify the migrated accounts after repair
+and a desktop reopen. Also exercise normal recovery with a subsequently
+truncated configuration and with a receipt from a different file or baseline.
+
 Webhook completion must be resolved consistently by the startup gate and the
 migration itself. Explicit config markers win. A partial config marker may reuse
 machine-only completion only for absent channels with empty decisions; never

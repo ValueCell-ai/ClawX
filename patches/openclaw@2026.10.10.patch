@@ -5284,3 +5284,89 @@ index 8d35684..2f6ccaa 100644
      if (!isHelpFastPathDisabled() && (await tryOutputBareRootHelp())) {
        if (currentNodeRuntimeFailure) {
          process.stderr.write(`${formatUnsupportedNodeDiagnosticWarning(process.versions.node)}\n`);
+diff --git a/dist/io.factory-BX1asySf.mjs b/dist/io.factory-BX1asySf.mjs
+--- a/dist/io.factory-BX1asySf.mjs
++++ b/dist/io.factory-BX1asySf.mjs
+@@ -382,6 +382,29 @@
+ 	if (!isRecord(update)) return false;
+ 	return Object.keys(update).length === 1 && typeof update.channel === "string";
+ }
++// ClawX's offline upgrade can legitimately cross the size threshold. Only
++// its exact committed bytes qualify, against the same native healthy baseline.
++function matchesClawxMigrationReceipt(params) {
++	if (!params.configPath) return false;
++	try {
++		const file = params.configPath + ".clawx-2026.10.10-migration.json";
++		const stat = params.fs.lstatSync(file);
++		if (!stat.isFile() || stat.size > 8192) return false;
++		const receipt = JSON.parse(params.fs.readFileSync(file, "utf8"));
++		return receipt.configPath === params.configPath
++			&& typeof receipt.migratedHash === "string"
++			&& /^[0-9a-f]{64}$/.test(receipt.migratedHash)
++			&& (receipt.migratedHash === params.hash || receipt.previousMigratedHash === params.hash)
++			&& receipt.lastGoodHash === params.lastKnownGood.hash
++			&& typeof receipt.sourceHash === "string"
++			&& /^[0-9a-f]{64}$/.test(receipt.sourceHash)
++			&& receipt.sourceHash !== params.hash
++			&& Number.isSafeInteger(receipt.sourceBytes)
++			&& receipt.sourceBytes >= Math.floor(params.lastKnownGood.bytes * .5);
++	} catch {
++		return false;
++	}
++}
+ function resolveConfigObserveSuspiciousReasons(params) {
+ 	const reasons = [];
+ 	const baseline = params.lastKnownGood;
+@@ -390,6 +413,7 @@
+ 	if (baseline.hasMeta && !params.hasMeta) reasons.push("missing-meta-vs-last-good");
+ 	if (baseline.gatewayMode && !params.gatewayMode) reasons.push("gateway-mode-missing-vs-last-good");
+ 	if (baseline.gatewayMode && isUpdateChannelOnlyRoot(params.parsed)) reasons.push("update-channel-only-root");
++	if (reasons.length === 1 && reasons[0].startsWith("size-drop-vs-last-good:") && matchesClawxMigrationReceipt(params)) return [];
+ 	return reasons;
+ }
+ //#endregion
+@@ -415,6 +439,9 @@
+ 		baseline,
+ 		suspicious: resolveConfigObserveSuspiciousReasons({
+ 			bytes: params.current.bytes,
++			hash: params.current.hash,
++			fs: params.fs,
++			configPath: params.snapshot.valid && entry.lastKnownGood ? params.snapshot.path : void 0,
+ 			hasMeta: params.current.hasMeta,
+ 			gatewayMode: params.current.gatewayMode,
+ 			parsed: params.snapshot.parsed,
+@@ -451,6 +478,7 @@
+ 			const backupBaseline = readConfigHealthEntry(healthState, snapshot.path).lastKnownGood ?? await readConfigFingerprintForPath(deps, backupPath) ?? void 0;
+ 			if (!health.isCurrent()) return;
+ 			const { entry, baseline, suspicious } = resolveObservation({
++				fs: deps.fs,
+ 				snapshot,
+ 				current,
+ 				healthState,
+@@ -496,6 +524,7 @@
+ 	const healthState = readConfigHealthStateFromStore(deps);
+ 	const backupPath = `${snapshot.path}.bak`;
+ 	const { entry, baseline, suspicious } = resolveObservation({
++		fs: deps.fs,
+ 		snapshot,
+ 		current,
+ 		healthState,
+@@ -1159,6 +1188,8 @@
+ 	}) : void 0);
+ 	const suspicious = resolveConfigObserveSuspiciousReasons({
+ 		...current,
++		fs: deps.fs,
++		configPath: entry.lastKnownGood ? configPath : void 0,
+ 		parsed,
+ 		lastKnownGood: backupBaseline
+ 	});
+@@ -1331,6 +1362,9 @@
+ 		});
+ 		const entry = readConfigHealthEntry(healthSnapshot.state, snapshot.path);
+ 		const suspiciousReasons = resolveConfigObserveSuspiciousReasons({
++			fs: deps.fs,
++			configPath: snapshot.path,
++			hash: current.hash,
+ 			bytes: current.bytes,
+ 			hasMeta: current.hasMeta,
+ 			gatewayMode: current.gatewayMode,

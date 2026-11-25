@@ -35,6 +35,7 @@ import {
 } from '../utils/openclaw-auth';
 import { buildProxyEnv, resolveProxySettings } from '../utils/proxy';
 import { syncProxyConfigToOpenClaw } from '../utils/openclaw-proxy';
+import { withPrelaunchConfigMigration } from './config-delivery';
 import { logger } from '../utils/logger';
 import { prependPathEntry } from '../utils/env-path';
 import { ensureDingTalkDwsInstalled, resolveDingTalkDwsBinDir } from '../utils/dingtalk-dws';
@@ -449,6 +450,13 @@ function ensureExtensionDepsResolvable(openclawDir: string): void {
 // ── Pre-launch sync ──────────────────────────────────────────────
 
 export async function syncGatewayConfigBeforeLaunch(
+  appSettings: Awaited<ReturnType<typeof getAllSettings>>,
+  openclawDir: string,
+): Promise<GatewayPrelaunchSyncSummary> {
+  return withPrelaunchConfigMigration(() => synchronizePrelaunchConfig(appSettings, openclawDir));
+}
+
+async function synchronizePrelaunchConfig(
   appSettings: Awaited<ReturnType<typeof getAllSettings>>,
   openclawDir: string,
 ): Promise<GatewayPrelaunchSyncSummary> {
