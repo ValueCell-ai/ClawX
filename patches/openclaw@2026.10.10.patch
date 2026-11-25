@@ -3572,7 +3572,7 @@ diff --git a/dist/tools-invoke-DGTW5Yi2.mjs b/dist/tools-invoke-DGTW5Yi2.mjs
  				tool_call_blocked: "forbidden",
  				tool_error: "internal_error"
 diff --git a/dist/bash-tools-B7jTXO_k.mjs b/dist/bash-tools-B7jTXO_k.mjs
-index f8bae0b..73b2a8b 100644
+index f8bae0b..a5dbfc4 100644
 --- a/dist/bash-tools-B7jTXO_k.mjs
 +++ b/dist/bash-tools-B7jTXO_k.mjs
 @@ -93,6 +93,7 @@ import { o as buildExecApprovalUnavailableReplyPayload } from "./exec-approval-r
@@ -3595,8 +3595,8 @@ index f8bae0b..73b2a8b 100644
  					notifyOnExit
  				});
  				if (!workdir) throw new Error("exec internal error: local execution requires a resolved workdir");
-+				let clawxCronLauncher = host === "gateway" && process.platform === "win32" && !secretEgressEnabled ? getClawxCronLauncher(defaults, params, defaultTimeoutSec) : void 0;
-+				if (clawxCronLauncher && params.workdir && workdir !== resolveExistingHostWorkdir(defaults?.cwd ?? safeCurrentCwd())) clawxCronLauncher = void 0;
++				const clawxCronLauncher = host === "gateway" && process.platform === "win32" && !secretEgressEnabled
++					? getClawxCronLauncher(defaults, params, defaultTimeoutSec, !params.workdir || workdir === resolveExistingHostWorkdir(defaults?.cwd ?? safeCurrentCwd())) : void 0;
  				const githubProfileDir = host === "gateway" && preparedRunEnvironment.managedLocalIdentity ? preparedRunEnvironment.localIdentityEnv.GH_CONFIG_DIR : void 0;
  				if (host === "gateway" && !bypassApprovals) {
  					gatewayApproval = await processGatewayAllowlist({
@@ -3623,7 +3623,7 @@ index f8bae0b..73b2a8b 100644
  					else yieldTimer = setTimeout(onYieldNow, yieldWindow);
  				}
 diff --git a/dist/bash-tools.exec-runtime-DV-8QM6d.mjs b/dist/bash-tools.exec-runtime-DV-8QM6d.mjs
-index 5b443be..d676729 100644
+index 5b443be..50904aa 100644
 --- a/dist/bash-tools.exec-runtime-DV-8QM6d.mjs
 +++ b/dist/bash-tools.exec-runtime-DV-8QM6d.mjs
 @@ -762,7 +762,14 @@ function buildExecRuntimeErrorOutcome(params) {
@@ -3631,8 +3631,8 @@ index 5b443be..d676729 100644
  /** Starts a host or sandbox exec process and registers it for polling/backgrounding. */
  async function runExecProcess({ startupSignal: initialStartupSignal, onUpdate: initialOnUpdate, beforeSpawn: initialBeforeSpawn, assertCurrent: initialAssertCurrent, initiateSpawn: initialInitiateSpawn, releaseSpawn: initialReleaseSpawn, onSettledBeforeNotify: initialOnSettledBeforeNotify, ...opts }) {
 -	const requestSignal = execRequestAbortSignal(opts.requestOwners);
-+	// An approval may replace the shell command. Only the certified launcher inherits
-+	// the migrated lifetime; secret-backed exec still revokes its grant at root exit.
++	// Approval may replace the command. Only the original command under its existing
++	// authorization can wait for its Windows Job. Secret grants still expire at root exit.
 +	const candidate = opts.clawxCronLauncher;
 +	const launcher = candidate && !opts.usePty && !opts.sandbox && !opts.secretEgressBindings && (opts.execCommand ?? opts.command).trim() === candidate.command ? candidate : void 0;
 +	if (launcher) opts.timeoutSec = launcher.timeoutSeconds;
@@ -3690,26 +3690,28 @@ index 4107bc6..61d173f 100644
  			closeStartGate: params.ownedWorker ? disconnectWorkerIpc : void 0,
 diff --git a/dist/clawx-cron-run-context.mjs b/dist/clawx-cron-run-context.mjs
 new file mode 100644
-index 0000000..8ab59a4
+index 0000000..bd23659
 --- /dev/null
 +++ b/dist/clawx-cron-run-context.mjs
-@@ -0,0 +1,34 @@
+@@ -0,0 +1,36 @@
 +// Each local exec tool holds the same host-issued instance as its admitted agent.
 +// Object identity survives the lane queue and distinguishes separate admissions.
-+const launchers = new WeakMap();
++const scheduledRuns = new WeakMap();
 +
-+export function getClawxCronLauncher(defaults, params, configuredTimeoutSec) {
-+	const launcher = launchers.get(defaults?.operationalRunInstance);
-+	if (!launcher || typeof params.command !== "string" || params.command.trim() !== launcher.command || params.background === true || params.pty === true || params.env && Object.keys(params.env).length > 0) return;
-+	return {
-+		...launcher,
-+		timeoutSeconds: params.timeoutSeconds ?? (defaults?.timeoutSec === void 0 ? launcher.timeoutSeconds : configuredTimeoutSec)
-+	};
++export function getClawxCronLauncher(defaults, params, configuredTimeoutSec, matchesLegacyWorkdir = true) {
++	const run = scheduledRuns.get(defaults?.operationalRunInstance);
++	if (!run || typeof params.command !== "string" || params.background === true || params.pty === true || params.env && Object.keys(params.env).length > 0) return;
++	const command = params.command.trim();
++	const migrated = matchesLegacyWorkdir && run.migratedLauncher?.command === command;
++	if (!migrated && !(run.isolatedAgentTurn && params.awaitResults === true)) return;
++	const defaultTimeout = migrated && defaults?.timeoutSec === void 0 ? run.migratedLauncher.timeoutSeconds : configuredTimeoutSec;
++	return { command, signal: run.signal, timeoutSeconds: params.timeoutSeconds ?? defaultTimeout };
 +}
 +
 +export async function runClawxCronJob(request, run, migratedLauncher) {
 +	const { abortSignal, executionIdentity } = request;
-+	if (!migratedLauncher || !abortSignal || !executionIdentity?.onPostAdmission) return run(request);
++	const isolatedAgentTurn = request.job?.sessionTarget === "isolated" && request.job.payload?.kind === "agentTurn";
++	if ((!isolatedAgentTurn && !migratedLauncher) || !abortSignal || !executionIdentity?.onPostAdmission) return run(request);
 +	const settled = new AbortController();
 +	const signal = AbortSignal.any([abortSignal, settled.signal]);
 +	try {
@@ -3720,7 +3722,7 @@ index 0000000..8ab59a4
 +				async onPostAdmission(admitted) {
 +					await executionIdentity.onPostAdmission(admitted);
 +					const instance = admitted?.operationalRunInstance;
-+					if (instance && typeof instance === "object") launchers.set(instance, { ...migratedLauncher, signal });
++					if (instance && typeof instance === "object") scheduledRuns.set(instance, { migratedLauncher, isolatedAgentTurn, signal });
 +				}
 +			}
 +		});

@@ -1,7 +1,7 @@
 // Exercise the pinned Gateway's native Windows Job with a short launcher and
 // a synthetic worker. This script runs in a separate Node process in Windows CI.
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -20,9 +20,14 @@ for (const candidate of supervisors) {
   if ((await readFile(join(dist, candidate), 'utf8')).includes('function getProcessSupervisor()')) entrypoints.push(candidate);
 }
 assert.equal(entrypoints.length, 1, 'Review the bundled process supervisor after an OpenClaw upgrade');
-const { t: getProcessSupervisor } = await import(pathToFileURL(join(dist, entrypoints[0])).href);
-const supervisor = getProcessSupervisor();
 const root = await mkdtemp(join(tmpdir(), 'clawx-cron-worker-'));
+process.env.OPENCLAW_HOME = root;
+process.env.OPENCLAW_STATE_DIR = join(root, '.openclaw');
+process.env.OPENCLAW_CONFIG_PATH = join(root, '.openclaw', 'openclaw.json');
+const bundle = name => import(pathToFileURL(join(dist, name)).href);
+const { t: getProcessSupervisor } = await bundle(entrypoints[0]);
+const { closeOpenClawStateDatabaseAsync } = await bundle('openclaw-state-db-cache-BEkpq4DL.mjs');
+const supervisor = getProcessSupervisor();
 const starter = join(root, 'launcher.cjs');
 const worker = join(root, 'worker.cjs');
 try {
@@ -32,6 +37,7 @@ try {
     fs.writeFileSync(process.argv[3] + '.launcher-pid', String(process.pid));
     const task = spawn(process.execPath, process.argv.slice(2), {detached: true, stdio: 'ignore'});
     task.unref();
+    console.log('GENERATION_STARTED: pid=' + task.pid);
   `);
   await writeFile(worker, `
     const fs = require('node:fs');
@@ -50,23 +56,42 @@ try {
     }, 30);
   `);
 
+  async function readPidMarker(file) {
+    try {
+      const pid = Number(await readFile(file, 'utf8'));
+      return Number.isSafeInteger(pid) && pid > 0 ? pid : undefined;
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+  }
+
+  function processExited(pid) {
+    try {
+      process.kill(pid, 0);
+      return false;
+    } catch (error) {
+      if (error.code === 'ESRCH') return true;
+      throw error;
+    }
+  }
+
   async function waitForWorker(prefix, outcome) {
     const until = performance.now() + 12_000;
     for (;;) {
-      try {
-        await readFile(prefix + '.ready');
-        const launcherPid = Number(await readFile(prefix + '.launcher-pid', 'utf8'));
-        process.kill(launcherPid, 0);
-      } catch (error) {
-        if (error.code === 'ESRCH') break;
-        if (error.code !== 'ENOENT') throw error;
-      }
+      const [launcherPid, workerPid] = await Promise.all([
+        readPidMarker(prefix + '.launcher-pid'), readPidMarker(prefix + '.ready'),
+      ]);
+      if (launcherPid && workerPid && processExited(launcherPid)) break;
       assert.ok(performance.now() < until, 'Launcher should exit before the detached worker is released');
-      await Promise.race([delay(25), outcome.then(() => { throw new Error(prefix + ' ended before worker startup'); })]);
+      await Promise.race([delay(25), outcome.then(result => {
+        throw new Error(prefix + ' ended before worker startup: ' + JSON.stringify(result));
+      })]);
     }
     // The launcher exits without waiting for the worker. Its result must
     // still be pending until the worker is released, cancelled or times out.
-    assert.equal(await Promise.race([outcome.then(() => 'settled'), delay(180, 'pending')]), 'pending');
+    const pending = Symbol('pending');
+    const earlyResult = await Promise.race([outcome, delay(180, pending)]);
+    assert.ok(earlyResult === pending, 'Launcher finished before worker release: ' + JSON.stringify(earlyResult));
   }
 
   async function launch(name, timeoutMs) {
@@ -88,10 +113,44 @@ try {
 
   // A custom budget already matches the snapshot. Register its original launcher
   // without writing a new revision, then run it through the actual exec runtime.
-  const bundle = (name) => import(pathToFileURL(join(dist, name)).href);
   const { migrateClawxCronTimeouts, getClawxMigratedLauncher } = await bundle('clawx-cron-timeout-migration.mjs');
   const { runClawxCronJob, getClawxCronLauncher } = await bundle('clawx-cron-run-context.mjs');
   const { p: runExec } = await bundle('bash-tools.exec-runtime-DV-8QM6d.mjs');
+  const { r: createExecTool } = await bundle('bash-tools-B7jTXO_k.mjs');
+  // A new scheduled task can invoke a skill in another directory without
+  // carrying a migrated launcher command in the job definition.
+  const workspace = join(root, 'workspace');
+  await mkdir(workspace);
+  const freshPrefix = join(root, 'fresh');
+  const freshJob = {
+    id: 'fresh-launcher', sessionTarget: 'isolated',
+    payload: { kind: 'agentTurn', message: 'Run the worker skill.', timeoutSeconds: 60 },
+  };
+  assert.equal(getClawxMigratedLauncher(freshJob), undefined);
+  const freshController = new AbortController();
+  try {
+    await runClawxCronJob({
+      job: freshJob, abortSignal: freshController.signal, executionIdentity: { onPostAdmission() {} },
+    }, async scheduled => {
+      const operationalRunInstance = Object.freeze({ runId: 'fresh', instanceId: 'fresh-instance' });
+      await scheduled.executionIdentity.onPostAdmission({ operationalRunInstance });
+      const exec = createExecTool({
+        operationalRunInstance, cwd: workspace, config: {}, host: 'gateway', mode: 'full',
+        security: 'full', ask: 'off', notifyOnExit: false, processToolAvailabilityRef: { value: true },
+      });
+      const result = exec.execute('fresh-call', {
+        command: 'node ./launcher.cjs ./worker.cjs fresh --start', workdir: root, awaitResults: true,
+      });
+      await waitForWorker(freshPrefix, result);
+      await writeFile(freshPrefix + '.release', '');
+      const completed = await result;
+      assert.equal(completed.details.status, 'completed');
+      assert.match(completed.content[0].text, /GENERATION_STARTED: pid=\d+/);
+      assert.equal(await readFile(freshPrefix + '.done', 'utf8'), 'done');
+    });
+  } finally {
+    freshController.abort();
+  }
   const prefix = join(root, 'custom');
   const command = `node "${starter}" "${worker}" "${prefix}" --start --mock-recipient mock:cron-test`;
   const definition = {
@@ -141,11 +200,14 @@ try {
   await supervisor.shutdown();
   assert.equal((await shutdown.outcome).reason, 'manual-cancel');
   assert.equal((await shutdown.run.waitForExtinction()).status, 'confirmed');
-  console.log('Windows scheduled worker completion, deadline, cancellation and shutdown passed.');
 } finally {
   try {
     await supervisor.shutdown();
   } finally {
+    // The real exec tool reads the approval store. Release its SQLite handles
+    // before removing the isolated state directory on Windows.
+    await closeOpenClawStateDatabaseAsync();
     await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 }
+console.log('Windows scheduled worker completion, deadline, cancellation and shutdown passed.');

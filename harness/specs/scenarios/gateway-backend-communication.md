@@ -190,6 +190,8 @@ Scheduled-task upgrade continuity is a backend contract. Main prepares verified 
 
 The active cron store identifies which legacy jobs belong to the scheduler. For a verified Windows launcher, the managed Gateway supervises the worker through completion or its deadline, including a custom deadline inherited from the old job. See [the scheduled worker upgrade tests](../tasks/preserve-scheduled-exec-upgrade.md).
 
+An isolated scheduled agent can explicitly await a Windows host command and its descendants in the approved working directory. Use the [scheduled Windows worker task](../tasks/await-scheduled-windows-workers.md) to check foreground completion and cancellation.
+
 The local HTML Preview privileged bridge is also Main-owned: Renderer may load a validated local HTML file or open that current file externally through the typed Host API. The guest is an implementation detail of the existing `preview` tab; there is no `web-browser` artifact tab or general address navigation. The durable guest contract is `harness/reference/web-browser.md`.
 
 Electron communication fixtures wait for Main initialization before replacing IPC handlers, explicitly model ACP session loading for provider-free composer flows, and retain production service transformations under test. Restart catalogs recover after their transient incomplete snapshot. See [E2E parallelism](../../reference/e2e-parallelism.md) and [full-suite repair](../tasks/stabilize-openclaw-upgrade-e2e.md) for fixture boundaries, failure diagnostics and validation evidence.
