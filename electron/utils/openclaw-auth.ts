@@ -3171,7 +3171,7 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
     if (modified) {
       normalizeAgentsDefaultsCompactionMode(config);
     }
-  });
+  }, { prelaunchMigration: true });
   if (pinnedProviderRuntimes.length > 0) {
     console.log(`[batch-sync] Pinned embedded agent runtime for models.providers entries: ${pinnedProviderRuntimes.join(', ')}`);
   }
@@ -4370,7 +4370,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       normalizeAgentsDefaultsCompactionMode(config);
       console.log('[sanitize] openclaw.json sanitized successfully');
     }
-  });
+  }, { prelaunchMigration: true });
 }
 
 export { getProviderEnvVar } from './provider-registry';

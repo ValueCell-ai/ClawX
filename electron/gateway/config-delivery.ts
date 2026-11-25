@@ -9,7 +9,8 @@ import { applyProviderModelCompatibility } from '../shared/providers/model-compa
 import { isRecord } from '../services/payload-utils';
 import { withConfigLock } from '../utils/config-mutex';
 import { logger } from '../utils/logger';
-import { resolveOpenClawConfigPath } from '../utils/paths';
+import { resolveOpenClawConfigPath, resolveOpenClawStateDir } from '../utils/paths';
+import { prepareConfigMigrationReceipt } from '../utils/config-migration-receipt';
 
 export type OpenClawConfig = Record<string, unknown>;
 /** Mutators may be replayed after a compare-and-swap conflict and must not perform external writes. */
@@ -20,6 +21,7 @@ export type OpenClawConfigMutator = (
 export type OpenClawConfigBeforeApply = () => void | Promise<void>;
 export type OpenClawConfigMutationOptions = {
   beforeApply?: OpenClawConfigBeforeApply;
+  prelaunchMigration?: boolean;
 };
 
 type ConfigDeliveryGatewayManager = Pick<GatewayManager, 'getStatus' | 'rpc'>;
@@ -330,7 +332,8 @@ async function mutateFileConfig(
 
       await mkdir(dirname(configPath), { recursive: true });
       const temporaryPath = `${configPath}.${process.pid}.${randomUUID()}.tmp`;
-      await writeFile(temporaryPath, serializeConfig(snapshot.config), {
+      const serialized = serializeConfig(snapshot.config);
+      await writeFile(temporaryPath, serialized, {
         encoding: 'utf8',
         flag: 'wx',
         mode: 0o600,
@@ -341,6 +344,9 @@ async function mutateFileConfig(
           return await mutateRunningConfig(manager, mutator, options);
         }
 
+        if (options.prelaunchMigration && snapshot.raw !== undefined) {
+          await prepareConfigMigrationReceipt(configPath, resolveOpenClawStateDir(), snapshot.raw, serialized);
+        }
         const currentRaw = await readFileRaw(configPath);
         if (manager?.getStatus().state === 'running') {
           return await mutateRunningConfig(manager, mutator, options);
