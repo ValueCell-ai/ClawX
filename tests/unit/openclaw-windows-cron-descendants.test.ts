@@ -13,7 +13,7 @@ it('carries only scheduler-verified host executions through both approval paths'
   const tool = await readFile(path.join(dist, 'bash-tools-B7jTXO_k.mjs'), 'utf8');
   const runtime = await readFile(path.join(dist, 'bash-tools.exec-runtime-DV-8QM6d.mjs'), 'utf8');
   const adapter = await readFile(path.join(dist, 'child-DRU8rxky.mjs'), 'utf8');
-  expect(tool).toContain('host === "gateway" && process.platform === "win32" && !secretEgressEnabled ? getClawxCronLauncher(defaults, params, defaultTimeoutSec)');
+  expect(tool).toMatch(/host === "gateway" && process\.platform === "win32" && !secretEgressEnabled\s*\? getClawxCronLauncher\(/);
   expect(tool).toMatch(/processGatewayAllowlist\(\{\s*\.\.\.hostApprovalParams\(\),\s*clawxCronLauncher,/);
   expect(tool).toMatch(/runExecProcess\(\{\s*command: params.command,\s*clawxCronLauncher,/);
   expect(tool).toContain('clawxCronLauncher: params.clawxCronLauncher,');

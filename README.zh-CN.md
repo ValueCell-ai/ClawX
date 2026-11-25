@@ -175,6 +175,8 @@ Doctor 也识别已验证的 `2026.10.5`/schema 25 情况：首次启动 Gateway
 
 在 Windows 上升级时，ClawX 会从当前使用的定时任务存储中识别启动后台 worker 后立即返回的旧脚本。ClawX 继续使用原来的启动命令，等待其 Windows Job 完成。如果任务自定义了 600 秒等执行时限，worker 沿用该时限。旧设置只覆盖启动阶段、且无法确认整个后台任务所需时长时，迁移后的作业上限为 1 小时。
 
+在 Windows 上，隔离会话中的定时任务可以通过 `exec` 的 `awaitResults: true` 等待命令及其子进程执行完毕，也可以指定技能目录作为工作目录。Gateway 会持续监管子进程，直到执行完成、任务取消或达到时限。
+
 没有需要迁移的定时任务时，Gateway 也能正常启动。创建进程前会省略未设置的可选启动参数，避免升级后出现 `Invalid value for env`。详见[故障定位及验证](harness/reference/gateway-undefined-launch-env-20261111.md)。
 
 应用退出时会取消会话写入和排队的启动请求，先停止 ACP 和 ClawX 管理的 Gateway，再由扩展清理临时运行时凭据。加密登录状态保留供下次启动恢复，整个退出流程仍受原有超时限制。

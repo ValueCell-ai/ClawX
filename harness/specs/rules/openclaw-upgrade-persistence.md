@@ -26,6 +26,7 @@ Validation:
   - Focused isolated SQLite and migration regression tests.
   - Communication replay and compare for changed Main/Gateway paths.
   - When changing the bundled runtime, exercise a direct 0.6.1 upgrade and a Windows scheduled launcher whose worker outlives its parent. Check natural completion, the original deadline, cancellation and Gateway shutdown, using a temporary local marker for completion.
+  - Exercise explicitly awaited isolated cron exec in a non-default workdir with no migration record. Verify that the Windows Job stays supervised through completion and responds to timeout and cancellation.
   - In a partitioned cron database, select upgrade evidence from the active store before matching job IDs. Skip a relative store path when the snapshot lacks its original base directory. Verify worker completion under an existing custom deadline as well as a migrated startup deadline.
   - Scheduled-task upgrade coverage must distinguish shared and per-agent stores, community and synthetic enterprise credentials, repeated startup, model catalog changes and credential replacement. Real local-model execution and enterprise quit/restore require separate evidence from unit tests and chat-only upgrade probes. See `harness/reference/cron-inference-upgrade.md`.
 

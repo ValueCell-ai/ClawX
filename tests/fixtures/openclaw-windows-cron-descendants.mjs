@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { realpathSync } from 'node:fs';
+import { mkdir } from 'node:fs/promises';
 import { registerHooks } from 'node:module';
 import { join } from 'node:path';
 import { setImmediate as nextTurn, setTimeout as delay } from 'node:timers/promises';
@@ -27,10 +28,10 @@ registerHooks({
     const module = next(url, context);
     if (process.platform === 'win32' || !url.endsWith('/bash-tools-B7jTXO_k.mjs')) return module;
     // Emulate Windows for this one admission check, keeping host OS and exec policy intact.
-    const gate = 'process.platform === "win32" && !secretEgressEnabled ? getClawxCronLauncher';
+    const gate = /process\.platform === "win32" && (!secretEgressEnabled\s*\? getClawxCronLauncher)/;
     const source = Buffer.from(module.source).toString();
-    assert.ok(source.includes(gate));
-    return { ...module, source: source.replace(gate, '!secretEgressEnabled ? getClawxCronLauncher') };
+    assert.match(source, gate);
+    return { ...module, source: source.replace(gate, '$1') };
   },
 });
 globalThis.createCronTestAdapter = async ({ onSpawnCleanup }) => {
@@ -175,6 +176,45 @@ test('a verified launcher waits in the real exec tool with and without the proce
       job.extinction.resolve({ status: 'confirmed' });
       assert.equal((await result).details.status, 'completed');
     }, { command, timeoutSeconds: 3600 });
+  }
+});
+
+test('only an explicitly awaited exec from an isolated agent job waits for workers in its custom workdir', async (t) => {
+  const spawn = t.mock.method(getSupervisor(), 'spawn');
+  const workdir = join(process.cwd(), 'skill scripts');
+  await mkdir(workdir);
+  for (const [sessionTarget, awaitResults, shouldWait] of [
+    ['isolated', true, true],
+    ['isolated', false, false],
+    ['current', true, false],
+  ]) {
+    const request = {
+      job: { sessionTarget, payload: { kind: 'agentTurn' } },
+      abortSignal: new AbortController().signal, executionIdentity: { onPostAdmission() {} },
+    };
+    await runClawxCronJob(request, async (scheduled) => {
+      const operationalRunInstance = Object.freeze({ runId: 'run', instanceId: 'instance' });
+      await scheduled.executionIdentity.onPostAdmission({ operationalRunInstance });
+      const exec = createExecTool({
+        operationalRunInstance, cwd: process.cwd(), config: {}, host: 'gateway', mode: 'full',
+        security: 'full', ask: 'off', notifyOnExit: false, timeoutSec: 100,
+        processToolAvailabilityRef: { value: false },
+      });
+      job = { nativeJob: true, started: Promise.withResolvers(), launcher: Promise.withResolvers(), extinction: Promise.withResolvers(), kills: [] };
+      const result = exec.execute('launch', { command: 'echo launch', workdir, awaitResults, timeoutSeconds: 50 });
+      await Promise.race([job.started.promise, result.then(() => assert.fail('exec completed before spawn'))]);
+      const options = spawn.mock.calls.at(-1).arguments[0];
+      assert.equal(realpathSync(options.cwd), realpathSync(workdir));
+      assert.equal(options.timeoutMs, 50_000);
+      assert.equal(options.waitForWindowsCronDescendants, shouldWait);
+      await exitLauncher(job);
+      if (shouldWait) {
+        assert.deepEqual(job.kills, []);
+        job.extinction.resolve({ status: 'confirmed' });
+      }
+      assert.equal((await result).details.status, 'completed');
+      assert.equal(job.kills.length > 0, !shouldWait);
+    });
   }
 });
 

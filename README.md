@@ -179,6 +179,8 @@ Legacy scheduled tasks can recover their inference account from the verified pre
 
 When upgrading on Windows, ClawX recognizes scheduled scripts in the active cron store that start a background worker and return. ClawX runs the original command and waits for its Windows Job to finish. A custom timeout such as 600 seconds still applies to the worker. An old startup-only timeout becomes one hour when the full worker budget is unknown.
 
+On Windows, an isolated scheduled agent can use `exec` with `awaitResults: true` to wait for a command and its workers, including commands run from a skill directory. The Gateway supervises the workers until they finish, the run is cancelled, or its deadline expires.
+
 Gateway startup also works when no scheduled-task migration evidence is needed. Optional unset launch values are omitted before creating the process, preventing the upgrade-time `Invalid value for env` failure. See the [diagnosis and validation](harness/reference/gateway-undefined-launch-env-20261111.md).
 
 During app quit, session writes and queued starts are cancelled. ACP and the managed Gateway stop before extensions remove their temporary runtime credentials; encrypted login state remains available for the next launch. All shutdown work shares the existing timeout.
