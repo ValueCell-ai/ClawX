@@ -1,7 +1,10 @@
 // @vitest-environment node
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync,
+  realpathSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const { home, persist } = vi.hoisted(() => ({ home: { path: '' }, persist: vi.fn(() => true) }));
 vi.mock('node:os', async () => ({ ...await vi.importActual('node:os'), homedir: () => home.path }));
@@ -102,6 +105,49 @@ describe('replacePluginMirror', () => {
 
     expect(existsSync(join(targetDir, 'openclaw.plugin.json'))).toBe(true);
     expect(stagingEntries()).toEqual([]);
+  });
+
+  it.each([false, true])('installs and rolls back with redirected extensions (existing staging link: %s)', async (hasStagingLink) => {
+    const { replacePluginMirror } = await import('@electron/utils/plugin-install');
+    const extensionsLink = dirname(targetDir);
+    // The checkout and the OS temp directory can be on different volumes on Windows.
+    const resultsDir = join(process.cwd(), 'test-results');
+    mkdirSync(resultsDir, { recursive: true });
+    const storageDir = mkdtempSync(join(resultsDir, 'plugin-storage-'));
+    const extensions = join(storageDir, 'extensions');
+    const logicalStaging = join(openclawDir, '.clawx-plugin-staging');
+    const linkType = process.platform === 'win32' ? 'junction' : 'dir';
+    try {
+      mkdirSync(extensions);
+      symlinkSync(extensions, extensionsLink, linkType);
+      let expectedStaging = logicalStaging;
+      if (hasStagingLink) {
+        expectedStaging = join(storageDir, 'user-staging');
+        mkdirSync(expectedStaging);
+        symlinkSync(expectedStaging, logicalStaging, linkType);
+      } else if (statSync(openclawDir).dev !== statSync(extensions).dev) {
+        expectedStaging = join(storageDir, '.clawx-plugin-staging');
+      }
+      let usedStaging: string | undefined;
+      replacePluginMirror(targetDir, (next) => {
+        writeMirror(next, '1.0.0');
+        usedStaging = dirname(dirname(realpathSync.native(next)));
+        expect(readdirSync(extensions)).toEqual([]);
+      });
+      expect(usedStaging).toBe(realpathSync.native(expectedStaging));
+      expect(readFileSync(join(targetDir, 'dist/index.js'), 'utf8')).toContain('1.0.0');
+      expect(readdirSync(expectedStaging)).toEqual([]);
+
+      const upgrade = replacePluginMirror(targetDir, (next) => writeMirror(next, '2.0.0'), true)!;
+      expect(readFileSync(join(targetDir, 'dist/index.js'), 'utf8')).toContain('2.0.0');
+      upgrade.rollback();
+      expect(readFileSync(join(targetDir, 'dist/index.js'), 'utf8')).toContain('1.0.0');
+      expect(readdirSync(expectedStaging)).toEqual([]);
+    } finally {
+      if (existsSync(extensionsLink)) unlinkSync(extensionsLink);
+      if (hasStagingLink && existsSync(logicalStaging)) unlinkSync(logicalStaging);
+      rmSync(storageDir, { recursive: true, force: true });
+    }
   });
 
   it('keeps the previous mirror when the copy fails partway', async () => {

@@ -46,6 +46,11 @@ For Feishu/Lark specifically:
 
 Plugin mirror upgrades must never leave a partial mirror in `~/.openclaw/extensions/`. Copy into a staging directory outside plugin discovery and swap it in with `replacePluginMirror` only once it holds a manifest, keeping the previous mirror if the copy or swap fails. Otherwise a retry would see a matching `package.json` and skip a broken install.
 
+Place staging on the volume containing the resolved extensions directory. A
+Windows junction can put `~/.openclaw/extensions` on a different volume from
+its logical parent, causing both publication and rollback renames to fail with
+`EXDEV`.
+
 For OpenClaw capability consent:
 
 - ClawX records consent only for its own path-owned mirrors, and only for ids that are already explicitly enabled and allowed; consent must never enable a plugin
