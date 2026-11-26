@@ -11,15 +11,29 @@ const migrated = { command: 'python C:\\jobs\\daily.py --start', timeoutSeconds:
 const args = { command: migrated.command };
 type Instance = { runId: string; instanceId: string };
 type Admitted = { operationalRunInstance: Instance };
+type Launcher = { signal: AbortSignal; timeoutSeconds: number; beginWorkerWait?: () => (() => void) | undefined };
 type Request = {
-  job?: { sessionTarget: string; payload: { kind: string } };
+  job?: { sessionTarget: string; payload: { kind: string; message?: string; timeoutSeconds?: number } };
   abortSignal: AbortSignal;
+  clawxBeginWorkerWait?: (timeoutMs: number) => (() => void) | undefined;
   executionIdentity?: { onPostAdmission: (admitted: Admitted) => void | Promise<void> };
 };
 
 const { runClawxCronJob, getClawxCronLauncher } = await bundle('clawx-cron-run-context.mjs') as {
   runClawxCronJob: <T>(request: Request, run: (request: Request) => Promise<T>, launcher?: typeof migrated) => Promise<T>;
-  getClawxCronLauncher: (tool: { operationalRunInstance?: Instance; timeoutSec?: number } | undefined, params: Record<string, unknown>, configuredTimeout: number, matchesLegacyWorkdir?: boolean) => { signal: AbortSignal; timeoutSeconds: number } | undefined;
+  getClawxCronLauncher: (tool: { operationalRunInstance?: Instance; timeoutSec?: number } | undefined, params: Record<string, unknown>, configuredTimeout: number, matchesLegacyWorkdir?: boolean, resolvedWorkdir?: string) => Launcher | undefined;
+};
+type StartupLauncher = { command: string; workdir: string; workerTimeoutSeconds: number };
+const { resolveClawxStartupLauncher, matchesClawxStartupLauncher } = await bundle('clawx-cron-startup-launcher.mjs') as {
+  resolveClawxStartupLauncher: (job: Request['job']) => StartupLauncher | undefined;
+  matchesClawxStartupLauncher: (launcher: StartupLauncher | undefined, params: { command: string }, cwd: string) => boolean;
+};
+const workdir = 'D:\\fixtures\\tile-cache';
+const script = workdir + '\\tiles.py';
+const command = `python.exe ${script} --start --scan-timeout-seconds 11 --index-timeout-seconds 75`;
+const savedLauncherJob = {
+  sessionTarget: 'isolated',
+  payload: { kind: 'agentTurn', timeoutSeconds: 60, message: `Build the tile index.\n${command}` },
 };
 const { t: prepareCronRunAdmission } = await bundle('run-admission-BttHm5Ts.mjs') as {
   t: (params: Record<string, unknown>) => {
@@ -52,6 +66,40 @@ async function throughAdmission<T>(runId: string, request: Request, run: (tool: 
 }
 
 describe('OpenClaw scheduled exec ownership', () => {
+  it('matches the saved Windows launcher in its script directory with either path separator', () => {
+    const launcher = resolveClawxStartupLauncher(savedLauncherJob);
+    expect(launcher?.command).toBe(command);
+    const localizedPayload = { ...savedLauncherJob.payload, message: `瓦片索引示例：${command}。地图预览另行生成。` };
+    expect(resolveClawxStartupLauncher({ ...savedLauncherJob, payload: localizedPayload })).toEqual(launcher);
+    expect(launcher?.workerTimeoutSeconds).toBeGreaterThan(60);
+    expect(Number.isSafeInteger(launcher?.workerTimeoutSeconds)).toBe(true);
+    expect(matchesClawxStartupLauncher(launcher, { command }, workdir)).toBe(true);
+    expect(matchesClawxStartupLauncher(launcher, { command: command.replaceAll('\\', '/') }, workdir.replaceAll('\\', '/'))).toBe(true);
+    expect(matchesClawxStartupLauncher(launcher, { command }, workdir + '\\other')).toBe(false);
+    for (const actual of [
+      command.replace('75', '76'), command.replace(script, 'tiles.py'), command.replace(script, 'D:\\other\\tiles.py'),
+      command + ' & echo more', command + '\nWrite-Output more', command.replace(script, '%TEMP%\\tiles.py'),
+    ]) {
+      expect(matchesClawxStartupLauncher(launcher, { command: actual }, workdir)).toBe(false);
+    }
+  });
+
+  it('declines ambiguous launchers, ordinary jobs and other deadlines', () => {
+    const { payload } = savedLauncherJob;
+    for (const message of [
+      payload.message + '\n' + command, command.replace(script, 'relative.py'), command + ' && echo done',
+      command.replace('75', '60'), command.replace('75', String(Number.MAX_SAFE_INTEGER + 1)),
+      command.replace('--start', '--list'), command.replace(script, 'D:\\one\\..\\two\\tiles.py'),
+    ]) {
+      expect(resolveClawxStartupLauncher({ ...savedLauncherJob, payload: { ...payload, message } })).toBeUndefined();
+    }
+    for (const timeoutSeconds of [undefined, 0, 59, 61, 120]) {
+      expect(resolveClawxStartupLauncher({ ...savedLauncherJob, payload: { ...payload, timeoutSeconds } })).toBeUndefined();
+    }
+    expect(resolveClawxStartupLauncher({ ...savedLauncherJob, sessionTarget: 'current' })).toBeUndefined();
+    expect(resolveClawxStartupLauncher({ ...savedLauncherJob, payload: { ...payload, kind: 'script' } })).toBeUndefined();
+  });
+
   it('installs the wrapper on the scheduler’s isolated agent runner', async () => {
     const source = await readFile(path.join(dist, 'server-cron-BOAcxlHX.mjs'), 'utf8');
     const entry = source.slice(source.indexOf('runIsolatedAgentJob: async'), source.indexOf('runCommandJob: async'));
@@ -164,6 +212,51 @@ describe('OpenClaw scheduled exec ownership', () => {
       return launcher?.signal;
     }));
     expect(signal?.aborted).toBe(true);
+  });
+
+  it.runIf(process.platform === 'win32')('recognizes the saved short launcher without an explicit awaitResults or a migration', async () => {
+    const request = {
+      job: structuredClone(savedLauncherJob),
+      abortSignal: new AbortController().signal,
+      clawxBeginWorkerWait: vi.fn(() => vi.fn()),
+      executionIdentity: { onPostAdmission: vi.fn() },
+    };
+    const saved = structuredClone(request.job);
+    const finishedLauncher = await runClawxCronJob(request, (scheduled) =>
+      throughAdmission(randomUUID(), scheduled, async (tool) => {
+        const params = { command, workdir };
+        const launcher = getClawxCronLauncher(tool, params, 1800, false, workdir);
+        expect(launcher).toBeDefined();
+        expect(launcher?.signal.aborted).toBe(false);
+        expect(getClawxCronLauncher(tool, { ...params, timeoutSeconds: 45 }, 1800, false, workdir)?.timeoutSeconds).toBe(45);
+        expect(getClawxCronLauncher(tool, { ...params, awaitResults: true }, 1800, false, workdir)?.beginWorkerWait).toBeTypeOf('function');
+        expect(getClawxCronLauncher(tool, params, 1800, false, workdir + '\\other')).toBeUndefined();
+        const changes = [
+          { command: command.replace('tiles.py', 'unrelated.py') },
+          { command: command + ' && echo extra' },
+          { background: true }, { pty: true }, { env: { PYTHONPATH: 'other' } },
+        ];
+        for (const change of changes) {
+          expect(getClawxCronLauncher(tool, { ...params, ...change }, 1800, false, workdir)).toBeUndefined();
+        }
+        expect(getClawxCronLauncher({ operationalRunInstance: { ...tool.operationalRunInstance } },
+          params, 1800, false, workdir)).toBeUndefined();
+        return launcher;
+      }));
+    expect(finishedLauncher?.signal.aborted).toBe(true);
+    expect(finishedLauncher?.beginWorkerWait?.()).toBeUndefined();
+    expect(request.clawxBeginWorkerWait).not.toHaveBeenCalled();
+    expect(request.job).toEqual(saved);
+  });
+
+  it('keeps the saved command on its ordinary deadline without a scheduler-owned worker clock', async () => {
+    const request = {
+      job: structuredClone(savedLauncherJob), abortSignal: new AbortController().signal,
+      executionIdentity: { onPostAdmission: vi.fn() },
+    };
+    await runClawxCronJob(request, (scheduled) => throughAdmission(randomUUID(), scheduled, async (tool) => {
+      expect(getClawxCronLauncher(tool, { command, workdir }, 1800, false, workdir)).toBeUndefined();
+    }));
   });
 
   it.each([
