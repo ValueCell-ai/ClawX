@@ -29,7 +29,7 @@ const {
   mockExistsSync: vi.fn(),
   mockCpSync: vi.fn(),
   mockCopyFileSync: vi.fn(),
-  mockStatSync: vi.fn(() => ({ isDirectory: () => false })),
+  mockStatSync: vi.fn(),
   mockLstatSync: vi.fn(),
   mockMkdirSync: vi.fn(),
   mockRmSync: vi.fn(),
@@ -77,7 +77,7 @@ vi.mock('node:fs', async () => {
     readFileSync: mockReadFileSync,
     writeFileSync: mockWriteFileSync,
     readdirSync: mockReaddirSync,
-    realpathSync: mockRealpathSync,
+    realpathSync: Object.assign(mockRealpathSync, { native: mockRealpathSync }),
     readlinkSync: mockReadlinkSync,
   };
   return {
@@ -146,6 +146,7 @@ describe('plugin installer diagnostics', () => {
     setPlatform('linux');
 
     mockExistsSync.mockReturnValue(false);
+    mockStatSync.mockReturnValue({ dev: 1, isDirectory: () => false });
     mockCpSync.mockImplementation(() => undefined);
     mockMkdirSync.mockImplementation(() => undefined);
     mockRmSync.mockImplementation(() => undefined);
@@ -176,6 +177,33 @@ describe('plugin installer diagnostics', () => {
       Object.defineProperty(process, 'platform', ORIGINAL_PLATFORM_DESCRIPTOR);
     }
   });
+
+  it('selects a staging directory on the extensions volume when the configured paths span devices', async () => {
+    const physicalRoot = path.join(testHome, 'redirected', 'extensions');
+    mockStatSync.mockImplementation((input: string) => ({ dev: input === extensionsDir ? 2 : 1 }));
+    mockRealpathSync.mockReturnValue(physicalRoot);
+    mockExistsSync.mockReturnValue(true);
+    const populate = vi.fn<(dir: string) => void>();
+    const { replacePluginMirror } = await import('@electron/utils/plugin-install');
+
+    replacePluginMirror(path.join(extensionsDir, 'wecom'), populate);
+
+    const [[stagedDir]] = populate.mock.calls;
+    expect(path.dirname(path.dirname(stagedDir))).toBe(path.join(path.dirname(physicalRoot), '.clawx-plugin-staging'));
+    expect(mockRenameSync).toHaveBeenCalledWith(stagedDir, path.join(extensionsDir, 'wecom'));
+  });
+
+  it.each([path.parse(testHome).root, path.join(testHome, 'redirected', '.clawx-plugin-staging')])(
+    'refuses to stage in the plugin discovery directory %s', async (physicalRoot) => {
+      mockStatSync.mockImplementation((input: string) => ({ dev: input === extensionsDir ? 2 : 1 }));
+      mockRealpathSync.mockReturnValue(physicalRoot);
+      const populate = vi.fn();
+      const { replacePluginMirror } = await import('@electron/utils/plugin-install');
+
+      expect(() => replacePluginMirror(path.join(extensionsDir, 'wecom'), populate)).toThrow('No sibling staging directory');
+      expect(populate).not.toHaveBeenCalled();
+    },
+  );
 
   it('remaps official DingTalk connector onto the dingtalk channel identity', async () => {
     const targetDir = path.join(extensionsDir, 'dingtalk');

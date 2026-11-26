@@ -84,6 +84,23 @@ function _copyDirSyncRecursive(src: string, dest: string): void {
 
 const PLUGIN_STAGING_DIR = '.clawx-plugin-staging';
 
+function pluginStagingRoot(extensionsRoot: string): string {
+  const stateDir = path.dirname(extensionsRoot);
+  const stagingRoot = join(stateDir, PLUGIN_STAGING_DIR);
+  const staging = statSync(fsPath(stagingRoot), { throwIfNoEntry: false }) ?? statSync(fsPath(stateDir));
+  if (staging.dev === statSync(fsPath(extensionsRoot)).dev) return stagingRoot;
+
+  // A Windows junction can put extensions on another volume even when both
+  // paths start with the same drive letter. Stage beside the actual directory.
+  const physicalRoot = realpathSync.native(fsPath(extensionsRoot));
+  const parent = path.dirname(physicalRoot);
+  const physicalStaging = join(parent, PLUGIN_STAGING_DIR);
+  if (parent === physicalRoot || path.relative(physicalRoot, physicalStaging) === '') {
+    throw new Error(`No sibling staging directory outside the extensions directory: ${physicalRoot}`);
+  }
+  return physicalStaging;
+}
+
 /**
  * Replace the plugin mirror at `targetDir` without ever leaving a partial
  * copy in `extensions/`. `populate` fills a staging directory next to
@@ -94,9 +111,9 @@ const PLUGIN_STAGING_DIR = '.clawx-plugin-staging';
 export function replacePluginMirror(targetDir: string, populate: (stagedDir: string) => void,
   retainPrevious = false): { commit: () => void; rollback: () => void } | undefined {
   const extensionsRoot = path.dirname(targetDir);
+  mkdirSync(fsPath(extensionsRoot), { recursive: true });
   const stagingDir = join(
-    path.dirname(extensionsRoot),
-    PLUGIN_STAGING_DIR,
+    pluginStagingRoot(extensionsRoot),
     `${path.basename(targetDir)}-${process.pid}-${Date.now()}`,
   );
   const stagedDir = join(stagingDir, 'next');
@@ -114,7 +131,6 @@ export function replacePluginMirror(targetDir: string, populate: (stagedDir: str
     if (!existsSync(fsPath(join(stagedDir, 'openclaw.plugin.json')))) {
       throw new Error(`Staged plugin mirror has no openclaw.plugin.json: ${stagedDir}`);
     }
-    mkdirSync(fsPath(extensionsRoot), { recursive: true });
     try {
       renameSync(fsPath(targetDir), fsPath(previousDir));
       movedPrevious = true;
@@ -1144,13 +1160,11 @@ export async function ensurePluginInstalled(
 
   // Fresh install or upgrade — try bundled/build sources first
   if (sourceDir) {
-    const extensionsRoot = join(homedir(), '.openclaw', 'extensions');
     const attempts: Array<{ attempt: number; code?: string; name?: string; message: string }> = [];
     const maxAttempts = process.platform === 'win32' ? 2 : 1;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        mkdirSync(fsPath(extensionsRoot), { recursive: true });
         const installed = await publish((stagedDir) => cpSyncSafe(sourceDir, stagedDir));
         logger.info(`Installed ${pluginLabel} plugin from bundled mirror: ${sourceDir}`);
         return installed;
@@ -1189,7 +1203,6 @@ export async function ensurePluginInstalled(
             `${installedVersion ? `: ${installedVersion} → ${sourceVersion}` : `: ${sourceVersion}`} (dev/node_modules)`,
           );
           try {
-            mkdirSync(fsPath(join(homedir(), '.openclaw', 'extensions')), { recursive: true });
             return await publish((stagedDir) => copyPluginFromNodeModules(npmPkgPath, stagedDir, npmName));
           } catch (err) {
             logger.warn(
