@@ -137,3 +137,4 @@ Gatewayの存活判定はElectron Mainが行います。WebSocket pongは有用�
   - macOS/Linux：`lsof -nP -iTCP:18789 -sTCP:LISTEN`
   - Windows（PowerShell）：`Get-NetTCPConnection -LocalPort 18789 -State Listen`
 - ウィンドウの閉じるボタン（`X`）はClawXをトレイに隠すだけで、完全終了ではありません。完全終了にはトレイメニューの **Quit ClawX** を使用してください。
+- `clawx-YYYY-MM-DD.log` の日付は、ClawX が起動した時点の UTC 日付です。セッションが UTC の午前 0 時をまたいでも、その後のイベントは同じファイルに記録されます。イベントを探すときはログ内のタイムスタンプを確認してください。
