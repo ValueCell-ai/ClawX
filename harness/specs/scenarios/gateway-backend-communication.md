@@ -190,6 +190,8 @@ Scheduled-task upgrade continuity is a backend contract. Main prepares verified 
 
 The active cron store identifies which legacy jobs belong to the scheduler. For a verified Windows launcher, the managed Gateway supervises the worker through completion or its deadline, including a custom deadline inherited from the old job. See [the scheduled worker upgrade tests](../tasks/preserve-scheduled-exec-upgrade.md).
 
+A scheduled Windows launcher can finish within the stored 60-second limit while its worker continues under supervision. Exercise the actual scheduler with a worker that outlives the launch deadline and verify the saved job definition. See [the scheduled worker acceptance test](../tasks/retain-scheduled-worker-after-launch.md).
+
 An isolated scheduled agent can explicitly await a Windows host command and its descendants in the approved working directory. Use the [scheduled Windows worker task](../tasks/await-scheduled-windows-workers.md) to check foreground completion and cancellation.
 
 The local HTML Preview privileged bridge is also Main-owned: Renderer may load a validated local HTML file or open that current file externally through the typed Host API. The guest is an implementation detail of the existing `preview` tab; there is no `web-browser` artifact tab or general address navigation. The durable guest contract is `harness/reference/web-browser.md`.

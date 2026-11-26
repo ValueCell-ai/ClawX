@@ -183,6 +183,8 @@ When upgrading on Windows, ClawX recognizes scheduled scripts in the active cron
 
 On Windows, an isolated scheduled agent can use `exec` with `awaitResults: true` to wait for a command and its workers, including commands run from a skill directory. The Gateway supervises the workers until they finish, the run is cancelled, or its deadline expires.
 
+A 60-second Windows task can also launch a Python worker with `--start` and separate stage timeout arguments. If a stage needs more than 60 seconds, the task must specify the absolute launcher command and run it in the script directory. The launcher must exit successfully within 60 seconds. The Gateway then waits up to four hours for workers still in the Windows Job. Explicit execution limits and cancellation still apply.
+
 Gateway startup also works when no scheduled-task migration evidence is needed. Optional unset launch values are omitted before creating the process, preventing the upgrade-time `Invalid value for env` failure. See the [diagnosis and validation](harness/reference/gateway-undefined-launch-env-20261111.md).
 
 During app quit, session writes and queued starts are cancelled. ACP and the managed Gateway stop before extensions remove their temporary runtime credentials; encrypted login state remains available for the next launch. All shutdown work shares the existing timeout.

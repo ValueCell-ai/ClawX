@@ -3081,9 +3081,102 @@ new file mode 100644
 +	return counts;
 +}
 diff --git a/dist/service-pOwE_Xvo.mjs b/dist/service-pOwE_Xvo.mjs
+index 01ad0de..b168cd7 100644
 --- a/dist/service-pOwE_Xvo.mjs
 +++ b/dist/service-pOwE_Xvo.mjs
-@@ -4415,7 +4415,10 @@
+@@ -1316,6 +1316,9 @@ const CRON_AGENT_PHASE_WATCHDOG_STAGE = {
+ function createCronAgentWatchdog(params) {
+ 	let state = params.deferUntilRunner ? "waiting_for_runner" : "executing";
+ 	let timeoutId;
++	let executionDeadline;
++	let activeWorkerTimeoutMs;
++	let workerWaitUsed = false;
+ 	let setupTimeoutId;
+ 	let preExecutionTimeoutId;
+ 	let activeExecution;
+@@ -1324,13 +1327,15 @@ function createCronAgentWatchdog(params) {
+ 	const setTimedOut = (reason) => {
+ 		if (state === "timed_out" || state === "disposed") return;
+ 		state = "timed_out";
+-		params.triggerTimeout(reason);
++		params.triggerTimeout(reason, activeWorkerTimeoutMs);
++	};
++	const armTimeout = (timeoutMs) => {
++		clearTimeout(timeoutId);
++		executionDeadline = performance.now() + timeoutMs;
++		timeoutId = setTimeout(() => setTimedOut(timeoutErrorMessage(activeExecution)), timeoutMs);
+ 	};
+ 	const startTimeout = () => {
+-		if (timeoutId || state === "disposed") return;
+-		timeoutId = setTimeout(() => {
+-			setTimedOut(timeoutErrorMessage(activeExecution));
+-		}, params.jobTimeoutMs);
++		if (!timeoutId && state !== "disposed") armTimeout(params.jobTimeoutMs);
+ 	};
+ 	const clearSetupTimeout = () => {
+ 		if (!setupTimeoutId) return;
+@@ -1375,6 +1380,27 @@ function createCronAgentWatchdog(params) {
+ 			}
+ 			startTimeout();
+ 		},
++		beginWorkerWait: (workerTimeoutMs) => {
++			if (workerWaitUsed || state !== "executing" || !timeoutId) return;
++			const remaining = executionDeadline - performance.now();
++			if (remaining <= 0) {
++				setTimedOut(timeoutErrorMessage(activeExecution));
++				return;
++			}
++			workerWaitUsed = true;
++			activeWorkerTimeoutMs = workerTimeoutMs;
++			armTimeout(workerTimeoutMs);
++			let released = false;
++			return () => {
++				if (released || state === "disposed" || state === "timed_out") return;
++				released = true;
++				if (performance.now() >= executionDeadline) setTimedOut(timeoutErrorMessage(activeExecution));
++				else {
++					activeWorkerTimeoutMs = void 0;
++					armTimeout(remaining);
++				}
++			};
++		},
+ 		replaceTimeout: (timeoutMs) => {
+ 			if (timeoutId) clearTimeout(timeoutId);
+ 			timeoutId = timeoutMs !== void 0 && state !== "timed_out" && state !== "disposed" ? setTimeout(() => setTimedOut(timeoutErrorMessage(activeExecution)), timeoutMs) : void 0;
+@@ -1859,6 +1885,7 @@ async function executeDetachedCronJob(state, job, abortSignal, options) {
+ 		job,
+ 		admissionSource: resolveCronRunAdmissionSource(job),
+ 		message: job.payload.message,
++		clawxBeginWorkerWait: options?.clawxBeginWorkerWait,
+ 		abortSignal,
+ 		onExecutionStarted: options?.onExecutionStarted,
+ 		onExecutionPhase: options?.onExecutionPhase,
+@@ -2249,14 +2276,14 @@ async function executeJobCoreWithTimeoutUnfinalized(state, job, opts) {
+ 		const watchdog = jobTimeoutMs === void 0 ? void 0 : createCronAgentWatchdog({
+ 			deferUntilRunner: deferTimeoutUntilExecutionStart,
+ 			jobTimeoutMs,
+-			triggerTimeout: (reason) => {
++			triggerTimeout: (reason, activeWorkerTimeoutMs) => {
+ 				if (!runAbortController.signal.aborted) {
+ 					const timeoutError = new Error(reason);
+ 					timeoutError.name = "TimeoutError";
+ 					runAbortController.abort(timeoutError);
+ 				}
+ 				timeout.resolve({
+-					timeoutMs: jobTimeoutMs,
++					timeoutMs: activeWorkerTimeoutMs ?? jobTimeoutMs,
+ 					reason
+ 				});
+ 			}
+@@ -2283,6 +2310,7 @@ async function executeJobCoreWithTimeoutUnfinalized(state, job, opts) {
+ 		const resolveHeartbeatTimeoutMs = state.deps.resolveHeartbeatTimeoutMs;
+ 		const executionIdentity = opts?.executionIdentity;
+ 		const coreOptions = {
++			clawxBeginWorkerWait: watchdog?.beginWorkerWait,
+ 			deliveryAttemptFence,
+ 			activeJobMarker: opts?.activeJobMarker,
+ 			streamBatch: opts?.streamBatch,
+@@ -4415,7 +4443,10 @@ var CronService = class {
  	async startOnce(generation) {
  		this.startInProgress += 1;
  		try {
@@ -3231,9 +3324,10 @@ diff --git a/dist/run-fallback-policy-wMomHJ3c.mjs b/dist/run-fallback-policy-wM
  		return {
  			ok: true,
 diff --git a/dist/isolated-agent-CPxLr234.mjs b/dist/isolated-agent-CPxLr234.mjs
+index 2c8033e..8f9997a 100644
 --- a/dist/isolated-agent-CPxLr234.mjs
 +++ b/dist/isolated-agent-CPxLr234.mjs
-@@ -878,6 +878,7 @@
+@@ -878,6 +878,7 @@ async function prepareCronRunContext(params) {
  					agentConfigOverride,
  					sessionEntry: cronSession.sessionEntry,
  					payload: input.job.payload,
@@ -3241,7 +3335,7 @@ diff --git a/dist/isolated-agent-CPxLr234.mjs b/dist/isolated-agent-CPxLr234.mjs
  					isGmailHook,
  					agentId,
  					agentDir,
-@@ -899,6 +900,7 @@
+@@ -899,6 +900,7 @@ async function prepareCronRunContext(params) {
  				const preflight = await resolveCronPreflight({
  					cfg: cfgWithAgentDefaults,
  					job: input.job,
@@ -3249,6 +3343,25 @@ diff --git a/dist/isolated-agent-CPxLr234.mjs b/dist/isolated-agent-CPxLr234.mjs
  					agentId: modelOwner.agentId,
  					provider: resolvedModelSelection.provider,
  					model: resolvedModelSelection.model,
+@@ -977,11 +979,16 @@ async function prepareCronRunContext(params) {
+ 				});
+ 				const admittedConfig = preparedModelRuntimeLease.snapshot.config;
+ 				const explicitTimeoutSeconds = input.job.payload.kind === "agentTurn" ? input.job.payload.timeoutSeconds : void 0;
++				let runnerBudgetSeconds = explicitTimeoutSeconds;
++				if (input.clawxRunnerBudgetSeconds !== void 0) {
++					const agentBudgetSeconds = resolveAgentTimeoutMs({ cfg: cfgWithAgentDefaults }) / 1000;
++					runnerBudgetSeconds = Math.max(explicitTimeoutSeconds, Math.min(input.clawxRunnerBudgetSeconds, agentBudgetSeconds));
++				}
+ 				const timeoutMs = resolveAgentTimeoutMs({
+ 					cfg: cfgWithAgentDefaults,
+-					overrideSeconds: explicitTimeoutSeconds
++					overrideSeconds: runnerBudgetSeconds
+ 				});
+-				const runTimeoutOverrideMs = resolveCronRunTimeoutOverrideMs(explicitTimeoutSeconds);
++				const runTimeoutOverrideMs = resolveCronRunTimeoutOverrideMs(runnerBudgetSeconds);
+ 				const agentPayload = input.job.payload.kind === "agentTurn" ? {
+ 					...input.job.payload,
+ 					toolsAllow: resolveCronRunToolsAllow(input.job)
 diff --git a/dist/authorization-DKL02XyX.mjs b/dist/authorization-DKL02XyX.mjs
 --- a/dist/authorization-DKL02XyX.mjs
 +++ b/dist/authorization-DKL02XyX.mjs
@@ -3271,15 +3384,16 @@ diff --git a/dist/authorization-DKL02XyX.mjs b/dist/authorization-DKL02XyX.mjs
  				await execution.prepare({
  					assertCurrent,
 diff --git a/dist/postinstall-inventory.json b/dist/postinstall-inventory.json
-index fa0d799..6bdf743 100644
+index fa0d799..11b9555 100644
 --- a/dist/postinstall-inventory.json
 +++ b/dist/postinstall-inventory.json
-@@ -1118,6 +1118,12 @@
+@@ -1118,6 +1118,13 @@
    "dist/claws-removal-journal-DnhsGbTc.mjs",
    "dist/claws-update-cli.runtime-CjtDlU-J.mjs",
    "dist/claws-update-cli.runtime.js",
 +  "dist/clawx-cron-inference-migration.mjs",
 +  "dist/clawx-cron-run-context.mjs",
++  "dist/clawx-cron-startup-launcher.mjs",
 +  "dist/clawx-cron-timeout-migration.mjs",
 +  "dist/clawx-user-channel-policy-store.mjs",
 +  "dist/clawx-user-channel-policy.worker.mjs",
@@ -3572,7 +3686,7 @@ diff --git a/dist/tools-invoke-DGTW5Yi2.mjs b/dist/tools-invoke-DGTW5Yi2.mjs
  				tool_call_blocked: "forbidden",
  				tool_error: "internal_error"
 diff --git a/dist/bash-tools-B7jTXO_k.mjs b/dist/bash-tools-B7jTXO_k.mjs
-index f8bae0b..a5dbfc4 100644
+index f8bae0b..9586dad 100644
 --- a/dist/bash-tools-B7jTXO_k.mjs
 +++ b/dist/bash-tools-B7jTXO_k.mjs
 @@ -93,6 +93,7 @@ import { o as buildExecApprovalUnavailableReplyPayload } from "./exec-approval-r
@@ -3596,7 +3710,7 @@ index f8bae0b..a5dbfc4 100644
  				});
  				if (!workdir) throw new Error("exec internal error: local execution requires a resolved workdir");
 +				const clawxCronLauncher = host === "gateway" && process.platform === "win32" && !secretEgressEnabled
-+					? getClawxCronLauncher(defaults, params, defaultTimeoutSec, !params.workdir || workdir === resolveExistingHostWorkdir(defaults?.cwd ?? safeCurrentCwd())) : void 0;
++					? getClawxCronLauncher(defaults, params, defaultTimeoutSec, !params.workdir || workdir === resolveExistingHostWorkdir(defaults?.cwd ?? safeCurrentCwd()), workdir) : void 0;
  				const githubProfileDir = host === "gateway" && preparedRunEnvironment.managedLocalIdentity ? preparedRunEnvironment.localIdentityEnv.GH_CONFIG_DIR : void 0;
  				if (host === "gateway" && !bypassApprovals) {
  					gatewayApproval = await processGatewayAllowlist({
@@ -3623,7 +3737,7 @@ index f8bae0b..a5dbfc4 100644
  					else yieldTimer = setTimeout(onYieldNow, yieldWindow);
  				}
 diff --git a/dist/bash-tools.exec-runtime-DV-8QM6d.mjs b/dist/bash-tools.exec-runtime-DV-8QM6d.mjs
-index 5b443be..50904aa 100644
+index 5b443be..b266384 100644
 --- a/dist/bash-tools.exec-runtime-DV-8QM6d.mjs
 +++ b/dist/bash-tools.exec-runtime-DV-8QM6d.mjs
 @@ -762,7 +762,14 @@ function buildExecRuntimeErrorOutcome(params) {
@@ -3659,15 +3773,16 @@ index 5b443be..50904aa 100644
  			}
  			if (outcome.exitReason !== "exit") beginSandboxTermination();
  			await sandboxTermination;
-@@ -1032,6 +1038,7 @@ async function runExecProcess({ startupSignal: initialStartupSignal, onUpdate: i
+@@ -1032,6 +1038,8 @@ async function runExecProcess({ startupSignal: initialStartupSignal, onUpdate: i
  			cwd: spawnSpec.cwd ?? opts.workdir,
  			env: spawnSpec.env,
  			timeoutMs,
 +			waitForWindowsCronDescendants: Boolean(cronSignal),
++			beginWindowsCronWorkerWait: launcher?.beginWorkerWait,
  			captureOutput: false,
  			onStdout: handleOutput("stdout", sanitizeStdout),
  			onStderr: handleOutput("stderr", sanitizeStderr)
-@@ -1107,6 +1114,7 @@ async function runExecProcess({ startupSignal: initialStartupSignal, onUpdate: i
+@@ -1107,6 +1115,7 @@ async function runExecProcess({ startupSignal: initialStartupSignal, onUpdate: i
  	});
  	return {
  		session,
@@ -3676,33 +3791,51 @@ index 5b443be..50904aa 100644
  		pid: session.pid ?? void 0,
  		promise,
 diff --git a/dist/child-DRU8rxky.mjs b/dist/child-DRU8rxky.mjs
-index 4107bc6..61d173f 100644
+index 4107bc6..ca41eba 100644
 --- a/dist/child-DRU8rxky.mjs
 +++ b/dist/child-DRU8rxky.mjs
-@@ -1686,6 +1686,8 @@ async function createChildAdapter(params) {
+@@ -1686,6 +1686,16 @@ async function createChildAdapter(params) {
  				return output ? await joinProcessCompletionAndOutput(completion.promise, output) : await completion.promise;
  			},
  			...process.platform === "win32" && { waitForExtinction: () => windowsCleanup ?? cleanup.promise.then(() => windowsFallback) },
 +			// Only present after admission to the kernel Job. The fallback cannot certify descendants.
 +			windowsJobExtinction: windowsCleanup,
++			hasWindowsJobDescendants: () => {
++				try {
++					return windowsJob?.inspect().some(pid => pid !== child.pid && pid !== windowsJob.commandPid) === true;
++				} catch {
++					// A retired or unobservable Job cannot acquire a separate deadline.
++					return false;
++				}
++			},
  			kill,
  			dispose,
  			closeStartGate: params.ownedWorker ? disconnectWorkerIpc : void 0,
 diff --git a/dist/clawx-cron-run-context.mjs b/dist/clawx-cron-run-context.mjs
 new file mode 100644
-index 0000000..bd23659
+index 0000000..1d3f2a4
 --- /dev/null
 +++ b/dist/clawx-cron-run-context.mjs
-@@ -0,0 +1,36 @@
+@@ -0,0 +1,51 @@
++import { resolveClawxStartupLauncher, matchesClawxStartupLauncher } from "./clawx-cron-startup-launcher.mjs";
++
 +// Each local exec tool holds the same host-issued instance as its admitted agent.
 +// Object identity survives the lane queue and distinguishes separate admissions.
 +const scheduledRuns = new WeakMap();
 +
-+export function getClawxCronLauncher(defaults, params, configuredTimeoutSec, matchesLegacyWorkdir = true) {
++export function getClawxCronLauncher(defaults, params, configuredTimeoutSec, matchesLegacyWorkdir = true, resolvedWorkdir) {
 +	const run = scheduledRuns.get(defaults?.operationalRunInstance);
 +	if (!run || typeof params.command !== "string" || params.background === true || params.pty === true || params.env && Object.keys(params.env).length > 0) return;
 +	const command = params.command.trim();
 +	const migrated = matchesLegacyWorkdir && run.migratedLauncher?.command === command;
++	if (matchesClawxStartupLauncher(run.startupLauncher, params, resolvedWorkdir)) {
++		const workerTimeout = run.startupLauncher.workerTimeoutSeconds;
++		return {
++			command, signal: run.signal,
++			timeoutSeconds: params.timeoutSeconds ?? (defaults?.timeoutSec === void 0 ? run.runnerBudgetSeconds : configuredTimeoutSec),
++			beginWorkerWait: () => run.signal.aborted ? void 0 : run.beginWorkerWait(workerTimeout * 1000)
++		};
++	}
 +	if (!migrated && !(run.isolatedAgentTurn && params.awaitResults === true)) return;
 +	const defaultTimeout = migrated && defaults?.timeoutSec === void 0 ? run.migratedLauncher.timeoutSeconds : configuredTimeoutSec;
 +	return { command, signal: run.signal, timeoutSeconds: params.timeoutSeconds ?? defaultTimeout };
@@ -3712,17 +3845,22 @@ index 0000000..bd23659
 +	const { abortSignal, executionIdentity } = request;
 +	const isolatedAgentTurn = request.job?.sessionTarget === "isolated" && request.job.payload?.kind === "agentTurn";
 +	if ((!isolatedAgentTurn && !migratedLauncher) || !abortSignal || !executionIdentity?.onPostAdmission) return run(request);
++	const startupLauncher = process.platform === "win32" && typeof request.clawxBeginWorkerWait === "function" ? resolveClawxStartupLauncher(request.job) : void 0;
++	const runnerBudgetSeconds = startupLauncher ? request.job.payload.timeoutSeconds + startupLauncher.workerTimeoutSeconds : void 0;
 +	const settled = new AbortController();
 +	const signal = AbortSignal.any([abortSignal, settled.signal]);
 +	try {
 +		return await run({
 +			...request,
++			// The scheduler enforces the original deadline until a live native Job is verified.
++			// Keep the embedded runner from imposing a duplicate, non-adjustable deadline.
++			clawxRunnerBudgetSeconds: runnerBudgetSeconds,
 +			executionIdentity: {
 +				...executionIdentity,
 +				async onPostAdmission(admitted) {
 +					await executionIdentity.onPostAdmission(admitted);
 +					const instance = admitted?.operationalRunInstance;
-+					if (instance && typeof instance === "object") scheduledRuns.set(instance, { migratedLauncher, isolatedAgentTurn, signal });
++					if (instance && typeof instance === "object") scheduledRuns.set(instance, { migratedLauncher, isolatedAgentTurn, signal, startupLauncher, runnerBudgetSeconds, beginWorkerWait: request.clawxBeginWorkerWait });
 +				}
 +			}
 +		});
@@ -3827,17 +3965,24 @@ index 0000000..09ab728
 +	}
 +}
 diff --git a/dist/supervisor-D58YpK8r.mjs b/dist/supervisor-D58YpK8r.mjs
-index 6ceca57..31d4aad 100644
+index 6ceca57..1400d91 100644
 --- a/dist/supervisor-D58YpK8r.mjs
 +++ b/dist/supervisor-D58YpK8r.mjs
-@@ -506,6 +506,12 @@ function createProcessSupervisor() {
+@@ -506,6 +506,19 @@ function createProcessSupervisor() {
  			};
  			const waitPromise = (async () => {
  				const result = await adapter.wait();
 +				// A scheduled launcher can exit while its Job still owns a worker. Retain the
 +				// original deadline, cancellation and native ownership until the Job is empty.
 +				if (input.waitForWindowsCronDescendants && adapter.windowsJobExtinction && !forcedReason && result.code === 0 && result.signal == null) {
-+					await adapter.windowsJobExtinction;
++					const beforeExecDeadline = overallDeadline.deadlineMs === null || performance.now() < overallDeadline.deadlineMs;
++					const releaseWorkerWait = beforeExecDeadline && input.beginWindowsCronWorkerWait && adapter.hasWindowsJobDescendants?.()
++						? input.beginWindowsCronWorkerWait() : void 0;
++					try {
++						await adapter.windowsJobExtinction;
++					} finally {
++						releaseWorkerWait?.();
++					}
 +					if (overallDeadline.deadlineMs !== null && performance.now() >= overallDeadline.deadlineMs) requestCancel("overall-timeout");
 +				}
  				const terminalReason = forcedReason;
@@ -5372,3 +5517,58 @@ diff --git a/dist/io.factory-BX1asySf.mjs b/dist/io.factory-BX1asySf.mjs
  			bytes: current.bytes,
  			hasMeta: current.hasMeta,
  			gatewayMode: current.gatewayMode,
+diff --git a/dist/clawx-cron-startup-launcher.mjs b/dist/clawx-cron-startup-launcher.mjs
+new file mode 100644
+index 0000000..a7ebf5d
+--- /dev/null
++++ b/dist/clawx-cron-startup-launcher.mjs
+@@ -0,0 +1,49 @@
++import { win32 } from "node:path";
++
++const launchSeconds = 60;
++const maxWorkerSeconds = 4 * 60 * 60;
++
++// Accept a single literal Python launcher. Shell expressions and interpreter options
++// would make it impossible to compare the authorized command with the saved task.
++function parseLauncher(command) {
++	if (typeof command !== "string" || /[\r\n\x60$%&|;<>()^!*?]/u.test(command)) return;
++	const match = /^((?:uv(?:\.exe)?[ \t]+run[ \t]+)?python3?(?:\.exe)?)[ \t]+(?:"([^"]+)"|'([^']+)'|([\p{L}\p{N}_.:\\/\-]+))[ \t]+(.+)$/iu.exec(command.trim());
++	if (!match) return;
++	const script = match[2] ?? match[3] ?? match[4];
++	if (!/^(?:[a-z]:[\\/]|[\\/]{2}[^\\/]+[\\/][^\\/]+[\\/])/iu.test(script) || !/\.py$/iu.test(script) || /(?:^|[\\/])\.\.(?:[\\/]|$)/u.test(script)) return;
++	const args = match[5].split(/[ \t]+/u);
++	if (args[0] !== "--start" || args.length < 3 || args.length % 2 === 0) return;
++	let longestStage = 0;
++	for (let index = 1; index < args.length; index += 2) {
++		const seconds = Number(args[index + 1]);
++		if (!/^--[a-z][a-z0-9-]*-timeout-seconds$/u.test(args[index]) || !/^[1-9]\d*$/u.test(args[index + 1]) || !Number.isSafeInteger(seconds)) return;
++		longestStage = Math.max(longestStage, seconds);
++	}
++	if (longestStage <= launchSeconds) return;
++	return {
++		interpreter: match[1].toLowerCase().replace(/[ \t]+/gu, " "),
++		script: win32.normalize(script),
++		args: args.join(" "),
++	};
++}
++
++export function resolveClawxStartupLauncher(job) {
++	const payload = job?.payload;
++	if (job?.sessionTarget !== "isolated" || payload?.kind !== "agentTurn" || payload.timeoutSeconds !== launchSeconds || typeof payload.message !== "string") return;
++	let launcher;
++	for (const segment of payload.message.split(/\r?\n|[：。；]|:[ \t]+/u)) {
++		const line = segment.trim().replace(/^\x60([^\x60]+)\x60$/u, "$1");
++		const parsed = parseLauncher(line);
++		if (!parsed) continue;
++		if (launcher) return;
++		launcher = { command: line, workdir: win32.dirname(parsed.script), workerTimeoutSeconds: maxWorkerSeconds };
++	}
++	return launcher;
++}
++
++export function matchesClawxStartupLauncher(candidate, params, resolvedWorkdir) {
++	if (!candidate || typeof resolvedWorkdir !== "string" || win32.normalize(resolvedWorkdir).toLowerCase() !== candidate.workdir.toLowerCase()) return false;
++	const saved = parseLauncher(candidate.command);
++	const actual = parseLauncher(params?.command);
++	return Boolean(saved && actual && saved.interpreter === actual.interpreter && saved.script === actual.script && saved.args === actual.args);
++}

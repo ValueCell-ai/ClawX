@@ -69,3 +69,5 @@ unchanged creation/update metadata and all ownership, receipt, absent deletion-r
 authority and verified backup guards, and reject unrelated versions or schemas.
 
 When a new runtime defers CLI exit, let its cleanup finish, drain output and propagate the exit from Electron utility processes. Cover both shared-state migration refusal and Agent-only schema refusal in the bounded Doctor/startup orchestration; never repair a competing live state owner.
+
+For Windows scheduled Python launchers with separate stage timeouts, apply the worker deadline to the admitted execution only. Preserve the stored cron definition and exercise a native worker across the original deadline. See [the scheduler acceptance criteria](../tasks/retain-scheduled-worker-after-launch.md).
