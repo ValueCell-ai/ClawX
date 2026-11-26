@@ -32,6 +32,8 @@ export interface CronJobLastRun {
   success: boolean;
   error?: string;
   duration?: number;
+  deliveryStatus?: 'delivered' | 'not-delivered' | 'unknown' | 'not-requested';
+  deliveryError?: string;
 }
 
 /**

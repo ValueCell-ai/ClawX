@@ -1561,6 +1561,11 @@ function CronJobCard({ job, deliveryAccountName, onToggle, onEdit, onDelete, onT
   const deliveryChannel = typeof job.delivery?.channel === 'string' ? job.delivery.channel : '';
   const deliveryLabel = deliveryChannel ? getChannelDisplayName(deliveryChannel) : '';
   const deliveryIcon = deliveryChannel && isKnownChannelType(deliveryChannel) ? CHANNEL_ICONS[deliveryChannel] : null;
+  const { deliveryStatus, deliveryError } = job.lastRun ?? {};
+  const showDeliveryError = !!deliveryError && (deliveryStatus === 'not-delivered' || deliveryStatus === 'unknown');
+  // A job can change channels after a run. Match the recorded adapter response.
+  const wechatPrepareFailed = showDeliveryError
+    && /(?:^|[:|]\s*)sendMessage ret=-2 errmsg=prepare failed\s*(?:\||$)/.test(deliveryError.trim());
 
   return (
     <div
@@ -1643,6 +1648,10 @@ function CronJobCard({ job, deliveryAccountName, onToggle, onEdit, onDelete, onT
             </span>
           )}
 
+          {deliveryStatus && deliveryStatus !== 'not-requested' && (
+            <span>{t(`card.deliveryStatus.${deliveryStatus}`)}</span>
+          )}
+
           <span className="flex items-center gap-1.5">
             <Bot className="h-3.5 w-3.5" />
             {agentName}
@@ -1650,10 +1659,21 @@ function CronJobCard({ job, deliveryAccountName, onToggle, onEdit, onDelete, onT
         </div>
 
         {/* Last Run Error */}
-        {job.lastRun && !job.lastRun.success && job.lastRun.error && (
+        {job.lastRun && !job.lastRun.success && job.lastRun.error
+          && !(showDeliveryError && job.lastRun.error === deliveryError) && (
           <div className="flex items-start gap-2 p-2.5 mb-3 rounded-xl bg-destructive/10 border border-destructive/20 text-meta text-destructive">
             <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
             <span className="line-clamp-2">{job.lastRun.error}</span>
+          </div>
+        )}
+
+        {showDeliveryError && (
+          <div className="flex items-start gap-2 p-2.5 mb-3 rounded-xl bg-amber-500/10 text-meta text-amber-700 dark:text-amber-400">
+            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+            <div className="min-w-0 break-words">
+              <p>{deliveryError}</p>
+              {wechatPrepareFailed && <p className="mt-1">{t('card.wechatDeliveryHint')}</p>}
+            </div>
           </div>
         )}
 

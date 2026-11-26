@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import type { RawMessage } from '@shared/chat/types';
-import type { CronJob, CronJobDelivery, CronSchedule } from '@shared/types/cron';
+import type { CronJob, CronJobDelivery, CronJobLastRun, CronSchedule } from '@shared/types/cron';
 import type { GatewayManager } from '../gateway/manager';
 import { getOpenClawConfigDir } from '../utils/paths';
 import { resolveAgentIdFromChannel } from '../utils/agent-config';
@@ -27,9 +27,12 @@ interface GatewayCronJob {
     nextRunAtMs?: number;
     runningAtMs?: number;
     lastRunAtMs?: number;
+    lastRunStatus?: string;
     lastStatus?: string;
     lastError?: string;
     lastDurationMs?: number;
+    lastDeliveryStatus?: CronJobLastRun['deliveryStatus'];
+    lastDeliveryError?: string;
   };
 }
 
@@ -449,12 +452,14 @@ function transformCronJob(job: GatewayCronJob): CronJob {
       recipient: delivery.to,
     }
     : undefined;
-  const lastRun = job.state?.lastRunAtMs
+  const lastRun: CronJobLastRun | undefined = job.state?.lastRunAtMs
     ? {
       time: new Date(job.state.lastRunAtMs).toISOString(),
-      success: job.state.lastStatus === 'ok',
+      success: (job.state.lastRunStatus ?? job.state.lastStatus) === 'ok',
       error: job.state.lastError,
       duration: job.state.lastDurationMs,
+      deliveryStatus: job.state.lastDeliveryStatus ?? (job.state.lastDeliveryError ? 'unknown' : undefined),
+      deliveryError: job.state.lastDeliveryError,
     }
     : undefined;
   const nextRun = job.state?.nextRunAtMs ? new Date(job.state.nextRunAtMs).toISOString() : undefined;

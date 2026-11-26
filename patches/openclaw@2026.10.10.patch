@@ -3081,7 +3081,6 @@ new file mode 100644
 +	return counts;
 +}
 diff --git a/dist/service-pOwE_Xvo.mjs b/dist/service-pOwE_Xvo.mjs
-index 01ad0de..b168cd7 100644
 --- a/dist/service-pOwE_Xvo.mjs
 +++ b/dist/service-pOwE_Xvo.mjs
 @@ -1316,6 +1316,9 @@ const CRON_AGENT_PHASE_WATCHDOG_STAGE = {
@@ -3176,7 +3175,23 @@ index 01ad0de..b168cd7 100644
  			deliveryAttemptFence,
  			activeJobMarker: opts?.activeJobMarker,
  			streamBatch: opts?.streamBatch,
-@@ -4415,7 +4443,10 @@ var CronService = class {
+@@ -3205,13 +3233,12 @@ async function startCronScheduler(state, skipJobIds) {
+ 				requests: getCronRunQueueRequests(state)
+ 			}
+ 		});
+-		const requests = adoptCronRunRequests(state, result.accepted, { source: "startup" }, context, generation);
++		adoptCronRunRequests(state, result.accepted, { source: "startup" }, context, generation);
+ 		started = true;
+ 		state.schedulerStarted = true;
+ 		await publish(state, result);
++		// The run queue owns completion and shutdown. Waiting for catch-up here also blocks manual admission.
+ 		await locked(state, () => launchCronRunQueueResult(state, result, context));
+-		const failed = (await Promise.allSettled(requests.map((request) => request.completion))).find((completion) => completion.status === "rejected");
+-		if (failed?.status === "rejected") throw failed.reason;
+ 	} catch (error) {
+ 		if (!started) await stopCronScheduler(state);
+ 		throw error;
+@@ -4415,7 +4442,10 @@ var CronService = class {
  	async startOnce(generation) {
  		this.startInProgress += 1;
  		try {

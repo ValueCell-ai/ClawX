@@ -19,7 +19,13 @@
         "runNow": "立即运行",
         "deleteConfirm": "确定要删除此任务吗？",
         "last": "上次运行",
-        "next": "下次运行"
+        "next": "下次运行",
+        "deliveryStatus": {
+            "delivered": "上次运行结束时，通知已送达",
+            "not-delivered": "上次运行结束时，通知尚未送达",
+            "unknown": "上次运行结束时，投递结果尚未确认"
+        },
+        "wechatDeliveryHint": "请收件人在微信里给上次发送通知的机器人发一条消息，为下次定时投递刷新会话。"
     },
     "dialog": {
         "createTitle": "创建任务",

@@ -19,7 +19,13 @@
         "runNow": "今すぐ実行",
         "deleteConfirm": "このタスクを削除してもよろしいですか？",
         "last": "前回",
-        "next": "次回"
+        "next": "次回",
+        "deliveryStatus": {
+            "delivered": "前回の実行終了時点で通知は配信済み",
+            "not-delivered": "前回の実行終了時点で通知は未配信",
+            "unknown": "前回の実行終了時点で配信結果は未確認"
+        },
+        "wechatDeliveryHint": "次回の定期配信に備えて、受信者から前回の通知に使った WeChat ボットにメッセージを送り、会話を更新してください。"
     },
     "dialog": {
         "createTitle": "タスク作成",

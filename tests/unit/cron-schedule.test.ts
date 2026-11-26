@@ -111,6 +111,33 @@ describe('cron list system jobs', () => {
   });
 });
 
+describe('cron last run projection', () => {
+  it('preserves execution and delivery outcomes independently for current and legacy jobs', async () => {
+    const base = makeGatewayJob({ kind: 'cron', expr: '0 9 * * *' });
+    const lastRunAtMs = base.createdAtMs;
+    const deliveryError = 'sendMessage ret=-2 errmsg=prepare failed';
+    const states = [
+      { lastRunAtMs, lastRunStatus: 'ok', lastDeliveryStatus: 'unknown', lastDeliveryError: deliveryError },
+      { lastRunAtMs, lastRunStatus: 'ok', lastDeliveryStatus: 'not-delivered', lastDeliveryError: deliveryError },
+      { lastRunAtMs, lastStatus: 'error', lastError: 'Command timed out' },
+      { lastRunAtMs, lastStatus: 'ok', lastDeliveryStatus: 'not-requested' },
+      { lastRunAtMs, lastStatus: 'ok', lastDeliveryError: 'Delivery receipt unavailable' },
+    ];
+    const jobs = states.map((state, index) => ({ ...base, id: String(index), state }));
+    const rpc = vi.fn(async () => ({ jobs }));
+    const api = createCronApi({ gatewayManager: { rpc } as unknown as GatewayManager });
+    const result = await api.list();
+    expect(result.map((job) => job.lastRun)).toMatchObject([
+      { success: true, deliveryStatus: 'unknown', deliveryError },
+      { success: true, deliveryStatus: 'not-delivered', deliveryError },
+      { success: false, error: 'Command timed out', deliveryStatus: undefined, deliveryError: undefined },
+      { success: true, deliveryStatus: 'not-requested', deliveryError: undefined },
+      { success: true, deliveryStatus: 'unknown', deliveryError: 'Delivery receipt unavailable' },
+    ]);
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('cron session history', () => {
   beforeEach(() => {
     sessionMocks.loadSessionTranscriptByKey.mockReset();

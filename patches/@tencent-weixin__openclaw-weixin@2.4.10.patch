@@ -1,0 +1,124 @@
+diff --git a/package.json b/package.json
+index 343cb9e..6eda354 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,7 @@
+ {
+   "name": "@tencent-weixin/openclaw-weixin",
+   "version": "2.4.10",
++  "clawxMirrorRevision": 1,
+   "description": "OpenClaw Weixin channel",
+   "license": "MIT",
+   "author": "Tencent",
+diff --git a/src/api/api.ts b/src/api/api.ts
+index 5febfea..6a8b64e 100644
+--- a/src/api/api.ts
++++ b/src/api/api.ts
+@@ -576,6 +576,9 @@ export function parseWeixinApiJson<T>(rawText: string): T {
+   return JSON.parse(output) as T;
+ }
+ 
++/** iLink explicitly rejected this request before assigning a message ID. */
++export class WeixinPrepareRejectedError extends Error {}
++
+ /** Send a single message downstream and return the server-assigned message ID. */
+ export async function sendMessage(
+   params: WeixinApiOptions & { body: SendMessageReq },
+@@ -590,7 +593,11 @@ export async function sendMessage(
+   });
+   const resp = parseWeixinApiJson<SendMessageResp>(rawText);
+   if (resp.ret && resp.ret !== 0) {
+-    throw new Error(`sendMessage ret=${resp.ret} errmsg=${resp.errmsg ?? "(none)"}`);
++    const message = `sendMessage ret=${resp.ret} errmsg=${resp.errmsg ?? "(none)"}`;
++    if (resp.ret === -2 && resp.errmsg === "prepare failed" && resp.message_id === undefined) {
++      throw new WeixinPrepareRejectedError(message);
++    }
++    throw new Error(message);
+   }
+   return resp;
+ }
+diff --git a/dist/src/api/api.js b/dist/src/api/api.js
+index 8323680..5cc603d 100644
+--- a/dist/src/api/api.js
++++ b/dist/src/api/api.js
+@@ -488,6 +488,9 @@ export function parseWeixinApiJson(rawText) {
+     }
+     return JSON.parse(output);
+ }
++/** iLink explicitly rejected this request before assigning a message ID. */
++export class WeixinPrepareRejectedError extends Error {}
++
+ /** Send a single message downstream and return the server-assigned message ID. */
+ export async function sendMessage(params) {
+     const rawText = await apiPostFetch({
+@@ -500,7 +503,11 @@ export async function sendMessage(params) {
+     });
+     const resp = parseWeixinApiJson(rawText);
+     if (resp.ret && resp.ret !== 0) {
+-        throw new Error(`sendMessage ret=${resp.ret} errmsg=${resp.errmsg ?? "(none)"}`);
++        const message = `sendMessage ret=${resp.ret} errmsg=${resp.errmsg ?? "(none)"}`;
++        if (resp.ret === -2 && resp.errmsg === "prepare failed" && resp.message_id === undefined) {
++            throw new WeixinPrepareRejectedError(message);
++        }
++        throw new Error(message);
+     }
+     return resp;
+ }
+diff --git a/src/channel.ts b/src/channel.ts
+index af1dfb3..f2f760b 100644
+--- a/src/channel.ts
++++ b/src/channel.ts
+@@ -1,6 +1,7 @@
+ import path from "node:path";
+ 
+ import type { ChannelPlugin, OpenClawConfig, PluginRuntime } from "openclaw/plugin-sdk/core";
++import { PlatformMessageNotDispatchedError } from "openclaw/plugin-sdk/error-runtime";
+ import { normalizeAccountId } from "openclaw/plugin-sdk/account-id";
+ import { resolvePreferredOpenClawTmpDir } from "openclaw/plugin-sdk/temp-path";
+ 
+@@ -15,7 +16,7 @@ import {
+   DEFAULT_BASE_URL,
+ } from "./auth/accounts.js";
+ import type { ResolvedWeixinAccount } from "./auth/accounts.js";
+-import { notifyStop, notifyStart } from "./api/api.js";
++import { notifyStop, notifyStart, WeixinPrepareRejectedError } from "./api/api.js";
+ import { assertSessionActive } from "./api/session-guard.js";
+ import {
+   getContextToken,
+@@ -177,6 +178,10 @@ async function sendWeixinOutbound(params: {
+       error: String(err),
+       accountId: account.accountId,
+     });
++    // sendText issued exactly one iLink request. Media may already have sent another part.
++    if (err instanceof WeixinPrepareRejectedError) {
++      throw new PlatformMessageNotDispatchedError(err.message, { retryable: true, cause: err });
++    }
+     throw err;
+   }
+ }
+diff --git a/dist/src/channel.js b/dist/src/channel.js
+index fd5d81f..5181a96 100644
+--- a/dist/src/channel.js
++++ b/dist/src/channel.js
+@@ -1,8 +1,9 @@
+ import path from "node:path";
++import { PlatformMessageNotDispatchedError } from "openclaw/plugin-sdk/error-runtime";
+ import { normalizeAccountId } from "openclaw/plugin-sdk/account-id";
+ import { resolvePreferredOpenClawTmpDir } from "openclaw/plugin-sdk/temp-path";
+ import { registerWeixinAccountId, loadWeixinAccount, saveWeixinAccount, listWeixinAccountIds, resolveWeixinAccount, triggerWeixinChannelReload, clearStaleAccountsForUserId, DEFAULT_BASE_URL, } from "./auth/accounts.js";
+-import { notifyStop, notifyStart } from "./api/api.js";
++import { notifyStop, notifyStart, WeixinPrepareRejectedError } from "./api/api.js";
+ import { assertSessionActive } from "./api/session-guard.js";
+ import { getContextToken, findAccountIdsByContextToken, restoreContextTokens, clearContextTokensForAccount, } from "./messaging/inbound.js";
+ import { deactivateQuoteStoreAccount, initializeQuoteStore } from "./messaging/quote-store.js";
+@@ -118,6 +119,10 @@ async function sendWeixinOutbound(params) {
+             error: String(err),
+             accountId: account.accountId,
+         });
++        // sendText issued exactly one iLink request. Media may already have sent another part.
++        if (err instanceof WeixinPrepareRejectedError) {
++            throw new PlatformMessageNotDispatchedError(err.message, { retryable: true, cause: err });
++        }
+         throw err;
+     }
+ }

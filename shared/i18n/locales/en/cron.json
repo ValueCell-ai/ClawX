@@ -19,7 +19,13 @@
         "runNow": "Run Now",
         "deleteConfirm": "Are you sure you want to delete this task?",
         "last": "Last",
-        "next": "Next"
+        "next": "Next",
+        "deliveryStatus": {
+            "delivered": "Notification delivered by the end of the last run",
+            "not-delivered": "Notification undelivered at the end of the last run",
+            "unknown": "Delivery unconfirmed at the end of the last run"
+        },
+        "wechatDeliveryHint": "Ask the recipient to send a WeChat message to the bot used for this notification. This refreshes the conversation for the next scheduled delivery."
     },
     "dialog": {
         "createTitle": "Create Task",
