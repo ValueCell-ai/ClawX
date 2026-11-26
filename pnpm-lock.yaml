@@ -11,9 +11,6 @@ patchedDependencies:
   '@electron/osx-sign@1.3.3':
     hash: 9dced16d300b4c83db3f94e2bccf5a19190aceb85c81e31ea78d5164448bafee
     path: patches/@electron__osx-sign@1.3.3.patch
-  '@tencent-weixin/openclaw-weixin@2.4.10':
-    hash: ec9784c61b765a58b1b08c0299faacdb9121652ec60211ef3b8d6c3075a92462
-    path: patches/@tencent-weixin__openclaw-weixin@2.4.10.patch
   '@wecom/wecom-openclaw-plugin@2026.10.30':
     hash: b962c919795ff91db421ff0278e4ede5292d33ededb3304b7007fd2b2446df56
     path: patches/@wecom__wecom-openclaw-plugin@2026.10.30.patch
@@ -163,7 +160,7 @@ importers:
         version: 1.2.0
       '@tencent-weixin/openclaw-weixin':
         specifier: 2.4.10
-        version: 2.4.10(patch_hash=ec9784c61b765a58b1b08c0299faacdb9121652ec60211ef3b8d6c3075a92462)(openclaw@2026.10.10(patch_hash=326dc39b8523538e4cb87612b030469cdfe8a2bc90b0698a143290cf7f464a9b)(encoding@0.1.13))
+        version: 2.4.10(openclaw@2026.10.10(patch_hash=326dc39b8523538e4cb87612b030469cdfe8a2bc90b0698a143290cf7f464a9b)(encoding@0.1.13))
       '@testing-library/jest-dom':
         specifier: ^6.9.1
         version: 6.9.1
@@ -9887,7 +9884,7 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  '@tencent-weixin/openclaw-weixin@2.4.10(patch_hash=ec9784c61b765a58b1b08c0299faacdb9121652ec60211ef3b8d6c3075a92462)(openclaw@2026.10.10(patch_hash=326dc39b8523538e4cb87612b030469cdfe8a2bc90b0698a143290cf7f464a9b)(encoding@0.1.13))':
+  '@tencent-weixin/openclaw-weixin@2.4.10(openclaw@2026.10.10(patch_hash=326dc39b8523538e4cb87612b030469cdfe8a2bc90b0698a143290cf7f464a9b)(encoding@0.1.13))':
     dependencies:
       openclaw: 2026.10.10(patch_hash=326dc39b8523538e4cb87612b030469cdfe8a2bc90b0698a143290cf7f464a9b)(encoding@0.1.13)
       qrcode-terminal: 0.12.0

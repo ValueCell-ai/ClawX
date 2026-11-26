@@ -85,5 +85,3 @@ For the 2026.10.10 upgrade, validate a bundled payload’s actual package name a
 Automatic prelaunch upgrades must use the same payload/index transaction as channel installation. Cache completion only after asynchronous commit, include runtime/package identity for same-app-version upgrades, and stop startup on a failed configured-plugin transaction so it remains retryable.
 
 For outbound media, use the bundled channel’s fallback only when the runtime has no applicable explicit limit. Preserve the existing fallback for unknown channels and leave file classification and platform-specific validation with the connector. Cover upgrades where no limit was ever written to the old configuration.
-
-When ClawX ships a connector patch under the same upstream version, include the mirror revision in prelaunch maintenance and replace the installed code through the usual mirror transaction. Keep the upstream version in the install record. See [WeChat scheduled delivery](../tasks/repair-upgraded-weixin-cron.md).

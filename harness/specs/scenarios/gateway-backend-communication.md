@@ -218,4 +218,4 @@ Extension runtime restoration is a Main-owned startup boundary. `GatewayManager.
 
 An upgrade from a configuration with no outbound attachment limit must preserve delivery of supported files on WeCom, DingTalk, Feishu and Weixin. Exercise the runtime limit used before connector upload as well as explicit limits and unknown channels. See [outbound media upgrade](../tasks/outbound-media-upgrade.md).
 
-Exercise manual cron admission while a startup catch-up job still owns its receipt. On WeChat, cover an explicit single-text prepare rejection, a refreshed conversation and an ambiguous transport failure. Verify the previous notification's outcome on the task card. See [scheduled runs and WeChat delivery after upgrading](../tasks/repair-upgraded-weixin-cron.md).
+While an overdue task is running at startup, verify that another task can be triggered manually and a repeat request for the active task returns `already-running`. See [manual runs during startup catch-up](../tasks/unblock-cron-startup-catchup.md).

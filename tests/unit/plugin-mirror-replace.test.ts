@@ -95,29 +95,6 @@ describe('replacePluginMirror', () => {
     expect(stagingEntries()).toEqual([]);
   });
 
-  it('publishes the patched WeChat connector once when the upstream version is unchanged', async () => {
-    const plugin = 'openclaw-weixin';
-    const source = join(home.path, 'bundle', plugin);
-    const installed = join(home.path, '.openclaw', 'extensions', plugin);
-    const pkg = { name: '@tencent-weixin/openclaw-weixin', version: '2.4.10' };
-    for (const dir of [source, installed]) {
-      mkdirSync(dir, { recursive: true });
-      writeFileSync(join(dir, 'openclaw.plugin.json'), JSON.stringify({ id: plugin }));
-    }
-    writeFileSync(join(installed, 'package.json'), JSON.stringify(pkg));
-    writeFileSync(join(source, 'package.json'), JSON.stringify({ ...pkg, clawxMirrorRevision: 1 }));
-    writeFileSync(join(source, 'index.js'), 'export default 1;');
-
-    const { ensurePluginInstalled } = await import('@electron/utils/plugin-install');
-    const install = () => ensurePluginInstalled(plugin, [source], 'WeChat');
-    expect(await install()).toMatchObject({ installed: true });
-    expect(readFileSync(join(installed, 'index.js'), 'utf8')).toBe('export default 1;');
-    // An unnecessary second swap would discard this marker.
-    writeFileSync(join(installed, 'marker'), '');
-    expect(await install()).toMatchObject({ installed: true });
-    expect(existsSync(join(installed, 'marker'))).toBe(true);
-  });
-
   it('installs a fresh mirror when none exists', async () => {
     const { replacePluginMirror } = await import('@electron/utils/plugin-install');
 

@@ -924,29 +924,24 @@ export function resolvePluginNpmPackagePath(npmName: string): string | null {
   return null;
 }
 
-export function readPluginPackageMetadata(pkgJsonPath: string): {
-  name: string | null;
-  version: string | null;
-  clawxMirrorRevision?: number;
-} {
+function readPluginVersion(pkgJsonPath: string): string | null {
   try {
-    const pkg = JSON.parse(readFileSync(fsPath(pkgJsonPath), 'utf-8'));
-    return {
-      name: typeof pkg.name === 'string' ? pkg.name : null,
-      version: typeof pkg.version === 'string' ? pkg.version : null,
-      ...(Number.isSafeInteger(pkg.clawxMirrorRevision) ? { clawxMirrorRevision: pkg.clawxMirrorRevision } : {}),
-    };
+    const raw = readFileSync(fsPath(pkgJsonPath), 'utf-8');
+    const parsed = JSON.parse(raw) as { version?: string };
+    return parsed.version ?? null;
   } catch {
-    return { name: null, version: null };
+    return null;
   }
 }
 
-function readPluginVersion(pkgJsonPath: string): string | null {
-  return readPluginPackageMetadata(pkgJsonPath).version;
-}
-
 function readPluginName(pkgJsonPath: string): string | null {
-  return readPluginPackageMetadata(pkgJsonPath).name;
+  try {
+    const raw = readFileSync(fsPath(pkgJsonPath), 'utf-8');
+    const parsed = JSON.parse(raw) as { name?: string };
+    return parsed.name ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export function removeLegacyOfficialDingTalkExtension(options: { requireCanonicalMirror?: boolean } = {}): void {
@@ -1098,9 +1093,6 @@ export async function ensurePluginInstalled(
   const targetPkgJson = join(targetDir, 'package.json');
 
   const sourceDir = candidateSources.find((dir) => existsSync(fsPath(join(dir, 'openclaw.plugin.json'))));
-  const npmName = PLUGIN_NPM_NAMES[pluginDirName];
-  const devPackage = !sourceDir && !app.isPackaged && npmName ? resolvePluginNpmPackagePath(npmName) : null;
-  const source = sourceDir ?? devPackage;
 
   async function finalizeInstalledMirror(): Promise<{ installed: true; peerLinkOk: boolean }> {
     // Compatibility fixups must also run for an already-installed plugin whose
@@ -1133,20 +1125,21 @@ export async function ensurePluginInstalled(
 
   // If already installed, check whether an upgrade is available
   if (existsSync(fsPath(targetManifest))) {
-    if (!source) {
+    if (!sourceDir) {
       return await finalizeInstalledMirror(); // no bundled source to compare, keep existing
     }
-    const installed = readPluginPackageMetadata(targetPkgJson);
-    const bundled = readPluginPackageMetadata(join(source, 'package.json'));
-    // Without a bundled mirror, keep an existing dev install unless the
-    // local package carries a ClawX connector patch.
-    if (!sourceDir && bundled.clawxMirrorRevision === undefined) return await finalizeInstalledMirror();
-    const ownerChanged = Boolean(bundled.name && bundled.name !== installed.name);
-    const revisionChanged = bundled.clawxMirrorRevision !== undefined && bundled.clawxMirrorRevision !== installed.clawxMirrorRevision;
-    if (!ownerChanged && !revisionChanged && (!bundled.version || !installed.version || bundled.version === installed.version)) {
+    const installedVersion = readPluginVersion(targetPkgJson);
+    const sourceVersion = readPluginVersion(join(sourceDir, 'package.json'));
+    const installedName = readPluginName(targetPkgJson);
+    const sourceName = readPluginName(join(sourceDir, 'package.json'));
+    const packageOwnerChanged = Boolean(sourceName && sourceName !== installedName);
+    if (!packageOwnerChanged && (!sourceVersion || !installedVersion || sourceVersion === installedVersion)) {
       return await finalizeInstalledMirror(); // same version or unable to compare
     }
-    logger.info(`[plugin] Upgrading ${pluginLabel} plugin`, { installed, bundled });
+    // Version differs — fall through to overwrite install
+    logger.info(
+      `[plugin] Upgrading ${pluginLabel} plugin: ${installedVersion} → ${sourceVersion}`,
+    );
   }
 
   // Fresh install or upgrade — try bundled/build sources first
@@ -1183,14 +1176,39 @@ export async function ensurePluginInstalled(
   }
 
   // Dev mode fallback: copy from node_modules with pnpm-aware dep resolution
-  if (devPackage && readPluginVersion(join(devPackage, 'package.json'))) {
-    try {
-      mkdirSync(fsPath(join(homedir(), '.openclaw', 'extensions')), { recursive: true });
-      return await publish((stagedDir) => copyPluginFromNodeModules(devPackage, stagedDir, npmName));
-    } catch (err) {
-      logger.warn(`[plugin] Failed to install ${pluginLabel} plugin from node_modules`, {
-        pluginDirName, pluginLabel, npmName, npmPkgPath: devPackage, targetDir, platform: process.platform, ...toErrorDiagnostic(err),
-      });
+  if (!app.isPackaged) {
+    const npmName = PLUGIN_NPM_NAMES[pluginDirName];
+    if (npmName) {
+      const npmPkgPath = resolvePluginNpmPackagePath(npmName);
+      if (npmPkgPath && existsSync(fsPath(join(npmPkgPath, 'openclaw.plugin.json')))) {
+        const installedVersion = existsSync(fsPath(targetPkgJson)) ? readPluginVersion(targetPkgJson) : null;
+        const sourceVersion = readPluginVersion(join(npmPkgPath, 'package.json'));
+        if (sourceVersion && (!installedVersion || sourceVersion !== installedVersion)) {
+          logger.info(
+            `[plugin] ${installedVersion ? 'Upgrading' : 'Installing'} ${pluginLabel} plugin` +
+            `${installedVersion ? `: ${installedVersion} → ${sourceVersion}` : `: ${sourceVersion}`} (dev/node_modules)`,
+          );
+          try {
+            mkdirSync(fsPath(join(homedir(), '.openclaw', 'extensions')), { recursive: true });
+            return await publish((stagedDir) => copyPluginFromNodeModules(npmPkgPath, stagedDir, npmName));
+          } catch (err) {
+            logger.warn(
+              `[plugin] Failed to install ${pluginLabel} plugin from node_modules`,
+              {
+                pluginDirName,
+                pluginLabel,
+                npmName,
+                npmPkgPath,
+                targetDir,
+                platform: process.platform,
+                ...toErrorDiagnostic(err),
+              },
+            );
+          }
+        } else if (existsSync(fsPath(targetManifest))) {
+          return await finalizeInstalledMirror(); // same version, already installed
+        }
+      }
     }
   }
 

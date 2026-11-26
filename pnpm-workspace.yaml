@@ -30,6 +30,5 @@ supportedArchitectures:
 
 patchedDependencies:
   '@electron/osx-sign@1.3.3': patches/@electron__osx-sign@1.3.3.patch
-  '@tencent-weixin/openclaw-weixin@2.4.10': patches/@tencent-weixin__openclaw-weixin@2.4.10.patch
   '@wecom/wecom-openclaw-plugin@2026.10.30': patches/@wecom__wecom-openclaw-plugin@2026.10.30.patch
   openclaw@2026.10.10: patches/openclaw@2026.10.10.patch

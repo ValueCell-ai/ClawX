@@ -39,7 +39,7 @@ import { withPrelaunchConfigMigration } from './config-delivery';
 import { logger } from '../utils/logger';
 import { prependPathEntry } from '../utils/env-path';
 import { ensureDingTalkDwsInstalled, resolveDingTalkDwsBinDir } from '../utils/dingtalk-dws';
-import { ensurePluginInstalled, buildCandidateSources, readPluginPackageMetadata, repairTrustedOfficialPluginInstallRecords, removeTrustedOfficialPluginInstallRecord, removeLegacyOfficialDingTalkExtension } from '../utils/plugin-install';
+import { ensurePluginInstalled, buildCandidateSources, repairTrustedOfficialPluginInstallRecords, removeTrustedOfficialPluginInstallRecord, removeLegacyOfficialDingTalkExtension } from '../utils/plugin-install';
 import { ensureClawXPluginCapabilityConsent } from '../utils/plugin-capability-consent';
 import { safeRmSync } from '../utils/safe-fs';
 import { CLAWX_OPENAI_IMAGE_PROVIDER_KEY } from '../utils/openclaw-image-relay-constants';
@@ -140,6 +140,19 @@ function cleanupStaleBuiltInExtensions(): void {
         logger.warn(`[plugin] Failed to remove stale extension ${ext}:`, err);
       }
     }
+  }
+}
+
+function readPluginPackageMetadata(pkgJsonPath: string): { name: string | null; version: string | null } {
+  try {
+    const raw = readFileSync(fsPath(pkgJsonPath), 'utf-8');
+    const parsed = JSON.parse(raw) as { name?: string; version?: string };
+    return {
+      name: typeof parsed.name === 'string' ? parsed.name : null,
+      version: typeof parsed.version === 'string' ? parsed.version : null,
+    };
+  } catch {
+    return { name: null, version: null };
   }
 }
 
@@ -309,16 +322,10 @@ export function buildPluginMaintenanceCacheKey(
 ): string {
   // Child directory mtimes don't change when a manifest is overwritten in place.
   // Including installed manifests also retires keys from before descriptor repair.
-  const installedManifests: Record<string, { manifest: string; packageJson: string }> = {};
+  const installedManifests: Record<string, string> = {};
   for (const channel of configuredChannels) {
     const plugin = CHANNEL_PLUGIN_MAP[channel];
-    if (plugin) {
-      const dir = join(extensionsDir, plugin.dirName);
-      installedManifests[channel] = {
-        manifest: pathSignature(join(dir, 'openclaw.plugin.json')),
-        packageJson: pathSignature(join(dir, 'package.json')),
-      };
-    }
+    if (plugin) installedManifests[channel] = pathSignature(join(extensionsDir, plugin.dirName, 'openclaw.plugin.json'));
   }
   return buildPrelaunchMaintenanceCacheKey({
     task: 'plugin-maintenance',
