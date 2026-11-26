@@ -200,7 +200,11 @@
             "size": "ファイルサイズ: {{size}}",
             "cancel": "キャンセル"
         },
+        "image": {
+            "loadFailed": "画像の読み込みに失敗しました: {{error}}"
+        },
         "pdf": {
+            "title": "PDF プレビュー",
             "loadFailed": "PDF の読み込みに失敗しました: {{error}}",
             "prev": "前のページ",
             "next": "次のページ",

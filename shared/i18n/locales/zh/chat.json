@@ -200,7 +200,11 @@
             "size": "文件大小：{{size}}",
             "cancel": "取消"
         },
+        "image": {
+            "loadFailed": "图片加载失败：{{error}}"
+        },
         "pdf": {
+            "title": "PDF 预览",
             "loadFailed": "PDF 加载失败：{{error}}",
             "prev": "上一页",
             "next": "下一页",
