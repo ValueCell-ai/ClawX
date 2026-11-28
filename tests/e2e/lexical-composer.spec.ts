@@ -1,7 +1,15 @@
 import { test, expect, completeSetup, installIpcMocks } from './fixtures/electron';
 import { settleFloatingSurface } from './fixtures/floating-ui';
 
-const skills = ['docx', 'pdf', 'skill-creator'].map(name => ({ name, description: `Work with ${name}`, source: 'workspace', sourceLabel: 'Workspace', manifestPath: `/tmp/composer/${name}/SKILL.md`, baseDir: `/tmp/composer/${name}` }));
+const docxDescription = 'Create and revise Word documents, apply consistent formatting, organize sections and tables, and extract text and images from existing files. Review tracked changes, update comments, and prepare the final document for sharing.';
+const skills = ['docx', 'pdf', 'skill-creator'].map(name => ({
+  name,
+  description: name === 'docx' ? docxDescription : `Work with ${name}`,
+  source: 'workspace',
+  sourceLabel: 'Workspace',
+  manifestPath: `/tmp/composer/${name}/SKILL.md`,
+  baseDir: `/tmp/composer/${name}`,
+}));
 test.beforeEach(async ({ electronApp, page }) => {
   await installIpcMocks(electronApp, {
     gatewayStatus: { state: 'running', gatewayReady: true, port: 18789 },
@@ -36,12 +44,31 @@ test.beforeEach(async ({ electronApp, page }) => {
 
 test('slash suggestions keep focus, support pointer and keyboard, dismiss and animate', async ({ page }, testInfo) => {
   const input = page.getByTestId('chat-composer-input');
+  const composer = page.getByTestId('chat-composer');
   const menu = page.getByTestId('chat-composer-input-slash-menu');
   await input.pressSequentially('/');
   await expect(menu).toBeVisible();
+  const results = menu.getByRole('listbox');
+  await expect(results).toHaveCSS('scroll-behavior', 'smooth');
+  const description = page.getByTestId('chat-composer-input-slash-docx-description');
+  await expect(description).toHaveText(docxDescription);
+  await expect(page.getByTestId('chat-composer-input-slash-docx-source')).toHaveCount(0);
   await expect(input).toBeFocused();
   expect(await menu.evaluate(el => getComputedStyle(el).animationDuration)).toBe('0.14s');
   await settleFloatingSurface(menu);
+  for (const width of [1280, 880]) {
+    await page.setViewportSize({ width, height: 720 });
+    await expect.poll(async () => {
+      const [panel, box] = await Promise.all([menu.boundingBox(), composer.boundingBox()]);
+      if (!panel || !box) return false;
+      return Math.abs(panel.x - box.x) < 1
+        && Math.abs(panel.width - box.width) < 1
+        && Math.abs(box.y - (panel.y + panel.height) - 4) < 1;
+    }).toBe(true);
+  }
+  await expect(description).toHaveCSS('height', '16px');
+  await expect(description).toHaveCSS('text-overflow', 'ellipsis');
+  await expect(menu.locator('kbd')).toHaveCount(0);
   await page.keyboard.press('ArrowDown');
   await expect(page.getByTestId('chat-composer-input-slash-pdf')).toHaveAttribute('aria-selected', 'true');
   await page.keyboard.press('Enter');
@@ -60,7 +87,7 @@ test('slash suggestions keep focus, support pointer and keyboard, dismiss and an
   await expect(input).toBeFocused();
   await input.fill('/pd');
   await expect(menu).toBeVisible();
-  await page.getByRole('heading').first().click();
+  await page.getByTestId('sidebar-brand').click();
   await expect(menu).toHaveCount(0);
   await input.fill('/doc');
   await expect(menu).toBeVisible();
@@ -68,6 +95,7 @@ test('slash suggestions keep focus, support pointer and keyboard, dismiss and an
   await page.screenshot({ path: testInfo.outputPath('slash-skills.png') });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await expect(menu).toHaveCSS('animation-name', 'none');
+  await expect(results).toHaveCSS('scroll-behavior', 'auto');
   await page.keyboard.press('Escape');
   await expect(menu).toHaveCount(0);
 });

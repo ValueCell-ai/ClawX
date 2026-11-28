@@ -282,11 +282,9 @@
         "attachFiles": "Attach files",
         "pickSkill": "Choose skill",
         "skillButton": "Skills",
-        "skillPickerTitle": "Quick skill access for {{agent}}",
         "skillSearchPlaceholder": "Search skills",
         "skillLoading": "Loading skills...",
         "skillEmpty": "No matching skills found",
-        "pickAgent": "Choose assistant",
         "thinkingStrength": "Thinking strength",
         "thinkingDefault": "Default",
         "thinkingDefaultLevel": "Default ({{level}})",
@@ -305,9 +303,7 @@
             "ultra": "Ultra"
         },
         "pickModel": "Choose model",
-        "clearTarget": "Clear selected assistant",
         "targetChip": "@{{agent}}",
-        "agentPickerTitle": "Send the next message to another assistant",
         "modelPickerTitle": "Choose a model for this task",
         "modelReadFailed": "Could not read this chat’s model: {{error}}",
         "modelSwitchFailed": "Failed to switch model: {{error}}",
@@ -361,7 +357,7 @@
         "placeholder": "Describe a task or add files to get started…",
         "executionAgent": "Choose Agent: {{agent}}",
         "executionAgentTitle": "Choose Agent",
-        "agentDefaultModel": "Default model: {{model}}"
+        "agentDefaultModel": "Default model:"
     },
     "sessionList": {
         "title": "Recent tasks",

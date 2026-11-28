@@ -131,16 +131,20 @@ test.describe('ClawX chat skill trigger', () => {
           const popup = page.getByTestId(menu);
           await expect(popup).toBeVisible();
           await settleFloatingSurface(popup);
+          const bounds = (await popup.boundingBox())!;
           if (menu === 'chat-agent-picker-menu') {
-            // Description rows grow with the shared supporting-text line height.
-            expect((await popup.locator('[aria-current="true"]').boundingBox())!.height).toBeGreaterThanOrEqual(44);
+            expect(bounds.width).toBe(288);
+            await expect(popup.locator('[aria-current="true"]')).toHaveCSS('height', '28px');
             await expectMenuSelection(popup.locator('[aria-current="true"]'));
             await expect(popup.locator('button:not([aria-current]) [data-slot="menu-selection-indicator"]')).toHaveCount(0);
+          } else {
+            const composer = (await page.getByTestId('chat-composer').boundingBox())!;
+            expect(Math.abs(bounds.x - composer.x)).toBeLessThan(1);
+            expect(Math.abs(bounds.width - composer.width)).toBeLessThan(1);
+            expect(Math.abs(composer.y - bounds.y - bounds.height - 4)).toBeLessThan(1);
           }
-          const bounds = await popup.boundingBox();
-          if (width >= 900) expect(bounds!.width).toBe(384);
-          expect(bounds!.x).toBeGreaterThanOrEqual(0);
-          expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+          expect(bounds.x).toBeGreaterThanOrEqual(0);
+          expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
           await page.keyboard.press('Escape');
           await expect(popup).toHaveCount(0);
         }

@@ -282,11 +282,9 @@
         "attachFiles": "ファイルを添付",
         "pickSkill": "Skill を選択",
         "skillButton": "Skills",
-        "skillPickerTitle": "{{agent}} のクイック Skill",
         "skillSearchPlaceholder": "Skill を検索",
         "skillLoading": "Skill を読み込み中...",
         "skillEmpty": "一致する Skill がありません",
-        "pickAgent": "アシスタントを選択",
         "thinkingStrength": "思考の強度",
         "thinkingDefault": "デフォルト",
         "thinkingDefaultLevel": "デフォルト（{{level}}）",
@@ -308,9 +306,7 @@
         "modelPickerTitle": "このタスクのモデルを選択",
         "modelReadFailed": "この会話のモデルを取得できませんでした：{{error}}",
         "modelSwitchFailed": "モデルの切り替えに失敗しました: {{error}}",
-        "clearTarget": "送信先アシスタントを解除",
         "targetChip": "@{{agent}}",
-        "agentPickerTitle": "次のメッセージを別のアシスタントに送信",
         "gatewayDisconnectedPlaceholder": "ローカルサービスに接続中…",
         "send": "送信",
         "sendFailed": "送信に失敗しました",
@@ -361,7 +357,7 @@
         "placeholder": "タスクを入力するか、ファイルを追加してください…",
         "executionAgent": "Agent を選択：{{agent}}",
         "executionAgentTitle": "Agent を選択",
-        "agentDefaultModel": "既定のモデル：{{model}}"
+        "agentDefaultModel": "既定のモデル："
     },
     "sessionList": {
         "title": "最近のタスク",

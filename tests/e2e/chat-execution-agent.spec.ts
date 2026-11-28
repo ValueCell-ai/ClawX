@@ -5,11 +5,12 @@ for (const language of ['zh', 'en', 'ja', 'ru']) {
     const app = await launchElectronApp({ skipSetup: true });
     try {
       const defaultAgentId = language === 'ja' ? 'coder' : 'main';
-      const agents = ['main', 'coder'].map(id => ({
+      const modelIds = { main: 'glm-5.3-flash', coder: 'gpt-5.6' };
+      const agents = (['main', 'coder'] as const).map(id => ({
         id, name: id === 'main' ? 'Main Agent' : 'Coder1', isDefault: id === defaultAgentId,
         workspace: `/tmp/clawx-execution-workspace-${id}`, agentDir: `/tmp/clawx-execution-agents/${id}`,
-        mainSessionKey: `agent:${id}:main`, modelDisplay: `model-${id}`,
-        modelRef: `custom-${id === 'main' ? 'main1234' : 'coder123'}/model-${id}`, inheritedModel: false,
+        mainSessionKey: `agent:${id}:main`, modelDisplay: modelIds[id],
+        modelRef: `custom-${id === 'main' ? 'main1234' : 'coder123'}/${modelIds[id]}`, inheritedModel: false,
       }));
       await installIpcMocks(app, {
         gatewayStatus: { state: 'running', gatewayReady: true, port: 18789 },
@@ -19,7 +20,7 @@ for (const language of ['zh', 'en', 'ja', 'ru']) {
           '["/api/agents","GET"]': { success: true, agents, defaultAgentId, defaultModelRef: agents[0].modelRef },
         },
       });
-      await app.evaluate(async (_electron, locale) => {
+      await app.evaluate(async (_electron, { locale, modelIds }) => {
         const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
         type Request = { id: string; module: string; action: string; payload?: Record<string, unknown> };
         const calls: Request[] = [];
@@ -44,14 +45,14 @@ for (const language of ['zh', 'en', 'ja', 'ru']) {
             });
             return respond(files);
           }
-          if (request.module === 'providers' && request.action === 'accounts') return respond(['main', 'coder'].map(id => ({ id: id === 'main' ? 'main1234' : 'coder123', vendorId: 'custom', label: id, authMode: 'api_key', enabled: true, model: `model-${id}`, updatedAt: '2026-10-25' })));
+          if (request.module === 'providers' && request.action === 'accounts') return respond((['main', 'coder'] as const).map(id => ({ id: id === 'main' ? 'main1234' : 'coder123', vendorId: 'custom', label: id, authMode: 'api_key', enabled: true, model: modelIds[id], updatedAt: '2026-10-25' })));
           if (request.module === 'providers' && request.action === 'list') return respond(['main', 'coder'].map(id => ({ id: id === 'main' ? 'main1234' : 'coder123', enabled: true, hasKey: true })));
           if (request.module === 'providers' && request.action === 'accountKeyInfo') return respond(['main1234', 'coder123'].map(accountId => ({ accountId, hasKey: true })));
           if (request.module === 'providers' && request.action === 'vendors') return respond([]);
           if (request.module === 'providers' && request.action === 'getDefaultAccount') return respond({ accountId: 'main1234' });
           return original(event, request);
         });
-      }, language);
+      }, { locale: language, modelIds });
       const page = await getStableWindow(app);
       await page.reload();
       const selector = page.getByTestId('chat-composer-agent');
@@ -101,16 +102,49 @@ for (const language of ['zh', 'en', 'ja', 'ru']) {
         await expect(page.getByTestId('chat-composer-send')).toBeDisabled();
         await app.evaluate(() => (globalThis as unknown as { finishDraftUpload: () => void }).finishDraftUpload());
       }
-      await expect(page.getByTestId('chat-model-picker-button')).toHaveText('model-coder');
+      await expect(page.getByTestId('chat-model-picker-button')).toHaveText(modelIds.coder);
+      await expect(page.getByTestId('chat-model-picker-current-icon')).toHaveAttribute('data-model-icon', 'openai');
       await expect(page.getByText('@Main Agent', { exact: true })).toHaveCount(0);
+      if (language === 'ru') await page.setViewportSize({ width: 700, height: 800 });
       await selector.click();
-      await expect(page.getByTestId('chat-agent-option-coder')).toHaveAttribute('aria-current', 'true');
+      const menu = page.getByTestId('chat-agent-picker-menu');
+      const coderOption = menu.getByTestId('chat-agent-option-coder');
+      await expect(coderOption).toHaveAttribute('aria-current', 'true');
       await expect(page.getByTestId('chat-agent-open-main')).toHaveCount(0);
-      await expect(page.getByTestId('chat-agent-picker-menu').getByRole('menuitemradio')).toHaveCount(2);
-      const menuLabels = { zh: ['选择 Agent', '默认模型：model-coder'], en: ['Choose Agent', 'Default model: model-coder'], ja: ['Agent を選択', '既定のモデル：model-coder'], ru: ['Выбрать агента', 'Модель по умолчанию: model-coder'] };
+      await expect(menu.getByRole('menuitemradio')).toHaveCount(2);
+      await expect(menu.getByRole('menuitem', { exact: true })).toHaveCount(0);
+      await expect(menu).toHaveCSS('width', '288px');
+      await expect(menu).toBeInViewport({ ratio: 1 });
+      const menuLabels = {
+        zh: ['选择 Agent', '默认模型：'],
+        en: ['Choose Agent', 'Default model:'],
+        ja: ['Agent を選択', '既定のモデル：'],
+        ru: ['Выбрать агента', 'Модель по умолчанию:'],
+      };
       const [menuTitle, modelLabel] = menuLabels[language as keyof typeof menuLabels];
-      await expect(page.getByTestId('chat-agent-picker-menu').getByText(menuTitle, { exact: true })).toBeVisible();
-      await expect(page.getByTestId('chat-agent-option-coder')).toContainText(modelLabel);
+      await expect(menu.getByText(menuTitle, { exact: true })).toBeVisible();
+      const label = coderOption.getByText(modelLabel, { exact: true });
+      const model = coderOption.getByText(modelIds.coder, { exact: true });
+      const icon = coderOption.getByTestId('chat-agent-option-coder-model-icon');
+      await expect(icon).toHaveAttribute('data-model-icon', 'openai');
+      await expect(menu.getByTestId('chat-agent-option-main-model-icon')).toHaveAttribute('data-model-icon', 'zai');
+      await expect.poll(async () => {
+        const [nameBox, labelBox, iconBox, modelBox] = await Promise.all([
+          coderOption.getByText('Coder1', { exact: true }).boundingBox(),
+          label.boundingBox(),
+          icon.boundingBox(),
+          model.boundingBox(),
+        ]);
+        if (!nameBox || !labelBox || !iconBox || !modelBox) return false;
+        const nameCenter = nameBox.y + nameBox.height / 2;
+        return nameBox.x + nameBox.width <= labelBox.x
+          && labelBox.x + labelBox.width <= iconBox.x
+          && iconBox.x + iconBox.width <= modelBox.x
+          && Math.abs(nameCenter - (labelBox.y + labelBox.height / 2)) < 1
+          && Math.abs(nameCenter - (modelBox.y + modelBox.height / 2)) < 1
+          && Math.abs(nameCenter - (iconBox.y + iconBox.height / 2)) < 1;
+      }).toBe(true);
+      if (language === 'ru') await menu.screenshot({ path: testInfo.outputPath('agent-menu-narrow-dark.png') });
       await page.keyboard.press('Escape');
       await page.getByTestId('chat-composer-skill').click();
       await expect(page.getByTestId('chat-composer-skill-option-coder-skill')).toBeVisible();
@@ -148,7 +182,7 @@ for (const language of ['zh', 'en', 'ja', 'ru']) {
       expect((await getCalls()).filter(call => call.action === 'sendAcpPrompt')).toHaveLength(1);
       await page.getByTestId('sidebar-session-agent:main:main').click();
       await expect(selector).toHaveText('Main Agent');
-      await expect(page.getByTestId('chat-model-picker-button')).toHaveText('model-main');
+      await expect(page.getByTestId('chat-model-picker-button')).toHaveText(modelIds.main);
       await page.setViewportSize({ width: 700, height: 800 });
       await expect(selector).toBeInViewport();
       await expect(page.getByTestId('chat-composer-send')).toBeInViewport();

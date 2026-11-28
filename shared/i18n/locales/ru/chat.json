@@ -282,11 +282,9 @@
         "attachFiles": "Прикрепить файлы",
         "pickSkill": "Выбрать Skill",
         "skillButton": "Навыки",
-        "skillPickerTitle": "Быстрый доступ к Skill для {{agent}}",
         "skillSearchPlaceholder": "Поиск Skill",
         "skillLoading": "Загрузка Skill...",
         "skillEmpty": "Подходящие Skill не найдены",
-        "pickAgent": "Выбрать помощника",
         "thinkingStrength": "Интенсивность рассуждений",
         "thinkingDefault": "По умолчанию",
         "thinkingDefaultLevel": "По умолчанию ({{level}})",
@@ -308,9 +306,7 @@
         "modelPickerTitle": "Выбрать модель для этой задачи",
         "modelReadFailed": "Не удалось получить модель этого чата: {{error}}",
         "modelSwitchFailed": "Не удалось переключить модель: {{error}}",
-        "clearTarget": "Сбросить выбранного помощника",
         "targetChip": "@{{agent}}",
-        "agentPickerTitle": "Отправить следующее сообщение другому помощнику",
         "gatewayDisconnectedPlaceholder": "Подключение к локальной службе…",
         "send": "Отправить",
         "sendFailed": "Не удалось отправить",
@@ -361,7 +357,7 @@
         "placeholder": "Опишите задачу или добавьте файлы…",
         "executionAgent": "Выбрать агента: {{agent}}",
         "executionAgentTitle": "Выбрать агента",
-        "agentDefaultModel": "Модель по умолчанию: {{model}}"
+        "agentDefaultModel": "Модель по умолчанию:"
     },
     "sessionList": {
         "title": "Недавние задачи",

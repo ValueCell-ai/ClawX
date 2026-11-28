@@ -514,6 +514,9 @@ throughout the app, including reopened conversations.
 - Reuse existing feature capabilities before adding another implementation.
   Model choices in assistants, tasks and Usage share ModelPicker. File readers
   share Workspace preview, and configuration forms reuse ConfigDialogContent.
+- In the composer's Agent menu, place the Agent name and its default model in
+  one row. Put the shared model icon after the default-model label and next to
+  the model name. Preserve access to full truncated labels.
 - Treat consistency as consistent behavior as well as matching colors. Equivalent
   actions and fields across pages share the same components, interaction states,
   density and visual roles. Reuse a shared primitive or capability rather than
@@ -530,6 +533,15 @@ throughout the app, including reopened conversations.
 - Task and scheduled-task composition share the Lexical plain-text editor and
   atomic skill nodes. Slash suggestions use the shared non-modal Radix Popover,
   retain editor focus and expose listbox options through `aria-activedescendant`.
+  In chat, the Skills button and slash suggestions share one panel design
+  aligned to the outer edges of the composer with a small gap above it. The
+  button opens the panel with a compact full-width search field and a divider. Slash
+  suggestions use the query in the editor. Lead each option with a compact
+  skill icon shared with the welcome shortcuts, and stack the command name
+  above one line of its description in the caption role. Keep full descriptions
+  available through the skill preview. Highlight the active option with the
+  shared selection tint and dot. Bound the panel to 384px and the available
+  viewport height.
   Do not recreate token visuals with a second text overlay or rebuild the editor
   from a string on every keystroke. Keep the existing plain-text send boundary.
 - Reuse shared motion, including reduced-motion support. Do not add page-specific

@@ -452,7 +452,7 @@ async function installSettledAcpHydrationMock(
 }
 
 async function installTargetAgentRequestRecorder(app: ElectronApplication) {
-  await app.evaluate(async ({ app: _app }, targetSessionKey) => {
+  await app.evaluate(async ({ app: _app }, draftPrefix) => {
     const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
     type HostInvokeRequest = {
       id?: string;
@@ -474,7 +474,8 @@ async function installTargetAgentRequestRecorder(app: ElectronApplication) {
       if (
         request?.module === 'chat'
         && (request.action === 'loadAcpSession' || request.action === 'sendAcpPrompt')
-        && requestPayload?.sessionKey === targetSessionKey
+        && typeof requestPayload?.sessionKey === 'string'
+        && requestPayload.sessionKey.startsWith(draftPrefix)
       ) {
         globals.__targetAgentRequests?.push({
           action: request.action,
@@ -484,7 +485,7 @@ async function installTargetAgentRequestRecorder(app: ElectronApplication) {
       }
       return originalHostInvoke?.(event, request) ?? { id: request?.id, ok: true, data: {} };
     });
-  }, REVIEWER_SESSION_KEY);
+  }, 'agent:reviewer:session-');
 }
 
 async function getTargetAgentRequests(app: ElectronApplication) {
@@ -2281,7 +2282,7 @@ test.describe('ClawX ACP inline timeline', () => {
     }
   });
 
-  test('creates and sends the first prompt to a newly targeted agent workspace', async ({ launchElectronApp }) => {
+  test('creates and sends the first prompt in a new task for the selected agent', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -2332,7 +2333,8 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
 
       await page.getByTestId('chat-composer-agent').click();
-      await page.getByTestId('chat-agent-target-reviewer').click();
+      await page.getByTestId('chat-agent-option-reviewer').click();
+      await expect(page.getByTestId('chat-composer-agent')).toHaveText('reviewer');
       await page.getByTestId('chat-composer-input').fill('Hello reviewer');
       await page.getByTestId('chat-composer-send').click();
 
@@ -2341,7 +2343,10 @@ test.describe('ClawX ACP inline timeline', () => {
         return requests.some((request) => request.action === 'sendAcpPrompt');
       }).toBe(true);
 
-      const reviewerSessionRow = page.getByTestId(`sidebar-session-${REVIEWER_SESSION_KEY}`);
+      const sent = (await getTargetAgentRequests(app)).find((request) => request.action === 'sendAcpPrompt')!;
+      const sessionKey = String(sent.payload.sessionKey);
+      expect(sessionKey).toMatch(/^agent:reviewer:session-\d+$/);
+      const reviewerSessionRow = page.getByTestId(`sidebar-session-${sessionKey}`);
       await expect(reviewerSessionRow).toContainText('Hello reviewer');
       await expect(reviewerSessionRow).not.toContainText('ACP');
 
@@ -2354,7 +2359,7 @@ test.describe('ClawX ACP inline timeline', () => {
         {
           action: 'loadAcpSession',
           payload: {
-            sessionKey: REVIEWER_SESSION_KEY,
+            sessionKey,
             workspaceRoot: REVIEWER_WORKSPACE,
             cwd: REVIEWER_WORKSPACE,
             createIfMissing: true,
@@ -2363,7 +2368,7 @@ test.describe('ClawX ACP inline timeline', () => {
         {
           action: 'loadAcpSession',
           payload: {
-            sessionKey: REVIEWER_SESSION_KEY,
+            sessionKey,
             workspaceRoot: REVIEWER_WORKSPACE,
             cwd: REVIEWER_WORKSPACE,
           },
@@ -2371,7 +2376,7 @@ test.describe('ClawX ACP inline timeline', () => {
       ]);
       expect(requests.some((request) => (
         request.action === 'sendAcpPrompt'
-        && request.payload.sessionKey === REVIEWER_SESSION_KEY
+        && request.payload.sessionKey === sessionKey
         && request.payload.cwd === REVIEWER_WORKSPACE
         && request.payload.message === 'Hello reviewer'
       ))).toBe(true);
@@ -2444,13 +2449,10 @@ test.describe('ClawX ACP inline timeline', () => {
       });
       await installAcpPromptFailureMock(app, error, partialReply);
 
-      const page = await openChat(app);
+      const page = await openChat(app, REVIEWER_SESSION_KEY);
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByTestId('workspace-session-group-%2Fworkspace%2Freviewer')).toBeVisible({ timeout: 30_000 });
-
-      await page.getByTestId('chat-composer-agent').click();
-      await page.getByTestId('chat-agent-target-reviewer').click();
-      await page.getByTestId('chat-composer-input').fill('Trigger target send failure');
+      await expect(page.getByTestId('chat-composer-agent')).toHaveText('reviewer');
+      await page.getByTestId('chat-composer-input').fill('Trigger send failure in reviewer chat');
       await page.getByTestId('chat-composer-send').click();
 
       const partialOutput = page.getByText(partialReply);

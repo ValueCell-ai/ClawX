@@ -93,7 +93,7 @@ for (const reduced of [false, true]) {
       await page.getByTestId('chat-composer-skill').click();
       await expect(page.getByTestId('chat-skill-picker-menu')).toBeVisible();
       await expect(page.getByTestId('chat-model-picker-menu')).toHaveCount(0);
-      await page.getByRole('heading').first().click();
+      await page.getByTestId('sidebar-brand').click();
       await expect(page.getByTestId('chat-skill-picker-menu')).toHaveCount(0);
 
       await navigateToSection(page, 'cron');

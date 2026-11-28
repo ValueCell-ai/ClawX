@@ -282,11 +282,9 @@
         "attachFiles": "添加文件",
         "pickSkill": "选择技能",
         "skillButton": "技能",
-        "skillPickerTitle": "{{agent}} 的快捷技能",
         "skillSearchPlaceholder": "搜索技能",
         "skillLoading": "正在加载技能...",
         "skillEmpty": "未找到匹配的技能",
-        "pickAgent": "选择助手",
         "thinkingStrength": "思考强度",
         "thinkingDefault": "默认",
         "thinkingDefaultLevel": "默认（{{level}}）",
@@ -308,9 +306,7 @@
         "modelPickerTitle": "选择当前任务的模型",
         "modelReadFailed": "无法读取此会话的模型：{{error}}",
         "modelSwitchFailed": "模型切换失败：{{error}}",
-        "clearTarget": "清除指定助手",
         "targetChip": "@{{agent}}",
-        "agentPickerTitle": "将下一条消息发送给其他助手",
         "gatewayDisconnectedPlaceholder": "正在连接本地服务…",
         "send": "发送",
         "sendFailed": "发送失败",
@@ -361,7 +357,7 @@
         "placeholder": "描述你的任务，或添加文件开始…",
         "executionAgent": "选择 Agent：{{agent}}",
         "executionAgentTitle": "选择 Agent",
-        "agentDefaultModel": "默认模型：{{model}}"
+        "agentDefaultModel": "默认模型："
     },
     "sessionList": {
         "title": "最近任务",

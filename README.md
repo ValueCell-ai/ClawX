@@ -191,7 +191,7 @@ Open **Thinking strength** beside the model picker and drag the slider. Release 
 
 For enterprise DeepSeek V4.1 Flash (including the `-1017` model), **Off** explicitly disables thinking on the request. Ordinary enabled levels send `high`, while `xhigh` and `max` send `max`.
 
-In the composer’s Agent menu, use **Send the next message to another assistant** to mention an Agent. Then the picker shows and changes the model for that Agent’s main conversation. Remove the mention to see the original conversation’s model again.
+Use **Choose Agent** in the composer to start a new task with that agent. Unsent text and attachments carry over. Open existing conversations from the sidebar.
 
 ClawX upgrades OpenClaw directly from official ClawX 0.6.1 (`2026.7.1-2`) or a main build using `2026.10.5` to `2026.10.10`. Before startup writes it retains `backups/clawx-openclaw-2026.10.10-pre-migration` under the OpenClaw state directory, independently of any 10.5 snapshot. This private snapshot includes configuration, channel credentials, legacy history, plugin payloads, media and configured external Agent/session stores. SQLite online backups include committed WAL data. Startup stops if backup fails; Gateway readiness never deletes it. OpenClaw owns schema migration before ClawX synchronizes credentials, allowing interrupted migration to retry. Workspaces and runtime binaries are not backed up. Keep the matching old installer and the snapshot until validation is complete; the snapshot contains secrets and must not be shared.
 

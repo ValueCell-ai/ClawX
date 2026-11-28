@@ -1,6 +1,6 @@
 import {
   forwardRef, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect,
-  useMemo, useRef, useState, type ReactNode,
+  useMemo, useRef, useState, type RefObject,
 } from 'react';
 import { LexicalComposer } from '@lexical/react/LexicalComposer';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
@@ -19,13 +19,13 @@ import {
   type RangeSelection,
 } from 'lexical';
 import { useTranslation } from 'react-i18next';
-import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
+import { Popover } from '@/components/ui/popover';
 import { hasFloatingSurface } from '@/components/ui/floating-ui';
-import { QuickSkillOption } from '@/components/skills/QuickSkillOption';
-import { getQuickSkillSourceLabel } from '@/lib/skill-source-label';
+import { filterQuickAccessSkills } from '@/lib/skill-source-label';
 import { useComposerDraftStore } from '@/stores/composer-drafts';
 import type { QuickAccessSkill } from '@/types/skill';
 import { cn } from '@/lib/utils';
+import { ComposerSkillPopoverContent } from './ComposerSkillPopover';
 import { SkillNode, $createSkillNode, $isSkillNode } from './SkillNode';
 
 // Lexical history is explicitly mutable and scoped to one live editor/session.
@@ -60,6 +60,7 @@ interface Props {
   disabled?: boolean;
   readOnly?: boolean;
   suspendSuggestions?: boolean;
+  skillMenuAnchorRef?: RefObject<HTMLElement | null>;
   autoFocus?: boolean;
   placeholder: string;
   id?: string;
@@ -104,14 +105,9 @@ const Editor = forwardRef<ComposerEditorHandle, Props>(function Editor(props, re
   const [query, setQuery] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const dismissedQuery = useRef<string | null>(null);
-  const anchor = useRef({ getBoundingClientRect: () => editor.getRootElement()?.getBoundingClientRect() ?? new DOMRect() });
+  const caretAnchor = useRef({ getBoundingClientRect: () => editor.getRootElement()?.getBoundingClientRect() ?? new DOMRect() });
   const listId = useId();
-  const menuRef = useRef<HTMLDivElement>(null);
-  const matches = useMemo(() => {
-    const needle = (query ?? '').toLowerCase();
-    return props.skills.filter(skill => [skill.name, skill.description, skill.sourceLabel, getQuickSkillSourceLabel(skill.source, t)]
-      .some(value => value.toLowerCase().includes(needle)));
-  }, [props.skills, query, t]);
+  const matches = useMemo(() => filterQuickAccessSkills(props.skills, query ?? '', t), [props.skills, query, t]);
   const menuOpen = query !== null && !props.disabled && !props.readOnly && !props.suspendSuggestions;
   const menuState = useRef({ open: menuOpen, matches, activeIndex });
   useLayoutEffect(() => { menuState.current = { open: menuOpen, matches, activeIndex }; });
@@ -228,10 +224,12 @@ const Editor = forwardRef<ComposerEditorHandle, Props>(function Editor(props, re
       if (!match) { dismissedQuery.current = null; setQuery(null); return; }
       if (dismissedQuery.current === match[1]) { setQuery(null); return; }
       dismissedQuery.current = null;
-      const domSelection = window.getSelection();
-      if (domSelection?.rangeCount) {
-        const range = domSelection.getRangeAt(0).cloneRange();
-        anchor.current.getBoundingClientRect = () => range.getBoundingClientRect();
+      if (!latest.current.skillMenuAnchorRef) {
+        const domSelection = window.getSelection();
+        if (domSelection?.rangeCount) {
+          const range = domSelection.getRangeAt(0).cloneRange();
+          caretAnchor.current.getBoundingClientRect = () => range.getBoundingClientRect();
+        }
       }
       setQuery(previous => { if (previous !== match[1]) setActiveIndex(0); return match[1]; });
     });
@@ -308,9 +306,6 @@ const Editor = forwardRef<ComposerEditorHandle, Props>(function Editor(props, re
     }, COMMAND_PRIORITY_HIGH),
   ), [editor, insertSkill]);
 
-  useEffect(() => {
-    menuRef.current?.querySelector<HTMLElement>(`[data-active="true"]`)?.scrollIntoView?.({ block: 'nearest' });
-  }, [activeIndex, matches]);
   const close = () => { dismissedQuery.current = query; setQuery(null); };
   return <>
     <HistoryPlugin externalHistoryState={history} />
@@ -329,27 +324,22 @@ const Editor = forwardRef<ComposerEditorHandle, Props>(function Editor(props, re
         ErrorBoundary={LexicalErrorBoundary} />
     </div>
     <Popover open={menuOpen} onOpenChange={open => { if (!open) close(); }} modal={false}>
-      <PopoverAnchor virtualRef={anchor} />
-      <PopoverContent side="top" align="start" role="listbox" id={listId} ref={menuRef}
+      <ComposerSkillPopoverContent
+        composerRef={props.skillMenuAnchorRef}
+        caretAnchor={caretAnchor}
+        skills={matches}
+        skillsLoading={props.skillsLoading}
+        skillsError={props.skillsError}
+        optionTestIdPrefix={`${props.testId ?? 'composer'}-slash`}
+        navigation={{ listId, activeIndex, onActiveIndexChange: setActiveIndex }}
+        onSelectSkill={skill => insertSkill(skill, false, true)}
         data-testid={`${props.testId ?? 'composer'}-slash-menu`}
         onOpenAutoFocus={event => event.preventDefault()} onCloseAutoFocus={event => event.preventDefault()}
         onFocusOutside={event => { if (editor.getRootElement()?.contains(event.target as Node)) event.preventDefault(); }}
-        className="w-96 max-h-[min(320px,var(--radix-popover-content-available-height))] overflow-y-auto rounded-2xl border border-border bg-surface-modal p-1.5 shadow-xl">
-        {props.skillsLoading ? <MenuStatus>{t('composer.skillLoading')}</MenuStatus>
-          : props.skillsError ? <MenuStatus>{props.skillsError}</MenuStatus>
-          : matches.length === 0 ? <MenuStatus>{t('composer.skillEmpty')}</MenuStatus>
-          : <div className="clawx-menu-list" onMouseDown={event => event.preventDefault()}>
-            {matches.map((skill, index) => <QuickSkillOption key={`${skill.source}:${skill.name}:${skill.manifestPath}`}
-              id={`${listId}-${index}`} role="option" aria-selected={index === activeIndex} tabIndex={-1}
-              data-active={index === activeIndex} onMouseMove={() => setActiveIndex(index)}
-              testId={`${props.testId ?? 'composer'}-slash-${skill.name}`} skill={skill} selected={index === activeIndex}
-              onSelect={() => insertSkill(skill, false, true)} />)}
-          </div>}
-      </PopoverContent>
+      />
     </Popover>
   </>;
 });
-function MenuStatus({ children }: { children: ReactNode }) { return <div role="status" className="px-3 py-4 text-sm text-muted-foreground">{children}</div>; }
 export const ComposerEditor = forwardRef<ComposerEditorHandle, Props>(function ComposerEditor(props, ref) {
   const initialConfig = useMemo(() => ({ namespace: NAMESPACE, nodes: [SkillNode], theme: { paragraph: 'm-0', skillTokenTestId: props.tokenTestId },
     onError(error: Error) { throw error; } }), [props.tokenTestId]);

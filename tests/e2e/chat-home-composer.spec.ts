@@ -95,25 +95,57 @@ for (const locale of locales) {
       await expect(page.getByTestId('chat-home-skill-docx')).toBeEnabled();
       expect(await page.getByTestId('chat-home-skills').boundingBox()).toEqual(loadingBounds);
       await page.getByTestId('chat-composer-skill').click();
-      await settleFloatingSurface(page.getByTestId('chat-skill-picker-menu'));
-      await expect(page.getByTestId('chat-skill-picker-menu').locator(':scope > div').nth(1)).toHaveCSS('font-size', '14px');
+      const skillMenu = page.getByTestId('chat-skill-picker-menu');
+      await settleFloatingSurface(skillMenu);
       const docxOption = page.getByTestId('chat-composer-skill-option-docx');
       const legacyOption = page.getByTestId('chat-composer-skill-option-legacy-report');
-      await expect(docxOption.getByText('OpenClaw', { exact: true })).toHaveCount(1);
-      await expect(page.getByTestId('chat-composer-skill-option-docx-description')).toHaveText('Original docx description');
-      await expect(page.getByTestId('chat-composer-skill-option-legacy-report-source')).toHaveText(locale.legacy);
+      const workspaceOption = page.getByTestId('chat-composer-skill-option-workspace-note');
+      const docxDescription = docxOption.getByTestId('chat-composer-skill-option-docx-description');
+      await expect(docxDescription).toHaveText('Original docx description');
+      await expect(docxOption.getByTestId('chat-composer-skill-option-docx-source')).toHaveCount(0);
+      await expect(legacyOption.getByTestId('chat-composer-skill-option-legacy-report-source')).toHaveCount(0);
       await expect(page.getByTestId('chat-composer-skill-option-workspace-note-description')).toHaveCount(0);
-      await expect(docxOption).toHaveCSS('height', '48px');
-      await expect(page.getByTestId('chat-composer-skill-option-workspace-note')).toHaveCSS('height', '30px');
+      await expect(docxDescription).toHaveCSS('font-size', '12px');
+      await expect(docxOption).toHaveCSS('height', '44px');
+      await expect(workspaceOption).toHaveCSS('height', '36px');
+      const [nameBounds, descriptionBounds, iconBounds] = await Promise.all([
+        docxOption.getByText('/docx', { exact: true }).boundingBox(),
+        docxDescription.boundingBox(),
+        docxOption.locator('span[aria-hidden="true"]:has(> svg)').boundingBox(),
+      ]);
+      expect(iconBounds!.width).toBeCloseTo(28);
+      expect(nameBounds!.x).toBeCloseTo(descriptionBounds!.x);
+      expect(nameBounds!.x).toBeGreaterThan(iconBounds!.x + iconBounds!.width);
+      expect(descriptionBounds!.y).toBeCloseTo(nameBounds!.y + nameBounds!.height);
       const docxBounds = await docxOption.boundingBox();
       const nextOption = docxOption.locator('..').locator('button').nth(1);
       const nextBounds = await nextOption.boundingBox();
       expect(nextBounds!.y - docxBounds!.y - docxBounds!.height).toBeCloseTo(4, 0);
-      const skillSearch = docxOption.locator('..').locator('..').locator('input');
+      const skillSearch = skillMenu.getByRole('combobox');
+      await expect(skillSearch).toBeFocused();
+      await expect(skillSearch).toHaveCSS('height', '32px');
+      const [searchBounds, skillMenuBounds] = await Promise.all([skillSearch.boundingBox(), skillMenu.boundingBox()]);
+      expect(searchBounds!.x - skillMenuBounds!.x).toBeCloseTo(7, 0);
+      expect(skillMenuBounds!.x + skillMenuBounds!.width - searchBounds!.x - searchBounds!.width).toBeCloseTo(7, 0);
+      await expect(skillMenu.locator('kbd')).toHaveCount(0);
+      await expect(docxOption).toHaveAttribute('aria-selected', 'true');
+      await skillSearch.press('ArrowUp');
+      await expect(workspaceOption).toHaveAttribute('aria-selected', 'true');
+      await expect(workspaceOption).toBeInViewport();
+      await skillSearch.press('ArrowDown');
+      await expect(docxOption).toHaveAttribute('aria-selected', 'true');
+      await expect(docxOption.locator('[data-slot="menu-selection-indicator"]')).toBeVisible();
       await skillSearch.fill(locale.legacy);
       await expect(legacyOption).toBeVisible();
       await expect(docxOption).toHaveCount(0);
-      await page.keyboard.press('Escape');
+      await skillSearch.press('Escape');
+      await expect(input).toBeFocused();
+      await page.getByTestId('chat-composer-skill').click();
+      await expect(skillSearch).toHaveValue('');
+      await skillSearch.fill('docx');
+      await skillSearch.press('Enter');
+      await expect(page.getByTestId('chat-composer-skill-token')).toHaveText('/docx');
+      await expect(input).toBeFocused();
       const requestsBeforeNewChat = await app.evaluate(() => (globalThis as unknown as { homeSkillGate: { requests: number } }).homeSkillGate.requests);
       // New drafts reuse the same resolved catalog, without another Host request.
       await page.getByTestId('sidebar-new-chat').click();

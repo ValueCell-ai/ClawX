@@ -10,17 +10,17 @@ import {
   useState, useRef, useEffect, useCallback, useMemo,
   type SetStateAction,
 } from 'react';
-import { CircleAlert, Presentation, Table2, FileScan, Monitor, WandSparkles, SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, AtSign, Bot, Search, ChevronDown } from 'lucide-react';
+import { CircleAlert, SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, Bot, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import * as DropdownMenu from '@/components/ui/dropdown-menu';
 import { hasFloatingSurface } from '@/components/ui/floating-ui';
-import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
+import { Popover, PopoverTrigger } from '@/components/ui/popover';
 import { MenuSelectionIndicator } from '@/components/ui/menu-selection';
 import { menuOptionStateClass } from '@/components/ui/menu-selection-styles';
 import { ComposerEditor, type ComposerEditorHandle } from '@/components/composer/ComposerEditor';
+import { ComposerSkillPopoverContent } from '@/components/composer/ComposerSkillPopover';
+import { SkillIcon } from '@/components/skills/SkillIcon';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { QuickSkillOption } from '@/components/skills/QuickSkillOption';
-import { getQuickSkillSourceLabel } from '@/lib/skill-source-label';
 import { hostApi } from '@/lib/host-api';
 import { cn } from '@/lib/utils';
 import { useGatewayStore } from '@/stores/gateway';
@@ -50,6 +50,7 @@ import { useVoiceDictation } from '@/hooks/useVoiceDictation';
 import { VoiceDictationButton } from '@/components/voice/VoiceDictationButton';
 import { MicrophonePermissionDialog } from '@/components/voice/MicrophonePermissionDialog';
 import type { AsrMicrophoneAccessResult } from '@shared/host-api/contract';
+import { ModelIcon } from '@/components/common/ModelIcon';
 import { ModelPicker } from '@/components/common/ModelPicker';
 import { ThinkingStrengthPicker } from './ThinkingStrengthPicker';
 import { AcpSessionPlan } from './AcpSessionPlan';
@@ -263,11 +264,9 @@ export function ChatInput({
     else setLocalAttachments(items => items.map(item => item.id === id ? { ...item, ...update, id } : item));
   }, [draftKey]);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [target, setTarget] = useState<{ source: string; agentId: string } | null>(null);
   const [skillPickerOpen, setSkillPickerOpen] = useState(false);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
-  const [skillQuery, setSkillQuery] = useState('');
   const [quickSkills, setQuickSkills] = useState<QuickAccessSkill[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(false);
   const [loadedSkillsScope, setLoadedSkillsScope] = useState('');
@@ -275,6 +274,7 @@ export function ChatInput({
   const [skillsError, setSkillsError] = useState<string | null>(null);
   const [admitting, setAdmitting] = useState(false);
   const admissionInFlight = useRef(false);
+  const composerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<ComposerEditorHandle>(null);
   const contextUsageSourceRef = useRef<{ value: unknown; modelRef: string | null } | undefined>(undefined);
   const gatewayStatus = useGatewayStore((s) => s.status);
@@ -291,7 +291,6 @@ export function ChatInput({
   const failedPrompts = useComposerDraftStore((s) => s.failedPrompts[currentSessionKey]);
   const submissionPending = useComposerDraftStore((s) => !!s.submissions[currentSessionKey]?.length);
   const sessions = useChatStore((s) => s.sessions);
-  const targetAgentId = target?.source === currentSessionKey ? target?.agentId ?? null : null;
   const composerSessionRef = useRef(currentSessionKey);
   composerSessionRef.current = currentSessionKey;
   const currentAgent = useMemo(
@@ -311,17 +310,9 @@ export function ChatInput({
     ),
     [providerAccounts, providerDefaultAccountId, providerStatuses, providerVendors],
   );
-  const selectedTarget = useMemo(
-    () => (agents ?? []).find((agent) => agent.id === targetAgentId) ?? null,
-    [agents, targetAgentId],
-  );
-  const destinationKey = getPromptSessionKey(currentSessionKey, selectedTarget);
-  const destination = sessions?.find((session) => session.key === destinationKey);
-  const destinationKeyRef = useRef(destinationKey);
-  destinationKeyRef.current = destinationKey;
-  const destinationAgent = selectedTarget ?? currentAgent;
-  const agentModelRef = destinationAgent?.modelRef || defaultModelRef;
-  const sessionModel = useSessionModel(destinationKey, destination,
+  const currentSession = sessions?.find((session) => session.key === currentSessionKey);
+  const agentModelRef = currentAgent?.modelRef || defaultModelRef;
+  const sessionModel = useSessionModel(currentSessionKey, currentSession,
     gatewayStatus.state === 'running' && gatewayStatus.gatewayReady !== false, sending, agentModelRef);
   const effectiveModelRef = sessionModel.value?.modelRef || sessionModel.value?.effectiveModelRef || agentModelRef;
   const thinking = sessionModel.thinking;
@@ -329,20 +320,6 @@ export function ChatInput({
     const matchedOption = modelOptions.find((option) => option.modelRef === effectiveModelRef);
     return matchedOption?.modelId || (effectiveModelRef ? formatModelRefLabel(effectiveModelRef) : t('composer.pickModel'));
   }, [effectiveModelRef, modelOptions, t]);
-  const mentionableAgents = useMemo(
-    () => (agents ?? []).filter((agent) => agent.id !== currentAgentId),
-    [agents, currentAgentId],
-  );
-  const filteredQuickSkills = useMemo(() => {
-    const query = skillQuery.trim().toLowerCase();
-    if (!query) return quickSkills;
-    return quickSkills.filter((skill) =>
-      skill.name.toLowerCase().includes(query)
-      || skill.description.toLowerCase().includes(query)
-      || getQuickSkillSourceLabel(skill.source, t).toLowerCase().includes(query)
-      || skill.sourceLabel.toLowerCase().includes(query),
-    );
-  }, [quickSkills, skillQuery, t]);
   const showAgentPicker = !!currentAgent;
   const showModelPicker = modelOptions.length > 0 || !!sessionModel.value?.modelRef;
   const chatComposerStatusComponents = rendererExtensionRegistry.getChatComposerStatusComponents();
@@ -374,14 +351,13 @@ export function ChatInput({
   });
   useEffect(() => () => { cancelVoiceDictation(); }, [draftKey, cancelVoiceDictation]);
 
-  const visibleUsage = destinationKey === currentSessionKey ? contextUsage : undefined;
-  if (destinationKey === currentSessionKey && contextUsageSourceRef.current?.value !== contextUsage) {
+  if (contextUsageSourceRef.current?.value !== contextUsage) {
     contextUsageSourceRef.current = { value: contextUsage, modelRef: effectiveModelRef };
   }
   const contextWindowOverride = contextUsageSourceRef.current?.modelRef === effectiveModelRef
     ? undefined
     : sessionModel.value?.contextWindow ?? (!sessionModel.value?.modelRef ? currentAgent?.contextWindow : undefined);
-  const activeContextUsage = getContextUsage(visibleUsage, contextWindowOverride);
+  const activeContextUsage = getContextUsage(contextUsage, contextWindowOverride);
   const contextUsagePercentage = activeContextUsage
     ? new Intl.NumberFormat(i18n.resolvedLanguage, { style: 'percent', maximumFractionDigits: 0 }).format(activeContextUsage.percent / 100)
     : null;
@@ -452,7 +428,6 @@ export function ChatInput({
   useEffect(() => {
     setSkillPickerOpen(false);
     setWorkspaceMenuOpen(false);
-    setSkillQuery('');
     setSkillsError(null);
   }, [currentAgentId]);
 
@@ -525,15 +500,15 @@ export function ChatInput({
   const selectWelcomeSkill = (name: string) => { editorRef.current?.insertSkill({ name }, true); };
 
   const handleSelectModel = async (modelRef: string) => {
-    if (!destinationKey || !destinationAgent || sessionModel.writing || admissionInFlight.current) return;
+    if (!currentSessionKey || !currentAgent || sessionModel.writing || admissionInFlight.current) return;
     setModelPickerOpen(false);
     if (modelRef === sessionModel.value?.modelRef && !sessionModel.failed) return;
     try {
       await sessionModel.select(modelRef);
     } catch (error) {
-      if (destinationKeyRef.current === destinationKey) toast.error(t('composer.modelSwitchFailed', { error: String(error) }));
+      if (composerSessionRef.current === currentSessionKey) toast.error(t('composer.modelSwitchFailed', { error: String(error) }));
     } finally {
-      if (destinationKeyRef.current === destinationKey) editorRef.current?.focus();
+      if (composerSessionRef.current === currentSessionKey) editorRef.current?.focus();
     }
   };
 
@@ -673,7 +648,7 @@ export function ChatInput({
     if (!(retry ? sendEnabled : canSend) || admissionInFlight.current) return;
     const textToSend = retry?.text ?? input;
     const attachmentsToSend = retry ? retry.attachments : (attachments.length ? attachments : undefined);
-    const targetId = retry ? retry.targetAgentId ?? null : targetAgentId;
+    const targetId = retry?.targetAgentId ?? null;
     const target = targetId ? agents.find((agent) => agent.id === targetId) ?? null : null;
     const key = getPromptSessionKey(currentSessionKey, target);
     const destinationSession = sessions?.find((session) => session.key === key);
@@ -715,8 +690,7 @@ export function ChatInput({
           sessionEffectiveModelRef,
         });
         if (!guard.ok) throw new Error(guard.message);
-        if (!submission.isTracked() || useChatStore.getState().currentSessionKey !== currentSessionKey
-          || (!retry && destinationKeyRef.current !== key)) throw new Error();
+        if (!submission.isTracked() || useChatStore.getState().currentSessionKey !== currentSessionKey) throw new Error();
       }
       const accepted = targetId
         ? onSend(textToSend, attachmentsToSend, targetId)
@@ -742,18 +716,15 @@ export function ChatInput({
       setAdmitting(false);
     }
     if (!retry) {
-      // An @mention can open another conversation during admission. setInput
-      // still addresses the original keyed draft, while transient UI is shared.
+      // Draft updates are scoped to the original session. Menu state is shared.
       setInput((value) => value === input ? '' : value);
       setAttachments((current) => current === attachments ? [] : current);
-      setTarget((current) => current?.source === currentSessionKey && current.agentId === targetAgentId ? null : current);
       if (composerSessionRef.current !== currentSessionKey) return;
-      setSkillQuery('');
       setPickerOpen(false);
       setSkillPickerOpen(false);
       setWorkspaceMenuOpen(false);
     }
-  }, [input, attachments, canSend, sendEnabled, currentSessionKey, sessions, agents, onSend, setAttachments, setInput, t, targetAgentId, workspacePath]);
+  }, [input, attachments, canSend, sendEnabled, currentSessionKey, sessions, agents, onSend, setAttachments, setInput, t, workspacePath]);
 
   const handleStop = useCallback(() => {
     if (!canStop) return;
@@ -852,14 +823,7 @@ export function ChatInput({
             {t('welcome.subtitle')}
           </h1>
           <div data-testid="chat-home-skills" className="flex min-h-8 flex-wrap justify-start gap-1.5">
-            {([
-              { name: 'docx', icon: FileText, color: 'text-blue-700 dark:text-blue-400', background: 'bg-blue-500/10' },
-              { name: 'xlsx', icon: Table2, color: 'text-emerald-700 dark:text-emerald-400', background: 'bg-emerald-500/10' },
-              { name: 'pptx', icon: Presentation, color: 'text-orange-700 dark:text-orange-400', background: 'bg-orange-500/10' },
-              { name: 'pdf', icon: FileScan, color: 'text-rose-700 dark:text-rose-400', background: 'bg-rose-500/10' },
-              { name: 'computer-use', icon: Monitor, color: 'text-cyan-700 dark:text-cyan-400', background: 'bg-cyan-500/10' },
-              { name: 'skill-creator', icon: WandSparkles, color: 'text-violet-700 dark:text-violet-400', background: 'bg-violet-500/10' },
-            ] as const).map(({ name, icon: Icon, color, background }) => (
+            {(['docx', 'xlsx', 'pptx', 'pdf', 'computer-use', 'skill-creator'] as const).map(name => (
               <button
                 key={name}
                 type="button"
@@ -869,7 +833,7 @@ export function ChatInput({
                 onClick={() => selectWelcomeSkill(name)}
                 className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-border/70 bg-surface-modal px-2 text-xs text-foreground/80 shadow-sm transition-colors hover:border-primary/25 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 motion-reduce:transition-none"
               >
-                <span className={cn("flex h-5 w-5 items-center justify-center rounded-md", background, color)}><Icon className="h-3.5 w-3.5" aria-hidden="true" /></span>
+                <SkillIcon name={name} size="shortcut" />
                 {t(`welcome.skills.${name}`)}
               </button>
             ))}
@@ -981,7 +945,7 @@ export function ChatInput({
           </div>
         )}
 
-        <div className="clawx-composer rounded-3xl border bg-surface-input">
+        <div ref={composerRef} data-testid="chat-composer" className="clawx-composer rounded-3xl border bg-surface-input">
           {/* Input Container */}
           <div
             data-testid="chat-composer-box"
@@ -1000,19 +964,6 @@ export function ChatInput({
               </div>
             )}
 
-            {selectedTarget && (
-              <button
-                type="button"
-                title={t('composer.clearTarget')}
-                onClick={() => setTarget(null)}
-                disabled={admitting}
-                className="mb-2 inline-flex max-w-full items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/5 px-2 py-1 text-meta font-medium hover:bg-primary/10"
-              >
-                <span className="truncate">{t('composer.targetChip', { agent: selectedTarget.name })}</span>
-                <X className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" />
-              </button>
-            )}
-
             <ComposerEditor
               ref={editorRef} value={input} onChange={setInput} draftKey={draftKey}
               skills={quickSkills} skillsLoading={skillsLoading} skillsError={skillsError}
@@ -1020,6 +971,7 @@ export function ChatInput({
               onSend={handleSend} onPasteFiles={stageBufferFiles}
               disabled={inputDisabled} readOnly={voiceStatus !== 'idle'} autoFocus
               suspendSuggestions={pickerOpen || skillPickerOpen || modelPickerOpen || workspaceMenuOpen}
+              skillMenuAnchorRef={composerRef}
               placeholder={inputDisabled && gatewayUnavailable ? t('composer.gatewayDisconnectedPlaceholder') : t('composer.placeholder')}
               testId="chat-composer-input" tokenTestId="chat-composer-skill-token"
               className={cn('min-h-[48px] max-h-[240px]', welcome && 'min-h-[88px]')}
@@ -1060,12 +1012,22 @@ export function ChatInput({
                     <ChevronDown className="h-3 w-3 shrink-0" />
                   </Button>
                   </DropdownMenu.Trigger>
-                  <DropdownMenu.Portal><DropdownMenu.Content side="top" align="start" sideOffset={8} onCloseAutoFocus={handlePickerCloseAutoFocus} data-testid="chat-agent-picker-menu" className="w-96 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10">
+                  <DropdownMenu.Portal>
+                    <DropdownMenu.Content
+                      side="top"
+                      align="start"
+                      sideOffset={8}
+                      onCloseAutoFocus={handlePickerCloseAutoFocus}
+                      data-testid="chat-agent-picker-menu"
+                      className="w-72 overflow-hidden rounded-xl border border-border bg-surface-modal p-1.5 shadow-lg"
+                    >
                       <div className="px-3 py-1.5 text-sm font-normal text-muted-foreground">
                         {t('composer.executionAgentTitle')}
                       </div>
-                      <div className="max-h-[min(16rem,calc(var(--radix-dropdown-menu-content-available-height)-3rem))] overflow-y-auto">
-                      <DropdownMenu.RadioGroup value={currentAgentId} className="clawx-menu-list">
+                      <DropdownMenu.RadioGroup
+                        value={currentAgentId}
+                        className="clawx-menu-list max-h-[min(16rem,calc(var(--radix-dropdown-menu-content-available-height)-3rem))] overflow-y-auto"
+                      >
                         {agents.map((agent) => (
                           <AgentPickerItem
                             key={agent.id}
@@ -1078,90 +1040,43 @@ export function ChatInput({
                           />
                         ))}
                       </DropdownMenu.RadioGroup>
-                      {mentionableAgents.length > 0 && (
-                        <DropdownMenu.Group className="clawx-menu-list mt-1 border-t border-border pt-1">
-                          <DropdownMenu.Label className="px-3 py-1.5 text-sm font-normal text-muted-foreground">
-                            {t('composer.agentPickerTitle')}
-                          </DropdownMenu.Label>
-                          {mentionableAgents.map(agent => (
-                            <DropdownMenu.Item key={agent.id}
-                              data-testid={`chat-agent-target-${agent.id}`}
-                              className="clawx-menu-item flex items-center gap-2 text-sm"
-                              onSelect={() => setTarget({ source: currentSessionKey, agentId: agent.id })}
-                            >
-                              <AtSign className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                              <span className="truncate">{agent.name}</span>
-                            </DropdownMenu.Item>
-                          ))}
-                        </DropdownMenu.Group>
-                      )}
-                      </div>
-                    </DropdownMenu.Content></DropdownMenu.Portal>
+                    </DropdownMenu.Content>
+                  </DropdownMenu.Portal>
                   </DropdownMenu.Root>
                 </div>
               )}
 
               <div className="shrink-0">
-                  <Popover open={skillPickerOpen} onOpenChange={(open) => handlePickerOpenChange('skill', open)}>
+                <Popover open={skillPickerOpen} onOpenChange={(open) => handlePickerOpenChange('skill', open)}>
                   <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  data-testid="chat-composer-skill"
-                  className={cn(
-                    'inline-flex h-8 items-center gap-1 rounded-lg px-1.5 text-meta font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50',
-                    skillPickerOpen && 'text-foreground',
-                  )}
-                  disabled={inputDisabled || sending}
-                  title={t('composer.pickSkill')}
-                >
-                  <span>{t('composer.skillButton')}</span>
-                  <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', skillPickerOpen && 'rotate-180')} />
-                </button>
-                </PopoverTrigger>
-                  <PopoverContent side="top" align="start" onCloseAutoFocus={handlePickerCloseAutoFocus} data-testid="chat-skill-picker-menu" className="w-96 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10">
-                    <div className="flex items-center gap-2 rounded-xl border border-black/10 bg-black/[0.03] px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]">
-                      <Search className="h-3.5 w-3.5 text-muted-foreground" />
-                      <input
-                        value={skillQuery}
-                        onChange={(event) => setSkillQuery(event.target.value)}
-                        placeholder={t('composer.skillSearchPlaceholder')}
-                        className="w-full bg-transparent text-meta outline-none placeholder:text-muted-foreground/70"
-                        autoFocus
-                      />
-                    </div>
-                    <div className="px-3 py-1.5 text-sm font-normal text-muted-foreground">
-                      {t('composer.skillPickerTitle', { agent: currentAgentName })}
-                    </div>
-                    <div className="clawx-menu-list max-h-72 overflow-y-auto">
-                      {skillsLoading ? (
-                        <div className="px-3 py-4 text-xs text-muted-foreground">
-                          {t('composer.skillLoading')}
-                        </div>
-                      ) : skillsError ? (
-                        <div className="px-3 py-4 text-xs text-destructive">
-                          {skillsError}
-                        </div>
-                      ) : filteredQuickSkills.length === 0 ? (
-                        <div className="px-3 py-4 text-xs text-muted-foreground">
-                          {t('composer.skillEmpty')}
-                        </div>
-                      ) : (
-                        filteredQuickSkills.map((skill) => (
-                          <QuickSkillOption
-                            key={`${skill.source}:${skill.name}`}
-                            testId={`chat-composer-skill-option-${skill.name}`}
-                            skill={skill}
-                            selected={false}
-                            onSelect={() => {
-                              editorRef.current?.insertSkill(skill);
-                              setSkillPickerOpen(false);
-                              setSkillQuery('');
-                            }}
-                          />
-                        ))
+                    <button
+                      type="button"
+                      data-testid="chat-composer-skill"
+                      className={cn(
+                        'inline-flex h-8 items-center gap-1 rounded-lg px-1.5 text-meta font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50',
+                        skillPickerOpen && 'text-foreground',
                       )}
-                    </div>
-                  </PopoverContent>
+                      disabled={inputDisabled || sending}
+                      title={t('composer.pickSkill')}
+                    >
+                      <span>{t('composer.skillButton')}</span>
+                      <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', skillPickerOpen && 'rotate-180')} />
+                    </button>
+                  </PopoverTrigger>
+                  <ComposerSkillPopoverContent
+                    composerRef={composerRef}
+                    skills={quickSkills}
+                    skillsLoading={skillsLoading}
+                    skillsError={skillsError}
+                    optionTestIdPrefix="chat-composer-skill-option"
+                    onSelectSkill={skill => {
+                      editorRef.current?.insertSkill(skill);
+                      setSkillPickerOpen(false);
+                    }}
+                    onCloseAutoFocus={handlePickerCloseAutoFocus}
+                    aria-label={t('composer.pickSkill')}
+                    data-testid="chat-skill-picker-menu"
+                  />
                 </Popover>
               </div>
 
@@ -1181,18 +1096,18 @@ export function ChatInput({
                     handlePickerOpenChange('model', open);
                   }}
                   onValueChange={ref => void handleSelectModel(ref)}
-                  disabled={inputDisabled || sending || !destinationAgent} busy={sessionModel.writing}
+                  disabled={inputDisabled || sending || !currentAgent} busy={sessionModel.writing}
                   onCloseAutoFocus={handlePickerCloseAutoFocus}
                 />}
 
                 {thinking && (
                   <ThinkingStrengthPicker
-                    key={JSON.stringify([destinationKey, effectiveModelRef, thinking.levels.map(({ id }) => id)])}
+                    key={JSON.stringify([currentSessionKey, effectiveModelRef, thinking.levels.map(({ id }) => id)])}
                     profile={thinking}
                     disabled={inputDisabled || sending || sessionModel.writing || !isGatewayUsable}
                     onSelect={(level) => {
                       void sessionModel.select(undefined, level).catch((error) => {
-                        if (destinationKeyRef.current === destinationKey) toast.error(t('composer.thinkingFailed', { error: String(error) }));
+                        if (composerSessionRef.current === currentSessionKey) toast.error(t('composer.thinkingFailed', { error: String(error) }));
                       });
                     }}
                   />
@@ -1461,26 +1376,39 @@ function AgentPickerItem({
   onSelect: () => void;
 }) {
   const { t } = useTranslation('chat');
+  const modelId = agent.modelRef ? formatModelRefLabel(agent.modelRef) : agent.modelDisplay;
+  const modelName = agent.modelDisplay || modelId;
+  const modelLabel = t('composer.agentDefaultModel');
+  const modelTitle = modelName ? `${modelLabel} ${modelName}` : undefined;
   return (
-    <DropdownMenu.RadioItem value={agent.id} asChild>
-    <button
-      type="button"
-      onClick={onSelect}
-      data-testid={`chat-agent-option-${agent.id}`}
-      aria-current={selected ? 'true' : undefined}
-      className={cn(
-        'clawx-menu-item flex w-full items-center justify-between gap-3 text-left transition-colors',
-        menuOptionStateClass(selected)
-      )}
-    >
-      <span className="min-w-0">
-        <span className="block truncate text-sm font-medium text-foreground">{agent.name}</span>
-        {agent.modelDisplay && (
-          <span className="block truncate text-meta text-muted-foreground">{t('composer.agentDefaultModel', { model: agent.modelDisplay })}</span>
+    <DropdownMenu.RadioItem value={agent.id} textValue={agent.name} asChild>
+      <button
+        type="button"
+        onClick={onSelect}
+        data-testid={`chat-agent-option-${agent.id}`}
+        aria-label={modelTitle ? `${agent.name}, ${modelTitle}` : agent.name}
+        aria-current={selected ? 'true' : undefined}
+        className={cn(
+          'clawx-menu-item flex w-full items-center gap-2 text-left transition-colors',
+          menuOptionStateClass(selected),
         )}
-      </span>
-      <MenuSelectionIndicator selected={selected} />
-    </button>
+      >
+        <span className="max-w-[45%] shrink-0 truncate text-sm font-medium text-foreground" title={agent.name}>
+          {agent.name}
+        </span>
+        <span className="flex min-w-0 flex-1 items-center justify-end gap-2">
+          {modelTitle && (
+            <span className="flex min-w-0 items-center gap-1 text-meta text-muted-foreground" title={modelTitle}>
+              <span className="min-w-0 truncate">{modelLabel}</span>
+              <ModelIcon modelName={modelId} testId={`chat-agent-option-${agent.id}-model-icon`} />
+              <span className="max-w-[60%] shrink-0 truncate">{modelName}</span>
+            </span>
+          )}
+          <span className="flex w-1.5 shrink-0">
+            <MenuSelectionIndicator selected={selected} />
+          </span>
+        </span>
+      </button>
     </DropdownMenu.RadioItem>
   );
 }

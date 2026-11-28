@@ -503,17 +503,8 @@ test.describe('ClawX chat model picker', () => {
         || request.path === 'gateway:config.patch'
       )).toBe(false);
 
-      await test.step('selects a model for the mentioned conversation when sending from a local draft', async () => {
-        await page.getByTestId('sidebar-new-chat').click();
-        await picker.click();
-        await kimiOption.click();
-        await expect(picker).toHaveText(/kimi-k2.7/);
-
-        const selectReviewer = async () => {
-          await page.getByTestId('chat-composer-agent').click();
-          await page.getByTestId('chat-agent-target-reviewer').click();
-        };
-        await selectReviewer();
+      await test.step('selects a model and sends from another agent’s existing conversation', async () => {
+        await page.getByTestId('sidebar-session-agent:reviewer:primary').click();
         await expect(picker).toHaveText(/provider\/model-beta/);
         await picker.click();
         await expect(betaOption).toHaveAttribute('aria-checked', 'true');
@@ -521,28 +512,24 @@ test.describe('ClawX chat model picker', () => {
         await expect(page.getByTestId('chat-model-picker-follow-agent')).toHaveCount(0);
         await gptOption.click();
         await expect(picker).toHaveText(/gpt-5.6/);
-        await page.getByRole('button', { name: '@Reviewer', exact: true }).click();
-        await expect(picker).toHaveText(/kimi-k2.7/);
-        await selectReviewer();
-        await expect(picker).toHaveText(/gpt-5.6/);
         await page.getByTestId('chat-composer-input').fill('Please review this change.');
         await page.getByTestId('chat-composer-send').click();
 
-        const routedRequests = () => app.evaluate((_electron, since) => (
+        const reviewerRequests = () => app.evaluate((_electron, since) => (
           (globalThis as typeof globalThis & {
             __chatModelPickerRequests?: Array<{ path: string; body: Record<string, unknown> | null }>;
           }).__chatModelPickerRequests?.slice(since) ?? []
         ), requests.length);
-        await expect.poll(async () => (await routedRequests())
+        await expect.poll(async () => (await reviewerRequests())
           .filter((r) => r.path === 'chat:sendAcpPrompt')
           .map((r) => r.body?.sessionKey)).toEqual(['agent:reviewer:primary']);
-        const routed = await routedRequests();
-        const promptIndex = routed.findIndex((r) => r.path === 'chat:sendAcpPrompt');
-        expect(routed[promptIndex].body?.cwd).toBe('/tmp/clawx-model-picker-workspace-review');
-        expect(routed.filter((r) => r.path === 'sessions:setModel').map((r) => r.body)).toEqual([
+        const sent = await reviewerRequests();
+        const promptIndex = sent.findIndex((r) => r.path === 'chat:sendAcpPrompt');
+        expect(sent[promptIndex].body?.cwd).toBe('/tmp/clawx-model-picker-workspace-review');
+        expect(sent.filter((r) => r.path === 'sessions:setModel').map((r) => r.body)).toEqual([
           { sessionKey: 'agent:reviewer:primary', modelRef: 'openai/gpt-5.6' },
         ]);
-        expect(routed.findIndex((r) => r.path === 'sessions:setModel')).toBeLessThan(promptIndex);
+        expect(sent.findIndex((r) => r.path === 'sessions:setModel')).toBeLessThan(promptIndex);
       });
 
       await test.step('keeps the startup task local and stages its model while the catalog is unavailable', async () => {
