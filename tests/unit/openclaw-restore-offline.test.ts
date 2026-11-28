@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFile, cp, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { copyFile, cp, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -15,7 +15,7 @@ const roots: string[] = [];
 const cliSource = join(process.cwd(), 'resources/cli/restore-openclaw-upgrade.mjs');
 
 async function fixture() {
-  const root = await mkdtemp(join(tmpdir(), 'clawx-offline-restore-'));
+  const root = await mkdtemp(join(await realpath(tmpdir()), 'clawx-offline-restore-'));
   roots.push(root);
   const stateDir = join(root, 'state');
   const configPath = join(stateDir, 'openclaw.json');

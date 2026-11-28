@@ -274,6 +274,9 @@ export const hostApi = {
     updateModel: (id: string, modelRef: string | null) => (
       invokeHost('agents', 'updateModel', { id, modelRef })
     ),
+    updateFallbacks: (id: string | null, fallbacks: string[] | null) => (
+      invokeHost('agents', 'updateFallbacks', { id, fallbacks })
+    ),
     delete: (id: string) => invokeHost('agents', 'delete', { id }),
     assignChannel: (id: string, channelType: string) => (
       invokeHost('agents', 'assignChannel', { id, channelType })
@@ -340,6 +343,9 @@ export const hostApi = {
     ),
     setDefaultAccount: (accountId: string) => (
       invokeHost('providers', 'setDefaultAccount', { accountId })
+    ),
+    setDefaultModel: (accountId: string, modelId: string) => (
+      invokeHost('providers', 'setDefaultModel', { accountId, modelId })
     ),
     requestOAuth: (input: ProviderOAuthRequestPayload) => invokeHost('providers', 'requestOAuth', input),
     cancelOAuth: () => invokeHost('providers', 'cancelOAuth'),

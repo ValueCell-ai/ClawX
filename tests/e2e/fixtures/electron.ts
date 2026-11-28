@@ -914,6 +914,9 @@ export async function installAttachmentHostFixture(
     ipcMain.handle('host:invoke', async (event: unknown, request: HostRequest) => {
       state.hostInvocations.push({ module: request.module, action: request.action, payload: request.payload });
 
+      if (request.module === 'chat' && request.action === 'getAcpSessionFamily') {
+        return respond(request.id, { success: true, current: null, children: [] });
+      }
       if (request.module === 'chat' && request.action === 'loadAcpSession') {
         const sessionKey = String(request.payload?.sessionKey ?? '');
         state.generation += 1;
@@ -977,6 +980,9 @@ export async function installAttachmentHostFixture(
           state.deferredTranscriptReturned[response.deferId] = true;
         }
         return respond(request.id, { success: true, messages: response.messages });
+      }
+      if (request.module === 'sessions' && request.action === 'turnTimings') {
+        return respond(request.id, { success: true, timings: [] });
       }
       if (request.module === 'files' && request.action === 'resolveWorkspaceContext') {
         const workspaceRoot = typeof request.payload?.workspaceRoot === 'string'

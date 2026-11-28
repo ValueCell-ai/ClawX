@@ -754,12 +754,11 @@ while absent ACP content cannot be repaired by changing its React presentation.
 
 ### CHAT-UI-01: tool presentation coverage
 
-**Status:** `exec(code)` and `ls` specialization is implemented on the upgrade
-branch; extending coverage to the remaining tools is deferred at the
-user's request. This is not a claim that all OpenClaw tools have specialized UI.
+**Status:** ClawX has localized action names and icons for the selected native
+tool families, Code Mode and Tool Search controls, and recorded aliases.
 
 ClawX maintains its own label/icon mapping in
-[`AcpToolCallCard.tsx`](../../src/pages/Chat/AcpToolCallCard.tsx). OpenClaw's tool
+[`tool-call-presentation.ts`](../../src/pages/Chat/tool-call-presentation.ts). OpenClaw's tool
 catalog and WebUI display metadata do not automatically populate that mapping.
 The implemented follow-up is described in
 [`chat-code-and-list-tools`](../specs/tasks/chat-code-and-list-tools.md):
@@ -769,36 +768,33 @@ The implemented follow-up is described in
   title-only hints, with `code:` / `command:` title hints supporting replay that
   omits the input.
 - `ls` shows List files / 列出文件 with a file-list icon.
-- Existing mappings cover `update_plan`, `web_fetch`, `browser`, `computer`,
-  `read`, `write`, `sessions_spawn`, and `memory_search`. Labels cover en, zh,
-  ja and ru. Full arguments, output and expansion behavior remain unchanged.
+- `bash` uses the execution presentation and defaults to Run command when the
+  record has no execution hint. `cron` uses the `automations` presentation.
+- Labels cover en, zh, ja and ru. Other tools use their recorded title. Expanding
+  a card exposes its recorded arguments and output.
 - Component tests, locale-parity checks and the Electron replay/group-expansion
   test cover the new presentations. See `tests/unit/acp-chat-components.test.tsx`,
   `tests/unit/i18n-locale-parity.test.ts`, and
   `tests/e2e/chat-acp-inline-timeline.spec.ts`.
 
-The following is a snapshot of remaining presentation candidates, not an
-effective inventory for every agent or a list of tools newly introduced by
-this upgrade. Availability depends on model/provider, configuration, plugins
-and the active tool policy. Recheck the pinned runtime's `tool-catalog` and
-`core-tool-factory-descriptors` modules before implementing further mappings.
+The selected names follow the installed OpenClaw 2026.10.10 catalog, factory
+descriptors, and mode-specific registrations. Availability depends on the
+model, provider, configuration, plugins, and active tool policy.
 
-| Area | Candidates still using generic presentation | Suggested labels |
-| --- | --- | --- |
-| File editing | `edit`, `apply_patch` | Edit file, Apply patch |
-| Execution control | `wait`, `process` | Wait for execution, Manage process |
-| Memory and reading | `memory_get`, `view_image`, `pdf` | Read memory, View image, Read PDF |
-| Media generation | `image_generate`, `music_generate`, `video_generate`, `tts` | Generate image/music/video/speech |
-| Sessions | `sessions`, `sessions_list`, `sessions_history`, `sessions_search`, `sessions_send`, `session_status` | Manage/list/read/search/send/status |
-| Agents | `agents_list`, `agents_wait`, `subagents`, `sessions_yield` | List/wait/manage agents, Yield for results |
-| Messages and automation | `message`, `conversations_list`, `conversations_send`, `conversations_turn`, `automations` | Send messages, Manage automations |
-| Provider and runtime capabilities | `code_execution`, `plugins`, `openclaw` | Remote code analysis, Manage plugins, Configure/repair OpenClaw |
+| Area | Localized tools |
+| --- | --- |
+| Files | `ls`, `read`, `write`, `edit`, `apply_patch` |
+| Execution | `exec`, `process`, `code_execution`, `secrets` |
+| Web | `web_fetch`, `web_search`, `x_search` |
+| Memory and personal instructions | `memory_search`, `memory_get`, `personal_instructions` |
+| Subtasks | `sessions_spawn`, `agents_wait`, `sessions_yield`, `subagents` |
+| Skills | `skill_workshop`, `skills_search`, `skills_read` |
+| Runtime controls | `wait`, `tool_search`, `tool_describe`, `dispatch_action` |
+| Scheduled tasks | `automations` and its `cron` alias |
+| Other existing mappings | `update_plan`, `browser`, `computer` |
 
-Code Mode's `wait` and optional Tool Search tools (`tool_search`,
-`tool_describe`, `tool_call`) also need an inventory check: helpers invoked
-inside Code Mode do not necessarily produce independent ACP tool cards.
-`code_execution` is provider-backed remote analysis, distinct from local
-`exec(code)`.
+The provider-backed `code_execution` tool uses Run remote code. Code Mode uses
+Run code for its `exec` call with a code argument.
 
 Some capabilities need semantic UI integration rather than just a label/icon:
 `ask_user` needs questions, options and answer submission; `secrets` needs
@@ -809,9 +805,9 @@ decision. Do not treat these as supported interactions merely because their
 generic tool card can render.
 
 The current ClawX sanitizer explicitly denies `web_search`, `skill_workshop`,
-`gateway`, `nodes`, `create_goal`, `get_goal` and `update_goal`. These are not
-priority presentation gaps unless that policy changes. Additional plugin tools
-must be assessed against the installed plugin set.
+`gateway`, `nodes`, `create_goal`, `get_goal` and `update_goal`. For
+`web_search` and `skill_workshop`, the localized names also apply to recorded
+history.
 
 ### CHAT-ACP-01: assistant text before a tool call is absent from ACP replay
 

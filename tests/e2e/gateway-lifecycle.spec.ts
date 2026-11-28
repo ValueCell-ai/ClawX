@@ -1,4 +1,6 @@
+import { navigateToSection } from './fixtures/navigation';
 import { completeSetup, expect, getRecordedHostInvocations, installIpcMocks, test } from './fixtures/electron';
+import type { AgentSummary } from '../../shared/types/agent';
 
 function stableStringify(value: unknown): string {
   if (value == null || typeof value !== 'object') return JSON.stringify(value);
@@ -15,6 +17,17 @@ const SESSIONS_LIST_PAYLOAD = {
 };
 const MAIN_SESSION_KEY = 'agent:main:main';
 const DEFAULT_WORKSPACE = '~/.openclaw/workspace';
+const MAIN_AGENT = {
+  id: 'main',
+  name: 'Main',
+  isDefault: true,
+  modelDisplay: 'Default Model',
+  inheritedModel: true,
+  workspace: DEFAULT_WORKSPACE,
+  agentDir: '~/.openclaw/agents/main/agent',
+  mainSessionKey: MAIN_SESSION_KEY,
+  channelTypes: [],
+} satisfies AgentSummary;
 
 test.describe('ClawX gateway lifecycle resilience', () => {
   test('app remains fully navigable while gateway is disconnected', async ({ page }) => {
@@ -24,105 +37,46 @@ test.describe('ClawX gateway lifecycle resilience', () => {
 
     // Navigate through all major pages to verify nothing crashes
     // when the gateway is not running.
-    await page.getByTestId('sidebar-nav-models').click();
+    await navigateToSection(page, 'models');
     await expect(page.getByTestId('models-page')).toBeVisible();
 
-    await page.getByTestId('sidebar-nav-agents').click();
+    await navigateToSection(page, 'agents');
     await expect(page.getByTestId('agents-page')).toBeVisible();
 
-    await page.getByTestId('sidebar-nav-channels').click();
+    await navigateToSection(page, 'channels');
     await expect(page.getByTestId('channels-page')).toBeVisible();
 
     await page.getByTestId('sidebar-nav-settings').click();
     await expect(page.getByTestId('settings-page')).toBeVisible();
 
-    // Navigate back to chat — the gateway status indicator should be visible
     await page.getByTestId('sidebar-new-chat').click();
-    // Verify the page didn't crash; main layout should still be stable
-    await expect(page.getByTestId('main-layout')).toBeVisible();
+    await expect(page.getByTestId('chat-composer-gateway-status')).toHaveText('stopped');
   });
 
-  test('gateway status indicator updates when status transitions occur', async ({ electronApp, page }) => {
-    await completeSetup(page);
-
-    // Mock the initial gateway status as "stopped"
+  test('composer reflects gateway startup, disconnection and recovery', async ({ electronApp, page }) => {
     await installIpcMocks(electronApp, {
       gatewayStatus: { state: 'stopped', port: 18789 },
     });
+    await completeSetup(page);
 
-    // Simulate gateway status transitions by sending IPC events to the renderer.
-    // This mimics the main process emitting gateway:status-changed events.
+    const indicator = page.getByTestId('chat-composer-gateway-status');
+    await expect(indicator).toHaveText('stopped');
 
-    // Transition 1: stopped → starting
-    await electronApp.evaluate(({ BrowserWindow }) => {
-      const win = BrowserWindow.getAllWindows()[0];
-      win?.webContents.send('gateway:status-changed', {
-        state: 'starting',
-        port: 18789,
-      });
-    });
-    // Wait briefly for the renderer to process the IPC event
-    await page.waitForTimeout(500);
-
-    // Transition 2: starting → running
-    await electronApp.evaluate(({ BrowserWindow }) => {
-      const win = BrowserWindow.getAllWindows()[0];
-      win?.webContents.send('gateway:status-changed', {
-        state: 'running',
-        port: 18789,
-        pid: 12345,
-        connectedAt: Date.now(),
-      });
-    });
-    await page.waitForTimeout(500);
-
-    // Verify navigation still works after status transitions
-    await page.getByTestId('sidebar-nav-models').click();
-    await expect(page.getByTestId('models-page')).toBeVisible();
-
-    // Transition 3: running → error (simulates the bug scenario where
-    // gateway becomes unreachable after in-process restart)
-    await electronApp.evaluate(({ BrowserWindow }) => {
-      const win = BrowserWindow.getAllWindows()[0];
-      win?.webContents.send('gateway:status-changed', {
-        state: 'error',
-        port: 18789,
-        error: 'WebSocket closed before handshake',
-      });
-    });
-    await page.waitForTimeout(500);
-
-    // App should still be functional in error state
-    await page.getByTestId('sidebar-nav-agents').click();
-    await expect(page.getByTestId('agents-page')).toBeVisible();
-
-    // Transition 4: error → reconnecting → running (the recovery path)
-    await electronApp.evaluate(({ BrowserWindow }) => {
-      const win = BrowserWindow.getAllWindows()[0];
-      win?.webContents.send('gateway:status-changed', {
-        state: 'reconnecting',
-        port: 18789,
-        reconnectAttempts: 1,
-      });
-    });
-    await page.waitForTimeout(300);
-
-    await electronApp.evaluate(({ BrowserWindow }) => {
-      const win = BrowserWindow.getAllWindows()[0];
-      win?.webContents.send('gateway:status-changed', {
-        state: 'running',
-        port: 18789,
-        pid: 23456,
-        connectedAt: Date.now(),
-      });
-    });
-    await page.waitForTimeout(500);
-
-    // Final navigation check to confirm app is still healthy after full lifecycle
-    await page.getByTestId('sidebar-nav-settings').click();
-    await expect(page.getByTestId('settings-page')).toBeVisible();
-    await page.getByTestId('sidebar-new-chat').click();
-    await expect(page.getByTestId('main-layout')).toBeVisible();
+    for (const [status, label] of [
+      [{ state: 'running', pid: 12345, gatewayReady: false }, 'starting'],
+      [{ state: 'running', pid: 12345, gatewayReady: true }, 'connected'],
+      [{ state: 'error', error: 'WebSocket closed before handshake' }, 'error'],
+      [{ state: 'reconnecting', reconnectAttempts: 1 }, 'reconnecting'],
+      [{ state: 'running', pid: 23456, gatewayReady: true }, 'connected'],
+    ] as const) {
+      await electronApp.evaluate(({ BrowserWindow }, nextStatus) => {
+        BrowserWindow.getAllWindows()[0]?.webContents.send('gateway:status-changed', {
+          port: 18789,
+          ...nextStatus,
+        });
+      }, status);
+      await expect(indicator).toHaveText(label);
+    }
   });
 
   test('uses the existing sidebar restart indicator for owned recovery instead of page-level warnings', async ({ electronApp, page }) => {
@@ -142,7 +96,7 @@ test.describe('ClawX gateway lifecycle resilience', () => {
           data: {
             status: 200,
             ok: true,
-            json: { success: true, agents: [{ id: 'main', name: 'main' }] },
+            json: { success: true, agents: [MAIN_AGENT], defaultAgentId: MAIN_AGENT.id },
           },
         },
         [stableStringify(['/api/channels/accounts', 'GET'])]: {
@@ -215,9 +169,10 @@ test.describe('ClawX gateway lifecycle resilience', () => {
       },
     });
 
+    await page.reload();
     await completeSetup(page);
 
-    await page.getByTestId('sidebar-nav-channels').click();
+    await navigateToSection(page, 'channels');
     await expect(page.getByTestId('channels-health-banner')).toBeVisible();
     await expect(page.getByTestId('channels-recovery-status')).toContainText(/ClawX is restarting its Gateway/i);
     await expect(page.getByText('Gateway control plane appears unresponsive.')).toBeVisible();
@@ -235,15 +190,15 @@ test.describe('ClawX gateway lifecycle resilience', () => {
 
     const restartIndicator = page.getByTestId('sidebar-gateway-restarting');
     await expect(restartIndicator).toHaveAttribute('data-state', 'visible');
-    await expect(restartIndicator).toContainText(/gateway.*restart|重启中/i);
+    await expect(restartIndicator).toContainText(/Local service restarting|本地服务重启中/i);
 
-    const oldWarningCopy = /Gateway service is not running|Gateway is not running\.|Gateway 服务未运行|Agent 或频道变更|网关未运行。|没有活跃的网关|Scheduled tasks cannot be managed|无法管理定时任务|Channels cannot connect|无法管理频道/i;
+    const oldWarningCopy = /Local service is not running|Start the local service|本地服务尚未启动|本地服务暂不可用|Gateway service is not running|Gateway is not running\.|Gateway 服务未运行|Agent 或频道变更|网关未运行。|没有活跃的网关|Scheduled tasks cannot be managed|无法管理定时任务|Channels cannot connect|无法管理频道/i;
 
-    await page.getByTestId('sidebar-nav-agents').click();
+    await navigateToSection(page, 'agents');
     await expect(page.getByTestId('agents-page')).toBeVisible();
     await expect(page.getByText(oldWarningCopy)).toHaveCount(0);
 
-    await page.getByTestId('sidebar-nav-channels').click();
+    await navigateToSection(page, 'channels');
     await expect(page.getByTestId('channels-page')).toBeVisible();
     await expect(page.getByText(oldWarningCopy)).toHaveCount(0);
 
@@ -251,7 +206,7 @@ test.describe('ClawX gateway lifecycle resilience', () => {
     await expect(page.getByTestId('cron-page')).toBeVisible();
     await expect(page.getByText(oldWarningCopy)).toHaveCount(0);
 
-    await page.getByTestId('sidebar-nav-skills').click();
+    await navigateToSection(page, 'skills');
     await expect(page.getByTestId('skills-page')).toBeVisible();
     await expect(page.getByTestId('skills-gateway-banner')).toHaveCount(0);
 
@@ -287,7 +242,7 @@ test.describe('ClawX gateway lifecycle resilience', () => {
           data: {
             status: 200,
             ok: true,
-            json: { success: true, agents: [{ id: 'main', name: 'main', workspace: DEFAULT_WORKSPACE, mainSessionKey: MAIN_SESSION_KEY }] },
+            json: { success: true, agents: [MAIN_AGENT], defaultAgentId: MAIN_AGENT.id },
           },
         },
         [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, workspaceRoot: DEFAULT_WORKSPACE, cwd: DEFAULT_WORKSPACE }])]: {
@@ -303,6 +258,7 @@ test.describe('ClawX gateway lifecycle resilience', () => {
       },
     });
 
+    await page.reload();
     await completeSetup(page);
     await expect(page.getByTestId('sidebar-gateway-restarting')).toHaveAttribute('data-state', 'visible');
     await expect(page.getByText('history after ready')).toHaveCount(0);
@@ -329,7 +285,7 @@ test.describe('ClawX gateway lifecycle resilience', () => {
           data: {
             status: 200,
             ok: true,
-            json: { success: true, agents: [{ id: 'main', name: 'main', workspace: DEFAULT_WORKSPACE, mainSessionKey: MAIN_SESSION_KEY }] },
+            json: { success: true, agents: [MAIN_AGENT], defaultAgentId: MAIN_AGENT.id },
           },
         },
         [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, workspaceRoot: DEFAULT_WORKSPACE, cwd: DEFAULT_WORKSPACE }])]: {
@@ -347,10 +303,6 @@ test.describe('ClawX gateway lifecycle resilience', () => {
       },
     });
 
-    // Chat session loading is throttled; let the initial empty load age out so
-    // the ready transition exercises the reload path instead of the throttle.
-    await page.waitForTimeout(1_300);
-
     await electronApp.evaluate(({ BrowserWindow }) => {
       const win = BrowserWindow.getAllWindows()[0];
       win?.webContents.send('gateway:status-changed', {
@@ -362,7 +314,10 @@ test.describe('ClawX gateway lifecycle resilience', () => {
       });
     });
 
-    await expect(page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`)).toContainText('history after ready', { timeout: 10_000 });
+    const history = page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`);
+    await expect(history).toContainText('history after ready', { timeout: 10_000 });
+    expect(await chatReads()).toEqual([]);
+    await history.click();
     await expect.poll(chatReads).toEqual(expect.arrayContaining(['getAcpSessionFamily', 'loadAcpSession']));
     await expect(page.getByTestId('sidebar-gateway-restarting')).toHaveAttribute('data-state', 'hidden');
   });
@@ -374,7 +329,7 @@ test.describe('ClawX gateway lifecycle resilience', () => {
         data: {
           status: 200,
           ok: true,
-          json: { success: true, agents: [{ id: 'main', name: 'main', workspace: DEFAULT_WORKSPACE, mainSessionKey: MAIN_SESSION_KEY }] },
+          json: { success: true, agents: [MAIN_AGENT], defaultAgentId: MAIN_AGENT.id },
         },
       },
       [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, workspaceRoot: DEFAULT_WORKSPACE, cwd: DEFAULT_WORKSPACE }])]: {
@@ -405,6 +360,7 @@ test.describe('ClawX gateway lifecycle resilience', () => {
       },
     });
 
+    await page.reload();
     await completeSetup(page);
     const sessionRow = page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`);
     await expect(sessionRow).toContainText('conversation before restart', { timeout: 10_000 });

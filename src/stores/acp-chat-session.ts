@@ -471,6 +471,37 @@ function recordImageGenerationStartAnchor(
   session.lastTaskToolCallId = start.toolCallId;
 }
 
+function recordLiveImageGenerationStart(
+  start: ImageGenerationTaskStart,
+  generation: number,
+): TranscriptSupplementOperation | undefined {
+  const state = useAcpChatSessionStore.getState();
+  if (!isCurrentAction(state, start.sessionKey, generation)) return;
+
+  const session = compatSession(start.sessionKey);
+  const alreadyPending = state.pendingImageGenerationTaskIds.includes(start.taskId);
+  // A later acknowledgment must not reopen a completed task.
+  if (session.taskIds.has(start.taskId) && !alreadyPending) return;
+  session.taskStartedAt = Date.now();
+  session.taskIds.add(start.taskId);
+  recordImageGenerationStartAnchor(session, start, false);
+  if (!alreadyPending) {
+    useAcpChatSessionStore.setState({
+      pendingImageGenerationTaskIds: [...state.pendingImageGenerationTaskIds, start.taskId],
+    });
+  }
+
+  const operation = activeTranscriptSupplement;
+  if (!operation?.liveUserMessageId || operation.sessionKey !== start.sessionKey || operation.generation !== generation) return;
+  const isNewTask = !operation.imageTaskIds.has(start.taskId);
+  operation.imageTaskIds.add(start.taskId);
+  if (isNewTask && operation.terminal) {
+    operation.terminal = false;
+    operation.retryIndex = 0;
+  }
+  return operation;
+}
+
 function existingToolAnchorId(state: AcpChatSessionState, toolCallId: string | undefined): string | undefined {
   if (!toolCallId) return undefined;
   const itemId = `tool:${toolCallId}`;
@@ -839,6 +870,11 @@ async function runTranscriptSupplement(operation: TranscriptSupplementOperation)
   for (const start of result.imageGeneration.starts) {
     if (!isCurrent()) return;
     recordHistoricalImageGenerationStart(start, operation.generation);
+    // The live ACP notification can arrive after the settled replay advances its
+    // generation. This transcript read has already matched the current user turn.
+    if (operation.liveUserMessageId && !operation.imageTaskIds.has(start.taskId)) {
+      recordLiveImageGenerationStart(start, operation.generation);
+    }
   }
   for (const completion of result.imageGeneration.completions) {
     if (!isCurrent()) return;
@@ -854,6 +890,9 @@ async function runTranscriptSupplement(operation: TranscriptSupplementOperation)
       if (!isCurrent()) return;
       await resolveOpenClawMediaCandidate(operation, attempt, supplement.acpTurnId, candidate);
     }
+  }
+  if (operation.liveUserMessageId && operation.imageTaskIds.size > 0 && isCurrent()) {
+    scheduleLiveTranscriptSupplement(operation);
   }
 }
 
@@ -1628,46 +1667,17 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
         historical: !!event.historical,
       },
     });
-    const session = compatSession(start.sessionKey);
     if (event.historical) {
+      const session = compatSession(start.sessionKey);
       session.replayTaskStartedAt = Date.now();
       session.replayTaskIds.add(start.taskId);
       recordImageGenerationStartAnchor(session, start, true);
-    } else {
-      // The dispatch wrapper can repeat the child tool's acknowledgment after delivery.
-      if (session.taskIds.has(start.taskId) && !state.pendingImageGenerationTaskIds.includes(start.taskId)) return;
-      session.taskStartedAt = Date.now();
-      session.taskIds.add(start.taskId);
-      recordImageGenerationStartAnchor(session, start, false);
-      set((current) => (
-        current.activeSessionKey === start.sessionKey
-        && current.generation === event.generation
-        && !current.pendingImageGenerationTaskIds.includes(start.taskId)
-          ? {
-            pendingImageGenerationTaskIds: [
-              ...current.pendingImageGenerationTaskIds,
-              start.taskId,
-            ],
-          }
-          : {}
-      ));
-      const operation = activeTranscriptSupplement;
-      if (
-        operation?.liveUserMessageId
-        && operation.sessionKey === start.sessionKey
-        && operation.generation === event.generation
-      ) {
-        const isNewTask = !operation.imageTaskIds.has(start.taskId);
-        operation.imageTaskIds.add(start.taskId);
-        if (isNewTask && operation.terminal) {
-          operation.terminal = false;
-          operation.retryIndex = 0;
-        }
-        if (operation.started && !operation.retryTimer) {
-          void runLiveTranscriptSupplement(operation);
-          scheduleLiveTranscriptSupplement(operation);
-        }
-      }
+      return;
+    }
+    const operation = recordLiveImageGenerationStart(start, event.generation);
+    if (operation?.started && !operation.retryTimer) {
+      void runLiveTranscriptSupplement(operation);
+      scheduleLiveTranscriptSupplement(operation);
     }
   },
 

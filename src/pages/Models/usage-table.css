@@ -1,0 +1,82 @@
+.usage-detail-table :is(th, td) {
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.usage-detail-table [data-column='model'] {
+  width: 25%;
+}
+
+.usage-detail-table [data-column='time'] {
+  width: 17%;
+}
+
+.usage-detail-table :is([data-column='model'], [data-column='time']) {
+  text-align: left;
+}
+
+.usage-detail-table [data-column='cost'] {
+  width: 7.5rem;
+}
+
+.usage-detail-table :is([data-column='cache'], [data-total-breakdown]) {
+  display: none;
+}
+
+@container (width < 48rem) {
+  .usage-detail-table [data-column='model'] {
+    width: 20%;
+  }
+
+  .usage-detail-table [data-column='time'] {
+    width: 16%;
+  }
+
+  .usage-detail-table :is([data-column='cacheRead'], [data-column='cacheWrite']) {
+    display: none;
+  }
+
+  .usage-detail-table [data-column='cache'] {
+    display: table-cell;
+    width: 6rem;
+  }
+
+  .usage-detail-table [data-column='cost'] {
+    width: 5.75rem;
+  }
+}
+
+@container (width < 42rem) {
+  .usage-detail-table :is([data-column='input'], [data-column='cache'], [data-total-value]:has(+ [data-total-breakdown])) {
+    display: none;
+  }
+
+  .usage-detail-table [data-column='model'] {
+    width: auto;
+  }
+
+  .usage-detail-table [data-column='time'] {
+    width: 23%;
+  }
+
+  .usage-detail-table :is([data-column='output'], [data-column='total']) {
+    width: 4.5rem;
+  }
+
+  .usage-detail-table [data-column='cost'] {
+    width: 5rem;
+  }
+
+  .usage-detail-table [data-total-breakdown] {
+    display: inline;
+  }
+
+  .usage-detail-table [data-total-breakdown] svg {
+    display: none;
+  }
+
+  .usage-detail-table [data-total-breakdown] button {
+    text-decoration: underline dotted;
+    text-underline-offset: 0.2em;
+  }
+}

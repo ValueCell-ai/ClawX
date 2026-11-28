@@ -1,7 +1,8 @@
-import { useEffect, useReducer, useRef, useState } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, MessageSquare, Mic, ImagePlus, ChartColumn } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useGatewayStore } from '@/stores/gateway';
 import { useSettingsStore } from '@/stores/settings';
@@ -11,40 +12,43 @@ import { ProvidersSettings } from '@/components/settings/ProvidersSettings';
 import { ImageGenerationSettings } from '@/components/settings/ImageGenerationSettings';
 import { AsrSettings } from '@/components/settings/AsrSettings';
 import { FeedbackState } from '@/components/common/FeedbackState';
+import { ModelPicker } from '@/components/common/ModelPicker';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
+  createUsageMillionsFormatter,
   filterUsageHistoryByWindow,
-  groupUsageHistory,
+  groupUsageByModel,
+  isHiddenUsageSource,
+  usageModelKey,
+  formatUsageTimestamp,
   resolveStableUsageHistory,
   resolveVisibleUsageHistory,
   type UsageGroupBy,
   type UsageHistoryEntry,
+  type UsageModel,
   type UsageWindow,
 } from './usage-history';
+import { UsageChart, UsageChoice } from './UsageChart';
+import { UsageTable } from './UsageTable';
+
 const DEFAULT_USAGE_FETCH_MAX_ATTEMPTS = 2;
 const WINDOWS_USAGE_FETCH_MAX_ATTEMPTS = 3;
 const USAGE_FETCH_RETRY_DELAY_MS = 1500;
 const USAGE_AUTO_REFRESH_INTERVAL_MS = 15_000;
 
-const HIDDEN_USAGE_MARKERS = ['gateway-injected', 'delivery-mirror'];
-
-type ModelsManagementTab = 'chat' | 'image-generation' | 'voice';
+type ModelsManagementTab = 'chat' | 'image-generation' | 'voice' | 'usage';
 
 function getModelsManagementTab(tab: string | null, devModeUnlocked: boolean): ModelsManagementTab {
+  if (tab === 'usage') return 'usage';
   if (tab === 'voice' || tab === 'image-generation') {
     return devModeUnlocked ? tab : 'chat';
   }
   return 'chat';
 }
 
-function isHiddenUsageSource(source?: string): boolean {
-  if (!source) return false;
-  const normalizedSource = source.trim().toLowerCase();
-  return HIDDEN_USAGE_MARKERS.some((marker) => normalizedSource.includes(marker));
-}
-
-export function Models() {
-  const { t } = useTranslation(['dashboard', 'settings']);
+export function Models({ embedded = false }: { embedded?: boolean }) {
+  const { t, i18n } = useTranslation(['dashboard', 'settings']);
+  const usageLocale = i18n?.resolvedLanguage ?? i18n?.language;
   const [searchParams, setSearchParams] = useSearchParams();
   const gatewayStatus = useGatewayStore((state) => state.status);
   const devModeUnlocked = useSettingsStore((state) => state.devModeUnlocked);
@@ -54,24 +58,15 @@ export function Models() {
   const usageFetchMaxAttempts =
     window.electron.platform === 'win32' ? WINDOWS_USAGE_FETCH_MAX_ATTEMPTS : DEFAULT_USAGE_FETCH_MAX_ATTEMPTS;
 
-  const [usageGroupBy, setUsageGroupBy] = useState<UsageGroupBy>('model');
+  const [usageGroupBy, setUsageGroupBy] = useState<UsageGroupBy>('day');
   const [usageWindow, setUsageWindow] = useState<UsageWindow>('7d');
+  const [usageNow, setUsageNow] = useState(Date.now);
   const [usagePage, setUsagePage] = useState(1);
+  const [usageModel, setUsageModel] = useState<UsageModel | null>(null);
   const [selectedUsageEntry, setSelectedUsageEntry] = useState<UsageHistoryEntry | null>(null);
+  const [usageContentOpen, setUsageContentOpen] = useState(false);
+  const usageTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [usageRefreshNonce, setUsageRefreshNonce] = useState(0);
-  function formatUsageSource(source?: string): string | undefined {
-    if (!source) return undefined;
-
-    if (isHiddenUsageSource(source)) {
-      return undefined;
-    }
-
-    return source;
-  }
-
-  function shouldHideUsageEntry(entry: UsageHistoryEntry): boolean {
-    return isHiddenUsageSource(entry.provider) || isHiddenUsageSource(entry.model);
-  }
 
   type FetchState = {
     status: 'idle' | 'loading' | 'done';
@@ -195,7 +190,6 @@ export function Models() {
         if (usageFetchGenerationRef.current !== generation) return;
 
         const normalized = Array.isArray(entries) ? entries : [];
-        setUsagePage(1);
         trackUiEvent('models.token_usage_fetch_succeeded', {
           generation,
           attempt,
@@ -222,6 +216,7 @@ export function Models() {
               restartMarker,
             });
           }
+          setUsageNow(Date.now());
           dispatchFetch({ type: 'done', data: normalized });
         }
       } catch (error) {
@@ -265,46 +260,81 @@ export function Models() {
     };
   }, [isGatewayRunning, gatewayStatus.connectedAt, gatewayStatus.pid, usageFetchMaxAttempts, usageRefreshNonce]);
 
-  const usageHistory = isGatewayRunning ? fetchState.data.filter((entry) => !shouldHideUsageEntry(entry)) : [];
-  const stableUsageHistory = isGatewayRunning
-    ? fetchState.stableData.filter((entry) => !shouldHideUsageEntry(entry))
-    : [];
-  const visibleUsageHistory = resolveVisibleUsageHistory(usageHistory, stableUsageHistory, {
-    preferStableOnEmpty: isGatewayRunning && fetchState.status === 'loading',
+  const usageHistory = resolveVisibleUsageHistory(fetchState.data, fetchState.stableData, {
+    preferStableOnEmpty: fetchState.status === 'loading',
   });
-  const filteredUsageHistory = filterUsageHistoryByWindow(visibleUsageHistory, usageWindow);
-  const usageGroups = groupUsageHistory(filteredUsageHistory, usageGroupBy);
-  const usagePageSize = 5;
-  const usageTotalPages = Math.max(1, Math.ceil(filteredUsageHistory.length / usagePageSize));
+  const visibleUsageHistory = useMemo(() => isGatewayRunning
+    ? usageHistory.filter((entry) => !isHiddenUsageSource(entry.provider) && !isHiddenUsageSource(entry.model))
+    : [], [isGatewayRunning, usageHistory]);
+  const selectedModelKey = usageModel ? usageModelKey(usageModel) : null;
+  const usageModelOptions = useMemo(() => {
+    const groups = groupUsageByModel(visibleUsageHistory);
+    const models: UsageModel[] = [...groups];
+    if (usageModel && !groups.some((group) => group.key === selectedModelKey)) models.push(usageModel);
+
+    return models
+      .sort((a, b) => (a.provider ?? '').localeCompare(b.provider ?? '', usageLocale) || (a.model ?? '').localeCompare(b.model ?? '', usageLocale))
+      .map((item) => {
+        const modelId = item.model || t('dashboard:recentTokenHistory.unknownModel');
+        const providerName = item.provider || t('dashboard:recentTokenHistory.unknownProvider');
+        return {
+          modelRef: usageModelKey(item),
+          modelId,
+          providerName,
+          runtimeProviderKey: item.provider ?? '',
+          label: `${modelId} (${providerName})`,
+          source: { model: item.model, provider: item.provider },
+        };
+      });
+  }, [selectedModelKey, t, usageLocale, usageModel, visibleUsageHistory]);
+  const selectedUsageModel = usageModelOptions.find((item) => item.modelRef === selectedModelKey);
+  const allModelsLabel = t('dashboard:recentTokenHistory.allModels');
+  const recentUsage = filterUsageHistoryByWindow(visibleUsageHistory, usageWindow, usageNow);
+  const usageDetails = selectedModelKey ? recentUsage.filter((entry) => usageModelKey(entry) === selectedModelKey) : recentUsage;
+  const usageTotals = recentUsage.reduce((total, entry) => ({
+    total: total.total + entry.totalTokens,
+    input: total.input + entry.inputTokens,
+    output: total.output + entry.outputTokens,
+    cache: total.cache + entry.cacheReadTokens + entry.cacheWriteTokens,
+  }), { total: 0, input: 0, output: 0, cache: 0 });
+  const usagePageSize = 10;
+  const usageTotalPages = Math.max(1, Math.ceil(usageDetails.length / usagePageSize));
   const safeUsagePage = Math.min(usagePage, usageTotalPages);
-  const pagedUsageHistory = filteredUsageHistory.slice(
-    (safeUsagePage - 1) * usagePageSize,
-    safeUsagePage * usagePageSize,
-  );
+  const pagedUsageHistory = usageDetails.slice((safeUsagePage - 1) * usagePageSize, safeUsagePage * usagePageSize);
   const usageLoading = isGatewayRunning && fetchState.status === 'loading' && visibleUsageHistory.length === 0;
-  const usageRefreshing = isGatewayRunning && fetchState.status === 'loading' && visibleUsageHistory.length > 0;
+  const usageEmpty = recentUsage.length === 0;
+  const usageNumber = new Intl.NumberFormat(usageLocale);
+  const formatUsageMillions = createUsageMillionsFormatter(usageLocale);
+  const widerUsageWindow = usageWindow === '7d' && filterUsageHistoryByWindow(visibleUsageHistory, '30d', usageNow).length > 0
+    ? '30d' : 'all';
+
+  function changeUsageWindow(value: UsageWindow) {
+    setUsageNow(Date.now());
+    setUsageWindow(value);
+    setUsagePage(1);
+  }
 
   return (
     <div
       data-testid="models-page"
-      className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden"
+      className={embedded ? "flex h-full min-h-0 flex-col overflow-hidden" : "flex flex-col -m-6 dark:bg-background h-[calc(100%+3rem)] overflow-hidden"}
     >
-      <div className="w-full max-w-5xl mx-auto flex flex-col h-full p-10 pt-16 pb-0">
+      <div className="w-full max-w-6xl mx-auto flex flex-col h-full p-6 md:p-8">
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-start justify-between mb-12 shrink-0 gap-4">
+        <div className="flex flex-col md:flex-row md:items-start justify-between mb-6 shrink-0 gap-4">
           <div>
             <h1
               data-testid="models-page-title"
-              className="text-5xl md:text-6xl font-serif text-foreground mb-3 font-normal tracking-tight"
+              className="text-2xl font-sans text-foreground mb-1 font-medium tracking-normal"
             >
               {t('dashboard:models.title')}
             </h1>
-            <p className="text-subtitle text-foreground/70 font-medium">{t('dashboard:models.subtitle')}</p>
+            <p className="text-sm text-muted-foreground">{t('dashboard:models.subtitle')}</p>
           </div>
         </div>
 
-        {/* Content Area */}
-        <div className="flex-1 overflow-y-auto pr-2 pb-10 min-h-0 -mr-2 space-y-12">
+        {/* Keep absolutely positioned screen-reader text inside the tab scroller. */}
+        <div data-testid="models-content-scroll" className="relative -mr-2 min-h-0 flex-1 space-y-8 overflow-y-auto pr-2">
           <Tabs
             value={selectedManagementTab}
             onValueChange={(value) => {
@@ -320,404 +350,159 @@ export function Models() {
             }}
             data-testid="models-management-tabs"
           >
-            <TabsList>
-              <TabsTrigger value="chat" data-testid="models-tab-chat">
+            <TabsList variant="page">
+              <TabsTrigger variant="page" value="chat" data-testid="models-tab-chat">
+                <MessageSquare aria-hidden="true" className="mr-2 h-4 w-4" />
                 {t('dashboard:models.tabs.chat')}
               </TabsTrigger>
               {devModeUnlocked && (
                 <>
-                  <TabsTrigger value="voice" data-testid="models-tab-voice">
-                    {t('dashboard:models.tabs.voice')}
+                  <TabsTrigger variant="page" value="voice" data-testid="models-tab-voice">
+                    <Mic aria-hidden="true" className="mr-2 h-4 w-4" />
+                {t('dashboard:models.tabs.voice')}
                   </TabsTrigger>
-                  <TabsTrigger value="image-generation" data-testid="models-tab-image-generation">
-                    {t('dashboard:models.tabs.imageGeneration')}
+                  <TabsTrigger variant="page" value="image-generation" data-testid="models-tab-image-generation">
+                    <ImagePlus aria-hidden="true" className="mr-2 h-4 w-4" />
+                {t('dashboard:models.tabs.imageGeneration')}
                   </TabsTrigger>
                 </>
               )}
+              <TabsTrigger variant="page" value="usage" data-testid="models-tab-usage"><ChartColumn aria-hidden="true" className="mr-2 h-4 w-4" />{t('dashboard:models.tabs.usage')}</TabsTrigger>
             </TabsList>
-            <TabsContent value="chat" className="mt-8">
+            <TabsContent value="chat" className="mt-5">
               <ProvidersSettings />
             </TabsContent>
             {devModeUnlocked && (
               <>
-                <TabsContent value="voice" className="mt-8">
+                <TabsContent value="voice" className="mt-5">
                   <AsrSettings />
                 </TabsContent>
-                <TabsContent value="image-generation" className="mt-8">
+                <TabsContent value="image-generation" className="mt-5">
                   <ImageGenerationSettings />
                 </TabsContent>
               </>
             )}
-          </Tabs>
-
-          {(!devModeUnlocked || selectedManagementTab === 'chat') && <div>
-            <h2 className="text-3xl font-serif text-foreground mb-6 font-normal tracking-tight">
-              {t('dashboard:recentTokenHistory.title', 'Token Usage History')}
-            </h2>
-            <div>
-              {usageLoading ? (
-                <div className="flex items-center justify-center py-12 text-muted-foreground bg-black/5 dark:bg-white/5 rounded-3xl border border-transparent border-dashed">
-                  <FeedbackState state="loading" title={t('dashboard:recentTokenHistory.loading')} />
-                </div>
-              ) : visibleUsageHistory.length === 0 ? (
-                <div className="flex items-center justify-center py-12 text-muted-foreground bg-black/5 dark:bg-white/5 rounded-3xl border border-transparent border-dashed">
-                  <FeedbackState state="empty" title={t('dashboard:recentTokenHistory.empty')} />
-                </div>
-              ) : filteredUsageHistory.length === 0 ? (
-                <div className="flex items-center justify-center py-12 text-muted-foreground bg-black/5 dark:bg-white/5 rounded-3xl border border-transparent border-dashed">
-                  <FeedbackState state="empty" title={t('dashboard:recentTokenHistory.emptyForWindow')} />
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex flex-wrap items-center gap-3">
-                      <div className="flex rounded-xl bg-transparent p-1 border border-black/10 dark:border-white/10">
-                        <Button
-                          variant={usageGroupBy === 'model' ? 'secondary' : 'ghost'}
-                          size="sm"
-                          onClick={() => {
-                            setUsageGroupBy('model');
-                            setUsagePage(1);
-                          }}
-                          className={
-                            usageGroupBy === 'model'
-                              ? 'rounded-lg bg-black/5 dark:bg-white/10 text-foreground'
-                              : 'rounded-lg text-muted-foreground'
-                          }
-                        >
-                          {t('dashboard:recentTokenHistory.groupByModel')}
-                        </Button>
-                        <Button
-                          variant={usageGroupBy === 'day' ? 'secondary' : 'ghost'}
-                          size="sm"
-                          onClick={() => {
-                            setUsageGroupBy('day');
-                            setUsagePage(1);
-                          }}
-                          className={
-                            usageGroupBy === 'day'
-                              ? 'rounded-lg bg-black/5 dark:bg-white/10 text-foreground'
-                              : 'rounded-lg text-muted-foreground'
-                          }
-                        >
-                          {t('dashboard:recentTokenHistory.groupByTime')}
-                        </Button>
-                      </div>
-                      <div className="flex rounded-xl bg-transparent p-1 border border-black/10 dark:border-white/10">
-                        <Button
-                          variant={usageWindow === '7d' ? 'secondary' : 'ghost'}
-                          size="sm"
-                          onClick={() => {
-                            setUsageWindow('7d');
-                            setUsagePage(1);
-                          }}
-                          className={
-                            usageWindow === '7d'
-                              ? 'rounded-lg bg-black/5 dark:bg-white/10 text-foreground'
-                              : 'rounded-lg text-muted-foreground'
-                          }
-                        >
-                          {t('dashboard:recentTokenHistory.last7Days')}
-                        </Button>
-                        <Button
-                          variant={usageWindow === '30d' ? 'secondary' : 'ghost'}
-                          size="sm"
-                          onClick={() => {
-                            setUsageWindow('30d');
-                            setUsagePage(1);
-                          }}
-                          className={
-                            usageWindow === '30d'
-                              ? 'rounded-lg bg-black/5 dark:bg-white/10 text-foreground'
-                              : 'rounded-lg text-muted-foreground'
-                          }
-                        >
-                          {t('dashboard:recentTokenHistory.last30Days')}
-                        </Button>
-                        <Button
-                          variant={usageWindow === 'all' ? 'secondary' : 'ghost'}
-                          size="sm"
-                          onClick={() => {
-                            setUsageWindow('all');
-                            setUsagePage(1);
-                          }}
-                          className={
-                            usageWindow === 'all'
-                              ? 'rounded-lg bg-black/5 dark:bg-white/10 text-foreground'
-                              : 'rounded-lg text-muted-foreground'
-                          }
-                        >
-                          {t('dashboard:recentTokenHistory.allTime')}
-                        </Button>
-                      </div>
-                    </div>
-                    <p className="text-meta font-medium text-muted-foreground">
-                      {usageRefreshing
-                        ? t('dashboard:recentTokenHistory.loading')
-                        : t('dashboard:recentTokenHistory.showingLast', { count: filteredUsageHistory.length })}
-                    </p>
-                  </div>
-
-                  <UsageBarChart
-                    groups={usageGroups}
-                    emptyLabel={t('dashboard:recentTokenHistory.empty')}
-                    totalLabel={t('dashboard:recentTokenHistory.totalTokens')}
-                    inputLabel={t('dashboard:recentTokenHistory.inputShort')}
-                    outputLabel={t('dashboard:recentTokenHistory.outputShort')}
-                    cacheLabel={t('dashboard:recentTokenHistory.cacheShort')}
+            <TabsContent value="usage" className="mt-5">
+              <div data-testid="models-usage-panel" className="space-y-4">
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+                  <UsageChoice
+                    label={t('dashboard:recentTokenHistory.timeRange')}
+                    value={usageWindow}
+                    choices={[
+                      ['7d', t('dashboard:recentTokenHistory.last7Days')],
+                      ['30d', t('dashboard:recentTokenHistory.last30Days')],
+                      ['all', t('dashboard:recentTokenHistory.allTime')],
+                    ]}
+                    onChange={changeUsageWindow}
                   />
-
-                  <div className="space-y-3 pt-2">
-                    {pagedUsageHistory.map((entry) => (
-                      <div
-                        key={`${entry.sessionId}-${entry.timestamp}`}
-                        data-testid="token-usage-entry"
-                        className="rounded-2xl bg-transparent border border-black/10 dark:border-white/10 p-5 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="font-semibold text-sm text-foreground truncate">
-                              {entry.model || t('dashboard:recentTokenHistory.unknownModel')}
-                            </p>
-                            <p className="text-meta text-muted-foreground truncate mt-0.5">
-                              {[formatUsageSource(entry.provider), formatUsageSource(entry.agentId), entry.sessionId]
-                                .filter(Boolean)
-                                .join(' • ')}
-                            </p>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <p className={getUsageTotalClass(entry)}>{formatUsageTotal(entry)}</p>
-                            {entry.usageStatus === 'missing' && (
-                              <p className="text-xs text-muted-foreground mt-0.5">
-                                {t('dashboard:recentTokenHistory.noUsage')}
-                              </p>
-                            )}
-                            {entry.usageStatus === 'error' && (
-                              <p className="text-xs text-red-500 dark:text-red-400 mt-0.5">
-                                {t('dashboard:recentTokenHistory.usageParseError')}
-                              </p>
-                            )}
-                            <p className="text-xs text-muted-foreground mt-0.5">
-                              {formatUsageTimestamp(entry.timestamp)}
-                            </p>
-                          </div>
+                  {!usageEmpty && (
+                    <div data-testid="usage-summary" className="ml-auto flex flex-wrap justify-end gap-x-4 gap-y-2 text-sm">
+                      {([['totalTokens', usageTotals.total], ['inputShort', usageTotals.input], ['outputShort', usageTotals.output], ['cacheShort', usageTotals.cache]] as const).map(([label, value]) => (
+                        <div key={label} className="flex items-baseline gap-2 whitespace-nowrap">
+                          <span className="text-meta text-muted-foreground">{t(`dashboard:recentTokenHistory.${label}`)}</span>
+                          <span className="font-medium tabular-nums" title={usageNumber.format(value)}>{formatUsageMillions(value)}</span>
                         </div>
-                        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-meta font-medium text-muted-foreground">
-                          {entry.usageStatus === 'available' || entry.usageStatus === undefined ? (
-                            <>
-                              <span className="flex items-center gap-1.5">
-                                <div className="w-2 h-2 rounded-full bg-usage-input"></div>
-                                {t('dashboard:recentTokenHistory.input', {
-                                  value: formatTokenCount(entry.inputTokens),
-                                })}
-                              </span>
-                              <span className="flex items-center gap-1.5">
-                                <div className="w-2 h-2 rounded-full bg-usage-output"></div>
-                                {t('dashboard:recentTokenHistory.output', {
-                                  value: formatTokenCount(entry.outputTokens),
-                                })}
-                              </span>
-                              {entry.cacheReadTokens > 0 && (
-                                <span className="flex items-center gap-1.5">
-                                  <div className="w-2 h-2 rounded-full bg-usage-cache"></div>
-                                  {t('dashboard:recentTokenHistory.cacheRead', {
-                                    value: formatTokenCount(entry.cacheReadTokens),
-                                  })}
-                                </span>
-                              )}
-                              {entry.cacheWriteTokens > 0 && (
-                                <span className="flex items-center gap-1.5">
-                                  <div className="w-2 h-2 rounded-full bg-usage-cache"></div>
-                                  {t('dashboard:recentTokenHistory.cacheWrite', {
-                                    value: formatTokenCount(entry.cacheWriteTokens),
-                                  })}
-                                </span>
-                              )}
-                            </>
-                          ) : (
-                            <span className="text-xs">
-                              {entry.usageStatus === 'missing'
-                                ? t('dashboard:recentTokenHistory.noUsage')
-                                : t('dashboard:recentTokenHistory.usageParseError')}
-                            </span>
-                          )}
-                          {typeof entry.costUsd === 'number' && Number.isFinite(entry.costUsd) && (
-                            <span className="flex items-center gap-1.5 ml-auto text-foreground/80 bg-black/5 dark:bg-white/5 px-2 py-0.5 rounded-md">
-                              {t('dashboard:recentTokenHistory.cost', { amount: entry.costUsd.toFixed(4) })}
-                            </span>
-                          )}
-                          {devModeUnlocked && entry.content && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-6 rounded-full px-2.5 text-tiny border-black/10 dark:border-white/10"
-                              onClick={() => setSelectedUsageEntry(entry)}
-                            >
-                              {t('dashboard:recentTokenHistory.viewContent')}
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="flex items-center justify-between gap-3 pt-2">
-                    <p className="text-meta font-medium text-muted-foreground">
-                      {t('dashboard:recentTokenHistory.page', { current: safeUsagePage, total: usageTotalPages })}
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setUsagePage((page) => Math.max(1, page - 1))}
-                        disabled={safeUsagePage <= 1}
-                        className="rounded-full px-4 h-9 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5"
-                      >
-                        <ChevronLeft className="h-4 w-4 mr-1" />
-                        {t('dashboard:recentTokenHistory.prev')}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setUsagePage((page) => Math.min(usageTotalPages, page + 1))}
-                        disabled={safeUsagePage >= usageTotalPages}
-                        className="rounded-full px-4 h-9 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5"
-                      >
-                        {t('dashboard:recentTokenHistory.next')}
-                        <ChevronRight className="h-4 w-4 ml-1" />
-                      </Button>
+                      ))}
                     </div>
-                  </div>
+                  )}
                 </div>
-              )}
-            </div>
-          </div>}
+                {usageLoading ? (
+                  <FeedbackState state="loading" title={t('dashboard:recentTokenHistory.loading')} />
+                ) : usageEmpty ? (
+                  <FeedbackState
+                    state="empty"
+                    title={t(visibleUsageHistory.length > 0 ? 'dashboard:recentTokenHistory.emptyForWindow' : 'dashboard:recentTokenHistory.empty')}
+                    action={visibleUsageHistory.length > 0 && usageWindow !== 'all' ? (
+                      <Button variant="outline" size="sm" onClick={() => changeUsageWindow(widerUsageWindow)}>
+                        {t(widerUsageWindow === '30d' ? 'dashboard:recentTokenHistory.viewLast30Days' : 'dashboard:recentTokenHistory.viewAllTime')}
+                      </Button>
+                    ) : undefined}
+                  />
+                ) : (
+                  <>
+                    <UsageChart entries={recentUsage} window={usageWindow} now={usageNow} groupBy={usageGroupBy} onGroupChange={setUsageGroupBy} />
+
+                    <section className="space-y-3 pt-2" aria-labelledby="usage-details-title">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                          <h2 id="usage-details-title" className="text-base font-medium">{t('dashboard:recentTokenHistory.details')}</h2>
+                          <span className="text-meta text-muted-foreground">
+                            {t('dashboard:recentTokenHistory.showingLast', { count: usageDetails.length })}
+                          </span>
+                        </div>
+                        <ModelPicker
+                          options={usageModelOptions}
+                          value={selectedModelKey}
+                          label={selectedUsageModel?.modelId ?? allModelsLabel}
+                          title={t('dashboard:recentTokenHistory.columns.model')}
+                          providerLabel={selectedUsageModel?.providerName}
+                          allModelsLabel={allModelsLabel}
+                          hideIcon={!selectedUsageModel}
+                          side="bottom"
+                          testIdPrefix="usage-model-filter"
+                          onValueChange={(key) => {
+                            if (key === (selectedModelKey ?? '')) return;
+                            setUsageModel(usageModelOptions.find((item) => item.modelRef === key)?.source ?? null);
+                            setUsagePage(1);
+                          }}
+                        />
+                      </div>
+                      {usageDetails.length > 0 ? (
+                        <>
+                          <UsageTable
+                            entries={pagedUsageHistory}
+                            showContent={devModeUnlocked}
+                            onViewContent={(entry, trigger) => {
+                              usageTriggerRef.current = trigger;
+                              setSelectedUsageEntry(entry);
+                              setUsageContentOpen(true);
+                            }}
+                          />
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <p className="text-meta text-muted-foreground">
+                              {t('dashboard:recentTokenHistory.page', { current: safeUsagePage, total: usageTotalPages })}
+                            </p>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Button
+                                variant="outline" size="sm"
+                                onClick={() => setUsagePage(safeUsagePage - 1)}
+                                disabled={safeUsagePage <= 1}
+                              >
+                                <ChevronLeft aria-hidden="true" className="mr-1 size-4" />
+                                {t('dashboard:recentTokenHistory.prev')}
+                              </Button>
+                              <Button
+                                variant="outline" size="sm"
+                                onClick={() => setUsagePage(safeUsagePage + 1)}
+                                disabled={safeUsagePage >= usageTotalPages}
+                              >
+                                {t('dashboard:recentTokenHistory.next')}
+                                <ChevronRight aria-hidden="true" className="ml-1 size-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        </>
+                      ) : <FeedbackState state="empty" title={t('dashboard:recentTokenHistory.emptyForModel')} />}
+                    </section>
+                  </>
+                )}
+              </div>
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
       {devModeUnlocked && selectedUsageEntry && (
         <UsageContentPopup
           entry={selectedUsageEntry}
-          onClose={() => setSelectedUsageEntry(null)}
+          open={usageContentOpen}
+          onReturnFocus={() => { if (usageTriggerRef.current?.isConnected) usageTriggerRef.current.focus(); }}
+          onClose={() => setUsageContentOpen(false)}
           title={t('dashboard:recentTokenHistory.contentDialogTitle')}
           closeLabel={t('dashboard:recentTokenHistory.close')}
           unknownModelLabel={t('dashboard:recentTokenHistory.unknownModel')}
+          locale={usageLocale}
         />
       )}
-    </div>
-  );
-}
-
-function formatTokenCount(value: number): string {
-  return Intl.NumberFormat().format(value);
-}
-
-function getUsageTotalClass(entry: UsageHistoryEntry): string {
-  if (entry.usageStatus === 'error') return 'font-bold text-sm text-red-500 dark:text-red-400';
-  if (entry.usageStatus === 'missing') return 'font-bold text-sm text-muted-foreground';
-  return 'font-bold text-sm';
-}
-
-function formatUsageTotal(entry: UsageHistoryEntry): string {
-  if (entry.usageStatus === 'error') return '✕';
-  if (entry.usageStatus === 'missing') return '—';
-  return formatTokenCount(entry.totalTokens);
-}
-
-function formatUsageTimestamp(timestamp: string): string {
-  const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) return timestamp;
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date);
-}
-
-function UsageBarChart({
-  groups,
-  emptyLabel,
-  totalLabel,
-  inputLabel,
-  outputLabel,
-  cacheLabel,
-}: {
-  groups: Array<{
-    label: string;
-    totalTokens: number;
-    inputTokens: number;
-    outputTokens: number;
-    cacheTokens: number;
-  }>;
-  emptyLabel: string;
-  totalLabel: string;
-  inputLabel: string;
-  outputLabel: string;
-  cacheLabel: string;
-}) {
-  if (groups.length === 0) {
-    return (
-      <div className="rounded-2xl border border-dashed border-black/10 dark:border-white/10 p-8 text-center text-sm font-medium text-muted-foreground">
-        {emptyLabel}
-      </div>
-    );
-  }
-
-  const maxTokens = Math.max(...groups.map((group) => group.totalTokens), 1);
-
-  return (
-    <div className="space-y-4 bg-transparent p-5 rounded-2xl border border-black/10 dark:border-white/10">
-      <div className="flex flex-wrap gap-4 text-meta font-medium text-muted-foreground mb-2">
-        <span className="inline-flex items-center gap-2">
-          <span className="h-2.5 w-2.5 rounded-full bg-usage-input" />
-          {inputLabel}
-        </span>
-        <span className="inline-flex items-center gap-2">
-          <span className="h-2.5 w-2.5 rounded-full bg-usage-output" />
-          {outputLabel}
-        </span>
-        <span className="inline-flex items-center gap-2">
-          <span className="h-2.5 w-2.5 rounded-full bg-usage-cache" />
-          {cacheLabel}
-        </span>
-      </div>
-      {groups.map((group) => (
-        <div key={group.label} className="space-y-1.5">
-          <div className="flex items-center justify-between gap-3 text-sm">
-            <span className="truncate font-semibold text-foreground">{group.label}</span>
-            <span className="text-muted-foreground font-medium">
-              {totalLabel}: {formatTokenCount(group.totalTokens)}
-            </span>
-          </div>
-          <div className="h-3.5 overflow-hidden rounded-full bg-black/5 dark:bg-white/5">
-            <div
-              className="flex h-full overflow-hidden rounded-full"
-              style={{
-                width: group.totalTokens > 0 ? `${Math.max((group.totalTokens / maxTokens) * 100, 6)}%` : '0%',
-              }}
-            >
-              {group.inputTokens > 0 && (
-                <div
-                  className="h-full bg-usage-input"
-                  style={{ width: `${(group.inputTokens / group.totalTokens) * 100}%` }}
-                />
-              )}
-              {group.outputTokens > 0 && (
-                <div
-                  className="h-full bg-usage-output"
-                  style={{ width: `${(group.outputTokens / group.totalTokens) * 100}%` }}
-                />
-              )}
-              {group.cacheTokens > 0 && (
-                <div
-                  className="h-full bg-usage-cache"
-                  style={{ width: `${(group.cacheTokens / group.totalTokens) * 100}%` }}
-                />
-              )}
-            </div>
-          </div>
-        </div>
-      ))}
     </div>
   );
 }
@@ -726,50 +511,33 @@ export default Models;
 
 function UsageContentPopup({
   entry,
+  open,
+  onReturnFocus,
   onClose,
   title,
   closeLabel,
   unknownModelLabel,
+  locale,
 }: {
   entry: UsageHistoryEntry;
+  open: boolean;
+  onReturnFocus: () => void;
   onClose: () => void;
   title: string;
   closeLabel: string;
   unknownModelLabel: string;
+  locale?: string;
 }) {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
-      role="dialog"
-      aria-modal="true"
-    >
-      <div className="w-full max-w-3xl rounded-2xl border border-black/10 dark:border-white/10 bg-background shadow-xl">
-        <div className="flex items-start justify-between gap-3 border-b border-black/10 dark:border-white/10 px-5 py-4">
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-foreground">{title}</p>
-            <p className="text-xs text-muted-foreground truncate mt-0.5">
-              {entry.model || unknownModelLabel} • {formatUsageTimestamp(entry.timestamp)}
-            </p>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 rounded-full"
-            onClick={onClose}
-            aria-label={closeLabel}
-          >
-            <X className="h-4 w-4" />
-          </Button>
+    <Dialog open={open} onOpenChange={open => { if (!open) onClose(); }}>
+      <DialogContent onCloseAutoFocus={event => { event.preventDefault(); onReturnFocus(); }} data-testid="usage-content-dialog" className="flex max-h-[85vh] w-[calc(100vw-2rem)] max-w-2xl flex-col gap-0 overflow-hidden rounded-xl bg-surface-modal p-0">
+        <div className="px-5 pb-4 pt-5">
+          <DialogTitle className="font-sans text-lg font-medium tracking-normal">{title}</DialogTitle>
+          <DialogDescription className="mt-1 text-meta">{entry.model || unknownModelLabel} · {formatUsageTimestamp(entry.timestamp, locale)}</DialogDescription>
         </div>
-        <div className="max-h-[65vh] overflow-y-auto px-5 py-4">
-          <pre className="whitespace-pre-wrap break-words text-sm text-foreground font-mono">{entry.content}</pre>
-        </div>
-        <div className="flex justify-end border-t border-black/10 dark:border-white/10 px-5 py-3">
-          <Button variant="outline" onClick={onClose}>
-            {closeLabel}
-          </Button>
-        </div>
-      </div>
-    </div>
+        <div className="min-h-0 overflow-y-auto px-5 pb-5"><pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-foreground">{entry.content}</pre></div>
+        <div className="flex justify-end border-t border-border px-5 py-3"><Button variant="outline" className="h-9" onClick={onClose}>{closeLabel}</Button></div>
+      </DialogContent>
+    </Dialog>
   );
 }

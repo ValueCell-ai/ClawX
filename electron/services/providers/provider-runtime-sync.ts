@@ -559,7 +559,8 @@ export async function syncUpdatedProviderToRuntime(
   }
 
   const ock = context.runtimeProviderKey;
-  const fallbackModels = await getProviderFallbackModelRefs(config);
+  // Leave the fallback list untouched in the same locked config mutation.
+  const fallbackModels = undefined;
 
   const defaultProviderId = await getDefaultProvider();
   const isDefaultProvider = defaultProviderId === config.id;
@@ -621,10 +622,22 @@ export async function syncDeletedProviderApiKeyToRuntime(
 export async function syncDefaultProviderToRuntime(
   providerId: string,
   _gatewayManager?: GatewayManager,
+  selectedModelId?: string,
 ): Promise<void> {
-  const provider = await getProvider(providerId);
+  let provider = await getProvider(providerId);
   if (!provider) {
-    return;
+    throw new Error(`Provider not found: ${providerId}`);
+  }
+  if (selectedModelId !== undefined) {
+    const model = normalizeRuntimeModelId(await resolveRuntimeProviderKey(provider), selectedModelId);
+    if (!model) throw new Error('No model selected');
+    provider = { ...provider, model };
+  }
+  if (!provider.model && isUnregisteredProviderType(provider.type)) {
+    const account = await getProviderAccount(providerId);
+    const selected = account?.metadata?.customModels?.find(id => id.trim());
+    if (!selected) throw new Error('No configured model for this service');
+    provider = { ...provider, model: selected };
   }
 
   // Self-heal: opportunistically remove any pre-existing models.providers
@@ -671,7 +684,7 @@ export async function syncDefaultProviderToRuntime(
 
   const ock = await resolveRuntimeProviderKey(provider);
   const providerKey = await getApiKey(providerId);
-  const fallbackModels = await getProviderFallbackModelRefs(provider);
+  const fallbackModels = undefined;
   const oauthTypes = ['minimax-portal', 'minimax-portal-cn'];
   const browserOAuthRuntimeProvider = await getBrowserOAuthRuntimeProvider(provider);
   const isOAuthProvider = (oauthTypes.includes(provider.type) && !providerKey) || Boolean(browserOAuthRuntimeProvider);
@@ -733,7 +746,7 @@ export async function syncDefaultProviderToRuntime(
           baseUrl: OPENAI_CODEX_OAUTH_PROVIDER_CONFIG.baseUrl,
           api: OPENAI_CODEX_OAUTH_PROVIDER_CONFIG.api,
         },
-        fallbackModels.map((fallback) => fallback.replace(/^openai-codex\//, `${browserOAuthRuntimeProvider}/`)),
+        fallbackModels,
       );
       logger.info(`Configured openclaw.json for browser OAuth provider "${provider.id}"`);
       await syncAgentModelsToRuntime();

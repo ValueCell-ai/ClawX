@@ -8,6 +8,7 @@ import { AcpTurnFileActivity } from '@/pages/Chat/AcpTurnFileActivity';
 import type { AcpTimelineSnapshot, AttachmentRenderPart, CompactionItem, ToolCallItem } from '@/lib/acp/timeline-types';
 import type { AcpFileActivityProjection } from '@/lib/acp/openclaw-file-activities';
 import { useArtifactPanel } from '@/stores/artifact-panel';
+import englishChat from '@shared/i18n/locales/en/chat.json';
 
 const openAttachmentMock = vi.hoisted(() => vi.fn());
 const listAttachmentOpenHandlersMock = vi.hoisted(() => vi.fn());
@@ -52,24 +53,20 @@ vi.mock('react-i18next', () => ({
     t: (key: string, options?: Record<string, unknown>) => {
       if (i18nLanguage.value === 'zh' && key === 'acp.turnDuration') return `用时 ${String(options?.duration ?? '')}`;
       if (i18nLanguage.value === 'zh' && key === 'acp.turnElapsed') return `已处理 ${String(options?.duration ?? '')}`;
+      const toolNamePrefix = 'acp.toolName.';
+      if (key.startsWith(toolNamePrefix)) {
+        const toolName = key.slice(toolNamePrefix.length) as keyof typeof englishChat.acp.toolName;
+        return englishChat.acp.toolName[toolName] ?? key;
+      }
       const labels: Record<string, string> = {
         'acp.thought': 'Thought',
         'acp.tool': 'Tool',
-        'acp.toolName.updatePlan': 'Update plan',
-        'acp.toolName.webFetch': 'Read web page',
-        'acp.toolName.browser': 'Control browser',
-        'acp.toolName.execCommand': 'Run command',
-        'acp.toolName.execCode': 'Run code',
-        'acp.toolName.listFiles': 'List files',
-        'acp.toolName.read': 'Read',
-        'acp.toolName.write': 'Write',
-        'acp.toolName.spawnSubagent': 'Spawn subagent',
-        'acp.toolName.memorySearch': 'Search memory',
         'acp.expandTool': 'Expand tool result',
         'acp.collapseTool': 'Collapse tool result',
         'acp.expandToolGroup': 'Expand tool calls',
         'acp.collapseToolGroup': 'Collapse tool calls',
-        'acp.toolGroupSummary': '{{count}} tool calls',
+        'acp.toolGroupActionSeparator': englishChat.acp.toolGroupActionSeparator,
+        'acp.toolGroupMoreActions': englishChat.acp.toolGroupMoreActions,
         'acp.permission': 'Permission',
         'acp.plan': 'Plan',
         'acp.running': 'Running',
@@ -83,6 +80,7 @@ vi.mock('react-i18next', () => ({
         'acp.unsupportedContent': 'Unsupported content',
         'acp.turnDuration': 'Took {{duration}}',
         'acp.turnElapsed': '{{duration}} elapsed',
+        'acp.viewTurnProcess': 'View process',
         'acp.compaction.inProgress': 'Compacting context',
         'acp.compaction.completed': 'Compacted history',
         'acp.compaction.continuing': 'Context compacted and continuing',
@@ -219,7 +217,6 @@ describe('ACP chat timeline components', () => {
       open: false,
       tab: 'changes',
       focusedFile: null,
-      htmlPreviewAnchor: null,
     });
   });
 
@@ -574,7 +571,40 @@ describe('ACP chat timeline components', () => {
     expect(screen.getByTestId('acp-turn-duration')).toHaveTextContent('Took 6 sec');
   });
 
-  it('floors Chinese whole-turn seconds, spaces the unit, and uses processing/completed copy', () => {
+  it('keeps active activity inline and offers a disclosure on settled history without timing', () => {
+    const state = snapshot({
+      itemOrder: ['user-a:0', 'tool:read-file', 'assistant-a:0'],
+      itemsById: {
+        'user-a:0': {
+          kind: 'message-segment', id: 'user-a:0', role: 'user', messageId: 'user-a', segmentIndex: 0,
+          parts: [{ kind: 'markdown', text: 'Read the file' }],
+        },
+        'tool:read-file': toolCallItem({ historical: true }),
+        'assistant-a:0': {
+          kind: 'message-segment', id: 'assistant-a:0', role: 'assistant', messageId: 'assistant-a', segmentIndex: 0,
+          parts: [{ kind: 'markdown', text: 'The file contains three entries.' }],
+        },
+      },
+    });
+
+    const { rerender } = render(<AcpTimeline snapshot={state} conciseReplies isStreaming />);
+    expect(screen.getByTestId('acp-tool-call-card')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'View process' })).not.toBeInTheDocument();
+
+    rerender(<AcpTimeline snapshot={state} conciseReplies keepLatestTurnExpanded />);
+    expect(screen.getByTestId('acp-tool-call-card')).toBeVisible();
+
+    rerender(<AcpTimeline snapshot={state} conciseReplies />);
+    const toggle = screen.getByRole('button', { name: 'View process' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByTestId('acp-tool-call-card')).not.toBeInTheDocument();
+    expect(screen.getByText('The file contains three entries.')).toBeVisible();
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByTestId('acp-tool-call-card')).toBeVisible();
+  });
+
+  it('formats Chinese whole-turn minutes and seconds with processing and completed copy', () => {
     vi.useFakeTimers();
     vi.setSystemTime(20_000);
     i18nLanguage.value = 'zh';
@@ -603,19 +633,19 @@ describe('ACP chat timeline components', () => {
     render(<AcpTimeline
       snapshot={state}
       turnTimingsByUserMessageId={{
-        'user-a': { source: 'transcript', status: 'complete', durationMs: 23_600 },
+        'user-a': { source: 'transcript', status: 'complete', durationMs: 83_600 },
         'user-b': { source: 'live', status: 'running', startedAtMs: 600 },
       }}
     />);
 
-    expect(screen.getByText('用时 23 秒')).toBeVisible();
+    expect(screen.getByText('用时 1 分钟 23 秒')).toBeVisible();
     expect(screen.getByText('已处理 19 秒')).toBeVisible();
     vi.useRealTimers();
   });
 
-  it('updates a running whole-turn elapsed duration from its original start time', () => {
+  it('carries a running whole-turn elapsed duration into minutes', () => {
     vi.useFakeTimers();
-    vi.setSystemTime(10_000);
+    vi.setSystemTime(66_999);
     const state = snapshot({
       itemOrder: ['user-a:0', 'tool:read-file'],
       itemsById: {
@@ -633,10 +663,14 @@ describe('ACP chat timeline components', () => {
         'user-a': { source: 'live', status: 'running', startedAtMs: 7_000 },
       }}
     />);
-    expect(screen.getByTestId('acp-turn-duration')).toHaveTextContent('3 sec elapsed');
+    const duration = screen.getByTestId('acp-turn-duration');
+    expect(duration).toHaveTextContent('59 sec elapsed');
 
     act(() => vi.advanceTimersByTime(1_000));
-    expect(screen.getByTestId('acp-turn-duration')).toHaveTextContent('4 sec elapsed');
+    expect(duration).toHaveTextContent('1 min elapsed');
+
+    act(() => vi.advanceTimersByTime(1_000));
+    expect(duration).toHaveTextContent('1 min 1 sec elapsed');
     vi.useRealTimers();
   });
 
@@ -790,7 +824,7 @@ describe('ACP chat timeline components', () => {
     const message = screen.getByTestId('acp-assistant-message');
     const duration = screen.getByTestId('acp-turn-duration');
     expect(screen.queryByTestId('acp-turn-file-activity')).not.toBeInTheDocument();
-    expect(message.nextElementSibling).toBe(duration.parentElement);
+    expect(message.previousElementSibling).toContainElement(duration);
   });
 
   it('routes deleted path-only activity to Changes without rendering counts', () => {
@@ -1139,8 +1173,32 @@ describe('ACP chat timeline components', () => {
 
     const group = screen.getByTestId('acp-tool-calls-group');
     expect(group).toHaveAttribute('data-collapsed', 'true');
-    expect(group).toHaveTextContent('3 tool calls');
+    expect(group).toHaveTextContent('exec, image and more');
     expect(screen.queryByTestId('acp-tool-call-card')).not.toBeInTheDocument();
+  });
+
+  it('lists distinct tool actions in call order and marks omitted actions', () => {
+    const items = [
+      'exec: code: return 1',
+      'skills_read: name: docx',
+      'exec: code: return 2',
+      'bash: pwd',
+    ].map((title, index) => toolCallItem({
+      id: `tool:summary-${index}`,
+      toolCallId: `summary-${index}`,
+      historical: true,
+      title,
+    }));
+    const label = 'Run code, Load skill';
+    const { rerender } = render(<AcpToolCallsGroup items={items.slice(0, 3)} />);
+    expect(screen.getByTestId('acp-tool-calls-group')).toHaveTextContent(new RegExp(`^${label}$`));
+
+    rerender(<AcpToolCallsGroup items={items} />);
+    expect(screen.getByTestId('acp-tool-calls-group')).toHaveTextContent(`${label} and more`);
+
+    fireEvent.click(screen.getByTestId('acp-tool-calls-group'));
+    expect(screen.getByTestId('acp-tool-calls-group-collapse')).toHaveTextContent(`${label} and more`);
+    expect(screen.getAllByTestId('acp-tool-call-card')).toHaveLength(items.length);
   });
 
   it('expands the tool group to show individual tool cards when clicked', () => {
@@ -1380,11 +1438,40 @@ describe('ACP chat timeline components', () => {
     ['write: path: report.md', undefined, 'Write: path: report.md', 'save'],
     ['sessions_spawn: task: Review', undefined, 'Spawn subagent: task: Review', 'bot'],
     ['memory_search: query: release plan', undefined, 'Search memory: query: release plan', 'database'],
+    ['edit: path: notes.md', undefined, 'Edit file: path: notes.md', 'file-pen-line'],
+    ['apply_patch: input: sample.patch', undefined, 'Apply patch: input: sample.patch', 'file-diff'],
+    ['process: action: list', undefined, 'Manage process: action: list', 'activity'],
+    ['code_execution: language: python', undefined, 'Run remote code: language: python', 'cloud-cog'],
+    ['secrets: action: list', undefined, 'Manage credentials: action: list', 'key-round'],
+    ['web_search: query: release notes', undefined, 'Search the web: query: release notes', 'search'],
+    ['x_search: query: release notes', undefined, 'Search X posts: query: release notes', 'message-square-text'],
+    ['memory_get: path: MEMORY.md', undefined, 'Read memory: path: MEMORY.md', 'file-text'],
+    ['personal_instructions: action: show', undefined, 'Edit personal instructions: action: show', 'user-round-pen'],
+    ['agents_wait: runIds: []', undefined, 'Wait for subagents: runIds: []', 'hourglass'],
+    ['sessions_yield: reason: awaiting report', undefined, 'Wait for follow-up: reason: awaiting report', 'pause'],
+    ['subagents: action: list', undefined, 'Manage background tasks: action: list', 'workflow'],
+    ['skill_workshop: action: list', undefined, 'Manage skills: action: list', 'library-big'],
+    ['skills_search: query: document', undefined, 'Search skills: query: document', 'file-search'],
+    ['skills_read: name: docx', undefined, 'Load skill: name: docx', 'book-open'],
+    ['wait: id: pending', undefined, 'Wait for execution: id: pending', 'hourglass'],
+    ['tool_search: query: file', undefined, 'Search tools: query: file', 'search-code'],
+    ['tool_describe: id: read', undefined, 'View tool details: id: read', 'info'],
+    ['dispatch_action: id: read', undefined, 'Call tool: id: read', 'play'],
+    ['automations: action: list', undefined, 'Manage scheduled tasks: action: list', 'calendar-clock'],
+    ['bash: pwd', undefined, 'Run command: pwd', 'monitor-play'],
+    ['cron: action: list', undefined, 'Manage scheduled tasks: action: list', 'calendar-clock'],
   ])('renders %s with its localized label and icon', (title, input, label, icon) => {
     render(<AcpToolCallCard item={toolCallItem({ title, input, status: 'running', outputParts: [] })} />);
 
     expect(screen.getByTestId('acp-tool-call-card')).toHaveTextContent(label);
     expect(screen.getByTestId(`acp-tool-icon-${icon}`)).toBeInTheDocument();
+  });
+
+  it.each(['llm-task: example', 'constructor'])('keeps the original title and ordinary tool styling for %s', (title) => {
+    render(<AcpToolCallCard item={toolCallItem({ title, status: 'running', outputParts: [] })} />);
+
+    expect(screen.getByText(title, { exact: true })).toBeVisible();
+    expect(screen.queryAllByTestId(/^acp-tool-icon-/)).toHaveLength(0);
   });
 
   it('keeps the wrench before the tool label and places the specialized icon after it for a single tool call', () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { groupAcpTimelineItems } from '@/lib/acp/timeline-groups';
+import { conciseAssistantTurn, groupAcpTimelineItems } from '@/lib/acp/timeline-groups';
 import { createEmptyAcpTimeline } from '@/lib/acp/reducer';
-import type { AcpTimelineSnapshot, MessageSegmentItem, ToolCallItem } from '@/lib/acp/timeline-types';
+import type { AcpTimelineSnapshot, MessageSegmentItem, TimelineItem, ToolCallItem } from '@/lib/acp/timeline-types';
 
 function timelineWithItems(items: AcpTimelineSnapshot['itemsById']): AcpTimelineSnapshot {
   return {
@@ -10,6 +10,57 @@ function timelineWithItems(items: AcpTimelineSnapshot['itemsById']): AcpTimeline
     itemsById: items,
   };
 }
+
+describe('conciseAssistantTurn', () => {
+  const message = (id: string): MessageSegmentItem => ({
+    kind: 'message-segment', role: 'assistant', id, messageId: id, segmentIndex: 0,
+    parts: [{ kind: 'markdown', text: id }],
+  });
+  const tool = (id: string): ToolCallItem => ({
+    kind: 'tool-call', id, toolCallId: id, title: id, status: 'completed', outputParts: [], locations: [],
+  });
+
+  it('keeps both reply segments after the last tool and exposes earlier deliverables and errors', () => {
+    const image: MessageSegmentItem = {
+      ...message('image'), parts: [{ kind: 'image', source: 'data:image/png;base64,test' }],
+    };
+    const error: MessageSegmentItem = {
+      ...message('error'), parts: [{ kind: 'error', message: 'An attachment could not be opened.' }],
+    };
+    const answer = [message('Reply part one'), message('Reply part two')];
+    const items = [message('I will inspect'), tool('read'), image, error, message('First findings'), tool('check'), ...answer];
+    expect(conciseAssistantTurn(items, 'complete')).toEqual({
+      items: [image, error, ...answer],
+      processLength: 6,
+    });
+  });
+
+  it('leaves unconfirmed, unfinished, and reply-less turns inline', () => {
+    const reply = message('The answer');
+    const read = tool('read');
+    const receipt: MessageSegmentItem = {
+      ...message('Generating the image'),
+      compat: { source: 'image-generation', evidenceId: 'receipt', provisionalText: true },
+    };
+    const cases: TimelineItem[][] = [
+      [reply],
+      [reply, read],
+      [read, receipt],
+      [{ ...read, status: 'running' }, reply],
+      [read, reply, { kind: 'permission', id: 'request', requestId: 'request', title: 'Continue', options: [], status: 'pending' }],
+    ];
+    for (const items of cases) {
+      const display = conciseAssistantTurn(items, 'complete');
+      expect(display.items).toBe(items);
+      expect(display.processLength).toBe(0);
+    }
+
+    const live = [read, reply];
+    expect(conciseAssistantTurn(live, 'running')).toEqual({ items: live, processLength: 0 });
+    expect(conciseAssistantTurn(live)).toEqual({ items: live, processLength: 0 });
+    expect(conciseAssistantTurn([{ ...read, historical: true }, reply])).toEqual({ items: [reply], processLength: 1 });
+  });
+});
 
 describe('groupAcpTimelineItems', () => {
   it('keeps a late acknowledgment before its image without moving either across another task or turn', () => {

@@ -74,6 +74,7 @@ test('hides native ACP control-user replay while retaining quoted text, assistan
       const previousInvocations = (await getRecordedHostInvocations(app)).length;
       await page.reload();
       await expect(page.getByTestId('main-layout')).toBeVisible();
+      await page.getByTestId(`sidebar-session-${NATIVE_REPLAY_SESSION_KEY}`).click();
       const chat = page.getByTestId('acp-chat-timeline');
       await expect(chat).toBeVisible({ timeout: 30_000 });
       const users = chat.getByTestId('acp-user-message');
@@ -96,6 +97,7 @@ test('hides native ACP control-user replay while retaining quoted text, assistan
       await expect(chat.getByText('INTERNAL_HIDDEN_CAPTION', { exact: false })).toHaveCount(0);
       await expect(chat.getByText(NATIVE_REPLAY_TEXT.reply, { exact: true })).toBeVisible();
       await expect(chat.getByText(NATIVE_REPLAY_TEXT.explanation, { exact: true })).toBeVisible();
+      await chat.getByRole('button', { name: 'View process', exact: true }).click();
       await expect(chat.getByTestId('acp-thought-block')).toContainText(NATIVE_REPLAY_TEXT.thought);
       const tool = chat.getByTestId('acp-tool-call-card');
       await expect(tool).toBeVisible();

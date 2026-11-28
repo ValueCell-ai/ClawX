@@ -7,6 +7,11 @@ type SessionModel = Awaited<ReturnType<typeof hostApi.sessions.getModel>>;
 
 // A newly mounted composer can revisit a session while its previous write is in flight.
 const writes = new Map<string, Promise<SessionModel>>();
+const selectionErrors = new Map<string, string>();
+
+export function getSessionModelSelectionError(sessionKey: string) {
+  return selectionErrors.get(sessionKey);
+}
 
 export async function readSessionModel(sessionKey: string) {
   await writes.get(sessionKey)?.catch(() => {});
@@ -65,7 +70,7 @@ export function useSessionModel(
   useEffect(() => {
     const request = ++revision.current;
     let cancelled = false;
-    if (!local && canRead) {
+    if (sessionKey && !local && canRead) {
       void readSessionModel(sessionKey).then((value) => {
         if (!cancelled && revision.current === request) setSnapshot({ key: sessionKey, value });
       }).catch(() => {
@@ -84,7 +89,7 @@ export function useSessionModel(
     void hostApi.sessions.getDraftThinking(sessionKey, draftModel).then((thinking) => {
       if (!cancelled) setDraftProfile({ sessionKey, modelRef: draftModel, thinking: thinking ?? undefined });
     }).catch(() => {
-      if (!cancelled) setDraftProfile(null);
+      if (!cancelled) setDraftProfile({ sessionKey, modelRef: draftModel, thinking: undefined });
     });
     return () => { cancelled = true; };
   }, [canRead, draftModel, sessionKey]);
@@ -93,6 +98,7 @@ export function useSessionModel(
     const stage = () => {
       const drafts = useComposerDraftStore.getState();
       if (modelRef !== undefined) {
+        selectionErrors.delete(sessionKey);
         drafts.setModelRef(sessionKey, modelRef);
         if (modelRef !== (draft || agentModelRef)) drafts.setThinkingLevel(sessionKey, null);
       } else if (thinkingLevel !== undefined) drafts.setThinkingLevel(sessionKey, thinkingLevel);
@@ -116,12 +122,19 @@ export function useSessionModel(
       }
       const value = await writeSessionModel(sessionKey, modelRef, false, thinkingLevel);
       // A previous failed first send may still have a pending model on this session.
-      useComposerDraftStore.getState().setModelRef(sessionKey, null);
-      useComposerDraftStore.getState().setThinkingLevel(sessionKey, null);
+      const drafts = useComposerDraftStore.getState();
+      if (modelRef !== undefined) {
+        selectionErrors.delete(sessionKey);
+        drafts.setModelRef(sessionKey, null);
+      }
+      drafts.setThinkingLevel(sessionKey, null);
       if (revision.current === request) {
         setSnapshot({ key: sessionKey, value });
         if (value.thinking || observed?.thinking) setReadAttempt((n) => n + 1);
       }
+    } catch (error) {
+      if (modelRef !== undefined) selectionErrors.set(sessionKey, String(error));
+      throw error;
     } finally {
       setWritingKey((key) => key === sessionKey ? null : key);
     }
@@ -129,11 +142,18 @@ export function useSessionModel(
   let value: SessionModel | undefined;
   if (draft || local) value = { modelRef: draft ?? null };
   else if (snapshot?.key === sessionKey) value = snapshot.value;
-  let thinking = value?.thinking;
-  if (isDraft) {
-    const profile = draftProfile?.modelRef === draftModel && draftProfile?.sessionKey === sessionKey
-      ? draftProfile.thinking : undefined;
-    thinking = profile && { ...profile, selectedLevel: draftLevel };
-  }
-  return { value, thinking, select, writing: writingKey === sessionKey, refresh: () => setReadAttempt((n) => n + 1) };
+  const currentDraftProfile = draftProfile?.modelRef === draftModel && draftProfile?.sessionKey === sessionKey
+    ? draftProfile : null;
+  const thinking = isDraft
+    ? currentDraftProfile?.thinking && { ...currentDraftProfile.thinking, selectedLevel: draftLevel }
+    : value?.thinking;
+  return {
+    value,
+    thinking,
+    thinkingLoading: Boolean(draftModel && canRead && !currentDraftProfile),
+    select,
+    failed: selectionErrors.has(sessionKey),
+    writing: writingKey === sessionKey,
+    refresh: () => setReadAttempt((n) => n + 1),
+  };
 }

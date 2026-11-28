@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { ChevronDown, ChevronRight, Wrench } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ToolCallItem } from '@/lib/acp/timeline-types';
 import { cn } from '@/lib/utils';
 import { AcpToolCallCard } from './AcpToolCallCard';
+import { describeToolCall } from './tool-call-presentation';
 
 const TOOL_GROUP_AUTO_COLLAPSE_DELAY_MS = 1_000;
+const MAX_SUMMARY_ACTIONS = 2;
 
 export function AcpToolCallsGroup({
   items,
@@ -15,6 +17,7 @@ export function AcpToolCallsGroup({
   collapsedByDefault?: boolean;
 }) {
   const { t } = useTranslation('chat');
+  const summaryId = useId();
   const shouldStartCollapsed = collapsedByDefault || items.every((item) => item.historical);
   const [expanded, setExpanded] = useState(!shouldStartCollapsed);
   const [manualOverride, setManualOverride] = useState(false);
@@ -29,7 +32,14 @@ export function AcpToolCallsGroup({
   }, [collapsedByDefault, items, manualOverride]);
 
   const toggleLabel = expanded ? t('acp.collapseToolGroup') : t('acp.expandToolGroup');
-  const summary = t('acp.toolGroupSummary', { count: items.length });
+  const actionNames = [...new Set(items.map((item) => {
+    const { name, presentation } = describeToolCall(item);
+    return presentation ? t(presentation.labelKey) : name || t('acp.tool');
+  }))];
+  const actions = actionNames.slice(0, MAX_SUMMARY_ACTIONS).join(t('acp.toolGroupActionSeparator'));
+  const summary = actionNames.length > MAX_SUMMARY_ACTIONS
+    ? t('acp.toolGroupMoreActions', { actions })
+    : actions;
 
   if (!expanded) {
     return (
@@ -42,12 +52,14 @@ export function AcpToolCallsGroup({
           setExpanded(true);
         }}
         aria-label={toggleLabel}
-        title={toggleLabel}
+        aria-describedby={summaryId}
+        aria-expanded={false}
+        title={summary}
         className="group flex w-full items-center gap-2 rounded-lg px-1 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 dark:hover:bg-white/10"
       >
         <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
         <Wrench className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-        <span className="min-w-0 truncate font-medium">
+        <span id={summaryId} className="min-w-0 truncate font-medium">
           {summary}
         </span>
       </button>
@@ -64,12 +76,14 @@ export function AcpToolCallsGroup({
           setExpanded(false);
         }}
         aria-label={toggleLabel}
-        title={toggleLabel}
+        aria-describedby={summaryId}
+        aria-expanded={true}
+        title={summary}
         className="group flex w-full items-center gap-2 rounded-lg px-1 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 dark:hover:bg-white/10"
       >
         <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
         <Wrench className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-        <span className="min-w-0 truncate font-medium">
+        <span id={summaryId} className="min-w-0 truncate font-medium">
           {summary}
         </span>
       </button>
@@ -79,7 +93,7 @@ export function AcpToolCallsGroup({
           <div className="mt-1 flex flex-col gap-0.5">
             {items.map((item) => (
               <div key={item.id} data-acp-item-id={item.id} className="w-full">
-                <AcpToolCallCard item={item} grouped />
+                <AcpToolCallCard item={item} variant="grouped" />
               </div>
             ))}
           </div>

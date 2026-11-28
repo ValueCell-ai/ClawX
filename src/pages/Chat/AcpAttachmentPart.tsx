@@ -170,7 +170,7 @@ export function AcpAttachmentPart({ part, tone = 'assistant' }: { part: Attachme
           <span className="max-w-[50%] shrink-0 truncate font-medium text-foreground">{name}</span>
           <span
             data-testid="acp-user-attachment-path"
-            className="min-w-0 flex-1 truncate text-2xs text-muted-foreground"
+            className="min-w-0 flex-1 truncate text-xs text-muted-foreground"
             title={userDisplayPath}
           >
             {userDisplayPath}
@@ -180,9 +180,9 @@ export function AcpAttachmentPart({ part, tone = 'assistant' }: { part: Attachme
         <span className="min-w-0 flex-1">
           <span className="block truncate font-medium text-foreground">{name}</span>
           {disabled ? (
-            <span className="block truncate text-2xs text-muted-foreground">{actionLabel}</span>
+            <span className="block truncate text-xs text-muted-foreground">{actionLabel}</span>
           ) : (
-            <span className="flex min-w-0 items-baseline gap-1 text-2xs text-muted-foreground">
+            <span className="flex min-w-0 items-baseline gap-1 text-xs text-muted-foreground">
               <span data-testid="acp-attachment-path" className="min-w-0 w-auto truncate" title={displayPath}>
                 {displayPath}
               </span>

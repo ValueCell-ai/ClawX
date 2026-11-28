@@ -2,20 +2,25 @@
   "title": "設定",
   "subtitle": "ClawX の体験をカスタマイズ",
   "appearance": {
-    "title": "通用",
+    "title": "外観と起動",
     "description": "外観とスタイルをカスタマイズ",
     "theme": "テーマ",
     "light": "ライト",
     "dark": "ダーク",
     "system": "システム",
     "language": "言語",
+    "replyDisplay": {
+      "title": "返信の表示",
+      "concise": "簡潔",
+      "detailed": "詳細"
+    },
     "menuLanguageUpdated": "メニューの言語を更新しました",
-    "launchAtStartup": "システム起動時に自動起動",
+    "launchAtStartup": "ログイン時に ClawX を起動",
     "launchAtStartupDesc": "ログイン時に ClawX を自動的に起動します"
   },
   "aiProviders": {
-    "title": "AI プロバイダー",
-    "description": "AI モデルプロバイダーと API キーを設定",
+    "title": "モデルサービス",
+    "description": "テキスト会話に使用するプロバイダーと利用可能なモデルを管理します。",
     "overview": {
       "title": "プロバイダーアカウント",
       "description": "現在設定されているプロバイダーアカウントとモデルの概要です。",
@@ -33,7 +38,7 @@
       "model": "モデル設定",
       "fallback": "フォールバック設定"
     },
-    "add": "プロバイダーを追加",
+    "add": "サービスを追加",
     "custom": "カスタム",
     "notRequired": "不要",
     "empty": {
@@ -42,27 +47,30 @@
       "cta": "最初のプロバイダーを追加"
     },
     "dialog": {
-      "title": "AI プロバイダーを追加",
-      "desc": "新しい AI モデルプロバイダーを構成",
+      "title": "モデルサービスを追加",
       "displayName": "表示名",
       "apiKey": "API キー",
-      "apiKeyConfigured": "このプロバイダーには API キーが保存されています。",
-      "apiKeyMissing": "このプロバイダーにはまだ API キーが保存されていません。",
+      "apiKeyRequired": "API キーを入力してください。",
+      "baseUrlRequired": "ベース URL を入力してください。",
+      "baseUrlInvalid": "http:// または https:// で始まる有効な URL を入力してください。",
+      "modelIdSingle": "モデル ID は 1 つだけ入力してください。",
+      "apiKeyMissing": "API キーは未保存です。",
       "apiKeyStored": "API キーはローカルマシンに保存されます。",
-      "replaceApiKey": "API キーを置き換える",
-      "replaceApiKeyHelp": "現在保存されている API キーをそのまま使う場合は、この欄を空のままにしてください。",
+      "replaceApiKey": "API キーを更新",
+      "replaceApiKeyHelp": "保存済みの API キーを使う場合は空欄にしてください",
       "baseUrl": "ベース URL",
       "modelId": "モデル ID",
+      "configuredModels": "設定済みモデル",
+      "singleModelHint": "モデル ID は 1 つのみ指定できます。",
       "modelIdEditDisabled": "モデル ID は作成後に変更できません。別のモデル ID を使用するには、このプロバイダーを削除して再度追加してください。",
-      "codePlanPreset": "Code Plan プリセット",
+      "connectionPreset": "接続プリセット",
+      "generalApiPreset": "汎用 API",
       "codePlanMode": "Code Plan",
-      "useCodePlanPreset": "Ark Code Plan プリセットを使用",
-      "codePlanPresetDesc": "Code Plan は {{baseUrl}} と model {{modelId}} を使います。Code Plan 通信に一般 API エンドポイントを使わないでください。",
       "codePlanDoc": "Code Plan ドキュメント",
       "protocol": "プロトコル",
       "advancedConfig": "詳細設定",
       "userAgent": "User-Agent",
-      "userAgentPlaceholder": "ClawX/1.0",
+      "userAgentPlaceholder": "空欄の場合は既定値を使用",
       "fallbackModels": "フォールバックモデル",
       "fallbackProviders": "別プロバイダーへのフォールバック",
       "fallbackModelIds": "同一プロバイダーのフォールバックモデル ID",
@@ -70,12 +78,18 @@
       "fallbackModelIdsHelp": "1 行につき 1 つのモデル ID を指定します。まず現在のプロバイダー内でこれらを試し、その後ほかのプロバイダーへフォールバックします。",
       "noFallbackOptions": "フォールバック先にするには、先に別のプロバイダーを追加してください。",
       "cancel": "キャンセル",
-      "change": "プロバイダーを変更",
-      "add": "プロバイダーを追加",
+      "add": "サービスを追加",
       "save": "保存",
+      "serviceList": "モデルサービス",
+      "customService": "カスタムサービス",
       "customDoc": "ドキュメント",
       "validate": "検証",
-      "failed": "失敗"
+      "failed": "失敗",
+      "search": "プロバイダーを検索…",
+      "close": "閉じる",
+      "showKey": "API キーを表示",
+      "hideKey": "API キーを非表示",
+      "noResults": "一致するプロバイダーがありません"
     },
     "card": {
       "default": "デフォルト",
@@ -85,12 +99,13 @@
       "fallbacks_one": "フォールバック: {{names}}",
       "fallbacks_other": "フォールバック ({{count}}): {{names}}",
       "setDefault": "デフォルトに設定",
-      "editKey": "API キーを編集",
-      "delete": "プロバイダーを削除"
+      "editKey": "設定を編集",
+      "delete": "プロバイダーを削除",
+      "more": "その他の操作"
     },
     "protocols": {
       "openai": "OpenAI 互換",
-      "openaiCompletions": "OpenAI Completions",
+      "openaiCompletions": "OpenAI Chat Completions",
       "openaiResponses": "OpenAI Responses",
       "anthropic": "Anthropic 互換"
     },
@@ -109,26 +124,20 @@
       "zaiConflict": "Z.AI (Global) と Z.AI (CN) は同時に追加できません。"
     },
     "oauth": {
+      "method": "認証方法",
       "loginMode": "OAuthログイン",
       "apikeyMode": "APIキー",
-      "loginPrompt": "このプロバイダーはブラウザからのサインインが必要です。",
       "loginButton": "ブラウザでログイン",
       "getApiKey": "API キーを取得",
-      "waiting": "待機中...",
       "openLoginPage": "ログインページを開く",
-      "waitingApproval": "ブラウザの承認を待っています...",
+      "waitingApproval": "承認を待っています…",
       "cancel": "キャンセル",
       "codeCopied": "コードをクリップボードにコピーしました",
       "authFailed": "認証に失敗しました",
       "browserFlowUnavailable": "このプロバイダーのブラウザ OAuth はまだ接続されていません。",
       "tryAgain": "再試行",
-      "approveLogin": "ログインを承認",
-      "step1": "以下の認証コードをコピーしてください。",
-      "step2": "ブラウザでログインページを開いてください。",
-      "step3": "コードを貼り付けてアクセスを承認してください。",
-      "requestingCode": "セキュアログインコードを取得中...",
-      "completeBrowserLogin": "ブラウザでログインを完了",
-      "manualCallbackHelp": "認証ページを開いてログインを完了し、コールバック URL または認証コードを貼り付けてください。",
+      "enterDeviceCode": "ログインページでこの認証コードを入力してください。",
+      "requestingCode": "認証コードを取得中…",
       "openAuthorizationPage": "認証ページを開く",
       "callbackPlaceholder": "コールバック URL またはコードを貼り付け",
       "submitCode": "コードを送信",
@@ -145,17 +154,17 @@
     }
   },
   "gateway": {
-    "title": "ゲートウェイ",
+    "title": "ローカルサービス",
     "description": "OpenClaw ゲートウェイ設定",
     "status": "ステータス",
     "port": "ポート",
     "logs": "ログ",
     "appLogs": "アプリケーションログ",
     "openFolder": "フォルダーを開く",
-    "autoStart": "ゲートウェイ自動起動",
-    "autoStartDesc": "ClawX 起動時にゲートウェイを自動起動",
-    "proxyTitle": "プロキシ",
-    "proxyDesc": "Electron と Gateway の通信をローカルプロキシ経由にします。",
+    "autoStart": "ローカルサービスを自動起動",
+    "autoStartDesc": "ClawX の起動時にローカルサービスを起動します",
+    "proxyTitle": "ネットワークプロキシ",
+    "proxyDesc": "ClawX とローカルサービスのネットワークプロキシを設定します。",
     "proxyServer": "プロキシサーバー",
     "proxyServerHelp": "すべてのリクエストで使う基本プロキシです。host:port のみの場合は HTTP 扱いです。",
     "proxyHttpServer": "HTTP プロキシ",
@@ -168,14 +177,14 @@
     "hideAdvancedProxy": "高度なプロキシ項目を非表示",
     "proxyBypass": "バイパスルール",
     "proxyBypassHelp": "直接接続するホストをセミコロン、カンマ、または改行で区切って指定します。",
-    "proxyRestartNote": "保存すると Electron のネットワーク設定を再適用し、Gateway をすぐ再起動します。プロキシ無効時の通常再起動では Telegram チャネルの既存プロキシ設定を保持し、無効状態で保存すると明示的に削除されます。",
+    "proxyRestartNote": "保存するとプロキシが適用され、ローカルサービスが再起動します。Telegram の既存のプロキシを消去するには、無効にして保存してください。",
     "proxySaved": "プロキシ設定を保存しました",
     "proxySaveFailed": "プロキシ設定の保存に失敗しました"
   },
   "updates": {
     "title": "アップデート",
     "description": "ClawX を最新に保つ",
-    "autoCheck": "自動更新チェック",
+    "autoCheck": "起動時に更新を確認",
     "autoCheckDesc": "起動時に更新を確認",
     "autoDownload": "更新通知",
     "autoDownloadDesc": "新しいバージョンが見つかったら通知し、選択後にのみダウンロードします",
@@ -187,7 +196,9 @@
       "autoInstalling": "{{seconds}} 秒後に再起動して更新をインストールします...",
       "failed": "更新の確認に失敗しました",
       "latest": "最新バージョンです",
-      "check": "更新を確認して最新の機能を入手"
+      "check": "更新を確認して最新の機能を入手",
+      "devUnavailable": "開発ビルドではアプリ内更新を利用できません。",
+      "progress": "{{percent}}% ダウンロード済み"
     },
     "action": {
       "checking": "確認中...",
@@ -215,9 +226,10 @@
     "title": "詳細設定",
     "description": "上級ユーザー向けオプション",
     "devMode": "開発者モード",
-    "devModeDesc": "開発者ツールとショートカットを表示",
+    "devModeDesc": "デバッグツールと実験的な機能を表示します。",
     "telemetry": "匿名利用データ",
-    "telemetryDesc": "ClawX 改善のため、匿名の基本的な利用データの提供を許可します"
+    "telemetryDesc": "ClawX 改善のため、匿名の基本的な利用データの提供を許可します",
+    "privacy": "プライバシー"
   },
   "developer": {
     "title": "開発者",
@@ -274,14 +286,15 @@
     "installCmdDesc": "~/.local/bin/openclaw をインストール（管理者権限不要）",
     "installTitle": "OpenClaw コマンドをインストール",
     "installMessage": "\"openclaw\" コマンドをインストールしますか？",
-    "installDetail": "~/.local/bin/openclaw が作成されます。グローバルに実行するには ~/.local/bin が PATH に含まれていることを確認してください。"
+    "installDetail": "~/.local/bin/openclaw が作成されます。グローバルに実行するには ~/.local/bin が PATH に含まれていることを確認してください。",
+    "consoleUnavailable": "OpenClaw コンソールを開けません"
   },
   "support": {
-    "title": "サポート"
+    "title": "ヘルプとフィードバック"
   },
   "issueReport": {
     "actionTitle": "問題調査レポートをエクスポート",
-    "actionDescription": "トラブルシューティングとサポート用の診断 ZIP をデスクトップに作成します。",
+    "actionDescription": "診断用 ZIP をデスクトップに保存します。",
     "open": "内容を確認してエクスポート",
     "dialogTitle": "問題調査レポートをエクスポート",
     "dialogDescription": "含まれる内容を確認し、必要に応じて会話を選択してください。ZIP はデスクトップに保存されます。",
@@ -368,5 +381,46 @@
       "modelRequired": "モデル名を入力してください。",
       "request": "保存できませんでした。もう一度お試しください。"
     }
+  },
+  "navigation": {
+    "label": "設定カテゴリ",
+    "openAdvanced": "詳細設定を開く",
+    "general": {
+      "title": "一般",
+      "description": "外観、言語、起動時の動作を設定します。"
+    },
+    "models": {
+      "title": "AI モデル",
+      "description": "チャット・音声・画像モデルを管理し、利用状況を確認します。"
+    },
+    "channels": {
+      "title": "メッセージ遠隔操作",
+      "description": "メッセージアプリで ClawX に依頼し、結果を受け取れます。"
+    },
+    "computer-use": {
+      "title": "コンピューター操作",
+      "description": "アシスタントによる画面の確認とコンピューター操作、および必要な権限を管理します。",
+      "developerHint": "コンピューター操作は実験的機能です。詳細設定で開発者モードを有効にしてから設定してください。システム権限は別途許可が必要です。"
+    },
+    "advanced": {
+      "title": "詳細設定",
+      "description": "ローカルサービス、ネットワーク、開発者ツールを管理します。"
+    },
+    "about": {
+      "title": "情報とヘルプ",
+      "description": "バージョンや更新を確認し、ヘルプや問題報告にアクセスします。"
+    }
+  },
+  "modelManagement": {
+    "loading": "設定を読み込み中…",
+    "editService": "モデルサービスを編集",
+    "editServiceHint": "接続先と認証情報を管理します。",
+    "configure": "設定する",
+    "editConfiguration": "設定を編集",
+    "notConfigured": "モデルは未設定です",
+    "configured": "設定を保存済み",
+    "needsConfiguration": "設定が必要です",
+    "voiceDescription": "音声を文字に変換して入力欄に反映するサービスとモデルを設定します。",
+    "imageDescription": "画像生成に使用するサービスとモデルを設定します。"
   }
 }

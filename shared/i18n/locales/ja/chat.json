@@ -1,14 +1,24 @@
 {
-    "gatewayNotRunning": "ゲートウェイが停止中",
-    "gatewayRequired": "チャットを利用するには OpenClaw ゲートウェイが実行されている必要があります。自動的に起動するか、設定から起動できます。",
+    "gatewayNotRunning": "ローカルサービスが停止中",
+    "gatewayRequired": "この機能にはローカルサービスが必要です。自動起動するか、設定 → 詳細設定で管理できます。",
     "welcome": {
         "title": "ClawX チャット",
-        "subtitle": "お手伝いできることはありますか？",
+        "subtitle": "今日は何を進めましょうか？",
         "askQuestions": "タスク対応",
         "askQuestionsDesc": "タスク指向の依頼に対応します",
         "creativeTasks": "連続実行",
         "creativeTasksDesc": "複数ステップの作業を継続して進めます",
-        "brainstorming": "マルチエージェント並列実行"
+        "brainstorming": "マルチエージェント並列実行",
+        "skills": {
+            "docx": "文書作成",
+            "xlsx": "表計算",
+            "pptx": "プレゼン資料",
+            "pdf": "PDF ツール",
+            "computer-use": "パソコン操作",
+            "skill-creator": "スキル作成"
+        },
+        "skillUnavailable": "スキル画面でこのスキルを有効化またはインストールしてください。",
+        "skillsFailed": "スキルを読み込めませんでした。スキルメニューを開いて再試行してください。"
     },
     "noLogs": "（ログはまだありません）",
     "scrollToLatest": "最下部に戻る",
@@ -59,13 +69,34 @@
             "read": "読み取り",
             "write": "書き込み",
             "spawnSubagent": "サブエージェントを起動",
-            "memorySearch": "メモリを検索"
+            "memorySearch": "メモリを検索",
+            "editFile": "ファイルを編集",
+            "applyPatch": "パッチを適用",
+            "manageProcess": "プロセスを管理",
+            "remoteCode": "リモートでコードを実行",
+            "manageCredentials": "認証情報を管理",
+            "webSearch": "ウェブを検索",
+            "xSearch": "X の投稿を検索",
+            "memoryRead": "メモリを読み取る",
+            "editPersonalInstructions": "個人向けの指示を編集",
+            "waitSubagents": "サブエージェントを待つ",
+            "awaitFollowUp": "後続の結果を待つ",
+            "manageBackgroundTasks": "バックグラウンドタスクを管理",
+            "manageSkills": "スキルを管理",
+            "searchSkills": "スキルを検索",
+            "loadSkill": "スキルを読み込む",
+            "waitExecution": "実行結果を待つ",
+            "searchTools": "ツールを検索",
+            "describeTool": "ツールの説明を表示",
+            "dispatchTool": "ツールを呼び出す",
+            "manageAutomations": "定期タスクを管理"
         },
         "expandTool": "ツール結果を展開",
         "collapseTool": "ツール結果を折りたたむ",
         "expandToolGroup": "ツール呼び出しを展開",
         "collapseToolGroup": "ツール呼び出しを折りたたむ",
-        "toolGroupSummary": "ツール呼び出し {{count}} 件",
+        "toolGroupActionSeparator": "、",
+        "toolGroupMoreActions": "{{actions}}など",
         "permission": "権限",
         "plan": "計画",
         "running": "実行中",
@@ -111,6 +142,7 @@
         "copied": "コピーしました",
         "turnDuration": "所要時間 {{duration}}",
         "turnElapsed": "経過時間 {{duration}}",
+        "viewTurnProcess": "処理の詳細",
         "compaction": {
             "inProgress": "コンテキストを圧縮中",
             "completed": "履歴を圧縮しました",
@@ -130,24 +162,26 @@
     },
     "artifactPanel": {
         "tabs": {
-            "changes": "変更",
+            "changes": "今回の変更",
             "preview": "プレビュー",
             "browser": "ワークスペース"
         },
         "actions": {
-            "back": "一覧に戻る"
+            "back": "一覧に戻る",
+            "maximize": "ワークスペースパネルを最大化",
+            "restore": "ワークスペースパネルを元のサイズに戻す"
         },
         "changes": {
-            "heading": "ファイルの変更（{{count}} 件）",
-            "empty": "このセッションにはまだファイルの変更がありません。",
+            "heading": "今回の変更（{{count}}）",
+            "empty": "この会話には変更がありません",
             "selectFileHint": "会話内のファイルカード、または「変更を表示」をクリックして diff を開きます。",
             "changeRecord": "変更 {{number}}",
-            "diffUnavailable": "この変更の差分は利用できません。"
+            "diffUnavailable": "この変更の差分は利用できません。",
+            "emptyHint": "この会話で作成・変更・削除したファイルがここに表示されます。"
         },
         "preview": {
             "emptyTitle": "ファイルが選択されていません",
-            "emptyHint": "まず会話内のファイルカードをクリックしてファイルを選択すると、ここにプレビューが表示されます。",
-            "fullscreenLabel": "ファイルの全画面プレビュー"
+            "emptyHint": "ワークスペースのファイル、または会話内のファイルカードを選択してください。"
         }
     },
     "filePreview": {
@@ -162,8 +196,6 @@
             "openInFinder": "ファイルマネージャーで表示",
             "openDirectly": "直接開く",
             "close": "閉じる",
-            "enterFullscreen": "全画面表示",
-            "exitFullscreen": "全画面表示を終了",
             "openHtmlExternally": "HTML をシステムブラウザで開く",
             "retry": "再試行"
         },
@@ -181,8 +213,8 @@
             "notFound": "ファイルが見つかりません",
             "loadFailed": "読み込みに失敗しました: {{error}}",
             "noPreview": "このファイルにはプレビューがありません",
-            "unsupportedFormatTitle": "このファイル形式は内蔵プレビューに未対応です",
-            "unsupportedFormatHint": "現在、内蔵プレビューは直接読み取れるテキスト/Markdown 系ファイルのみ対応しています。ファイルマネージャーで開いてください。",
+            "unsupportedFormatTitle": "このファイルはプレビューできません",
+            "unsupportedFormatHint": "ファイルマネージャーで開けます。",
             "largeBinaryOpenTitle": "このファイルは大きいため内蔵プレビューできません",
             "largeBinaryOpenHint": "このファイルは {{size}} です。ClawX では内蔵プレビューできませんが、確認後にシステム既定のアプリで開けます。",
             "openInFinderFailed": "ファイルマネージャーで表示できません",
@@ -246,7 +278,22 @@
         "actions": {
             "refresh": "更新",
             "openRootInFinder": "ルートをファイルマネージャーで表示"
-        }
+        },
+        "search": "ファイルを検索",
+        "clearSearch": "ファイル検索をクリア",
+        "showHidden": "隠しファイルを表示",
+        "collapseAll": "すべてのフォルダーを閉じる",
+        "browseFiles": "ファイルを参照",
+        "fileActions": "ファイル操作",
+        "copyPath": "パスをコピー",
+        "pathCopied": "パスをコピーしました",
+        "copyFailed": "パスをコピーできませんでした",
+        "resizeFiles": "ファイル一覧の幅を変更",
+        "resizePanel": "ワークスペースパネルの幅を変更",
+        "noResults": "一致するファイルがありません",
+        "noFiles": "表示できるファイルがありません。",
+        "searchLimited": "一部のファイルは未読込です。検索対象は読込済みのフォルダーです。",
+        "searchScope": "検索範囲：読込済みフォルダー"
     },
     "imageGeneration": {
         "generating": "画像を生成しています。しばらくお待ちください…",
@@ -258,13 +305,12 @@
         "attachFiles": "ファイルを添付",
         "pickSkill": "Skill を選択",
         "skillButton": "Skills",
-        "skillPickerTitle": "{{agent}} のクイック Skill",
         "skillSearchPlaceholder": "Skill を検索",
         "skillLoading": "Skill を読み込み中...",
         "skillEmpty": "一致する Skill がありません",
-        "pickAgent": "Agent を選択",
         "thinkingStrength": "思考の強度",
         "thinkingDefault": "デフォルト",
+        "thinkingRestoreDefault": "既定値に戻す",
         "thinkingDefaultLevel": "デフォルト（{{level}}）",
         "thinkingAdjusted": "{{level}}（モデルが調整）",
         "thinkingFailed": "思考の強度を変更できませんでした。{{error}}",
@@ -281,13 +327,11 @@
             "ultra": "Ultra"
         },
         "pickModel": "モデルを選択",
-        "modelPickerTitle": "この会話のモデルを選択",
+        "modelPickerTitle": "このタスクのモデルを選択",
         "modelReadFailed": "この会話のモデルを取得できませんでした：{{error}}",
         "modelSwitchFailed": "モデルの切り替えに失敗しました: {{error}}",
-        "clearTarget": "送信先 Agent をクリア",
         "targetChip": "@{{agent}}",
-        "agentPickerTitle": "次のメッセージを別の Agent に直接送信します",
-        "gatewayDisconnectedPlaceholder": "ゲートウェイ未接続...",
+        "gatewayDisconnectedPlaceholder": "ローカルサービスに接続中…",
         "send": "送信",
         "sendFailed": "送信に失敗しました",
         "retrySend": "再送信",
@@ -298,7 +342,7 @@
         "subagentsWorking": "サブエージェントが作業中",
         "gatewayConnected": "接続済み",
         "gatewayStarting": "起動中",
-        "gatewayStatus": "ゲートウェイ {{state}}",
+        "gatewayStatus": "{{state}}",
         "retryFailedAttachments": "失敗した添付を再試行",
         "workspacePrefix": "{{workspace}}",
         "workspacePickerTitle": "ワークスペースフォルダーを選択",
@@ -333,10 +377,14 @@
             "NETWORK": "音声サービスに接続できません。ネットワークまたは Base URL を確認してください。",
             "EMPTY_RESULT": "音声を認識できませんでした。",
             "INVALID_INPUT": "録音データが無効です。"
-        }
+        },
+        "placeholder": "タスクを入力するか、ファイルを追加してください…",
+        "executionAgent": "Agent を選択：{{agent}}",
+        "executionAgentTitle": "Agent を選択",
+        "agentDefaultModel": "既定のモデル："
     },
     "sessionList": {
-        "title": "セッション一覧",
+        "title": "最近のタスク",
         "collapseAll": "すべて折りたたむ",
         "expandAll": "すべて展開",
         "loadMore": "もっと読み込む",
@@ -355,7 +403,19 @@
         "deleteWorkspaceCleanupFailed": "セッションは削除されましたが、保存済みワークスペースの記録を消去できませんでした。",
         "workspaceName": "ワークスペース名",
         "saveWorkspaceRename": "ワークスペース名を保存",
-        "cancelWorkspaceRename": "ワークスペース名の変更をキャンセル"
+        "cancelWorkspaceRename": "ワークスペース名の変更をキャンセル",
+        "search": "すべてのタスクを検索",
+        "searchPlaceholder": "タイトル、アシスタント、ワークスペース",
+        "closeSearch": "検索を閉じる",
+        "results": "検索結果：{{count}}",
+        "noResults": "一致するタスクはありません",
+        "emptyHint": "新しいタスクを始めると、ここに表示されます。",
+        "pinned": "ピン留め",
+        "pin": "タスクをピン留め",
+        "unpin": "ピン留めを解除",
+        "pinFailed": "ピン留めを保存できませんでした。もう一度お試しください。",
+        "taskActions": "{{title}} の操作",
+        "lastRunFailed": "前回の実行は完了していません"
     },
     "historyBuckets": {
         "today": "今日",

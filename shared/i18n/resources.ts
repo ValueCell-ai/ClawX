@@ -1,4 +1,6 @@
-import type { LanguageCode } from '../language';
+import { MENU_LABELS } from './menu-labels';
+export { MENU_LABELS } from './menu-labels';
+export type { MenuLabels } from './menu-labels';
 
 // EN
 import enCommon from './locales/en/common.json';
@@ -10,7 +12,6 @@ import enAgents from './locales/en/agents.json';
 import enSkills from './locales/en/skills.json';
 import enCron from './locales/en/cron.json';
 import enSetup from './locales/en/setup.json';
-import enMenu from './locales/en/menu.json';
 
 // ZH
 import zhCommon from './locales/zh/common.json';
@@ -22,7 +23,6 @@ import zhAgents from './locales/zh/agents.json';
 import zhSkills from './locales/zh/skills.json';
 import zhCron from './locales/zh/cron.json';
 import zhSetup from './locales/zh/setup.json';
-import zhMenu from './locales/zh/menu.json';
 
 // JA
 import jaCommon from './locales/ja/common.json';
@@ -34,7 +34,6 @@ import jaAgents from './locales/ja/agents.json';
 import jaSkills from './locales/ja/skills.json';
 import jaCron from './locales/ja/cron.json';
 import jaSetup from './locales/ja/setup.json';
-import jaMenu from './locales/ja/menu.json';
 
 // RU
 import ruCommon from './locales/ru/common.json';
@@ -46,7 +45,6 @@ import ruAgents from './locales/ru/agents.json';
 import ruSkills from './locales/ru/skills.json';
 import ruCron from './locales/ru/cron.json';
 import ruSetup from './locales/ru/setup.json';
-import ruMenu from './locales/ru/menu.json';
 
 export const I18N_NAMESPACES = [
   'common',
@@ -72,7 +70,7 @@ export const I18N_RESOURCES = {
     skills: enSkills,
     cron: enCron,
     setup: enSetup,
-    menu: enMenu,
+    menu: MENU_LABELS.en,
   },
   zh: {
     common: zhCommon,
@@ -84,7 +82,7 @@ export const I18N_RESOURCES = {
     skills: zhSkills,
     cron: zhCron,
     setup: zhSetup,
-    menu: zhMenu,
+    menu: MENU_LABELS.zh,
   },
   ja: {
     common: jaCommon,
@@ -96,7 +94,7 @@ export const I18N_RESOURCES = {
     skills: jaSkills,
     cron: jaCron,
     setup: jaSetup,
-    menu: jaMenu,
+    menu: MENU_LABELS.ja,
   },
   ru: {
     common: ruCommon,
@@ -108,15 +106,6 @@ export const I18N_RESOURCES = {
     skills: ruSkills,
     cron: ruCron,
     setup: ruSetup,
-    menu: ruMenu,
+    menu: MENU_LABELS.ru,
   },
 } as const;
-
-export type MenuLabels = typeof enMenu;
-
-export const MENU_LABELS: Record<LanguageCode, MenuLabels> = {
-  en: enMenu,
-  zh: zhMenu,
-  ja: jaMenu,
-  ru: ruMenu,
-};

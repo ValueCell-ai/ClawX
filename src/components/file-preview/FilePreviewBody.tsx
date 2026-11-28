@@ -8,18 +8,18 @@
  * The `mode` prop lets callers force a read-only preview surface.
  *
  * Used by:
- *   - `FilePreviewOverlay` for the Skills detail Sheet (read-only).
- *   - `ArtifactPanel`'s PreviewTab.
+ *   - The shared `FilePreviewSurface` inside skill details and Workspace.
  *
  * All sandbox / read-only / large-file / binary edge cases are handled
  * here so callers only pass a `FilePreviewTarget` and a `readOnly` flag.
  */
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
-import { FolderOpen, Save, ShieldAlert, Undo2 } from 'lucide-react';
+import { FileQuestion, FolderOpen, Save, ShieldAlert, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { cn } from '@/lib/utils';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import {
   readTextFile,
@@ -67,6 +67,8 @@ export interface FilePreviewBodyProps {
   readOnly?: boolean;
   /** Compact mode reduces padding/font for use inside the side panel. */
   compact?: boolean;
+  /** Flat, single-line heading for the shared workspace preview. */
+  singleLineHeader?: boolean;
   /** Optional slot rendered to the LEFT of the header info (e.g. back button). */
   leadingHeader?: React.ReactNode;
   /** Optional slot rendered to the RIGHT of the header (extra actions). */
@@ -123,6 +125,7 @@ export function FilePreviewBody({
   file,
   readOnly = false,
   compact = false,
+  singleLineHeader = false,
   leadingHeader,
   trailingHeader,
   headerLeftInset,
@@ -134,6 +137,8 @@ export function FilePreviewBody({
 }: FilePreviewBodyProps) {
   const { t } = useTranslation('chat');
   const loadIdentity = getFilePreviewTargetIdentity(file);
+  const displayPath = previewDisplayPath(file);
+  const directory = displayPath.slice(0, Math.max(displayPath.lastIndexOf('/'), displayPath.lastIndexOf('\\')) + 1);
   const [storedState, setState] = useState<LoadState>({ identity: loadIdentity, status: 'loading' });
   const state: LoadState = storedState.identity === loadIdentity
     ? storedState
@@ -356,6 +361,7 @@ export function FilePreviewBody({
     const directOpen = allowSystemActions && shouldOfferDirectOpenFallback(file.ext, size);
     return (
     <div className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center">
+      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-black/5 text-muted-foreground dark:bg-white/10"><FileQuestion className="h-6 w-6" /></div>
       <div className="space-y-1.5">
         <p className="text-sm font-medium text-foreground">
           {directOpen
@@ -370,7 +376,7 @@ export function FilePreviewBody({
             })
             : t(
               'filePreview.errors.unsupportedFormatHint',
-              'Only directly readable files such as text and Markdown support inline preview. Please open this file in your file manager.',
+              'Open this file in your file manager.',
             )}
         </p>}
       </div>
@@ -511,7 +517,7 @@ export function FilePreviewBody({
             </TabsContent>
           )}
           {tabs.includes('preview') && (
-            <TabsContent value="preview" className="m-0 h-full overflow-auto">
+            <TabsContent value="preview" forceMount={isHtmlPreviewExt(file.ext) ? true : undefined} className={cn('m-0 h-full overflow-auto', isHtmlPreviewExt(file.ext) && tab !== 'preview' && 'hidden')}>
               {richPreview === 'image' ? (
                 <ImageViewer
                   filePath={file.filePath}
@@ -589,7 +595,7 @@ export function FilePreviewBody({
                 ) : null
               ) : file.contentType === 'document' ? (
                 isHtmlPreviewExt(file.ext) ? (
-                  <HtmlPreviewAnchor />
+                  <HtmlPreviewAnchor file={file} active={active && tab === 'preview'} />
                 ) : (
                   <MarkdownPreview source={draft ?? state.content} />
                 )
@@ -614,30 +620,43 @@ export function FilePreviewBody({
       <header
         data-testid="file-preview-header"
         className={
-          compact
-            ? 'flex items-center justify-between gap-3 border-b border-black/5 px-4 py-2 dark:border-white/10'
-            : 'flex items-center justify-between gap-3 border-b border-black/5 px-5 py-3 dark:border-white/10'
+          singleLineHeader
+            ? 'flex min-h-11 shrink-0 items-center justify-between gap-2 px-3 py-2'
+            : compact
+            ? 'flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-black/5 px-3 py-2 dark:border-white/10'
+            : 'flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-black/5 px-5 py-3 dark:border-white/10'
         }
         style={headerLeftInset == null ? undefined : { paddingLeft: headerLeftInset }}
       >
-        <div className="flex min-w-0 items-center gap-3">
+        <div className={cn(
+          'flex min-w-0 flex-1 items-center gap-2',
+          !singleLineHeader && 'basis-40',
+          singleLineHeader && leadingHeader && 'gap-1',
+        )}>
           {leadingHeader}
           <FilePreviewIcon
             contentType={file.contentType}
             mimeType={file.mimeType}
             ext={file.ext}
-            className="h-5 w-5 shrink-0 text-muted-foreground"
+            className={cn("shrink-0 text-muted-foreground", singleLineHeader ? "h-4 w-4" : "h-5 w-5")}
           />
-          <div className="min-w-0">
-            <h2 className="truncate text-sm font-semibold">{file.fileName}</h2>
-            <p className="truncate text-2xs text-muted-foreground" title={previewDisplayPath(file)}>{previewDisplayPath(file)}</p>
-          </div>
+          {singleLineHeader ? (
+            <h2 aria-label={file.fileName} aria-description={displayPath} className="flex min-w-0 flex-1 overflow-hidden whitespace-nowrap text-xs">
+              {directory && <span data-testid="file-preview-directory" className="min-w-0 truncate font-normal text-muted-foreground">{directory}</span>}
+              <span data-testid="file-preview-filename" className="max-w-full shrink-0 truncate font-medium text-foreground">{file.fileName}</span>
+            </h2>
+          ) : (
+            <div className="min-w-0">
+              <h2 className="truncate text-sm font-semibold">{file.fileName}</h2>
+              <p className="truncate text-xs text-muted-foreground" title={previewDisplayPath(file)}>{previewDisplayPath(file)}</p>
+            </div>
+          )}
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className={cn("flex items-center gap-1", singleLineHeader ? "min-w-0 max-w-[65%]" : "max-w-full shrink-0 overflow-x-auto")}>
           {state.status === 'ready' && tabs.length > 1 && (
-            <TabsList className="h-8 shrink-0" data-testid="file-preview-view-tabs">
+            <TabsList className={singleLineHeader ? "h-7 min-w-0 justify-start overflow-x-auto" : "h-8 shrink-0"} data-testid="file-preview-view-tabs">
               {tabs.map((id) => (
-                <TabsTrigger key={id} value={id} className="px-2.5 py-1 text-xs">
+                <TabsTrigger key={id} value={id} className="shrink-0 px-2.5 py-1 text-xs">
                   {id === 'source' && t('filePreview.tabs.source', 'Source')}
                   {id === 'preview' && t('filePreview.tabs.preview', 'Preview')}
                 </TabsTrigger>

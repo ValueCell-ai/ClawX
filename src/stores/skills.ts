@@ -3,6 +3,7 @@
  * Manages skill/plugin state
  */
 import { create } from 'zustand';
+import { invalidateQuickAccessSkills } from '@/lib/quick-access-skills';
 import { hostApi } from '@/lib/host-api';
 import type { SkillsStatusResult } from '@/lib/host-api';
 import { AppError, normalizeAppError } from '@/lib/error-model';
@@ -176,6 +177,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
   error: null,
 
   fetchSkills: async () => {
+    invalidateQuickAccessSkills();
     if (get().skills.length === 0) {
       set({ loading: true, error: null });
     }
@@ -306,6 +308,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
       throw new Error(result.error || 'Failed to update skill config');
     }
 
+    invalidateQuickAccessSkills();
     skillIds.forEach((skillId) => updateSkill(skillId, { enabled }));
   },
 

@@ -1,3 +1,4 @@
+import { navigateToSection } from './fixtures/navigation';
 import type { ElectronApplication, Page } from '@playwright/test';
 import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
 
@@ -108,6 +109,15 @@ test.describe('settings issue report export', () => {
       await shortcut.click();
 
       const dialog = page.getByTestId('issue-report-dialog');
+      await expect(dialog).toHaveCSS('max-width', '576px');
+      await expect(page.getByTestId('issue-report-select-all')).toBeFocused();
+      await page.keyboard.press('Escape');
+      await expect(dialog).toHaveCount(0);
+      await expect(shortcut).toBeFocused();
+      await shortcut.click();
+      await expect(dialog.locator('footer').getByTestId('issue-report-export')).toBeVisible();
+      await expect(dialog.getByRole('heading', { level: 2 })).toHaveCSS('font-weight', '500');
+      await expect(dialog.getByRole('heading', { level: 2 })).toHaveCSS('font-size', '20px');
       await expect(dialog).toBeVisible();
       await expect(page.getByTestId('issue-report-contents')).toContainText('Conversation transcripts');
       await expect(page.getByTestId('issue-report-contents')).toContainText('OpenClaw configuration');
@@ -150,8 +160,13 @@ test.describe('settings issue report export', () => {
       await installMocks(app);
       const page = await reloadStableWindow(app);
 
-      await page.getByTestId('sidebar-nav-settings').click();
-      await page.getByTestId('settings-issue-report-open').click();
+      await navigateToSection(page, 'about');
+      const settingsTrigger = page.getByTestId('settings-issue-report-open');
+      await settingsTrigger.click();
+      await page.keyboard.press('Escape');
+      await expect(page.getByTestId('issue-report-dialog')).toHaveCount(0);
+      await expect(settingsTrigger).toBeFocused();
+      await settingsTrigger.click();
       await page.getByTestId(`issue-report-session-${FIRST_SESSION_KEY}`).uncheck();
       await expect(page.getByTestId('issue-report-selection-count')).toContainText('0');
       await expect(page.getByTestId('issue-report-export')).toBeEnabled();

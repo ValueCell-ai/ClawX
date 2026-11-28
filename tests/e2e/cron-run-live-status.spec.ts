@@ -128,7 +128,6 @@ test.describe('ClawX cron run live status', () => {
 
       await expect(page.getByTestId('main-layout')).toBeVisible({ timeout: 30_000 });
 
-      // Open the cron session (default startup lands on the main session).
       const cronSidebarButton = page.getByTestId(`sidebar-session-${CRON_BASE_KEY}`);
       await expect(cronSidebarButton).toBeVisible({ timeout: 30_000 });
       await cronSidebarButton.click();

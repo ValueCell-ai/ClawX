@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Chat } from '@/pages/Chat';
 import { useComposerDraftStore } from '@/stores/composer-drafts';
+import { hostApi } from '@/lib/host-api';
 import type { AcpTimelineSnapshot } from '@/lib/acp/timeline-types';
 
 vi.mock('react-router-dom', () => ({
@@ -80,13 +81,11 @@ const { acpState, agentsState, artifactPanelState, artifactPanelProps, chatState
     currentSessionKey: 'agent:main:main',
     currentAgentId: 'main',
     sessionLabels: {},
-    loadSessions: vi.fn(),
     selectAcpSession: vi.fn(),
     acknowledgeAcpSessionCreated: vi.fn(),
   },
   gatewayState: {
     status: { state: 'running', gatewayReady: true, port: 18789 },
-    sessionCatalogAttempted: false,
   },
   settingsState: {
     chatWorkspacePath: '/workspace',
@@ -163,10 +162,12 @@ vi.mock('@/pages/Chat/ChatInput', () => ({
     onSend,
     onStop,
     sending,
+    welcome,
     workspaceLabel,
     workspacePath,
     workspaceReadOnly,
   }: {
+    welcome?: boolean;
     disabled?: boolean;
     onSend: (text: string, attachments?: Array<Record<string, unknown>>, targetAgentId?: string | null) => Promise<boolean>;
     onStop?: () => void;
@@ -177,6 +178,7 @@ vi.mock('@/pages/Chat/ChatInput', () => ({
     onSelectWorkspace?: (path: string) => void;
   }) => (
     <div data-testid="mock-chat-input" data-disabled={disabled ? 'true' : 'false'} data-sending={sending ? 'true' : 'false'}>
+      {welcome && <div data-testid="acp-chat-empty-state">What can I do for you?</div>}
       <span data-testid="mock-workspace-label">{workspaceLabel}</span>
       <span data-testid="mock-workspace-path">{workspacePath}</span>
       <span data-testid="mock-workspace-readonly">{workspaceReadOnly ? 'readonly' : 'editable'}</span>
@@ -212,8 +214,8 @@ vi.mock('@/pages/Chat/ChatInput', () => ({
   ),
 }));
 
-vi.mock('@/components/file-preview/ArtifactPanel', () => ({
-  ArtifactPanel: (props: { fileGroups: unknown[]; uniqueFileCount: number; agent: unknown; runStartedAt?: number | null }) => {
+vi.mock('@/components/file-preview/ResponsiveArtifactPanel', () => ({
+  default: (props: { fileGroups: unknown[]; uniqueFileCount: number; agent: unknown; runStartedAt?: number | null }) => {
     artifactPanelProps.push(props);
     return <div data-testid="mock-artifact-panel" />;
   },
@@ -304,7 +306,8 @@ function deferredPromise() {
 describe('ACP Chat page', () => {
   beforeEach(() => {
     setSessionModel.mockReset().mockImplementation(async (_key, modelRef) => ({ modelRef }));
-    useComposerDraftStore.setState({ drafts: {}, modelRefs: {}, thinkingLevels: {}, failedPrompts: {}, submissions: {} });
+    useComposerDraftStore.setState(useComposerDraftStore.getInitialState());
+    vi.mocked(hostApi.chat.getAcpSessionFamily).mockClear();
     targetPromptAdmitted.mockReset();
     ensureAcpChatSubscriptions.mockReset();
     acpState.loading = false;
@@ -358,8 +361,6 @@ describe('ACP Chat page', () => {
     chatState.sessions = [{ key: 'agent:main:main', workspacePath: '/workspace' }];
     chatState.currentSessionKey = 'agent:main:main';
     chatState.currentAgentId = 'main';
-    chatState.loadSessions.mockReset();
-    chatState.loadSessions.mockResolvedValue(undefined);
     chatState.selectAcpSession.mockReset();
     chatState.selectAcpSession.mockImplementation((sessionKey: string, workspacePath?: string) => {
       chatState.currentSessionKey = sessionKey;
@@ -379,7 +380,6 @@ describe('ACP Chat page', () => {
     settingsState.chatWorkspacePath = '/workspace';
     settingsState.setChatWorkspacePath.mockReset();
     gatewayState.status = { state: 'running', gatewayReady: true, port: 18789 };
-    gatewayState.sessionCatalogAttempted = false;
   });
 
   it('renders ACP inline timeline content', async () => {
@@ -479,108 +479,64 @@ describe('ACP Chat page', () => {
     expect(acpState.loadSession).toHaveBeenCalledTimes(2);
   });
 
-  it('keeps an automatically prepared default ACP session as a draft until its first prompt', async () => {
+  it('prepares a local draft without loading ACP and applies its staged model on first send', async () => {
+    const sessionKey = 'agent:main:session-1';
     acpState.activeSessionKey = null;
-    chatState.sessions = [];
-
-    const { rerender } = render(<Chat />);
-
-    await waitFor(() => expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-disabled', 'false'));
-    expect(acpState.loadSession).not.toHaveBeenCalled();
-    gatewayState.sessionCatalogAttempted = true;
-    rerender(<Chat />);
-    await waitFor(() => {
-      expect(acpState.loadSession).toHaveBeenCalledWith({
-        sessionKey: 'agent:main:main', workspaceRoot: '/workspace', cwd: '/workspace', createIfMissing: true,
-      });
-    });
-    expect(chatState.acknowledgeAcpSessionCreated).not.toHaveBeenCalled();
-    expect(chatState.sessions).toEqual([{
-      key: 'agent:main:main', workspacePath: '/workspace', createdLocally: true,
-    }]);
-
-    useComposerDraftStore.getState().setModelRef('agent:main:main', 'custom-id/model');
-    rerender(<Chat />);
-    expect(setSessionModel).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByTestId('mock-send'));
-    await waitFor(() => expect(acpState.sendPrompt).toHaveBeenCalled());
-    expect(setSessionModel).toHaveBeenCalledWith('agent:main:main', 'custom-id/model', { createIfMissing: true });
-    expect(setSessionModel.mock.invocationCallOrder[0]).toBeLessThan(acpState.sendPrompt.mock.invocationCallOrder[0]);
-    expect(chatState.acknowledgeAcpSessionCreated).toHaveBeenCalledWith('agent:main:main', '/workspace', 'Ship it');
-  });
-
-  it('does not load ACP until session discovery publishes the hydrated workspace', async () => {
-    const sessionKey = 'agent:main:hydrated-workspace';
-    chatState.sessions = [];
-
-    const { rerender } = render(<Chat />);
-    await waitFor(() => expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-disabled', 'false'));
-    expect(chatState.loadSessions).not.toHaveBeenCalled();
-    expect(acpState.loadSession).not.toHaveBeenCalled();
-
     chatState.currentSessionKey = sessionKey;
-    chatState.sessions = [{ key: sessionKey, workspacePath: '/hydrated-workspace' }];
-    gatewayState.sessionCatalogAttempted = true;
-    rerender(<Chat />);
-    await waitFor(() => {
-      expect(acpState.loadSession).toHaveBeenCalledWith({
-        sessionKey,
-        workspaceRoot: '/hydrated-workspace',
-        cwd: '/hydrated-workspace',
-      });
-    });
-  });
-
-  it('preserves an optimistic absent session when automatic ACP creation fails during catalog reconciliation', async () => {
-    const sessionKey = 'agent:main:session-auto-missing';
-    const fallbackSessionKey = 'agent:main:fallback';
-    let finishCatalog!: () => void;
-    chatState.sessions = [];
-    chatState.currentSessionKey = sessionKey;
-    acpState.activeSessionKey = null;
-    acpState.workspaceRoot = null;
-    acpState.cwd = null;
-    acpState.timeline = { ...emptyTimeline(), sessionId: sessionKey };
-    acpState.loadSession.mockResolvedValue(false);
-    chatState.loadSessions.mockImplementation(() => new Promise<void>((resolve) => {
-      finishCatalog = () => {
-        const optimisticSession = chatState.sessions.find((session) => session.key === sessionKey);
-        if (optimisticSession?.workspacePath) {
-          chatState.sessions = [{ ...optimisticSession, displayName: 'Reconciled automatic session' }];
-        } else {
-          chatState.currentSessionKey = fallbackSessionKey;
-          chatState.sessions = [{ key: fallbackSessionKey, workspacePath: '/fallback' }];
-        }
-        resolve();
-      };
-    }));
-    const catalogRequest = chatState.loadSessions();
+    chatState.sessions = [{ key: sessionKey, createdLocally: true }];
+    useComposerDraftStore.getState().setModelRef(sessionKey, 'custom-id/model');
 
     render(<Chat />);
 
     await waitFor(() => {
-      expect(chatState.selectAcpSession).toHaveBeenCalledWith(sessionKey, '/workspace');
-      expect(acpState.loadSession).toHaveBeenCalledWith({
-        sessionKey,
-        workspaceRoot: '/workspace',
-        cwd: '/workspace',
-        createIfMissing: true,
+      expect(acpState.prepareLocalSession).toHaveBeenCalledWith({
+        sessionKey, workspaceRoot: '/workspace', cwd: '/workspace',
+      });
+      expect(resolveWorkspaceContext).toHaveBeenCalled();
+    });
+    expect(acpState.loadSession).not.toHaveBeenCalled();
+    expect(setSessionModel).not.toHaveBeenCalled();
+    expect(chatState.acknowledgeAcpSessionCreated).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('mock-send'));
+    await waitFor(() => expect(acpState.sendPrompt).toHaveBeenCalled());
+    expect(acpState.loadSession).toHaveBeenCalledExactlyOnceWith({
+      sessionKey, workspaceRoot: '/workspace', cwd: '/workspace', createIfMissing: true,
+    });
+    expect(setSessionModel).toHaveBeenCalledWith(sessionKey, 'custom-id/model', { createIfMissing: true });
+    expect(setSessionModel.mock.invocationCallOrder[0]).toBeLessThan(acpState.sendPrompt.mock.invocationCallOrder[0]);
+    expect(acpState.sendPrompt).toHaveBeenCalledWith(expect.objectContaining({ sessionKey }));
+    expect(chatState.acknowledgeAcpSessionCreated).toHaveBeenCalledWith(sessionKey, '/workspace', 'Ship it');
+  });
+
+  it('waits for the selected catalog entry and Gateway readiness before replaying an existing conversation', async () => {
+    const sessionKey = 'agent:main:hydrated-workspace';
+    acpState.activeSessionKey = null;
+    chatState.sessions = [];
+    chatState.currentSessionKey = sessionKey;
+
+    const { rerender } = render(<Chat />);
+
+    await waitFor(() => expect(resolveWorkspaceContext).toHaveBeenCalled());
+    expect(acpState.loadSession).not.toHaveBeenCalled();
+    expect(chatState.selectAcpSession).not.toHaveBeenCalled();
+    expect(hostApi.chat.getAcpSessionFamily).not.toHaveBeenCalled();
+
+    gatewayState.status = { state: 'running', gatewayReady: false, port: 18789 };
+    chatState.sessions = [{ key: sessionKey, workspacePath: '/hydrated-workspace' }];
+    rerender(<Chat />);
+    await waitFor(() => expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-disabled', 'false'));
+    expect(acpState.loadSession).not.toHaveBeenCalled();
+    expect(hostApi.chat.getAcpSessionFamily).not.toHaveBeenCalled();
+
+    gatewayState.status = { state: 'running', gatewayReady: true, port: 18789 };
+    rerender(<Chat />);
+    await waitFor(() => {
+      expect(acpState.loadSession).toHaveBeenCalledExactlyOnceWith({
+        sessionKey, workspaceRoot: '/hydrated-workspace', cwd: '/hydrated-workspace',
       });
     });
-    expect(chatState.acknowledgeAcpSessionCreated).not.toHaveBeenCalled();
-    expect(chatState.selectAcpSession.mock.invocationCallOrder.at(-1)!).toBeLessThan(
-      acpState.loadSession.mock.invocationCallOrder.at(-1)!,
-    );
-
-    finishCatalog();
-    await catalogRequest;
-    expect(chatState.currentSessionKey).toBe(sessionKey);
-    expect(chatState.sessions).toEqual([{
-      key: sessionKey,
-      workspacePath: '/workspace',
-      createdLocally: true,
-      displayName: 'Reconciled automatic session',
-    }]);
+    expect(hostApi.chat.getAcpSessionFamily).toHaveBeenCalledExactlyOnceWith({ sessionKey });
   });
 
   it('defers placeholder creation until send and retries failed first-send ACP creation', async () => {

@@ -1,22 +1,22 @@
 {
-    "title": "Каналы сообщений",
-    "subtitle": "Управляйте каналами сообщений, учётными записями, привязками учётных записей к агентам и настройками по умолчанию для каждого канала.",
+    "title": "Управление через мессенджеры",
+    "subtitle": "Общайтесь с ClawX через мессенджеры, поручайте задачи и получайте результаты.",
     "refresh": "Обновить",
-    "addChannel": "Добавить канал",
+    "addChannel": "Подключить мессенджер",
     "stats": {
         "total": "Всего каналов",
         "connected": "Подключено",
         "disconnected": "Отключено"
     },
-    "gatewayWarning": "Служба шлюза не запущена. Каналы не могут подключиться.",
+    "gatewayWarning": "Запустите локальную службу для подключения мессенджеров.",
     "availableChannels": "Доступные каналы",
-    "supportedChannels": "Поддерживаемые каналы",
+    "supportedChannels": "Добавить мессенджер",
     "available": "Доступные каналы",
     "availableDesc": "Подключить новый канал",
-    "configured": "Настроенные каналы",
+    "configured": "Подключённые приложения",
     "configuredDesc": "Управление уже настроенными каналами",
     "configuredBadge": "Настроен",
-    "deleteConfirm": "Вы уверены, что хотите удалить этот канал?",
+    "deleteConfirm": "Удалить этот мессенджер и все его аккаунты из ClawX?",
     "showAll": "Показать все",
     "pluginBadge": "Плагин",
     "toast": {
@@ -38,17 +38,20 @@
     },
     "account": {
         "add": "Добавить учётную запись",
-        "edit": "Редактировать",
+        "linkedAccount": "Привязанный аккаунт",
+        "accountActions": "Действия аккаунта",
+        "appActions": "Действия приложения",
+        "edit": "Изменить настройки",
         "authorizeWorkspace": "Авторизовать рабочее пространство",
         "resetWorkspaceAuth": "Отменить авторизацию рабочего пространства",
         "resetWorkspaceAuthConfirm": "Отменить локально сохранённую авторизацию DingTalk Workspace? Настроенные учётные записи DingTalk используют её совместно. Чат продолжит работать, но календарь, документы, задачи и другие функции потребуется авторизовать снова.",
         "resetWorkspaceAuthConfirmAction": "Отменить авторизацию",
         "delete": "Удалить учётную запись",
-        "deleteChannel": "Удалить канал",
+        "deleteChannel": "Удалить приложение",
         "deleteConfirm": "Вы уверены, что хотите удалить эту учётную запись?",
         "default": "Текущая по умолчанию",
         "setDefault": "Установить как канал по умолчанию",
-        "bindAgentLabel": "Связанный агент",
+        "bindAgentLabel": "Кто выполняет задачи",
         "unassigned": "Не назначено",
         "mainAccount": "Основная учётная запись",
         "customIdLabel": "ID учётной записи",
@@ -78,12 +81,15 @@
     "dialog": {
         "updateTitle": "Обновить {{name}}",
         "configureTitle": "Настроить {{name}}",
-        "addTitle": "Добавить канал",
+        "addTitle": "Подключить мессенджер",
         "existingDesc": "Обновите существующую конфигурацию",
         "selectDesc": "Выберите тип канала для настройки",
         "qrCode": "QR-код",
         "token": "Токен",
         "scanQR": "Сканируйте этот QR-код с {{name}}",
+        "feishuSetupHint": "Создайте приложение в консоли разработчика Feishu или Lark, включите бота и введите App ID и App Secret.",
+        "whatsappSetupHint": "Создайте QR-код для подключения ClawX к WhatsApp на телефоне.",
+        "whatsappScanHint": "В WhatsApp на телефоне откройте «Связанные устройства» → «Привязка устройства» и отсканируйте код.",
         "refreshCode": "Обновить код",
         "loadingConfig": "Загрузка конфигурации...",
         "existingHint": "У вас уже есть конфигурация для этого канала",
@@ -223,7 +229,7 @@
             ]
         },
         "whatsapp": {
-            "description": "Подключите WhatsApp сканированием QR-кода (номер телефона не требуется)",
+            "description": "Отправляйте задачи ClawX и получайте результаты в WhatsApp.",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/ES7fwUfH8iGl8FkHYfFcyWB3n4d#doxcnUElomBZLi0NnKLUzn6zLbd",
             "instructions": [
                 "Откройте WhatsApp на телефоне",
@@ -243,7 +249,7 @@
             ]
         },
         "dingtalk": {
-            "description": "Подключите DingTalk через официальный коннектор OpenClaw (чат Stream). Календарь, документы и другие офисные навыки используют встроенный dws CLI.",
+            "description": "Подключите бота DingTalk для общения и рабочих задач.",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/Y5eNwiSiZidkLskrwtJc1rUln0b#doxcnDgA78n43DbkiQjI1OqUA7b",
             "fields": {
                 "clientId": {
@@ -263,7 +269,7 @@
             ]
         },
         "feishu": {
-            "description": "Подключите бота Feishu/Lark через WebSocket",
+            "description": "Подключите бота Feishu или Lark.",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/GKn8wOvHnibpPNkNkPzcAvGlnzK#GdHUdp9t9oqyegxwV8ScLvVGn1c",
             "fields": {
                 "appId": {
@@ -283,7 +289,7 @@
             ]
         },
         "wecom": {
-            "description": "Подключите бота WeCom через плагин",
+            "description": "Подключите бота WeCom.",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/JTGnwoV0RixKPtkr4w7c7gpAnDc",
             "fields": {
                 "botId": {

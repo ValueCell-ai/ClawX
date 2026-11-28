@@ -6,6 +6,7 @@ onlyBuiltDependencies:
   - '@discordjs/opus'
   - '@google/genai'
   - '@whiskeysockets/baileys'
+  - electron
   - electron-winstaller
   - koffi
   - node-llama-cpp
@@ -15,7 +16,6 @@ onlyBuiltDependencies:
   - tree-sitter-bash
 
 ignoredBuiltDependencies:
-  - electron
   - esbuild
 
 overrides:

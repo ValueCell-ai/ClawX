@@ -88,7 +88,9 @@ vi.mock('react-i18next', () => ({
       if (typeof params === 'string') return params;
       if (key === 'acp.tool') return 'Tool';
       if (key === 'acp.completed') return 'Completed';
-      if (key === 'acp.toolGroupSummary') return `${String(params?.count ?? '')} tool calls`;
+      if (key === 'acp.toolGroupActionSeparator') return ', ';
+      if (key === 'acp.toolGroupMoreActions') return `${String(params?.actions ?? '')} and more`;
+      if (key === 'acp.toolName.manageProcess') return 'Manage process';
       if (key === 'acp.expandToolGroup') return 'Expand tool calls';
       if (key === 'acp.collapseToolGroup') return 'Collapse tool calls';
       if (key === 'welcome.subtitle') return 'What can I do for you?';
@@ -213,7 +215,7 @@ describe('Chat tool card suppression', () => {
 
     expect(screen.getByTestId('acp-chat-timeline')).toBeInTheDocument();
     expect(screen.getByTestId('acp-tool-calls-group')).toHaveAttribute('data-collapsed', 'true');
-    expect(screen.getByTestId('acp-tool-calls-group')).toHaveTextContent('3 tool calls');
+    expect(screen.getByTestId('acp-tool-calls-group')).toHaveTextContent('exec, image and more');
     expect(screen.queryByTestId('acp-tool-call-card')).not.toBeInTheDocument();
     expect(screen.getByText('All done.')).toBeInTheDocument();
   });

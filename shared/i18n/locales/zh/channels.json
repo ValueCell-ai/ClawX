@@ -1,30 +1,30 @@
 {
-    "title": "消息频道",
-    "subtitle": "统一管理消息频道、账号、账号与智能体的绑定关系，以及频道默认账号",
+    "title": "消息遥控",
+    "subtitle": "通过微信、飞书等应用与 ClawX 对话，交办任务、接收结果。",
     "refresh": "刷新",
-    "addChannel": "添加频道",
+    "addChannel": "连接消息应用",
     "stats": {
-        "total": "频道总数",
+        "total": "应用总数",
         "connected": "已连接",
         "disconnected": "未连接"
     },
-    "gatewayWarning": "网关未运行。未启用网关时无法管理频道。",
-    "availableChannels": "可用频道",
-    "supportedChannels": "支持的频道",
+    "gatewayWarning": "本地服务尚未启动，启动后即可连接消息应用。",
+    "availableChannels": "可用消息应用",
+    "supportedChannels": "添加消息应用",
     "pluginBadge": "插件",
-    "available": "可用频道",
-    "availableDesc": "连接一个新的频道",
-    "configured": "已配置频道",
-    "configuredDesc": "管理已完成配置的频道",
+    "available": "可用消息应用",
+    "availableDesc": "连接一个新的消息应用",
+    "configured": "已连接的应用",
+    "configuredDesc": "管理已完成配置的消息应用",
     "configuredBadge": "已配置",
-    "deleteConfirm": "确定要删除此频道吗？",
+    "deleteConfirm": "确定要从 ClawX 移除此应用及其所有账号吗？",
     "showAll": "显示全部",
     "toast": {
         "whatsappConnected": "WhatsApp 连接成功",
         "whatsappFailed": "WhatsApp 连接失败: {{error}}",
         "qrConnected": "{{name}} 连接成功",
         "qrFailed": "{{name}} 连接失败: {{error}}",
-        "channelSaved": "频道 {{name}} 已保存",
+        "channelSaved": "应用 {{name}} 已保存",
         "channelConnecting": "正在连接 {{name}}...",
         "savedButRefreshFailed": "配置已保存，但刷新页面数据失败，请手动刷新查看最新状态",
         "restartManual": "请手动重启网关",
@@ -32,28 +32,31 @@
         "bindingUpdated": "账号绑定已更新",
         "defaultUpdated": "默认账号已更新",
         "accountDeleted": "账号已删除",
-        "channelDeleted": "频道已删除",
+        "channelDeleted": "应用已删除",
         "dingtalkWorkspaceAuthReset": "已取消钉钉办公能力授权",
         "dingtalkWorkspaceAuthResetFailed": "无法取消钉钉办公能力授权"
     },
     "account": {
         "add": "添加账号",
-        "edit": "编辑",
+        "linkedAccount": "已关联账号",
+        "accountActions": "账号操作",
+        "appActions": "应用操作",
+        "edit": "编辑配置",
         "authorizeWorkspace": "授权办公能力",
         "resetWorkspaceAuth": "取消办公授权",
         "resetWorkspaceAuthConfirm": "确定取消本机保存的钉钉办公能力授权吗？此授权由已配置的钉钉账号共享；取消后基础聊天仍可使用，但日历、文档、待办等办公能力需要重新授权。",
         "resetWorkspaceAuthConfirmAction": "取消授权",
         "delete": "删除账号",
-        "deleteChannel": "删除频道",
+        "deleteChannel": "移除应用",
         "deleteConfirm": "确定要删除该账号吗？",
         "default": "当前默认",
-        "setDefault": "设为频道默认账号",
-        "bindAgentLabel": "绑定 Agent",
+        "setDefault": "设为应用默认账号",
+        "bindAgentLabel": "交给哪位助手",
         "unassigned": "未绑定",
         "mainAccount": "主账号",
         "customIdLabel": "账号 ID",
         "customIdPlaceholder": "例如：feishu-sales-bot",
-        "customIdHint": "使用小写账号 ID（字母、数字、连字符、下划线）来区分同一频道下的多个账号。",
+        "customIdHint": "使用小写账号 ID（字母、数字、连字符、下划线）来区分同一应用下的多个账号。",
         "invalidId": "账号 ID 不能为空",
         "invalidCanonicalId": "账号 ID 仅支持小写字母、数字、连字符和下划线；必须以字母或数字开头，且最长 64 个字符。",
         "idLabel": "ID: {{id}}",
@@ -72,27 +75,30 @@
             "disconnected": "未连接",
             "error": "连接失败"
         },
-        "accountIdPrompt": "请输入该频道的新账号 ID",
+        "accountIdPrompt": "请输入该应用的新账号 ID",
         "accountIdExists": "账号 ID {{accountId}} 已存在"
     },
     "dialog": {
         "updateTitle": "更新 {{name}}",
         "configureTitle": "配置 {{name}}",
-        "addTitle": "添加频道",
+        "addTitle": "连接消息应用",
         "existingDesc": "更新您现有的配置",
-        "selectDesc": "选择要配置的频道类型",
+        "selectDesc": "选择要配置的应用类型",
         "qrCode": "二维码",
         "token": "令牌",
         "scanQR": "使用 {{name}} 扫描此二维码",
+        "feishuSetupHint": "在飞书或 Lark 开放平台创建应用并启用机器人，再填入 App ID 和 App Secret。",
+        "whatsappSetupHint": "生成二维码后，用手机上的 WhatsApp 扫码连接 ClawX。",
+        "whatsappScanHint": "在手机 WhatsApp 中打开「已关联的设备」→「关联设备」，扫描下方二维码。",
         "refreshCode": "刷新代码",
         "loadingConfig": "正在加载配置...",
-        "existingHint": "您已配置过此频道",
+        "existingHint": "您已配置过此应用",
         "howToConnect": "如何连接",
         "viewDocs": "查看文档",
-        "channelName": "频道名称",
+        "channelName": "应用名称",
         "channelNamePlaceholder": "我的 {{name}}",
-        "enableChannel": "启用频道",
-        "enableChannelDesc": "关闭后会保存配置，但不会启动该频道",
+        "enableChannel": "启用应用",
+        "enableChannelDesc": "关闭后会保存配置，但不会启动该应用",
         "credentialsVerified": "凭证已验证",
         "validationFailed": "验证失败",
         "warnings": "警告",
@@ -223,7 +229,7 @@
             ]
         },
         "whatsapp": {
-            "description": "通过扫描二维码连接 WhatsApp（无需手机号）",
+            "description": "在 WhatsApp 给 ClawX 交办任务、接收结果。",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/ES7fwUfH8iGl8FkHYfFcyWB3n4d#doxcnsDDFbeEzqgjN6HSlyonLvc",
             "instructions": [
                 "在手机上打开 WhatsApp",
@@ -243,7 +249,7 @@
             ]
         },
         "dingtalk": {
-            "description": "通过官方 OpenClaw 连接器接入钉钉（Stream 聊天）。日历、文档等办公技能使用随包提供的 dws CLI。",
+            "description": "连接钉钉机器人，聊天并处理办公任务。",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/Y5eNwiSiZidkLskrwtJc1rUln0b#doxcnr8KfaA2mNPeQUeHO83eDPh",
             "fields": {
                 "clientId": {
@@ -263,7 +269,7 @@
             ]
         },
         "feishu": {
-            "description": "通过飞书官方推出的 OpenClaw 插件连接飞书/Lark 机器人",
+            "description": "连接飞书或 Lark 机器人。",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/GKn8wOvHnibpPNkNkPzcAvGlnzK#Py88dTltfoJc1jxAhIBcW3Pkn7b",
             "fields": {
                 "appId": {
@@ -284,7 +290,7 @@
             ]
         },
         "wecom": {
-            "description": "通过插件连接企业微信机器人",
+            "description": "连接企业微信机器人。",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/JTGnwoV0RixKPtkr4w7c7gpAnDc",
             "fields": {
                 "botId": {

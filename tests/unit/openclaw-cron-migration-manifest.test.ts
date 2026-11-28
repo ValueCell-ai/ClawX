@@ -21,7 +21,7 @@ const job = (id = 'legacy', extra: JsonRecord = {}) => ({
   wakeMode: 'next-heartbeat', delivery: { mode: 'none' }, state: { lastRunAtMs: 3, lastStatus: 'ok' }, ...extra,
 });
 async function fixture(cfg: unknown = config()) {
-  const root = await mkdtemp(join(tmpdir(), 'clawx-cron-evidence-'));
+  const root = await mkdtemp(join(await realpath(tmpdir()), 'clawx-cron-evidence-'));
   roots.push(root);
   const stateDir = join(root, 'state');
   async function json(name: string, value: unknown) {

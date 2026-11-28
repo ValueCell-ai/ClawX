@@ -130,6 +130,7 @@ test.describe('ClawX chat LaTeX rendering', () => {
       }
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
+      await page.getByTestId(`sidebar-session-${SESSION_KEY}`).click();
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
       await emitAcpSessionUpdates(app, seededUpdates);
 

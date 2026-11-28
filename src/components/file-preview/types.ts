@@ -1,7 +1,7 @@
 /**
  * Shared types for the file preview pipeline.
  *
- * Lives outside `FilePreviewOverlay.tsx` so callers (chat panel, workspace
+ * Lives outside the reader UI so callers (chat panel, workspace
  * tree, skills page, …) can import the type without pulling in the Sheet /
  * Monaco component graph.
  */

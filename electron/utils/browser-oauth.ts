@@ -31,16 +31,18 @@ const OPENAI_OAUTH_DEFAULT_MODEL = 'gpt-5.6-sol';
 export class BrowserOAuthManager extends EventEmitter {
   private activeAccountId: string | null = null;
   private activeLabel: string | null = null;
+  private activeModelId: string | null = null;
   private active = false;
   private activeFlowId: number | null = null;
   private nextFlowId = 0;
   private pendingManualCodeResolve: ((value: string) => void) | null = null;
   private pendingManualCodeReject: ((reason?: unknown) => void) | null = null;
   private flowAbortController: AbortController | null = null;
+  private persistence: Promise<void> | null = null;
 
   async startFlow(
     provider: BrowserOAuthProviderType,
-    options?: { accountId?: string; label?: string },
+    options?: { accountId?: string; label?: string; modelId?: string },
   ): Promise<boolean> {
     // A double click or a reopened dialog can dispatch the same request twice.
     // Reuse the active flow instead of opening parallel callback servers and
@@ -56,6 +58,7 @@ export class BrowserOAuthManager extends EventEmitter {
     this.activeFlowId = flowId;
     this.activeAccountId = options?.accountId || provider;
     this.activeLabel = options?.label || null;
+    this.activeModelId = options?.modelId?.trim() || null;
     this.flowAbortController = controller;
     this.emit('oauth:start', { provider, accountId: this.activeAccountId });
 
@@ -80,6 +83,7 @@ export class BrowserOAuthManager extends EventEmitter {
     this.activeFlowId = null;
     this.activeAccountId = null;
     this.activeLabel = null;
+    this.activeModelId = null;
     this.pendingManualCodeResolve = null;
     this.pendingManualCodeReject = null;
     this.flowAbortController = null;
@@ -107,6 +111,7 @@ export class BrowserOAuthManager extends EventEmitter {
       }
 
       const token = await loginOpenAICodexOAuth({
+        signal,
         openUrl: async (url) => {
           await shell.openExternal(url);
         },
@@ -137,7 +142,7 @@ export class BrowserOAuthManager extends EventEmitter {
       });
 
       if (this.isCurrentFlow(flowId)) {
-        await this.onSuccess(provider, token, flowId);
+        await this.persist(this.onSuccess(provider, token, flowId));
       }
     } catch (error) {
       if (!this.isCurrentFlow(flowId)) {
@@ -149,13 +154,28 @@ export class BrowserOAuthManager extends EventEmitter {
     }
   }
 
+  private async persist(task: Promise<void>): Promise<void> {
+    this.persistence = task;
+    try {
+      await task;
+    } finally {
+      this.persistence = null;
+    }
+  }
+
   async stopFlow(): Promise<void> {
+    if (this.persistence) {
+      // Authorization succeeded. Let its configuration writes finish together.
+      await this.persistence.catch(() => {});
+      return;
+    }
     this.active = false;
     this.activeFlowId = null;
     this.flowAbortController?.abort();
     this.flowAbortController = null;
     this.activeAccountId = null;
     this.activeLabel = null;
+    this.activeModelId = null;
     if (this.pendingManualCodeReject) {
       this.pendingManualCodeReject(new Error('OAuth flow cancelled'));
     }
@@ -182,9 +202,11 @@ export class BrowserOAuthManager extends EventEmitter {
   ) {
     const accountId = this.activeAccountId || providerType;
     const accountLabel = this.activeLabel;
+    const requestedModel = this.activeModelId;
 
     const providerService = getProviderService();
     const existing = await providerService.getAccount(accountId);
+    if (!this.isCurrentFlow(flowId)) return;
     const runtimeProviderId = OPENAI_RUNTIME_PROVIDER_ID;
     const defaultModel = OPENAI_OAUTH_DEFAULT_MODEL;
     const accountLabelDefault = 'OpenAI Codex';
@@ -200,6 +222,7 @@ export class BrowserOAuthManager extends EventEmitter {
       return value.includes('/') ? value.split('/').pop() : value;
     })();
 
+    const modelId = requestedModel?.replace(/^openai(?:-codex)?\//, '') || normalizedExistingModel || defaultModel;
     const nextAccount = await providerService.createAccount({
       id: accountId,
       vendorId: providerType,
@@ -207,7 +230,7 @@ export class BrowserOAuthManager extends EventEmitter {
       authMode: 'oauth_browser',
       baseUrl: existing?.baseUrl,
       apiProtocol: existing?.apiProtocol,
-      model: normalizedExistingModel || defaultModel,
+      model: modelId,
       fallbackModels: existing?.fallbackModels,
       fallbackAccountIds: existing?.fallbackAccountIds,
       enabled: existing?.enabled ?? true,
@@ -220,6 +243,7 @@ export class BrowserOAuthManager extends EventEmitter {
       createdAt: existing?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
+    if (!this.isCurrentFlow(flowId)) return;
 
     await getSecretStore().set({
       type: 'oauth',
@@ -230,6 +254,7 @@ export class BrowserOAuthManager extends EventEmitter {
       email: oauthTokenEmail,
       subject: oauthTokenSubject,
     });
+    if (!this.isCurrentFlow(flowId)) return;
 
     await saveOAuthTokenToOpenClaw(runtimeProviderId, {
       access: token.access,
@@ -239,18 +264,9 @@ export class BrowserOAuthManager extends EventEmitter {
       projectId: oauthTokenSubject,
       accountId: oauthTokenSubject,
     });
+    if (!this.isCurrentFlow(flowId)) return;
 
-    const modelId = normalizedExistingModel || defaultModel;
     const modelRef = `${runtimeProviderId}/${modelId}`;
-    const fallbackModelRefs = (nextAccount.fallbackModels ?? [])
-      .map((fallback) => fallback.trim())
-      .filter(Boolean)
-      .map((fallback) => (
-        fallback.replace(/^openai-codex\//, `${runtimeProviderId}/`).startsWith(`${runtimeProviderId}/`)
-          ? fallback.replace(/^openai-codex\//, `${runtimeProviderId}/`)
-          : `${runtimeProviderId}/${fallback}`
-      ));
-
     try {
       await setOpenClawDefaultModelWithOverride(
         runtimeProviderId,
@@ -259,7 +275,6 @@ export class BrowserOAuthManager extends EventEmitter {
           baseUrl: OPENAI_CODEX_OAUTH_PROVIDER_CONFIG.baseUrl,
           api: OPENAI_CODEX_OAUTH_PROVIDER_CONFIG.api,
         },
-        fallbackModelRefs,
       );
       await ensureOpenClawProviderAgentRuntimePins();
       logger.info(`[BrowserOAuth] Registered ${runtimeProviderId} in openclaw.json (default model: ${modelRef})`);
@@ -284,12 +299,13 @@ export class BrowserOAuthManager extends EventEmitter {
     const providerType = 'tokendance' as const;
     const accountId = this.activeAccountId || providerType;
     const accountLabel = this.activeLabel;
+    const requestedModel = this.activeModelId;
 
     const providerService = getProviderService();
     const existing = await providerService.getAccount(accountId);
     if (!this.ownsFlow(flowId, signal)) return;
 
-    const model = existing?.model?.trim().replace(/^tokendance\//, '') || TOKENDANCE_DEFAULT_MODEL;
+    const model = (requestedModel || existing?.model?.trim())?.replace(/^tokendance\//, '') || TOKENDANCE_DEFAULT_MODEL;
     const headers = Object.fromEntries(
       Object.entries(existing?.headers ?? {}).filter(([name]) => name.toLowerCase() !== 'x-app-url'),
     );
@@ -326,9 +342,6 @@ export class BrowserOAuthManager extends EventEmitter {
         apiKeyEnv: 'TOKENDANCE_API_KEY',
         headers: TOKENDANCE_APP_HEADER,
       },
-      (nextAccount.fallbackModels ?? []).map((fallback) => (
-        fallback.startsWith(`${providerType}/`) ? fallback : `${providerType}/${fallback}`
-      )),
     );
     if (!this.ownsFlow(flowId, signal)) return;
 

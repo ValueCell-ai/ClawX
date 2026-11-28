@@ -1,14 +1,24 @@
 {
-    "gatewayNotRunning": "Gateway Not Running",
-    "gatewayRequired": "The OpenClaw Gateway needs to be running to use chat. It will start automatically, or you can start it from Settings.",
+    "gatewayNotRunning": "Local service is not running",
+    "gatewayRequired": "This feature needs the local service. It starts automatically, or you can manage it in Settings → Advanced.",
     "welcome": {
         "title": "ClawX Chat",
-        "subtitle": "What can I do for you?",
+        "subtitle": "What would you like to get done?",
         "askQuestions": "Handle Tasks",
         "askQuestionsDesc": "Work on task-oriented requests",
         "creativeTasks": "Continuous Execution",
         "creativeTasksDesc": "Keep running through multi-step work",
-        "brainstorming": "Multi-Agent Parallel"
+        "brainstorming": "Multi-Agent Parallel",
+        "skills": {
+            "docx": "Documents",
+            "xlsx": "Spreadsheets",
+            "pptx": "Presentations",
+            "pdf": "PDF tools",
+            "computer-use": "Computer use",
+            "skill-creator": "Create skills"
+        },
+        "skillUnavailable": "Enable or install this skill in Skills.",
+        "skillsFailed": "Skills could not be loaded. Open the skill menu to retry."
     },
     "noLogs": "(No logs available yet)",
     "scrollToLatest": "Back to bottom",
@@ -59,13 +69,34 @@
             "read": "Read",
             "write": "Write",
             "spawnSubagent": "Spawn subagent",
-            "memorySearch": "Search memory"
+            "memorySearch": "Search memory",
+            "editFile": "Edit file",
+            "applyPatch": "Apply patch",
+            "manageProcess": "Manage process",
+            "remoteCode": "Run remote code",
+            "manageCredentials": "Manage credentials",
+            "webSearch": "Search the web",
+            "xSearch": "Search X posts",
+            "memoryRead": "Read memory",
+            "editPersonalInstructions": "Edit personal instructions",
+            "waitSubagents": "Wait for subagents",
+            "awaitFollowUp": "Wait for follow-up",
+            "manageBackgroundTasks": "Manage background tasks",
+            "manageSkills": "Manage skills",
+            "searchSkills": "Search skills",
+            "loadSkill": "Load skill",
+            "waitExecution": "Wait for execution",
+            "searchTools": "Search tools",
+            "describeTool": "View tool details",
+            "dispatchTool": "Call tool",
+            "manageAutomations": "Manage scheduled tasks"
         },
         "expandTool": "Expand tool result",
         "collapseTool": "Collapse tool result",
         "expandToolGroup": "Expand tool calls",
         "collapseToolGroup": "Collapse tool calls",
-        "toolGroupSummary": "{{count}} tool calls",
+        "toolGroupActionSeparator": ", ",
+        "toolGroupMoreActions": "{{actions}} and more",
         "permission": "Permission",
         "plan": "Plan",
         "running": "Running",
@@ -111,6 +142,7 @@
         "copied": "Copied",
         "turnDuration": "Took {{duration}}",
         "turnElapsed": "{{duration}} elapsed",
+        "viewTurnProcess": "View process",
         "compaction": {
             "inProgress": "Compacting context",
             "completed": "Compacted history",
@@ -130,24 +162,26 @@
     },
     "artifactPanel": {
         "tabs": {
-            "changes": "Changes",
+            "changes": "Task changes",
             "preview": "Preview",
             "browser": "Workspace"
         },
         "actions": {
-            "back": "Back to list"
+            "back": "Back to list",
+            "maximize": "Maximize workspace panel",
+            "restore": "Restore workspace panel"
         },
         "changes": {
-            "heading": "File changes ({{count}})",
-            "empty": "This session has no file changes yet.",
+            "heading": "Task changes ({{count}})",
+            "empty": "No changes in this conversation",
             "selectFileHint": "Click a file card in the chat or “View changes” to open a diff.",
             "changeRecord": "Change {{number}}",
-            "diffUnavailable": "Diff unavailable for this change."
+            "diffUnavailable": "Diff unavailable for this change.",
+            "emptyHint": "Files created, modified or deleted during this conversation will appear here."
         },
         "preview": {
             "emptyTitle": "No file selected",
-            "emptyHint": "Click a file card in the chat first; the selected file will preview here.",
-            "fullscreenLabel": "Fullscreen file preview"
+            "emptyHint": "Choose a workspace file or a file card in the conversation to preview it here."
         }
     },
     "filePreview": {
@@ -162,8 +196,6 @@
             "openInFinder": "Reveal in file manager",
             "openDirectly": "Open directly",
             "close": "Close",
-            "enterFullscreen": "Enter fullscreen",
-            "exitFullscreen": "Exit fullscreen",
             "openHtmlExternally": "Open HTML in system browser",
             "retry": "Retry"
         },
@@ -181,8 +213,8 @@
             "notFound": "File not found",
             "loadFailed": "Load failed: {{error}}",
             "noPreview": "No preview available for this file",
-            "unsupportedFormatTitle": "This file format is not supported for built-in preview",
-            "unsupportedFormatHint": "Built-in preview currently supports directly readable text/Markdown-style files only. Open the file in the file manager instead.",
+            "unsupportedFormatTitle": "Preview unavailable",
+            "unsupportedFormatHint": "Open this file in your file manager.",
             "largeBinaryOpenTitle": "This file is too large for built-in preview",
             "largeBinaryOpenHint": "This file is {{size}}. ClawX cannot preview it inline, but you can confirm and open it with the system default app.",
             "openInFinderFailed": "Could not reveal file",
@@ -246,7 +278,22 @@
         "actions": {
             "refresh": "Refresh",
             "openRootInFinder": "Reveal workspace in file manager"
-        }
+        },
+        "search": "Search files",
+        "clearSearch": "Clear file search",
+        "showHidden": "Show hidden files",
+        "collapseAll": "Collapse all folders",
+        "browseFiles": "Browse files",
+        "fileActions": "File actions",
+        "copyPath": "Copy path",
+        "pathCopied": "Path copied",
+        "copyFailed": "Could not copy path",
+        "resizeFiles": "Resize file list",
+        "resizePanel": "Resize workspace panel",
+        "noResults": "No matching files",
+        "noFiles": "No visible files in this folder.",
+        "searchLimited": "Some files are not loaded. Search covers the loaded directory only.",
+        "searchScope": "Search scope: loaded folders"
     },
     "imageGeneration": {
         "generating": "Generating image, please wait…",
@@ -258,13 +305,12 @@
         "attachFiles": "Attach files",
         "pickSkill": "Choose skill",
         "skillButton": "Skills",
-        "skillPickerTitle": "Quick skill access for {{agent}}",
         "skillSearchPlaceholder": "Search skills",
         "skillLoading": "Loading skills...",
         "skillEmpty": "No matching skills found",
-        "pickAgent": "Choose agent",
         "thinkingStrength": "Thinking strength",
         "thinkingDefault": "Default",
+        "thinkingRestoreDefault": "Restore default",
         "thinkingDefaultLevel": "Default ({{level}})",
         "thinkingAdjusted": "{{level}} (adjusted by model)",
         "thinkingFailed": "Could not change thinking strength. {{error}}",
@@ -281,13 +327,11 @@
             "ultra": "Ultra"
         },
         "pickModel": "Choose model",
-        "clearTarget": "Clear target agent",
         "targetChip": "@{{agent}}",
-        "agentPickerTitle": "Route the next message to another agent",
-        "modelPickerTitle": "Switch model for this chat",
+        "modelPickerTitle": "Choose a model for this task",
         "modelReadFailed": "Could not read this chat’s model: {{error}}",
         "modelSwitchFailed": "Failed to switch model: {{error}}",
-        "gatewayDisconnectedPlaceholder": "Gateway not connected...",
+        "gatewayDisconnectedPlaceholder": "Connecting to the local service…",
         "send": "Send",
         "sendFailed": "Send failed",
         "retrySend": "Retry sending",
@@ -298,7 +342,7 @@
         "subagentsWorking": "Subagents working…",
         "gatewayConnected": "connected",
         "gatewayStarting": "starting",
-        "gatewayStatus": "gateway {{state}}",
+        "gatewayStatus": "{{state}}",
         "retryFailedAttachments": "Retry failed attachments",
         "workspacePrefix": "{{workspace}}",
         "workspacePickerTitle": "Select workspace folder",
@@ -310,7 +354,7 @@
         "folderAttachment": "Folder",
         "skillPreviewTooltip": "Preview SKILL.md",
         "skillPreviewNotFound": "Could not find this skill. Open the skill picker to refresh the list.",
-        "contextUsage": "{{percentage}} context used: {{used}} / {{total}} tokens",
+        "contextUsage": "{{percentage}} context used: {{used}} / {{total}} Tokens",
         "voiceInput": "Voice input",
         "voiceStop": "Stop recording",
         "voiceNotConfigured": "Voice transcription is not configured. Open Models to set it up.",
@@ -333,10 +377,14 @@
             "NETWORK": "Cannot reach the speech service. Check network or Base URL.",
             "EMPTY_RESULT": "No speech recognized.",
             "INVALID_INPUT": "Invalid audio recording."
-        }
+        },
+        "placeholder": "Describe a task or add files to get started…",
+        "executionAgent": "Choose Agent: {{agent}}",
+        "executionAgentTitle": "Choose Agent",
+        "agentDefaultModel": "Default model:"
     },
     "sessionList": {
-        "title": "Sessions",
+        "title": "Recent tasks",
         "collapseAll": "Collapse all",
         "expandAll": "Expand all",
         "loadMore": "Load more",
@@ -355,7 +403,19 @@
         "deleteWorkspaceCleanupFailed": "Sessions were deleted, but the saved workspace entry could not be cleaned up.",
         "workspaceName": "Workspace name",
         "saveWorkspaceRename": "Save workspace name",
-        "cancelWorkspaceRename": "Cancel workspace rename"
+        "cancelWorkspaceRename": "Cancel workspace rename",
+        "search": "Search all tasks",
+        "searchPlaceholder": "Title, assistant, or workspace",
+        "closeSearch": "Close search",
+        "results": "Results: {{count}}",
+        "noResults": "No matching tasks",
+        "emptyHint": "Start a task and find it here.",
+        "pinned": "Pinned",
+        "pin": "Pin task",
+        "unpin": "Unpin task",
+        "pinFailed": "Could not save pinned tasks. Please try again.",
+        "taskActions": "Actions for {{title}}",
+        "lastRunFailed": "Last run did not complete"
     },
     "historyBuckets": {
         "today": "Today",

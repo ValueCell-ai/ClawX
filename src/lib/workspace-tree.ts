@@ -12,7 +12,7 @@ import {
   basenameOf,
   classifyFileExt,
   extnameOf,
-  getMimeTypeForExt,
+  getMimeTypeForFile,
   type FileContentType,
 } from './generated-files';
 
@@ -66,7 +66,7 @@ function decorate(node: TreeNode, runStartedAt: number | null): WorkspaceTreeNod
     size: node.size,
     mtime: node.mtime,
     ext,
-    mimeType: getMimeTypeForExt(ext),
+    mimeType: getMimeTypeForFile(node.name, ext),
     contentType: classifyFileExt(ext),
     isFresh,
   };

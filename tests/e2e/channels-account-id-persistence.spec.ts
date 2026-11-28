@@ -1,3 +1,4 @@
+import { navigateToSection } from './fixtures/navigation';
 import { completeSetup, expect, installIpcMocks, test } from './fixtures/electron';
 
 function stableStringify(value: unknown): string {
@@ -55,7 +56,7 @@ test.describe('Channels account editor behavior', () => {
     });
 
     await completeSetup(page);
-    await page.getByTestId('sidebar-nav-channels').click();
+    await navigateToSection(page, 'channels');
     await expect(page.getByTestId('channels-page')).toBeVisible();
 
     const addAccountButton = page.locator('button').filter({

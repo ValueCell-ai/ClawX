@@ -62,10 +62,11 @@ a concrete model, including the inherited one, stores an explicit choice for
 the destination session. When the current model is unknown, the button uses the
 localized model-selection prompt.
 
-Selecting an Agent mention directs the model picker, pre-send hooks and prompt
-to that Agent's main session. Removing the mention restores the visible
-conversation's model. The Gateway can have a main session that the sidebar
-omits, so the picker reads the destination before staging a first-prompt choice.
+Selecting another Agent in the composer starts a new task with the draft's text
+and attachments. The model picker, pre-send hooks and prompt use that task's
+session and workspace. Existing conversations open from the sidebar. Explicit
+retries of previously failed targeted prompts validate their recorded session
+and workspace before sending.
 
 Main reads the Gateway's
 `sessions.describe` projection and writes `sessions.patch` with

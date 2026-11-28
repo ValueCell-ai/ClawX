@@ -536,13 +536,13 @@ describe('Channels page status refresh', () => {
     });
 
     render(<Channels />);
-    await screen.findByTitle('account.deleteChannel');
-    fireEvent.click(screen.getByTitle('account.deleteChannel'));
+    fireEvent.keyDown(await screen.findByRole('button', { name: 'account.appActions' }), { key: 'ArrowDown' });
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'account.deleteChannel' }));
     fireEvent.click(await screen.findByTestId('confirm-dialog-confirm-button'));
 
     await waitFor(() => {
       expect(screen.queryByTestId('confirm-dialog-confirm-button')).not.toBeInTheDocument();
-      expect(screen.queryByTitle('account.deleteChannel')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'account.appActions' })).not.toBeInTheDocument();
     });
     expect(toastSuccessMock).not.toHaveBeenCalled();
 
@@ -582,12 +582,12 @@ describe('Channels page status refresh', () => {
     });
 
     render(<Channels />);
-    await screen.findByTitle('account.deleteChannel');
-    fireEvent.click(screen.getByTitle('account.deleteChannel'));
+    fireEvent.keyDown(await screen.findByRole('button', { name: 'account.appActions' }), { key: 'ArrowDown' });
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'account.deleteChannel' }));
     fireEvent.click(await screen.findByTestId('confirm-dialog-confirm-button'));
 
     await waitFor(() => {
-      expect(screen.queryByTitle('account.deleteChannel')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'account.appActions' })).not.toBeInTheDocument();
     });
     await act(async () => {
       deleteDeferred.reject(new Error('delete failed'));
@@ -604,7 +604,7 @@ describe('Channels page status refresh', () => {
         'channels.accounts',
         expect.objectContaining({ mode: 'config', probe: false }),
       );
-      expect(screen.getByTitle('account.deleteChannel')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'account.appActions' })).toBeInTheDocument();
     });
   });
 

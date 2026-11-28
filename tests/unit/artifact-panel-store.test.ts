@@ -7,14 +7,13 @@ import {
 
 describe('artifact panel store', () => {
   beforeEach(() => {
-    window.localStorage.clear();
     useArtifactPanel.setState({
       open: false,
+      maximized: false,
       tab: 'changes',
       focusedFile: null,
       focusedChange: null,
       widthPct: ARTIFACT_PANEL_DEFAULT_WIDTH,
-      htmlPreviewAnchor: null,
     });
   });
 
@@ -27,24 +26,18 @@ describe('artifact panel store', () => {
     }
   });
 
-  it('registers and clears the HTML preview anchor', () => {
-    const anchor = document.createElement('div');
-
-    useArtifactPanel.getState().setHtmlPreviewAnchor(anchor);
-    expect(useArtifactPanel.getState().htmlPreviewAnchor).toBe(anchor);
-    useArtifactPanel.getState().setHtmlPreviewAnchor(null);
-    expect(useArtifactPanel.getState().htmlPreviewAnchor).toBeNull();
-  });
-
-  it('persists only the panel width', () => {
+  it('restores the current split and starts at the default size when reopened', () => {
+    useArtifactPanel.getState().openBrowser();
     useArtifactPanel.getState().setWidthPct(52);
+    useArtifactPanel.getState().toggleMaximized();
     useArtifactPanel.getState().openPreview();
-    useArtifactPanel.getState().setHtmlPreviewAnchor(document.createElement('div'));
-
-    expect(JSON.parse(window.localStorage.getItem('clawx.artifact-panel') ?? '{}')).toEqual({
-      state: { widthPct: 52 },
-      version: 0,
-    });
+    expect(useArtifactPanel.getState()).toMatchObject({ maximized: true, widthPct: 52 });
+    useArtifactPanel.getState().toggleMaximized();
+    expect(useArtifactPanel.getState()).toMatchObject({ maximized: false, widthPct: 52 });
+    useArtifactPanel.getState().toggleMaximized();
+    useArtifactPanel.getState().close();
+    useArtifactPanel.getState().openBrowser();
+    expect(useArtifactPanel.getState()).toMatchObject({ maximized: false, widthPct: ARTIFACT_PANEL_DEFAULT_WIDTH });
   });
 
   it('keeps preview and change focus separate and clears both on close', () => {

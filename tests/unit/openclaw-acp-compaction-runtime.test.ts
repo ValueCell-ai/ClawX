@@ -263,4 +263,3 @@ describe('installed native compaction producers and subscribers', () => {
     expect(deliveries[1].ids).toEqual(['global', 'both']);
   });
 });
-

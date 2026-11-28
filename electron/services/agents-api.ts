@@ -9,6 +9,7 @@ import {
   removeAgentWorkspaceDirectory,
   resolveAccountIdForAgent,
   updateAgentModel,
+  updateModelFallbacks,
   updateAgentName,
 } from '../utils/agent-config';
 import { deleteChannelAccountConfig } from '../utils/channel-config';
@@ -33,7 +34,15 @@ export function createAgentsApi(ctx: AgentsApiContext): CompleteHostServiceRegis
     create: async (payload) => {
       const name = requireString(payload, 'name');
       const inheritWorkspace = isRecord(payload) ? payload.inheritWorkspace === true : undefined;
-      const snapshot = await createAgent(name, { inheritWorkspace });
+      const instructions = isRecord(payload) ? payload.instructions : undefined;
+      const modelRef = isRecord(payload) ? payload.modelRef : undefined;
+      if (instructions !== undefined && (typeof instructions !== 'string' || instructions.length > 4000)) {
+        throw new Error('instructions must be text of at most 4000 characters');
+      }
+      if (modelRef !== undefined && (typeof modelRef !== 'string' || !modelRef.trim())) {
+        throw new Error('modelRef must be a non-empty provider/model reference');
+      }
+      const snapshot = await createAgent(name, { inheritWorkspace, instructions, ...(modelRef !== undefined ? { modelRef } : {}) });
       // Do not report a usable Agent while credentials are still being copied.
       await syncAllProviderAuthToRuntime();
       void ensureClawXContext({ waitForAllConfiguredWorkspaces: true }).catch((err) => {
@@ -61,6 +70,14 @@ export function createAgentsApi(ctx: AgentsApiContext): CompleteHostServiceRegis
       const snapshot = await updateAgentModel(agentId, modelRef);
       await syncAllProviderAuthToRuntime();
       await syncAgentModelOverrideToRuntime(agentId);
+      return { success: true, ...snapshot };
+    },
+    updateFallbacks: async (payload) => {
+      if (!isRecord(payload) || (payload.id !== null && (typeof payload.id !== 'string' || !payload.id.trim()))
+        || (payload.fallbacks !== null && (!Array.isArray(payload.fallbacks) || payload.fallbacks.some(value => typeof value !== 'string')))) {
+        throw new Error('Invalid model fallback configuration');
+      }
+      const snapshot = await updateModelFallbacks(payload.id as string | null, payload.fallbacks as string[] | null);
       return { success: true, ...snapshot };
     },
     delete: async (payload) => {

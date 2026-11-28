@@ -1,5 +1,6 @@
 import { CHANNEL_NAMES } from '@shared/types/channel';
 import type { AgentSummary } from '@shared/types/agent';
+import { normalizeWorkspacePath } from '@/lib/workspace-context';
 import {
   containsOpenClawHeartbeatPollSentinel,
   isOpenClawHeartbeatAckText,
@@ -14,6 +15,10 @@ const SUBAGENT_CONTEXT_PREFIX = '[Subagent Context]';
 
 export function getPromptSessionKey(sourceKey: string, target: AgentSummary | null): string {
   return target ? target.mainSessionKey || `agent:${target.id}:main` : sourceKey;
+}
+
+export function getPromptWorkspacePath(cwd: string, target: AgentSummary | null, destination?: ChatSession): string {
+  return target ? normalizeWorkspacePath(destination?.workspacePath) ?? (target.workspace || cwd) : cwd;
 }
 
 function stripHeartbeatSentinel(value: string | undefined): string {

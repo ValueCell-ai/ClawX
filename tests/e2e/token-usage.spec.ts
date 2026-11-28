@@ -1,7 +1,7 @@
+import { navigateToSection } from './fixtures/navigation';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Page } from '@playwright/test';
-import { completeSetup, expect, test } from './fixtures/electron';
+import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
 
 const TEST_AGENT_ID = 'agent';
 const ZERO_TOKEN_SESSION_ID = 'agent-session-zero-token';
@@ -99,64 +99,29 @@ async function seedTokenUsageTranscripts(homeDir: string): Promise<void> {
   );
 }
 
-test.describe('ClawX token usage history', () => {
-
-  async function validateUsageHistory(page: Page): Promise<void> {
-    const usageHistory = await page.evaluate(async () => {
-      return window.electron.ipcRenderer.invoke('usage:recentTokenHistory', 20);
+test('shows transcript usage while excluding internal gateway entries', async ({ launchElectronApp, homeDir }) => {
+  await seedTokenUsageTranscripts(homeDir);
+  const app = await launchElectronApp({ skipSetup: true });
+  try {
+    await installIpcMocks(app, {
+      gatewayStatus: { state: 'running', gatewayReady: true, port: 18789 },
     });
-    if (!Array.isArray(usageHistory) || usageHistory.length === 0) {
-      throw new Error('No usage history found in IPC usage:recentTokenHistory');
-    }
+    const page = await getStableWindow(app);
+    await page.reload();
+    await navigateToSection(page, 'models');
+    await page.getByTestId('models-tab-usage').click();
 
-    const hasSeededEntries = usageHistory.some((entry) =>
-      typeof entry?.sessionId === 'string' && (
-        entry.sessionId === ZERO_TOKEN_SESSION_ID
-        || entry.sessionId === NONZERO_TOKEN_SESSION_ID
-      ),
-    );
-    if (!hasSeededEntries) {
-      throw new Error('Seeded transcript session IDs were not found in IPC usage history');
+    const rows = page.getByTestId('token-usage-entry');
+    await expect(rows).toHaveCount(2);
+    for (const [sessionId, total] of [[ZERO_TOKEN_SESSION_ID, '0'], [NONZERO_TOKEN_SESSION_ID, '27']]) {
+      const row = rows.filter({ has: page.getByText(sessionId, { exact: true }) });
+      await expect(row.getByText('kimi-k2.6', { exact: true })).toBeVisible();
+      await expect(row.getByText(`kimi · ${TEST_AGENT_ID}`, { exact: true })).toBeVisible();
+      await expect(row.locator('[data-total-value]')).toHaveText(total);
     }
+    await expect(rows.filter({ hasText: GATEWAY_INJECTED_SESSION_ID })).toHaveCount(0);
+    await expect(rows.filter({ hasText: DELIVERY_MIRROR_SESSION_ID })).toHaveCount(0);
+  } finally {
+    await closeElectronApp(app);
   }
-
-  test('displays assistant usage for agent directory with zero and non-zero tokens', async ({ page, homeDir }) => {
-    await seedTokenUsageTranscripts(homeDir);
-    await completeSetup(page);
-    await validateUsageHistory(page);
-
-    const usageHistory = await page.evaluate(async () => {
-      return window.electron.ipcRenderer.invoke('usage:recentTokenHistory', 20);
-    });
-
-    const zeroEntry = usageHistory.find((entry) => entry?.sessionId === ZERO_TOKEN_SESSION_ID);
-    const nonzeroEntry = usageHistory.find((entry) => entry?.sessionId === NONZERO_TOKEN_SESSION_ID);
-    expect(zeroEntry).toBeTruthy();
-    expect(nonzeroEntry).toBeTruthy();
-    expect(nonzeroEntry?.totalTokens).toBe(27);
-    expect(zeroEntry?.totalTokens).toBe(0);
-    expect(zeroEntry?.agentId).toBe(TEST_AGENT_ID);
-    expect(nonzeroEntry?.agentId).toBe(TEST_AGENT_ID);
-    expect(zeroEntry?.provider).toBe('kimi');
-    expect(nonzeroEntry?.provider).toBe('kimi');
-  });
-
-  // TODO: This test needs a reliable way to inject mocked gateway status into
-  // the renderer's Zustand store in CI (where no real OpenClaw runtime exists).
-  // The IPC mock + page.reload approach fails because the reload
-  // re-triggers setup flow. Skipping until we add an E2E-aware store hook.
-  test.skip('hides gateway internal usage rows from the usage list overview', async ({ page, homeDir }) => {
-    await seedTokenUsageTranscripts(homeDir);
-    await completeSetup(page);
-    await validateUsageHistory(page);
-
-    await page.getByTestId('sidebar-nav-models').click();
-    await expect(page.getByTestId('models-page')).toBeVisible();
-
-    const usageEntryRows = page.getByTestId('token-usage-entry');
-    await expect.poll(async () => await usageEntryRows.count()).toBe(2);
-
-    await expect(page.locator('[data-testid="token-usage-entry"]', { hasText: GATEWAY_INJECTED_SESSION_ID })).toHaveCount(0);
-    await expect(page.locator('[data-testid="token-usage-entry"]', { hasText: DELIVERY_MIRROR_SESSION_ID })).toHaveCount(0);
-  });
 });

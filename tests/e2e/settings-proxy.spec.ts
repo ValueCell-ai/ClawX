@@ -1,3 +1,4 @@
+import { navigateToSection } from './fixtures/navigation';
 import type { Locator, Page } from '@playwright/test';
 import { completeSetup, expect, test } from './fixtures/electron';
 
@@ -20,7 +21,7 @@ test.describe('ClawX developer proxy settings', () => {
   test('keeps proxy save available when disabling proxy in developer mode', async ({ page }) => {
     await completeSetup(page);
 
-    await page.getByTestId('sidebar-nav-settings').click();
+    await navigateToSection(page, 'advanced');
     await expect(page.getByTestId('settings-page')).toBeVisible();
 
     const devModeToggle = page.getByTestId('settings-dev-mode-switch');
@@ -36,6 +37,8 @@ test.describe('ClawX developer proxy settings', () => {
     await expect(proxySaveButton).toBeVisible();
 
     await ensureSwitchState(proxyToggle, true);
+    await expect(page.locator('#proxy-server')).toHaveCSS('height', '36px');
+    await expect(page.locator('label[for="proxy-server"]')).toHaveCSS('font-size', '14px');
     await expect(proxySaveButton).toBeEnabled();
     await proxySaveButton.click();
     await expect.poll(async () => await readProxyEnabled(page)).toBe(true);

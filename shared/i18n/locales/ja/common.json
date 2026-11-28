@@ -1,20 +1,20 @@
 {
     "computerUse": {
         "title": "コンピューター操作",
-        "description": "内蔵のネイティブ CUA CLI を使い、Agent がウィンドウ、アクセシビリティ要素、メニューを調べ、結果を検証してこのコンピューターを操作できるようにします。",
+        "description": "アシスタントが画面を確認し、このコンピューターを操作できるようにします。",
         "enable": "コンピューター操作を有効にする",
-        "warning": "有効化後、/computer-use スキルで AI によるコンピューター操作をガイドすることをおすすめします。",
-        "off": "無効です。ClawX が管理する CUA サービスは停止しています。",
-        "running": "ローカルドライバーは実行中です。",
-        "unavailable": "有効ですがドライバーを利用できません。下記の原因を確認して起動を再試行してください。",
-        "loading": "コンピューター操作の状態を確認中…",
-        "starting": "ローカルドライバーを起動中…",
-        "stopping": "ローカルドライバーを停止中…",
+        "warning": "タスクでは /computer-use スキルを使えます。",
+        "off": "無効",
+        "running": "ドライバー稼働中",
+        "unavailable": "ドライバーを利用できません",
+        "loading": "状態を確認中…",
+        "starting": "ドライバーを起動中…",
+        "stopping": "ドライバーを停止中…",
         "retry": "起動を再試行",
         "reasons": {
             "unsupported": "このプラットフォームはコンピューター操作に対応していません。",
             "missingBinary": "内蔵ドライバーが見つかりません。ClawX を再インストールしてください。",
-            "permissions": "アクセシビリティと画面収録の権限が必要です。下記で確認し、変更後は ClawX を再起動してください。",
+            "permissions": "macOS の権限が不足しています。",
             "startupFailed": "ドライバーを起動できませんでした。再試行してください。詳細はアプリのログをご確認ください。",
             "exited": "ドライバーが予期せず終了しました。起動を再試行して新しいセッションを作成してください。",
             "stopFailed": "ドライバーの終了処理に失敗しました。ClawX を再起動してから続行してください。"
@@ -25,30 +25,33 @@
         "screenRecording": "画面収録",
         "granted": "許可済み",
         "notGranted": "未許可",
-        "permissionHint": "「コンピューター操作」が正しく動作するよう、ClawX に「アクセシビリティ」と「画面収録とシステムオーディオ録音」の権限を付与してください。権限を変更した後は ClawX の再起動が必要です。以前に権限要求を拒否または無視した場合、「権限を要求」ボタンを押してもダイアログが表示されないことがあります。その場合は「システム設定 > プライバシーとセキュリティ」で手動で設定してください。",
-        "permissionRequestIncomplete": "権限要求は終了しましたが、必要なアクセスはまだ許可されていません。以前の判断が保存されている場合など、macOS は再度ダイアログを表示しないことがあります。システム設定に表示されるアプリを確認し、再起動後に状態を更新してください。この状態では未要求と以前の拒否を区別できません。",
+        "permissionHint": "権限を付与したら ClawX を再起動してください。",
+        "permissionRequestIncomplete": "権限が不足しています。「システム設定 → プライバシーとセキュリティ」で表示されているアプリに権限を付与し、再起動してから状態を更新してください。",
         "request": "権限を要求",
-        "error": "操作を完了できませんでした。状態を更新して再試行してください。詳細はアプリのログをご確認ください。"
+        "error": "操作を完了できませんでした。状態を更新して再試行してください。"
     },
     "sidebar": {
+        "collapseSidebar": "サイドバーを折りたたむ",
+        "expandSidebar": "サイドバーを展開する",
         "chat": "チャット",
-        "newChat": "新しいチャット",
+        "newChat": "新しいタスク",
         "cronTasks": "定期タスク",
         "skills": "スキル",
-        "agents": "Agents",
-        "channels": "チャンネル",
+        "agents": "アシスタント",
+        "channels": "メッセージ遠隔操作",
         "dashboard": "ダッシュボード",
         "settings": "設定",
         "devConsole": "開発者コンソール",
-        "models": "モデル",
+        "models": "AI モデル",
         "deleteSessionConfirm": "「{{label}}」を削除しますか？",
-        "openClawPage": "OpenClaw ページ",
+        "openClawPage": "OpenClaw コンソール",
         "renameSession": "名前を変更",
         "deleteSession": "削除",
         "renameSessionPlaceholder": "セッションタイトル",
         "saveSessionRename": "セッションタイトルを保存",
         "cancelSessionRename": "名前変更をキャンセル",
-        "imageGeneration": "画像生成"
+        "imageGeneration": "画像生成",
+        "capabilities": "アシスタントとスキル"
     },
     "actions": {
         "save": "保存",
@@ -75,7 +78,8 @@
         "clear": "クリア"
     },
     "markdown": {
-        "copyCode": "コードをコピー"
+        "copyCode": "コードをコピー",
+        "metadata": "メタデータ"
     },
     "status": {
         "running": "実行中",
@@ -92,9 +96,9 @@
         "saving": "保存中..."
     },
     "gateway": {
-        "notRunning": "ゲートウェイが停止中",
-        "notRunningDesc": "この機能を使用するには OpenClaw ゲートウェイが実行されている必要があります。自動的に起動するか、設定から起動できます。",
-        "restarting": "ゲートウェイを再起動中",
-        "warning": "ゲートウェイが停止中です。"
+        "notRunning": "ローカルサービスが停止中",
+        "notRunningDesc": "この機能にはローカルサービスが必要です。自動起動するか、設定 → 詳細設定で管理できます。",
+        "restarting": "ローカルサービスを再起動中",
+        "warning": "ローカルサービスが停止中"
     }
 }

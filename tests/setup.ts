@@ -113,3 +113,28 @@ if (typeof window !== 'undefined') {
 afterEach(() => {
   vi.clearAllMocks();
 });
+
+// Radix's focus and positioning code relies on browser APIs jsdom omits.
+if (typeof HTMLElement !== 'undefined') {
+  HTMLElement.prototype.scrollIntoView ??= vi.fn();
+  HTMLElement.prototype.hasPointerCapture ??= vi.fn(() => false);
+  HTMLElement.prototype.setPointerCapture ??= vi.fn();
+  HTMLElement.prototype.releasePointerCapture ??= vi.fn();
+}
+if (typeof window !== 'undefined' && !window.PointerEvent) {
+  window.PointerEvent = MouseEvent as typeof PointerEvent;
+}
+if (typeof ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}
+
+// jsdom does not run CSS animations; real entrance/exit presence is tested in Electron.
+if (typeof document !== 'undefined') {
+  const style = document.createElement('style');
+  style.textContent = '* { animation-name: none !important; }';
+  document.head.appendChild(style);
+}

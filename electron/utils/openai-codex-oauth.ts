@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
+import { setTimeout as delay } from 'node:timers/promises';
 import { proxyAwareFetch } from './proxy-fetch';
 
 const CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
@@ -157,7 +158,7 @@ async function createAuthorizationFlow(): Promise<OpenAICodexAuthorizationFlow> 
   return { verifier, state, url: url.toString() };
 }
 
-function startLocalOAuthServer(state: string): Promise<OpenAICodexLocalServer | null> {
+function startLocalOAuthServer(state: string, signal?: AbortSignal): Promise<OpenAICodexLocalServer | null> {
   let lastCode: string | null = null;
 
   const server = createServer((req, res) => {
@@ -193,24 +194,27 @@ function startLocalOAuthServer(state: string): Promise<OpenAICodexLocalServer | 
   });
 
   return new Promise((resolve) => {
+    const onAbort = () => resolve(null);
+    signal?.addEventListener('abort', onAbort, { once: true });
     // Bind dual-stack loopback so both `localhost` and `127.0.0.1` redirects work.
     server
-      .listen(1455, () => {
+      .listen({ port: 1455, signal }, () => {
+        signal?.removeEventListener('abort', onAbort);
         resolve({
           close: () => server.close(),
           waitForCode: async () => {
-            const sleep = () => new Promise((r) => setTimeout(r, 100));
             for (let i = 0; i < 600; i += 1) {
               if (lastCode) {
                 return { code: lastCode };
               }
-              await sleep();
+              await delay(100, undefined, { signal });
             }
             return null;
           },
         });
       })
       .on('error', () => {
+        signal?.removeEventListener('abort', onAbort);
         resolve(null);
       });
   });
@@ -219,9 +223,11 @@ function startLocalOAuthServer(state: string): Promise<OpenAICodexLocalServer | 
 async function exchangeAuthorizationCode(
   code: string,
   verifier: string,
+  signal?: AbortSignal,
 ): Promise<{ access: string; refresh: string; expires: number }> {
   const response = await proxyAwareFetch(TOKEN_URL, {
     method: 'POST',
+    signal,
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       grant_type: 'authorization_code',
@@ -254,17 +260,21 @@ async function exchangeAuthorizationCode(
 }
 
 export async function loginOpenAICodexOAuth(options: {
+  signal?: AbortSignal;
   openUrl: (url: string) => Promise<void>;
   onProgress?: (message: string) => void;
   onManualCodeRequired?: (payload: { authorizationUrl: string; reason: 'port_in_use' | 'callback_timeout' }) => void;
   onManualCodeInput?: () => Promise<string>;
 }): Promise<OpenAICodexOAuthCredentials> {
   const { verifier, state, url } = await createAuthorizationFlow();
+  const { signal } = options;
+  signal?.throwIfAborted();
   options.onProgress?.('Opening OpenAI sign-in page…');
 
-  const server = await startLocalOAuthServer(state);
+  const server = await startLocalOAuthServer(state, signal);
 
   try {
+    signal?.throwIfAborted();
     await options.openUrl(url);
     options.onProgress?.(
       server ? 'Waiting for OpenAI OAuth callback…' : 'Callback port unavailable, waiting for manual authorization code…',
@@ -300,7 +310,8 @@ export async function loginOpenAICodexOAuth(options: {
       throw new Error('Missing OpenAI authorization code');
     }
 
-    const token = await exchangeAuthorizationCode(code, verifier);
+    signal?.throwIfAborted();
+    const token = await exchangeAuthorizationCode(code, verifier, signal);
     const accountId = getAccountIdFromAccessToken(token.access) ?? 'default';
 
     return {

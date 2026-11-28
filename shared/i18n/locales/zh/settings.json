@@ -2,20 +2,25 @@
   "title": "设置",
   "subtitle": "配置您的 ClawX 体验",
   "appearance": {
-    "title": "通用",
+    "title": "外观与启动",
     "description": "自定义外观和风格",
     "theme": "主题",
     "light": "浅色",
     "dark": "深色",
     "system": "跟随系统",
     "language": "语言",
+    "replyDisplay": {
+      "title": "回复展示",
+      "concise": "简练",
+      "detailed": "详细"
+    },
     "menuLanguageUpdated": "菜单语言已更新",
-    "launchAtStartup": "开机自动启动",
+    "launchAtStartup": "登录时启动 ClawX",
     "launchAtStartupDesc": "登录系统后自动启动 ClawX"
   },
   "aiProviders": {
-    "title": "AI 模型提供商",
-    "description": "配置 AI 模型提供商和 API 密钥",
+    "title": "模型服务",
+    "description": "管理用于文本对话的模型提供商与可用模型。",
     "overview": {
       "title": "提供商账户",
       "description": "这里汇总当前已配置的 provider 账户与模型信息。",
@@ -33,7 +38,7 @@
       "model": "模型配置",
       "fallback": "回退配置"
     },
-    "add": "添加提供商",
+    "add": "添加服务",
     "custom": "自定义",
     "notRequired": "非必填",
     "empty": {
@@ -42,27 +47,30 @@
       "cta": "添加您的第一个提供商"
     },
     "dialog": {
-      "title": "添加 AI 提供商",
-      "desc": "配置新的 AI 模型提供商",
+      "title": "添加模型服务",
       "displayName": "显示名称",
       "apiKey": "API 密钥",
-      "apiKeyConfigured": "这个 provider 已经保存了 API key。",
-      "apiKeyMissing": "这个 provider 还没有保存 API key。",
+      "apiKeyRequired": "请输入 API 密钥。",
+      "baseUrlRequired": "请输入基础 URL。",
+      "baseUrlInvalid": "请输入以 http:// 或 https:// 开头的有效 URL。",
+      "modelIdSingle": "请只填写一个模型 ID。",
+      "apiKeyMissing": "尚未保存 API 密钥。",
       "apiKeyStored": "您的 API 密钥存储在本地机器上。",
-      "replaceApiKey": "替换 API Key",
-      "replaceApiKeyHelp": "如果想保留当前已保存的 API key，这里留空即可。",
+      "replaceApiKey": "替换 API 密钥",
+      "replaceApiKeyHelp": "留空保留已保存的 API 密钥",
       "baseUrl": "基础 URL",
       "modelId": "模型 ID",
+      "configuredModels": "已配置模型",
+      "singleModelHint": "仅支持一个模型 ID。",
       "modelIdEditDisabled": "模型 ID 创建后不可修改。如需使用其他模型 ID，请删除此 Provider 后重新添加。",
-      "codePlanPreset": "Code Plan 预设",
+      "connectionPreset": "连接预设",
+      "generalApiPreset": "通用 API",
       "codePlanMode": "Code Plan",
-      "useCodePlanPreset": "使用 Ark Code Plan 预设",
-      "codePlanPresetDesc": "Code Plan 使用 {{baseUrl}} 与模型 {{modelId}}。请勿把通用 API 端点用于 Code Plan 流量。",
       "codePlanDoc": "Code Plan 文档",
       "protocol": "协议",
       "advancedConfig": "高级配置",
       "userAgent": "User-Agent",
-      "userAgentPlaceholder": "ClawX/1.0",
+      "userAgentPlaceholder": "留空使用默认值",
       "fallbackModels": "回退模型",
       "fallbackProviders": "跨 Provider 回退",
       "fallbackModelIds": "同 Provider 回退模型 ID",
@@ -70,12 +78,18 @@
       "fallbackModelIdsHelp": "每行一个模型 ID。会先使用当前 provider 的这些模型，再回退到其他 provider。",
       "noFallbackOptions": "请先添加其他 provider，才能把它设为回退目标。",
       "cancel": "取消",
-      "change": "更换提供商",
-      "add": "添加提供商",
+      "add": "添加服务",
       "save": "保存",
+      "serviceList": "模型服务",
+      "customService": "自定义服务",
       "customDoc": "查看文档",
       "validate": "验证",
-      "failed": "失败"
+      "failed": "失败",
+      "search": "搜索提供商…",
+      "close": "关闭",
+      "showKey": "显示 API 密钥",
+      "hideKey": "隐藏 API 密钥",
+      "noResults": "未找到匹配的提供商"
     },
     "card": {
       "default": "默认",
@@ -85,12 +99,13 @@
       "fallbacks_one": "回退：{{names}}",
       "fallbacks_other": "回退（{{count}} 个）：{{names}}",
       "setDefault": "设为默认",
-      "editKey": "编辑 API 密钥",
-      "delete": "删除提供商"
+      "editKey": "编辑配置",
+      "delete": "删除提供商",
+      "more": "更多操作"
     },
     "protocols": {
       "openai": "OpenAI 兼容",
-      "openaiCompletions": "OpenAI Completions",
+      "openaiCompletions": "OpenAI Chat Completions",
       "openaiResponses": "OpenAI Responses",
       "anthropic": "Anthropic 兼容"
     },
@@ -109,26 +124,20 @@
       "zaiConflict": "不能同时添加 Z.AI 国际站和国内站的服务商。"
     },
     "oauth": {
+      "method": "认证方式",
       "loginMode": "OAuth 登录",
       "apikeyMode": "API 密钥",
-      "loginPrompt": "此提供商需要通过浏览器登录授权。",
       "loginButton": "浏览器登录",
       "getApiKey": "获取 API 密钥",
-      "waiting": "等待中...",
       "openLoginPage": "打开登录页面",
-      "waitingApproval": "等待浏览器中的授权...",
+      "waitingApproval": "等待授权…",
       "cancel": "取消",
       "codeCopied": "代码已复制到剪贴板",
       "authFailed": "认证失败",
       "browserFlowUnavailable": "该提供商的浏览器 OAuth 登录链路暂未接通。",
       "tryAgain": "重试",
-      "approveLogin": "确认登录",
-      "step1": "复制下方的授权码。",
-      "step2": "在浏览器中打开登录页面。",
-      "step3": "粘贴授权码以批准访问。",
-      "requestingCode": "正在获取安全登录码...",
-      "completeBrowserLogin": "完成浏览器登录",
-      "manualCallbackHelp": "打开授权页面并完成登录，然后粘贴回调 URL 或授权码。",
+      "enterDeviceCode": "在登录页输入此授权码。",
+      "requestingCode": "正在获取授权码…",
       "openAuthorizationPage": "打开授权页面",
       "callbackPlaceholder": "粘贴回调 URL 或授权码",
       "submitCode": "提交授权码",
@@ -145,17 +154,17 @@
     }
   },
   "gateway": {
-    "title": "网关",
-    "description": "OpenClaw 网关设置",
+    "title": "本地服务",
+    "description": "管理 ClawX 在本机运行的服务",
     "status": "状态",
     "port": "端口",
     "logs": "日志",
     "appLogs": "应用日志",
     "openFolder": "打开文件夹",
-    "autoStart": "自动启动网关",
-    "autoStartDesc": "ClawX 启动时自动启动网关",
-    "proxyTitle": "代理",
-    "proxyDesc": "让 Electron 和 Gateway 的网络请求都走本地代理客户端。",
+    "autoStart": "自动启动本地服务",
+    "autoStartDesc": "启动 ClawX 时自动启动本地服务",
+    "proxyTitle": "网络代理",
+    "proxyDesc": "为 ClawX 和本地服务配置网络代理。",
     "proxyServer": "代理服务器",
     "proxyServerHelp": "所有请求默认使用的代理。只填 host:port 时默认按 HTTP 处理。",
     "proxyHttpServer": "HTTP 代理",
@@ -168,14 +177,14 @@
     "hideAdvancedProxy": "隐藏高级代理字段",
     "proxyBypass": "绕过规则",
     "proxyBypassHelp": "使用分号、逗号或换行分隔需要直连的主机。",
-    "proxyRestartNote": "保存后会立即重新应用 Electron 网络代理，并自动重启 Gateway。若代理已关闭，Gateway 常规重启会保留 Telegram 频道已有代理；如需清空，请在关闭代理后手动保存一次。",
+    "proxyRestartNote": "保存后应用代理并重启本地服务。关闭后再保存，可清除 Telegram 已有的代理。",
     "proxySaved": "代理设置已保存",
     "proxySaveFailed": "保存代理设置失败"
   },
   "updates": {
     "title": "更新",
     "description": "保持 ClawX 最新",
-    "autoCheck": "自动检查更新",
+    "autoCheck": "启动时检查更新",
     "autoCheckDesc": "启动时检查更新",
     "autoDownload": "更新提示",
     "autoDownloadDesc": "发现新版本时显示通知；仅在您选择更新后才下载",
@@ -187,7 +196,9 @@
       "autoInstalling": "将在 {{seconds}} 秒后重启并安装更新...",
       "failed": "检查更新失败",
       "latest": "您已拥有最新版本",
-      "check": "检查更新以获取最新功能"
+      "check": "检查更新以获取最新功能",
+      "devUnavailable": "开发版本不支持应用内更新。",
+      "progress": "已下载 {{percent}}%"
     },
     "action": {
       "checking": "检查中...",
@@ -215,9 +226,10 @@
     "title": "高级",
     "description": "高级选项",
     "devMode": "开发者模式",
-    "devModeDesc": "显示开发者工具和快捷方式",
+    "devModeDesc": "显示调试工具和实验功能。",
     "telemetry": "匿名使用数据",
-    "telemetryDesc": "允许提供匿名的基础使用数据，用于改进 ClawX"
+    "telemetryDesc": "允许提供匿名的基础使用数据，用于改进 ClawX",
+    "privacy": "隐私"
   },
   "developer": {
     "title": "开发者",
@@ -274,14 +286,15 @@
     "installCmdDesc": "安装 ~/.local/bin/openclaw（无需管理员权限）",
     "installTitle": "安装 OpenClaw 命令",
     "installMessage": "安装 \"openclaw\" 命令？",
-    "installDetail": "这将创建 ~/.local/bin/openclaw。确保 ~/.local/bin 在您的 PATH 中。"
+    "installDetail": "这将创建 ~/.local/bin/openclaw。确保 ~/.local/bin 在您的 PATH 中。",
+    "consoleUnavailable": "暂时无法打开 OpenClaw 控制台"
   },
   "support": {
-    "title": "支持"
+    "title": "帮助与反馈"
   },
   "issueReport": {
     "actionTitle": "导出问题现场",
-    "actionDescription": "在桌面创建用于问题排查和支持的诊断 ZIP。",
+    "actionDescription": "在桌面生成诊断 ZIP。",
     "open": "查看并导出",
     "dialogTitle": "导出问题现场",
     "dialogDescription": "查看将要导出的内容，并按需选择会话。ZIP 将保存到桌面。",
@@ -356,7 +369,7 @@
     "language": "语言",
     "languageAuto": "自动识别（推荐）",
     "apiKey": "API 密钥",
-    "apiKeyConfiguredPlaceholder": "此 Provider 已配置 API 密钥，留空保持不变",
+    "apiKeyConfiguredPlaceholder": "留空以保留已保存的 API 密钥",
     "apiKeyLink": "获取 API 密钥",
     "apiKeyLinkTitle": "前往服务商控制台获取 API 密钥",
     "save": "保存",
@@ -368,5 +381,46 @@
       "modelRequired": "请填写模型名称。",
       "request": "保存失败，请重试。"
     }
+  },
+  "navigation": {
+    "label": "设置分类",
+    "openAdvanced": "前往高级设置",
+    "general": {
+      "title": "通用",
+      "description": "调整外观、语言和启动偏好。"
+    },
+    "models": {
+      "title": "AI 模型",
+      "description": "管理对话、语音和图像模型，查看使用情况。"
+    },
+    "channels": {
+      "title": "消息遥控",
+      "description": "通过微信、飞书等应用与 ClawX 对话，交办任务、接收结果。"
+    },
+    "computer-use": {
+      "title": "电脑操作",
+      "description": "允许助手查看屏幕并操作这台电脑，管理所需的系统权限。",
+      "developerHint": "电脑操作目前属于实验功能。请先在「高级」中开启开发者模式，再返回这里配置；系统权限需要单独授权。"
+    },
+    "advanced": {
+      "title": "高级",
+      "description": "管理本地服务、网络连接和开发者工具。"
+    },
+    "about": {
+      "title": "关于与帮助",
+      "description": "查看版本、检查更新，获取帮助或反馈问题。"
+    }
+  },
+  "modelManagement": {
+    "loading": "正在读取配置…",
+    "editService": "编辑模型服务",
+    "editServiceHint": "管理服务连接和访问凭据。",
+    "configure": "配置",
+    "editConfiguration": "编辑配置",
+    "notConfigured": "尚未配置模型",
+    "configured": "配置已保存",
+    "needsConfiguration": "待配置",
+    "voiceDescription": "配置用于将语音转成文字到输入框的服务和模型。",
+    "imageDescription": "配置用于图片生成的服务和模型。"
   }
 }

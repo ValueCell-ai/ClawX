@@ -78,6 +78,13 @@ export function getMimeTypeForExt(ext: string): string {
   return EXT_MIME_MAP[ext.toLowerCase()] ?? 'application/octet-stream';
 }
 
+/** Recognize the extensionless LICENSE file as text. */
+export function getMimeTypeForFile(fileName: string, ext: string): string {
+  const name = fileName.toLowerCase();
+  if (!ext && name === 'license') return 'text/plain';
+  return getMimeTypeForExt(ext);
+}
+
 export function classifyFileExt(ext: string): FileContentType {
   const lower = ext.toLowerCase();
   if (SNAPSHOT_EXTS.has(lower)) return 'snapshot';

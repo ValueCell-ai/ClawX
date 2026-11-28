@@ -6,8 +6,8 @@
     "gatewayWarning": "ゲートウェイは停止しています。ローカルスキルは利用できますが、ランタイム状態は取得できません。",
     "gatewayStarting": "ゲートウェイを起動しています。ローカルスキルはすでに利用でき、ランタイム状態は準備完了後に反映されます。",
     "tabs": {
-        "installed": "インストール済み",
-        "marketplace": "マーケットプレイス"
+        "installed": "マイスキル",
+        "marketplace": "スキルを探す"
     },
     "filter": {
         "all": "すべて ({{count}})",
@@ -22,12 +22,21 @@
     "actions": {
         "enableVisible": "表示中を一括有効化",
         "disableVisible": "表示中を一括無効化",
-        "installSkill": "スキルをインストール"
+        "installSkill": "スキルを追加",
+        "more": "その他",
+        "toggle": "{{name}} を有効化",
+        "clearSearch": "検索をクリア"
     },
     "noSkills": "スキルが見つかりません",
     "noSkillsSearch": "別の検索語をお試しください",
     "noSkillsAvailable": "利用可能なスキルがありません",
+    "noEnabledSkills": "有効なスキルがありません",
+    "noDisabledSkills": "無効なスキルがありません",
     "detail": {
+        "title": "スキル詳細",
+        "skillSource": "スキルのソース",
+        "sourceDirectory": "ソースディレクトリ",
+        "files": "スキルファイル",
         "info": "情報",
         "config": "設定",
         "description": "説明",
@@ -60,6 +69,8 @@
         "enable": "有効化",
         "disable": "無効化",
         "sections": {
+            "otherDocs": "その他の文書",
+            "other": "その他",
             "title": "コンテンツ",
             "docs": "ドキュメント",
             "docsDesc": "SKILL.md と関連ドキュメント",
@@ -71,9 +82,18 @@
             "assetsDesc": "テンプレート、参考資料、静的ファイル",
             "empty": "このスキルにはプレビュー可能なファイルがありません。",
             "scanFailed": "スキルディレクトリのスキャンに失敗しました"
-        }
+        },
+        "technical": "ファイルと技術情報",
+        "close": "詳細を閉じる",
+        "open": "{{name}} の詳細を表示"
     },
     "source": {
+        "quickAccess": {
+            "workspace": "ワークスペース",
+            "openclaw": "OpenClaw",
+            "agents": ".agents フォルダー",
+            "legacy": "組み込み・拡張"
+        },
         "badge": {
             "bundled": "内蔵ディレクトリ",
             "managed": "管理ディレクトリ",
@@ -123,6 +143,7 @@
         "searching": "ClawHubを検索中...",
         "noResults": "検索に一致するスキルが見つかりません。",
         "emptyPrompt": "新しいスキルを検索して機能を拡張しましょう。",
-        "searchError": "ClawHub検索に失敗しました。接続またはインストールを確認してください。"
+        "searchError": "ClawHub検索に失敗しました。接続またはインストールを確認してください。",
+        "unavailable": "この環境ではスキルマーケットを利用できません。ローカルスキルの管理やフォルダーの表示は可能です。"
     }
 }

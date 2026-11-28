@@ -45,23 +45,10 @@ export function UpdateSettings() {
     await checkForUpdates();
   }, [checkForUpdates, clearError]);
 
-  const renderStatusIcon = () => {
-    switch (status) {
-      case 'checking':
-      case 'downloading':
-        return <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />;
-      case 'available':
-        return <Download className="h-4 w-4 text-primary" />;
-      case 'downloaded':
-        return <Rocket className="h-4 w-4 text-primary" />;
-      case 'error':
-        return <RefreshCw className="h-4 w-4 text-destructive" />;
-      default:
-        return <RefreshCw className="h-4 w-4 text-muted-foreground" />;
-    }
-  };
+  const canCheckForUpdates = !import.meta.env.DEV;
 
   const renderStatusText = () => {
+    if (!canCheckForUpdates) return t('updates.status.devUnavailable');
     if (status === 'downloaded' && autoInstallCountdown != null && autoInstallCountdown >= 0) {
       return t('updates.status.autoInstalling', { seconds: autoInstallCountdown });
     }
@@ -75,11 +62,11 @@ export function UpdateSettings() {
       case 'downloaded':
         return t('updates.status.downloaded', { version: updateInfo?.version });
       case 'error':
-        return error || t('updates.status.failed');
+        return t('updates.status.failed');
       case 'not-available':
         return t('updates.status.latest');
       default:
-        return t('updates.status.check');
+        return null;
     }
   };
 
@@ -140,32 +127,27 @@ export function UpdateSettings() {
 
   if (!isInitialized) {
     return (
-      <div className="flex items-center gap-2 text-muted-foreground">
+      <div className="flex items-center gap-2 py-3.5 text-sm text-muted-foreground" role="status">
         <Loader2 className="h-4 w-4 animate-spin" />
-        <span>Loading...</span>
+        <span>{t('common:status.loading')}</span>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      {/* Current Version */}
-      <div className="flex items-center justify-between">
+    <div className="space-y-3 py-3.5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-1">
-          <p className="text-sm font-medium">{t('updates.currentVersion')}</p>
-          <p className="text-2xl font-bold">v{currentVersion}</p>
+          <p className="text-sm font-medium">
+            {t('updates.currentVersion')} <span className="ml-1 tabular-nums" data-testid="settings-current-version">v{currentVersion}</span>
+          </p>
+          <p className="text-sm text-muted-foreground empty:hidden" role="status">{renderStatusText()}</p>
         </div>
-        {renderStatusIcon()}
-      </div>
-
-      {/* Status */}
-      <div className="flex items-center justify-between py-3 border-t border-b">
-        <p className="text-sm text-muted-foreground">{renderStatusText()}</p>
-        {renderAction()}
+        {canCheckForUpdates && renderAction()}
       </div>
 
       {/* Download Progress */}
-      {status === 'downloading' && progress && (
+      {canCheckForUpdates && status === 'downloading' && progress && (
         <div className="space-y-2">
           <div className="flex justify-between text-sm">
             <span>
@@ -175,16 +157,16 @@ export function UpdateSettings() {
           </div>
           <Progress value={progress.percent} className="h-2" />
           <p className="text-xs text-muted-foreground text-center">
-            {Math.round(progress.percent)}% complete
+            {t('updates.status.progress', { percent: Math.round(progress.percent) })}
           </p>
         </div>
       )}
 
       {/* Update Info */}
-      {updateInfo && (status === 'available' || status === 'downloaded') && (
+      {canCheckForUpdates && updateInfo && (status === 'available' || status === 'downloaded') && (
         <div className="rounded-lg bg-surface-input p-4 space-y-2">
           <div className="flex items-center justify-between">
-            <p className="font-medium">Version {updateInfo.version}</p>
+            <p className="font-medium">{t('about.version', { version: updateInfo.version })}</p>
             {updateInfo.releaseDate && (
               <p className="text-sm text-muted-foreground">
                 {new Date(updateInfo.releaseDate).toLocaleDateString()}
@@ -201,17 +183,12 @@ export function UpdateSettings() {
       )}
 
       {/* Error Details */}
-      {status === 'error' && error && (
-        <div className="rounded-lg bg-red-50 dark:bg-red-900/10 p-4 text-red-600 dark:text-red-400 text-sm">
-          <p className="font-medium mb-1">{t('updates.errorDetails')}</p>
-          <p>{error}</p>
-        </div>
+      {canCheckForUpdates && status === 'error' && error && (
+        <details className="text-sm text-muted-foreground">
+          <summary className="cursor-pointer">{t('updates.errorDetails')}</summary>
+          <p className="mt-2 break-words rounded-lg bg-surface-input p-3">{error}</p>
+        </details>
       )}
-
-      {/* Help Text */}
-      <p className="text-xs text-muted-foreground">
-        {t('updates.help')}
-      </p>
     </div>
   );
 }

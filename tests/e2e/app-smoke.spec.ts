@@ -1,10 +1,23 @@
+import { navigateToSection } from './fixtures/navigation';
 import { closeElectronApp, expect, test } from './fixtures/electron';
 
 test.describe('ClawX Electron smoke flows', () => {
   test('shows the setup wizard on a fresh profile', async ({ page }) => {
     await expect(page.getByTestId('setup-page')).toBeVisible();
     await expect(page.getByTestId('setup-welcome-step')).toBeVisible();
+    await expect(page.getByTestId('setup-step-surface')).toHaveCSS('box-shadow', 'none');
+    await expect(page.getByTestId('setup-welcome-step').getByRole('button', { name: 'English' })).toHaveCSS('font-size', '14px');
+    for (const heading of await page.getByTestId('setup-page').getByRole('heading').all()) {
+      await expect(heading).toHaveCSS('font-weight', '500');
+      expect(await heading.evaluate(el => getComputedStyle(el).fontFamily)).not.toMatch(/Georgia|Times New Roman/);
+    }
     await expect(page.getByTestId('setup-skip-button')).toBeVisible();
+    await page.getByTestId('setup-next-button').click();
+    await page.getByRole('button', { name: 'View Logs' }).click();
+    const logs = page.getByTestId('setup-runtime-logs');
+    await expect(logs).toBeVisible();
+    await expect(logs).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0.4)');
+    await expect(logs.getByRole('button', { name: 'Open Log Folder' })).toHaveCSS('font-size', '14px');
   });
 
   test('can skip setup and navigate to the models page', async ({ page }) => {
@@ -13,7 +26,7 @@ test.describe('ClawX Electron smoke flows', () => {
 
     await expect(page.getByTestId('main-layout')).toBeVisible();
     await expect(page.getByTestId('chat-toolbar-actions').getByRole('button', { name: 'Refresh chat' })).toHaveCount(0);
-    await page.getByTestId('sidebar-nav-models').click();
+    await navigateToSection(page, 'models');
 
     await expect(page.getByTestId('models-page')).toBeVisible();
     await expect(page.getByTestId('models-page-title')).toBeVisible();

@@ -145,6 +145,8 @@ describe('Skills page gateway readiness', () => {
 
     expect(fetchSkillsMock).toHaveBeenCalledTimes(1);
     expect(screen.queryByText('actions.installSkill')).not.toBeInTheDocument();
+    expect(screen.queryByText('tabs.marketplace')).not.toBeInTheDocument();
+    expect(searchSkillsMock).not.toHaveBeenCalled();
   });
 
   it('filters the list via enabled and disabled buttons', async () => {
@@ -173,7 +175,7 @@ describe('Skills page gateway readiness', () => {
     expect(screen.getByText('XLSX')).toBeInTheDocument();
   });
 
-  it('shows manifest versions but still hides slug badges and hash-only preinstalled versions', async () => {
+  it('keeps version metadata in details without slug badges or hash-only preinstalled versions', async () => {
     gatewayState.status = { state: 'stopped', port: 18789 };
     skillsState.skills = [
       {
@@ -224,8 +226,15 @@ describe('Skills page gateway readiness', () => {
     });
 
     expect(screen.queryByText('self-improvement-agent')).not.toBeInTheDocument();
-    expect(screen.getByText('v1.0.0')).toBeInTheDocument();
-    expect(screen.getByText('v0.1.3')).toBeInTheDocument();
+    expect(screen.queryByText('v1.0.0')).not.toBeInTheDocument();
+    expect(screen.queryByText('v0.1.3')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('custom-skill'));
+    expect(screen.getByRole('dialog')).toHaveTextContent('v0.1.3');
+    fireEvent.click(screen.getByRole('button', { name: 'detail.close' }));
+    fireEvent.click(screen.getByText('pdf'));
+    expect(screen.getByRole('dialog')).toHaveTextContent('v1.0.0');
+    fireEvent.click(screen.getByRole('button', { name: 'detail.close' }));
 
     fireEvent.click(screen.getByText('docx'));
     expect(screen.queryByText(/^v[a-f0-9]{40}$/i)).not.toBeInTheDocument();
@@ -244,8 +253,10 @@ describe('Skills page gateway readiness', () => {
       await vi.advanceTimersByTimeAsync(1_600);
     });
 
-    fireEvent.click(screen.getByText('Browser Automation'));
+    await act(async () => {
+      fireEvent.click(screen.getByText('Browser Automation'));
+    });
     expect(screen.queryByText('detail.uninstall')).not.toBeInTheDocument();
-    expect(screen.getByText('detail.disable')).toBeInTheDocument();
+    expect(screen.queryByText('detail.disable')).not.toBeInTheDocument();
   });
 });

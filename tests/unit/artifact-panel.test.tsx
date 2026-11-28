@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
+import { FilePreviewSurface } from '@/components/file-preview/FilePreviewSurface';
 import { ArtifactPanel } from '@/components/file-preview/ArtifactPanel';
 import { ARTIFACT_PANEL_DEFAULT_WIDTH, useArtifactPanel } from '@/stores/artifact-panel';
 import type { AcpSessionFileGroup } from '@/lib/acp/openclaw-file-activities';
-import { MAC_TRAFFIC_LIGHT_SAFE_INSET } from '@shared/sidebar-layout';
 
 const shellShowItemInFolder = vi.fn(async () => undefined);
 const openHtmlExternal = vi.fn(async () => undefined);
@@ -27,13 +27,11 @@ vi.mock('react-i18next', () => ({
         'artifactPanel.changes.empty': 'This session has no file changes yet.',
         'artifactPanel.changes.diffUnavailable': 'Diff unavailable',
         'artifactPanel.changes.changeRecord': `Change ${String(options?.number ?? '')}`,
-        'artifactPanel.preview.fullscreenLabel': 'Fullscreen file preview',
         'filePreview.actions.close': 'Close',
-        'filePreview.actions.enterFullscreen': 'Enter fullscreen',
-        'filePreview.actions.exitFullscreen': 'Exit fullscreen',
+        'filePreview.actions.openInFinder': 'Reveal in file manager',
         'filePreview.actions.openHtmlExternally': 'Open HTML in system browser',
       };
-      return labels[key] ?? '';
+      return labels[key] ?? String(options?.defaultValue ?? key);
     },
   }),
 }));
@@ -68,7 +66,7 @@ vi.mock('@/components/file-preview/WorkspaceBrowserBody', () => ({
     workspaceBrowserProps.push(props);
     return (
       <div data-testid="workspace-browser">
-        {props.active === true && <div data-testid="pptx-viewer">workspace</div>}
+        <FilePreviewSurface file={useArtifactPanel.getState().focusedFile} active={props.active === true} />
       </div>
     );
   },
@@ -112,7 +110,6 @@ afterEach(() => {
       focusedFile: null,
       focusedChange: null,
       widthPct: ARTIFACT_PANEL_DEFAULT_WIDTH,
-      htmlPreviewAnchor: null,
     });
   });
 });
@@ -146,18 +143,11 @@ describe('ArtifactPanel', () => {
     expect(screen.queryByTestId('artifact-panel-tab-web-browser')).not.toBeInTheDocument();
   });
 
-  it('keeps the rich-preview folder action after all three tabs', () => {
-    useArtifactPanel.setState({
-      focusedFile: { filePath: '/tmp/report.pdf', fileName: 'report.pdf', ext: '.pdf', mimeType: 'application/pdf', contentType: 'document' },
-    });
+  it('keeps file actions in the shared file header instead of mixing them into navigation', () => {
+    useArtifactPanel.setState({ tab: 'preview', focusedFile: { filePath: '/tmp/report.pdf', fileName: 'report.pdf', ext: '.pdf', mimeType: 'application/pdf', contentType: 'document' } });
     render(<ArtifactPanel fileGroups={[]} uniqueFileCount={0} agent={null} />);
-
-    expect(Array.from(screen.getByTestId('artifact-panel-tabs').children).map((control) => control.getAttribute('data-testid'))).toEqual([
-      'artifact-panel-tab-browser',
-      'artifact-panel-tab-preview',
-      'artifact-panel-tab-changes',
-      'artifact-panel-action-open-folder',
-    ]);
+    expect(screen.getByTestId('artifact-panel-tabs').children).toHaveLength(3);
+    expect(screen.getByTestId('file-preview-actions')).toBeInTheDocument();
   });
 
   it('keeps every localized tab reachable in a horizontally scrollable row', () => {
@@ -186,114 +176,24 @@ describe('ArtifactPanel', () => {
     expect(workspaceBrowserProps.at(-1)).toMatchObject({ workspacePath: '/session/workspace', workspaceLabel: '~/session/workspace' });
   });
 
-  it('keeps both preview surfaces mounted but activates only the visible PPTX surface', () => {
-    useArtifactPanel.setState({
-      open: true,
-      tab: 'preview',
-      focusedFile: {
-        filePath: '/tmp/slides.pptx', fileName: 'slides.pptx', ext: '.pptx',
-        mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', contentType: 'document',
-      },
-    });
+  it('keeps one shared preview active across Workspace and Preview', () => {
+    useArtifactPanel.setState({ open: true, tab: 'preview', focusedFile: { filePath: '/tmp/slides.pptx', fileName: 'slides.pptx', ext: '.pptx', mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', contentType: 'document' } });
     render(<ArtifactPanel fileGroups={[]} uniqueFileCount={0} agent={null} />);
-
-    expect(workspaceBrowserProps.at(-1)).toMatchObject({ active: false });
-    expect(filePreviewBodyProps.at(-1)).toMatchObject({ active: true });
+    expect(workspaceBrowserProps.at(-1)).toMatchObject({ active: true, previewOnly: true });
     expect(screen.getAllByTestId('pptx-viewer')).toHaveLength(1);
-
-    fireEvent.click(screen.getByTestId('artifact-panel-tab-browser'));
-
-    expect(screen.getByTestId('workspace-browser')).toBeInTheDocument();
-    expect(screen.getByTestId('file-preview-body')).toBeInTheDocument();
-    expect(workspaceBrowserProps.at(-1)).toMatchObject({ active: true });
-    expect(filePreviewBodyProps.at(-1)).toMatchObject({ active: false });
+    fireEvent.mouseDown(screen.getByTestId('artifact-panel-tab-browser'), { button: 0 });
+    expect(workspaceBrowserProps.at(-1)).toMatchObject({ active: true, previewOnly: false });
+    expect(screen.getAllByTestId('file-preview-body')).toHaveLength(1);
     expect(screen.getAllByTestId('pptx-viewer')).toHaveLength(1);
-
-    fireEvent.click(screen.getByTestId('artifact-panel-tab-changes'));
-
-    expect(workspaceBrowserProps.at(-1)).toMatchObject({ active: false });
-    expect(filePreviewBodyProps.at(-1)).toMatchObject({ active: false });
-    expect(screen.queryByTestId('pptx-viewer')).not.toBeInTheDocument();
   });
 
-  it('opens the selected file in a fullscreen layer and exits with Escape', () => {
-    useArtifactPanel.setState({
-      open: true,
-      tab: 'preview',
-      focusedFile: {
-        filePath: '/tmp/report.pdf', fileName: 'report.pdf', ext: '.pdf',
-        mimeType: 'application/pdf', contentType: 'document',
-      },
-    });
-    render(<ArtifactPanel fileGroups={[]} uniqueFileCount={0} agent={null} />);
-
-    expect(filePreviewBodyProps.at(-1)).toMatchObject({
-      compact: true,
-      headerLeftInset: undefined,
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Enter fullscreen' }));
-
-    expect(screen.getByRole('dialog', { name: 'Fullscreen file preview' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Exit fullscreen' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Exit fullscreen' })).toHaveFocus();
-    expect(filePreviewBodyProps.at(-1)).toMatchObject({
-      compact: false,
-      headerLeftInset: MAC_TRAFFIC_LIGHT_SAFE_INSET,
-    });
-
-    fireEvent.keyDown(window, { key: 'Escape' });
-
-    expect(screen.queryByTestId('file-preview-fullscreen-layer')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Enter fullscreen' })).toBeInTheDocument();
+  it('keeps previews compact without a maximize action or redundant empty-state buttons', () => {
+    const view = render(<FilePreviewSurface file={null} active />);
+    expect(screen.getByTestId('workspace-preview-empty').querySelector('button')).toBeNull();
+    view.rerender(<FilePreviewSurface file={{ filePath: '/tmp/report.pdf', fileName: 'report.pdf', ext: '.pdf', mimeType: 'application/pdf', contentType: 'document' }} active />);
     expect(filePreviewBodyProps.at(-1)).toMatchObject({ compact: true });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Enter fullscreen' }));
-    act(() => useArtifactPanel.getState().setTab('changes'));
-    expect(screen.queryByTestId('file-preview-fullscreen-layer')).not.toBeInTheDocument();
-  });
-
-  it('does not reserve traffic-light space for fullscreen previews off macOS', () => {
-    const originalPlatform = window.electron.platform;
-    window.electron.platform = 'linux';
-    try {
-      useArtifactPanel.setState({
-        open: true,
-        tab: 'preview',
-        focusedFile: {
-          filePath: '/tmp/report.pdf', fileName: 'report.pdf', ext: '.pdf',
-          mimeType: 'application/pdf', contentType: 'document',
-        },
-      });
-      render(<ArtifactPanel fileGroups={[]} uniqueFileCount={0} agent={null} />);
-
-      fireEvent.click(screen.getByRole('button', { name: 'Enter fullscreen' }));
-
-      expect(filePreviewBodyProps.at(-1)).toMatchObject({
-        compact: false,
-        headerLeftInset: undefined,
-      });
-    } finally {
-      window.electron.platform = originalPlatform;
-    }
-  });
-
-  it('preserves the viewer-reported PowerPoint position for each preview target', () => {
-    const first = {
-      filePath: '/tmp/first.pptx', fileName: 'first.pptx', ext: '.pptx',
-      mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', contentType: 'document' as const,
-    };
-    const second = { ...first, filePath: '/tmp/second.pptx', fileName: 'second.pptx' };
-    useArtifactPanel.setState({ open: true, tab: 'preview', focusedFile: first });
-    render(<ArtifactPanel fileGroups={[]} uniqueFileCount={0} agent={null} />);
-
-    expect(filePreviewBodyProps.at(-1)).toMatchObject({ initialPptxSlideIndex: 0 });
-    (filePreviewBodyProps.at(-1)?.onPptxSlideIndexChange as ((index: number) => void) | undefined)?.(2);
-
-    act(() => useArtifactPanel.setState({ focusedFile: second }));
-    expect(filePreviewBodyProps.at(-1)).toMatchObject({ initialPptxSlideIndex: 0 });
-
-    act(() => useArtifactPanel.setState({ focusedFile: first }));
-    expect(filePreviewBodyProps.at(-1)).toMatchObject({ initialPptxSlideIndex: 2 });
+    expect(screen.queryByTestId('file-preview-fullscreen-toggle')).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('always keeps Changes available for rich preview files', () => {
@@ -305,7 +205,7 @@ describe('ArtifactPanel', () => {
     render(<ArtifactPanel fileGroups={groups()} uniqueFileCount={2} agent={null} />);
 
     expect(screen.getByTestId('artifact-panel-tab-changes')).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('artifact-panel-tab-changes'));
+    fireEvent.mouseDown(screen.getByTestId('artifact-panel-tab-changes'), { button: 0 });
     expect(screen.getByText('File changes (2)')).toBeInTheDocument();
   });
 
@@ -362,7 +262,8 @@ describe('ArtifactPanel', () => {
     });
     render(<ArtifactPanel fileGroups={groups()} uniqueFileCount={2} agent={null} />);
 
-    fireEvent.click(screen.getByTestId('artifact-panel-action-open-folder'));
+    fireEvent.keyDown(screen.getByTestId('file-preview-actions'), { key: 'ArrowDown' });
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Reveal in file manager' }));
     expect(shellShowItemInFolder).toHaveBeenCalledWith('/tmp/report.pdf');
   });
 
@@ -375,7 +276,7 @@ describe('ArtifactPanel', () => {
     render(<ArtifactPanel fileGroups={[]} uniqueFileCount={0} agent={null} />);
     expect(screen.getByText('This session has no file changes yet.')).toBeInTheDocument();
     expect(screen.getByText('This session has no file changes yet.').closest('.hidden')).toBeNull();
-    expect(screen.getByTestId('file-preview-body').closest('.hidden')).not.toBeNull();
+    expect(screen.getByTestId('file-preview-body').closest('[hidden]')).not.toBeNull();
   });
 
   it('renders one diff per turn and file and keeps unavailable records independently', () => {
@@ -404,7 +305,7 @@ describe('ArtifactPanel', () => {
   it('expands and scrolls to the focused turn, then lets the user collapse it', () => {
     const scrollIntoView = vi.fn();
     const focus = { relativePath: 'src/first.ts', turnId: 'turn-2' };
-    Element.prototype.scrollIntoView = scrollIntoView;
+    vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(scrollIntoView);
     useArtifactPanel.getState().openChanges(focus);
     render(<ArtifactPanel fileGroups={groups()} uniqueFileCount={2} agent={null} />);
 

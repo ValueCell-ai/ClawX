@@ -15,6 +15,8 @@ import type { MarketplaceSkill, QuickAccessSkill, Skill } from '../types/skill';
 import type { WebBrowserNavigatePayload } from '../web-browser';
 export type JsonRecord = Record<string, unknown>;
 export type HostSuccess = { success: boolean; error?: string };
+export type ModelSelectionResult = HostSuccess & { modelRef?: string | null };
+export type GlobalModelSelectionPayload = { accountId: string; modelId: string };
 export type OptionalHostSuccess = { success?: boolean; error?: string };
 
 export type OpenClawDoctorMode = 'diagnose' | 'fix';
@@ -127,6 +129,7 @@ export type SettingsSnapshot = Partial<{
   autoCheckUpdate: boolean;
   sidebarCollapsed: boolean;
   sidebarWidth: number;
+  pinnedSessionKeys: string[];
   devModeUnlocked: boolean;
   setupComplete: boolean;
   chatWorkspacePath: string;
@@ -316,9 +319,10 @@ export type AgentDeleteResult = AgentSnapshotResult & {
   /** Resolved path, present only when Main successfully removed a ClawX-managed workspace directory. */
   removedWorkspacePath?: string;
 };
-export type AgentCreatePayload = { name: string; inheritWorkspace?: boolean };
+export type AgentCreatePayload = { name: string; inheritWorkspace?: boolean; instructions?: string; modelRef?: string };
 export type AgentUpdatePayload = { id: string; name: string };
 export type AgentUpdateModelPayload = { id: string; modelRef: string | null };
+export type AgentUpdateFallbacksPayload = { id: string | null; fallbacks: string[] | null };
 export type AgentIdPayload = { id: string };
 export type AgentChannelPayload = { id: string; channelType: string };
 
@@ -508,6 +512,7 @@ export type ProviderOAuthRequestPayload = {
   region?: 'global' | 'cn';
   accountId?: string;
   label?: string;
+  modelId?: string;
 };
 export type ProviderOAuthSubmitPayload = { code: string };
 
@@ -1038,6 +1043,7 @@ export type HostApiContract = {
     create: (payload: AgentCreatePayload) => AgentSnapshotResult;
     update: (payload: AgentUpdatePayload) => AgentSnapshotResult;
     updateModel: (payload: AgentUpdateModelPayload) => AgentSnapshotResult;
+    updateFallbacks: (payload: AgentUpdateFallbacksPayload) => AgentSnapshotResult;
     delete: (payload: AgentIdPayload) => AgentDeleteResult;
     assignChannel: (payload: AgentChannelPayload) => AgentSnapshotResult;
     removeChannel: (payload: AgentChannelPayload) => AgentSnapshotResult;
@@ -1073,6 +1079,7 @@ export type HostApiContract = {
     deleteAccount: (payload: ProviderAccountIdPayload) => HostSuccess;
     deleteAccountApiKey: (payload: ProviderAccountIdPayload) => HostSuccess;
     setDefaultAccount: (payload: ProviderAccountIdPayload) => HostSuccess;
+    setDefaultModel: (payload: GlobalModelSelectionPayload) => ModelSelectionResult;
     requestOAuth: (payload: ProviderOAuthRequestPayload) => HostSuccess;
     cancelOAuth: () => HostSuccess;
     submitOAuth: (payload: ProviderOAuthSubmitPayload) => HostSuccess;

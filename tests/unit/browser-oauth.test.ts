@@ -95,7 +95,7 @@ describe('BrowserOAuthManager TokenDance flow', () => {
       defaultWritesAtSuccess.push(mocks.setDefaultAccount.mock.calls.length);
     });
 
-    await manager.startFlow('tokendance', { accountId: 'tokendance-one', label: 'TokenDance' });
+    await manager.startFlow('tokendance', { accountId: 'tokendance-one', label: 'TokenDance', modelId: 'tokendance/td-model' });
     await manager.startFlow('tokendance', { accountId: 'tokendance-two', label: 'Duplicate' });
 
     expect(mocks.loginTokenDanceOAuth).toHaveBeenCalledTimes(1);
@@ -107,7 +107,27 @@ describe('BrowserOAuthManager TokenDance flow', () => {
     expect(mocks.setDefaultAccount).toHaveBeenCalledWith('tokendance-one');
     expect(defaultWritesAtSuccess).toEqual([1]);
     expect(mocks.saveProviderKeyToOpenClaw).toHaveBeenCalledTimes(1);
-    expect(mocks.setOpenClawDefaultModelWithOverride).toHaveBeenCalledTimes(1);
+    expect(mocks.createAccount).toHaveBeenCalledWith(expect.objectContaining({ model: 'td-model' }), 'td-secret');
+    expect(mocks.setOpenClawDefaultModelWithOverride).toHaveBeenCalledExactlyOnceWith(
+      'tokendance', 'tokendance/td-model', expect.any(Object),
+    );
+  });
+
+  it('persists the model chosen for an OpenAI OAuth account and its runtime configuration', async () => {
+    const manager = new BrowserOAuthManager();
+    const success = vi.fn();
+    manager.on('oauth:success', success);
+    mocks.loginOpenAICodexOAuth.mockResolvedValueOnce({
+      access: 'fixture-access', refresh: 'fixture-refresh', expires: 1234, accountId: 'fixture-subject',
+    });
+
+    await manager.startFlow('openai', { accountId: 'openai-account', modelId: 'openai-codex/test-choice' });
+
+    await vi.waitFor(() => expect(success).toHaveBeenCalledWith({ provider: 'openai', accountId: 'openai-account' }));
+    expect(mocks.createAccount).toHaveBeenCalledWith(expect.objectContaining({ model: 'test-choice' }));
+    expect(mocks.setOpenClawDefaultModelWithOverride).toHaveBeenCalledExactlyOnceWith(
+      'openai', 'openai/test-choice', expect.any(Object),
+    );
   });
 
   it('stops TokenDance persistence after cancellation during account creation', async () => {

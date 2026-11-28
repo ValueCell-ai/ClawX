@@ -62,8 +62,21 @@
  *     hover      :  hover:bg-black/5 dark:hover:bg-white/5
  *     idle text  :  text-muted-foreground (or text-foreground/80 / 70)
  *
+ *     Custom dropdown selections: menuOptionStateClass + MenuSelectionIndicator
+ *     (bg-primary/10 with a trailing primary dot).
+ *
  *     Reference: components/layout/Sidebar.tsx, pages/Settings/index.tsx
  *     (theme + language picker).
+ *
+ *   FIELD FOCUS
+ *   ─────────────────────────────────────────────────────────────────────
+ *     Inputs, textareas and selects use a quiet neutral focus treatment:
+ *       focus-visible:border-foreground/30 focus-visible:ring-1
+ *       focus-visible:ring-foreground/10 focus-visible:ring-offset-0
+ *     Composite fields use the equivalent focus-within variants on their
+ *     outer container; inner borderless textareas keep ring-0. Avoid blue
+ *     borders, thick halos and offset rings on text-entry surfaces.
+ *     Buttons and other keyboard controls retain their visible focus rings.
  *
  *   MODAL / SCRIM BACKDROPS
  *   ─────────────────────────────────────────────────────────────────────
@@ -91,35 +104,26 @@
  *
  *   TYPOGRAPHY
  *   ─────────────────────────────────────────────────────────────────────
- *     page H1 / H2     :  font-serif font-normal tracking-tight
- *                         · hero pages   text-5xl md:text-6xl  (Settings,
- *                                                               Cron, Models)
- *                         · wizard steps text-3xl / section H2 text-xl
- *                                                              (Setup)
- *     monospace        :  font-mono     (NOT `font-monospace` — dead class)
- *     pixel text       :  text-[13px] → text-meta
- *                         text-[10px] → text-2xs
- *                         Full named scale (2xs / tiny / meta / subtitle /
- *                         stat) defined in tailwind.config.js.
+ *     Project-wide text roles, size/line-height/weight mappings and
+ *     content exceptions are defined in DESIGN.md, under Typography.
+ *     Use those roles with the tokens in tailwind.config.js; a named
+ *     size alone does not make it suitable for a title or group label.
+ *     Shared components implement the same contract as product pages.
  *
  *   PRIMARY CTA
  *   ─────────────────────────────────────────────────────────────────────
  *     Use the default <Button> styling (variant="default", which renders
- *     `bg-primary`). Do not hand-apply `bg-brand` to action buttons —
+ *     `bg-primary-action`). Do not hand-apply `bg-brand` to action buttons —
  *     `bg-brand` / `bg-brand-hover` are reserved for branded surfaces
  *     where a divergent Apple-blue is explicitly desired (rare).
  *     Reference: pages/Models "+ Add Provider" trigger.
  *
- *   NATIVE <select> BACKGROUNDS
+ *   DROPDOWNS / SELECTS
  *   ─────────────────────────────────────────────────────────────────────
- *     Native selects MUST keep an opaque themed background
- *     (`bg-background` or `bg-surface-input`) — never `bg-transparent`.
- *     Chromium paints the dropdown popup with the select's own computed
- *     background/color, so a transparent select renders a white popup
- *     behind light option text in dark mode (Windows especially).
- *     When sharing `inputClasses` (which use `bg-transparent`) with a
- *     select, append `bg-background` to the select's className.
- *     Reference: components/ui/select.tsx, components/settings/AsrSettings.tsx.
+ *     Use shared Radix wrappers and clawx-floating-surface motion.
+ *     Popup surfaces use bg-surface-modal; triggers use semantic tokens.
+ *     Keep Content mounted for exit and respect prefers-reduced-motion.
+ *     Radix owns portals, keyboard focus, dismissal and collisions.
  * ────────────────────────────────────────────────────────────────────────── */
 
 @layer base {
@@ -131,32 +135,35 @@
     color-scheme: light;
 
     /* ── shadcn semantic tokens (light) ─────────────────────────── */
-    /* Clean neutral page background matching the white/gray light theme. */
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Soft warm neutrals give task surfaces a quieter, more approachable shell. */
+    --background: 40 20% 98.5%;
+    --foreground: 225 23% 15%;
     --card: 0 0% 100%;
     --card-foreground: 222.2 84% 4.9%;
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
     --primary: 221.2 83.2% 53.3%;
+    --primary-action: 221.2 83.2% 53.3%;
+    --message-user: 221.2 83.2% 53.3%;
+    --primary-action-hover: 224.3 76.3% 48%;
     --primary-foreground: 210 40% 98%;
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
     --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted-foreground: 220 10% 44%;
     --accent: 210 40% 96.1%;
     --accent-foreground: 222.2 47.4% 11.2%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
+    --border: 220 13% 89%;
     --input: 214.3 31.8% 91.4%;
     --ring: 221.2 83.2% 53.3%;
     --radius: 0.5rem;
 
     /* ── ClawX neutral surfaces (light) ───────────────────────────
      *
-     * Three stacked neutral layers. The app shell stays white while
-     * recessed controls and the sidebar use subtle gray contrast.
+     * Three stacked neutral layers. The shell uses warm near-white;
+     * white lifted surfaces and recessed controls provide subtle contrast.
      *
      *   --surface-modal   = lifted neutral panels, dialogs, popovers,
      *                       composer, cards
@@ -164,8 +171,8 @@
      *   --surface-sidebar = sidebar neutral navigation rail (often /60)
      * ─────────────────────────────────────────────────────────── */
     --surface-modal: 0 0% 100%;
-    --surface-input: 0 0% 96.5%;
-    --surface-sidebar: 0 0% 96%;
+    --surface-input: 35 14% 96%;
+    --surface-sidebar: 35 12% 95%;
 
     /* ── ClawX usage accents (light) ─────────────────────────────
      *
@@ -199,6 +206,9 @@
     --popover: 240 3% 14%;
     --popover-foreground: 210 20% 96%;
     --primary: 217.2 91.2% 59.8%;
+    --primary-action: 221.2 83.2% 53.3%;
+    --message-user: 221.2 83.2% 53.3%;
+    --primary-action-hover: 224.3 76.3% 48%;
     --primary-foreground: 210 40% 98%;
     --secondary: 240 3% 18%;
     --secondary-foreground: 210 20% 96%;
@@ -245,16 +255,60 @@
 }
 
 @layer components {
+  /* Shared option spacing for custom dropdowns and popup lists. */
+  .clawx-menu-list {
+    @apply space-y-1;
+  }
+
+  /* 28px single-line rows; description rows grow with their content. */
+  .clawx-menu-item {
+    @apply min-h-7 rounded-lg px-3 py-1;
+  }
+
+  /* Shared Radix wrappers keep closing surfaces mounted until the exit ends. */
+  .clawx-floating-surface {
+    transform-origin: var(--clawx-floating-origin, center);
+    animation: clawx-floating-in 140ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .clawx-popover-surface { --clawx-floating-origin: var(--radix-popover-content-transform-origin); }
+  .clawx-dropdown-surface { --clawx-floating-origin: var(--radix-dropdown-menu-content-transform-origin); }
+  .clawx-select-surface { --clawx-floating-origin: var(--radix-select-content-transform-origin); }
+  .clawx-floating-surface[data-state='closed'] {
+    /* Override the inline pointer-events used by modal Radix layers. */
+    pointer-events: none !important;
+    animation: clawx-floating-out 90ms ease-in;
+  }
+  @keyframes clawx-floating-in {
+    from { opacity: 0; transform: scale(0.98); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  @keyframes clawx-floating-out {
+    from { opacity: 1; transform: scale(1); }
+    to { opacity: 0; transform: scale(0.98); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .clawx-floating-surface[data-state] { animation: none; }
+  }
+
+  .clawx-inline-disclosure {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows 200ms ease-out;
+  }
+  .clawx-inline-disclosure[data-state='closed'] {
+    grid-template-rows: 0fr;
+  }
+  @starting-style {
+    .clawx-inline-disclosure[data-animate-on-mount='true'] {
+      grid-template-rows: 0fr;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .clawx-inline-disclosure { transition: none; }
+  }
+
   .sidebar-nav-text.sidebar-nav-text {
     @apply text-sm font-normal leading-4;
-  }
-
-  .clawx-skill-token-overlay {
-    background-color: color-mix(in srgb, #2f6bff 14%, hsl(var(--surface-modal)));
-  }
-
-  .dark .clawx-skill-token-overlay {
-    background-color: color-mix(in srgb, #2f6bff 18%, hsl(var(--surface-modal)));
   }
 
   .clawx-dialog-overlay {
@@ -404,35 +458,56 @@
   }
 }
 
-/* Custom scrollbar: keep scrollbars visually quiet until the user hovers a scroll area. */
+/* Quiet scrollbars: fixed narrow geometry avoids reflow when a thumb appears. */
 * {
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
 }
 
 *:hover {
-  scrollbar-color: hsl(var(--border)) transparent;
+  scrollbar-color: hsl(var(--muted-foreground) / 0.22) transparent;
+}
+
+/* In Chromium, non-auto standard properties override ::-webkit-scrollbar.
+ * Let the pixel-sized rules below own Electron's scrollbar geometry. */
+@supports selector(::-webkit-scrollbar) {
+  *,
+  *:hover {
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+  }
 }
 
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
-::-webkit-scrollbar-track {
-  @apply bg-transparent;
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-transparent rounded-full;
+  min-height: 24px;
+  border: 1px solid transparent;
+  border-radius: 9999px;
+  background-color: transparent;
+  background-clip: padding-box;
 }
 
 *:hover::-webkit-scrollbar-thumb {
-  @apply bg-border;
+  background-color: hsl(var(--muted-foreground) / 0.22);
 }
 
 *:hover::-webkit-scrollbar-thumb:hover {
-  @apply bg-muted-foreground/30;
+  background-color: hsl(var(--muted-foreground) / 0.4);
+}
+
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 /* Monaco's default light diff theme is pure white; keep it aligned with ClawX's light app background. */
@@ -693,4 +768,29 @@
   30% {
     transform: translateY(-4px);
   }
+}
+
+/* Composer elevation and focus share the same semantic tokens in both themes. */
+.clawx-composer {
+  border-color: hsl(var(--border) / .85);
+  box-shadow: 0 8px 30px -12px hsl(var(--foreground) / .15), 0 2px 6px -3px hsl(var(--foreground) / .08);
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+.clawx-composer:focus-within {
+  border-color: hsl(var(--foreground) / .25);
+  box-shadow: 0 8px 30px -12px hsl(var(--foreground) / .16), 0 0 0 1px hsl(var(--foreground) / .04);
+}
+@media (prefers-reduced-motion: reduce) {
+  .clawx-composer { transition: none; }
+}
+
+/* Lexical owns the visible text, caret and token geometry; no highlight overlay. */
+.clawx-composer-editor p { margin: 0; }
+.clawx-composer-editor { overflow-wrap: anywhere; }
+.clawx-skill-token {
+  border-radius: 0.375rem;
+  @apply bg-skill-bg/[0.14] text-skill-fg dark:bg-skill-bg/[0.18] dark:text-skill-fg-dark;
+  padding: 1px 2px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
 }

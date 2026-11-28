@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import MarkdownPreview from '@/components/file-preview/MarkdownPreview';
 
 describe('MarkdownPreview', () => {
@@ -10,17 +10,49 @@ describe('MarkdownPreview', () => {
   });
 
   it.each([
-    ['YAML', '---\ntitle: Hidden YAML metadata\n---'],
-    ['TOML', '+++\ntitle = "Hidden TOML metadata"\n+++'],
-  ])('omits %s frontmatter without rendering a metadata card', (_format, frontmatter) => {
-    const { container } = render(
+    ['YAML', '---\ntitle: YAML metadata\n---', 'title: YAML metadata'],
+    ['TOML', '+++\ntitle = "TOML metadata"\n+++', 'title = "TOML metadata"'],
+  ])('shows %s frontmatter expanded by default and allows collapsing it', (_format, frontmatter, metadata) => {
+    render(
       <MarkdownPreview source={`${frontmatter}\n\n# Visible heading\n\nVisible body`} />,
     );
 
     expect(screen.getByRole('heading', { name: 'Visible heading' })).toBeVisible();
     expect(screen.getByText('Visible body')).toBeVisible();
-    expect(container).not.toHaveTextContent('Hidden');
-    expect(container.querySelector('pre')).not.toBeInTheDocument();
+    const disclosure = screen.getByTestId('markdown-frontmatter');
+    const content = screen.getByTestId('markdown-frontmatter-content');
+    expect(disclosure).toHaveAttribute('open');
+    expect(content).toBeVisible();
+    expect(content.textContent).toBe(metadata);
+    fireEvent.click(disclosure.querySelector('summary')!);
+    expect(content).not.toBeVisible();
+    fireEvent.click(disclosure.querySelector('summary')!);
+    expect(content).toBeVisible();
+  });
+
+  it('preserves nested multiline metadata with BOM and CRLF as inert text', () => {
+    const metadata = 'name: pdf\r\ndescription: |\r\n  Multi-line description\r\n  <script>alert(1)</script>\r\nmetadata:\r\n  tools: [read, write]';
+    const { container } = render(<MarkdownPreview source={`\uFEFF---\r\n${metadata}\r\n---\r\n\r\n# Body`} />);
+    expect(screen.getByTestId('markdown-frontmatter-content')).toBeVisible();
+    expect(screen.getByTestId('markdown-frontmatter-content').textContent).toBe(metadata);
+    expect(container.querySelector('script')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Body' })).toBeVisible();
+  });
+
+  it('does not mistake body separators or fenced YAML for frontmatter', () => {
+    const { container } = render(<MarkdownPreview source={'# Body\n\n---\n\n```yaml\nname: example\n```'} />);
+
+    expect(screen.queryByTestId('markdown-frontmatter')).not.toBeInTheDocument();
+    expect(container.querySelector('hr')).toBeInTheDocument();
+    expect(container.querySelector('[data-streamdown="code-block"]')).toHaveTextContent('name: example');
+  });
+
+  it('keeps an unclosed frontmatter fence in the visible body', () => {
+    const { container } = render(<MarkdownPreview source={'---\nname: incomplete\n\nbody'} />);
+
+    expect(screen.queryByTestId('markdown-frontmatter')).not.toBeInTheDocument();
+    expect(container).toHaveTextContent('name: incomplete');
+    expect(container).toHaveTextContent('body');
   });
 
   it('keeps raw HTML visible without creating active elements', () => {

@@ -2,13 +2,13 @@
  * Skills Page
  * Browse and manage AI skills
  */
-import { Suspense, lazy, useEffect, useState, useCallback } from 'react';
-import { Search, Puzzle, Lock, Package, X, AlertCircle, Trash2, FolderOpen, Copy } from 'lucide-react';
+import { Suspense, lazy, useEffect, useRef, useState, useCallback } from 'react';
+import { Search, Puzzle, Lock, Package, X, AlertCircle, Trash2, FolderOpen, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { useSkillsStore } from '@/stores/skills';
 import { useGatewayStore } from '@/stores/gateway';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
@@ -22,11 +22,11 @@ import { rendererExtensionRegistry } from '@/extensions/registry';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { SkillFileSections } from '@/components/file-preview/SkillFileSections';
-import type { FilePreviewTarget } from '@/components/file-preview/FilePreviewOverlay';
+import { getFilePreviewTargetIdentity, type FilePreviewTarget } from '@/components/file-preview/types';
 import type { SkillFile } from '@/lib/skill-files';
 
 const FilePreviewOverlayLazy = lazy(() =>
-  import('@/components/file-preview/FilePreviewOverlay').then((m) => ({ default: m.FilePreviewOverlay })),
+  import('@/components/file-preview/FilePreviewOverlay'),
 );
 
 function skillFileToTarget(file: SkillFile): FilePreviewTarget {
@@ -57,8 +57,7 @@ interface SkillDetailDialogProps {
   skill: Skill | null;
   isOpen: boolean;
   onClose: () => void;
-  onToggle: (enabled: boolean) => void;
-  onUninstall?: (slug: string) => void;
+  onReturnFocus: () => void;
   onOpenFolder?: (skill: Skill) => Promise<void> | void;
 }
 
@@ -79,166 +78,88 @@ function resolveSkillSourceLabel(skill: Skill, t: TFunction<'skills'>): string {
   return source;
 }
 
-function canUninstallSkill(skill: Skill): boolean {
-  return (skill.source || '').trim().toLowerCase() === 'openclaw-managed';
-}
-
-function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall, onOpenFolder }: SkillDetailDialogProps) {
+function SkillDetailDialog({ skill, isOpen, onClose, onReturnFocus, onOpenFolder }: SkillDetailDialogProps) {
   const { t } = useTranslation('skills');
   const [openedSkillFile, setOpenedSkillFile] = useState<FilePreviewTarget | null>(null);
+  const [reading, setReading] = useState(false);
+  const slidePositions = useRef<Record<string, number>>({});
+  const [initialSlideIndex, setInitialSlideIndex] = useState(0);
+  const fileTriggerRef = useRef<HTMLButtonElement | null>(null);
   const detailMetaComponents = rendererExtensionRegistry.getSkillDetailMetaComponents();
-
-  const handleCopyPath = async () => {
-    if (!skill?.baseDir) return;
-    try {
-      await navigator.clipboard.writeText(skill.baseDir);
-      toast.success(t('toast.copiedPath'));
-    } catch (err) {
-      toast.error(t('toast.failedCopyPath') + ': ' + String(err));
-    }
-  };
 
   if (!skill) return null;
 
-  const uninstallable = canUninstallSkill(skill);
 
   return (
-    <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <Suspense fallback={null}>
-        <FilePreviewOverlayLazy file={openedSkillFile} readOnly onClose={() => setOpenedSkillFile(null)} />
-      </Suspense>
-      <SheetContent
-        className="w-full sm:max-w-[450px] p-0 flex flex-col border-l border-black/10 dark:border-white/10 bg-surface-modal shadow-[0_0_40px_rgba(0,0,0,0.2)]"
-        side="right"
+    <Dialog open={isOpen} onOpenChange={(open) => {
+      if (!open) {
+        onClose();
+      }
+    }}>
+      <DialogContent
+        data-testid="skill-detail-dialog"
+        className="flex h-[min(560px,85vh)] w-[calc(100vw-2rem)] max-w-4xl flex-col overflow-hidden rounded-xl border border-border bg-surface-modal p-0 shadow-2xl"
+        aria-describedby={undefined}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          onReturnFocus();
+        }}
       >
-        {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto px-8 py-10">
-          <div className="flex flex-col items-center mb-8">
-            <div className="w-16 h-16 flex items-center justify-center rounded-full bg-surface-modal border border-black/5 dark:border-white/5 shrink-0 mb-4 relative shadow-sm">
-              <span className="text-3xl">{skill.icon || '🔧'}</span>
-              {skill.isCore && (
-                <div className="absolute -bottom-1 -right-1 bg-surface-modal rounded-full p-1 shadow-sm border border-black/5 dark:border-white/5">
-                  <Lock className="h-3 w-3 text-muted-foreground shrink-0" />
-                </div>
-              )}
-            </div>
-            <h2 className="text-3xl font-serif text-foreground font-normal mb-3 text-center tracking-tight">
-              {skill.name}
-            </h2>
-            <div
-              data-skill-detail-meta-row="1"
-              className="flex items-center justify-center flex-wrap gap-2.5 mb-6 opacity-80"
-            >
-              {skill.version && (
-                <Badge
-                  variant="secondary"
-                  className="shrink-0 whitespace-nowrap font-mono text-tiny font-medium px-3 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] hover:bg-black/[0.08] dark:hover:bg-white/[0.12] border-0 shadow-none text-foreground/70 transition-colors"
-                >
-                  v{skill.version}
-                </Badge>
-              )}
-              <Badge
-                variant="secondary"
-                className="shrink-0 whitespace-nowrap font-mono text-tiny font-medium px-3 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] hover:bg-black/[0.08] dark:hover:bg-white/[0.12] border-0 shadow-none text-foreground/70 transition-colors"
-              >
-                {skill.isCore
-                  ? t('detail.coreSystem')
-                  : skill.isBundled
-                    ? t('detail.bundled')
-                    : t('detail.userInstalled')}
-              </Badge>
-              {detailMetaComponents.map((DetailMetaComponent, index) => (
-                <DetailMetaComponent key={`skill-detail-meta-${index}`} skill={skill} />
-              ))}
-            </div>
-
-            {skill.description && (
-              <p className="text-sm text-foreground/70 font-medium leading-[1.6] text-center px-4">
-                {skill.description}
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-7 px-1">
-            <div className="space-y-2">
-              <h3 className="text-meta font-bold text-foreground/80">{t('detail.source')}</h3>
-              <div className="flex items-center gap-2 flex-wrap">
-                <Badge
-                  variant="secondary"
-                  className="shrink-0 whitespace-nowrap font-mono text-tiny font-medium px-3 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] border-0 shadow-none text-foreground/70"
-                >
-                  {resolveSkillSourceLabel(skill, t)}
-                </Badge>
-              </div>
-              <div className="flex items-center gap-2">
-                <Input
-                  value={skill.baseDir || t('detail.pathUnavailable')}
-                  readOnly
-                  className="h-[38px] font-mono text-xs bg-transparent border-black/10 dark:border-white/10 rounded-xl text-foreground/70"
-                />
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-[38px] w-[38px] border-black/10 dark:border-white/10"
-                  disabled={!skill.baseDir}
-                  onClick={handleCopyPath}
-                  title={t('detail.copyPath')}
-                >
-                  <Copy className="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-[38px] w-[38px] border-black/10 dark:border-white/10"
-                  disabled={!skill.baseDir}
-                  onClick={() => onOpenFolder?.(skill)}
-                  title={t('detail.openActualFolder')}
-                >
-                  <FolderOpen className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            </div>
-
-            {/* File Sections — read-only preview of skill content */}
-            {skill.baseDir && (
-              <div className="space-y-3">
-                <h3 className="text-meta font-bold text-foreground/80">
-                  {t('detail.sections.title', { defaultValue: '内容' })}
-                </h3>
-                <SkillFileSections
-                  baseDir={skill.baseDir}
-                  onOpen={(file) => setOpenedSkillFile(skillFileToTarget(file))}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Centered Footer Button — uninstall / disable / enable */}
-          {!skill.isCore && (
-            <div className="pt-8 pb-4 flex items-center justify-center w-full px-2 max-w-[340px] mx-auto">
-              <Button
-                variant="outline"
-                className="w-full h-[42px] text-meta rounded-full font-semibold shadow-sm bg-transparent border-black/20 dark:border-white/20 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-foreground/80 hover:text-foreground"
-                onClick={() => {
-                  if (uninstallable && onUninstall && skill.slug) {
-                    onUninstall(skill.slug);
-                    onClose();
-                  } else {
-                    onToggle(!skill.enabled);
-                  }
-                }}
-              >
-                {uninstallable && onUninstall
-                  ? t('detail.uninstall')
-                  : skill.enabled
-                    ? t('detail.disable')
-                    : t('detail.enable')}
-              </Button>
-            </div>
-          )}
+        <DialogTitle className="sr-only">{skill.name}</DialogTitle>
+        <DialogClose asChild><Button variant="ghost" size="icon" className="absolute right-3 top-3 z-10 h-8 w-8 rounded-full" aria-label={t('detail.close')}><X className="h-4 w-4" /></Button></DialogClose>
+        <Suspense fallback={null}>
+          <FilePreviewOverlayLazy file={openedSkillFile} open={isOpen && reading} onClose={() => setReading(false)}
+            onReturnFocus={() => fileTriggerRef.current?.focus()}
+            initialPptxSlideIndex={initialSlideIndex}
+            onPptxSlideIndexChange={index => { if (openedSkillFile) slidePositions.current[getFilePreviewTargetIdentity(openedSkillFile)] = index; }}
+          />
+        </Suspense>
+        <div className="flex h-14 shrink-0 items-center border-b border-border px-6 pr-12">
+          <span className="text-sm font-medium">{t('detail.title')}</span>
         </div>
-      </SheetContent>
-    </Sheet>
+        <div data-testid="skill-detail-content" className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto sm:grid-cols-2 sm:overflow-hidden">
+          <div className="flex min-h-[260px] min-w-0 flex-col p-6 sm:min-h-0">
+            <div className="flex shrink-0 items-center gap-3">
+              <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-black/5 dark:bg-white/10">
+                <span className="text-2xl">{skill.icon || '🔧'}</span>
+                {skill.isCore && <Lock className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-surface-modal p-0.5 text-muted-foreground" />}
+              </div>
+              <h2 className="min-w-0 truncate font-sans text-xl font-medium text-foreground" title={skill.name}>{skill.name}</h2>
+            </div>
+            {(skill.version || detailMetaComponents.length > 0) && (
+              <div data-skill-detail-meta-row="1" className="mt-3 flex shrink-0 flex-wrap gap-2">
+                {skill.version && <Badge variant="secondary">v{skill.version}</Badge>}
+                {detailMetaComponents.map((DetailMetaComponent, index) => <DetailMetaComponent key={`skill-detail-meta-${index}`} skill={skill} />)}
+              </div>
+            )}
+            <div className="my-5 min-h-0 flex-1 overflow-y-auto text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">{skill.description}</div>
+            <div className="shrink-0 space-y-3 border-t border-border pt-4 text-sm text-muted-foreground">
+              <div data-testid="skill-detail-source" className="flex min-w-0 items-center gap-3">
+                <span className="shrink-0">{t('detail.skillSource')}</span>
+                <span className="min-w-0 truncate" title={resolveSkillSourceLabel(skill, t)}>{resolveSkillSourceLabel(skill, t)}</span>
+              </div>
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="shrink-0">{t('detail.sourceDirectory')}</span>
+                <span className="min-w-0 flex-1 truncate" title={skill.baseDir || t('detail.pathUnavailable')}>{skill.baseDir || t('detail.pathUnavailable')}</span>
+                <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" disabled={!skill.baseDir} onClick={() => onOpenFolder?.(skill)} title={t('detail.openActualFolder')} aria-label={t('detail.openActualFolder')}>
+                  <FolderOpen className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+          <div className="min-h-0 min-w-0 overflow-y-auto border-t border-border bg-black/[0.02] p-6 dark:bg-white/[0.02] sm:border-l sm:border-t-0">
+            <h3 className="mb-4 text-sm font-medium">{t('detail.files')}</h3>
+            {skill.baseDir && <SkillFileSections baseDir={skill.baseDir} onOpen={(file, trigger) => {
+              const target = skillFileToTarget(file);
+              fileTriggerRef.current = trigger;
+              setInitialSlideIndex(slidePositions.current[getFilePreviewTargetIdentity(target)] ?? 0);
+              setOpenedSkillFile(current => current && getFilePreviewTargetIdentity(current) === getFilePreviewTargetIdentity(target) ? current : target);
+              setReading(true);
+            }} />}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -262,8 +183,11 @@ export function Skills() {
   const gatewayStatus = useGatewayStore((state) => state.status);
   const [searchQuery, setSearchQuery] = useState('');
   const [installQuery, setInstallQuery] = useState('');
-  const [installSheetOpen, setInstallSheetOpen] = useState(false);
+  const [discoverOpen, setDiscoverOpen] = useState(false);
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailVisit, setDetailVisit] = useState(0);
+  const detailTriggerRef = useRef<HTMLButtonElement>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'enabled' | 'disabled'>('all');
   const [marketplaceAvailable, setMarketplaceAvailable] = useState(false);
 
@@ -375,11 +299,7 @@ export function Skills() {
     [enableSkill, disableSkill, t],
   );
 
-  const hasInstalledSkills = safeSkills.some((s) => !s.isBundled);
 
-  const handleStatusFilterClick = useCallback((nextFilter: 'enabled' | 'disabled') => {
-    setStatusFilter((current) => (current === nextFilter ? 'all' : nextFilter));
-  }, []);
 
   const handleOpenSkillsFolder = useCallback(async () => {
     try {
@@ -432,7 +352,7 @@ export function Skills() {
   }, []);
 
   useEffect(() => {
-    if (!installSheetOpen) {
+    if (!discoverOpen || !marketplaceAvailable) {
       return;
     }
 
@@ -446,7 +366,7 @@ export function Skills() {
       searchSkills(query);
     }, 300);
     return () => clearTimeout(timer);
-  }, [installQuery, installSheetOpen, searchSkills]);
+  }, [installQuery, discoverOpen, marketplaceAvailable, searchSkills]);
 
   const handleInstall = useCallback(
     async (slug: string) => {
@@ -478,8 +398,11 @@ export function Skills() {
 
   if (loading) {
     return (
-      <div className="flex flex-col -m-6 dark:bg-background min-h-[calc(100vh-2.5rem)] items-center justify-center">
-        <LoadingSpinner size="lg" />
+      <div data-testid="skills-page" className="flex flex-col -m-6 dark:bg-background h-[calc(100%+3rem)] overflow-hidden">
+        <div className="mx-auto flex h-full w-full max-w-6xl flex-col p-6 md:p-8">
+          <h1 className="mb-6 font-sans text-2xl font-medium tracking-normal">{t('title')}</h1>
+          <div className="flex flex-1 items-center justify-center"><LoadingSpinner size="lg" /></div>
+        </div>
       </div>
     );
   }
@@ -487,28 +410,18 @@ export function Skills() {
   return (
     <div
       data-testid="skills-page"
-      className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden"
+      className="flex flex-col -m-6 dark:bg-background h-[calc(100%+3rem)] overflow-hidden"
     >
-      <div className="w-full max-w-5xl mx-auto flex flex-col h-full p-10 pt-16 pb-0">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-start justify-between mb-6 shrink-0 gap-4">
+      <Dialog open={discoverOpen && marketplaceAvailable} onOpenChange={setDiscoverOpen}>
+      <div className="w-full max-w-6xl mx-auto flex flex-col h-full p-6 md:p-8">
+        <div className="mb-6 flex shrink-0 flex-col justify-between gap-4 md:flex-row md:items-start">
           <div>
-            <h1 className="text-5xl md:text-6xl font-serif text-foreground mb-3 font-normal tracking-tight">
-              {t('title')}
-            </h1>
-            <p className="text-subtitle text-foreground/70 font-medium">{t('subtitle')}</p>
+            <h1 className="mb-1 font-sans text-2xl font-medium tracking-normal text-foreground">{t('title')}</h1>
+            <p className="text-sm text-muted-foreground">{t('subtitle')}</p>
           </div>
-
-          <div className="flex items-center gap-3 md:mt-2">
-            {hasInstalledSkills && (
-              <button
-                onClick={handleOpenSkillsFolder}
-                className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors shrink-0 text-meta font-medium px-4 h-8 rounded-full border border-black/10 dark:border-white/10 flex items-center justify-center text-foreground/80 hover:text-foreground"
-              >
-                <FolderOpen className="h-4 w-4 mr-2" />
-                {t('openFolder')}
-              </button>
-            )}
+          <div className="flex flex-wrap items-center gap-3 md:mt-2">
+            <Button size="sm" onClick={handleOpenSkillsFolder}><FolderOpen className="mr-2 h-4 w-4" aria-hidden="true" />{t('openFolder')}</Button>
+            {marketplaceAvailable && <DialogTrigger asChild><Button size="sm"><Plus className="mr-2 h-4 w-4" aria-hidden="true" />{t('actions.installSkill')}</Button></DialogTrigger>}
           </div>
         </div>
 
@@ -524,78 +437,54 @@ export function Skills() {
           </div>
         )}
 
-        {/* Sub Navigation and Actions */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-black/10 dark:border-white/10 pb-4 mb-4 shrink-0 gap-4">
-          <div className="flex items-center flex-wrap gap-2 text-sm">
-            <div className="relative group flex items-center bg-black/5 dark:bg-white/5 rounded-full px-3 py-1.5 focus-within:bg-black/10 transition-colors border border-transparent focus-within:border-black/10 dark:focus-within:border-white/10 mr-2">
-              <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <input
+        <div data-testid="skills-toolbar" className="mb-5 flex shrink-0 flex-wrap items-center gap-3">
+            <div className="relative w-full sm:w-56">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+              <Input
+                aria-label={t('search')}
                 placeholder={t('search')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="ml-2 bg-transparent outline-none w-28 md:w-40 font-normal placeholder:text-foreground/50 text-meta text-foreground"
+                className="h-8 rounded-lg border-transparent bg-surface-input pl-9 pr-8 text-sm shadow-none"
               />
               {searchQuery && (
                 <button
                   type="button"
+                  aria-label={t('actions.clearSearch')}
                   onClick={() => setSearchQuery('')}
-                  className="text-foreground/50 hover:text-foreground shrink-0 ml-1"
+                  className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-black/5 hover:text-foreground dark:hover:bg-white/5"
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
               )}
             </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              data-testid="skills-filter-enabled"
-              onClick={() => handleStatusFilterClick('enabled')}
-              className={cn(
-                'h-8 rounded-full px-3 text-meta font-medium border shadow-none',
-                statusFilter === 'enabled'
-                  ? 'bg-black/5 dark:bg-white/10 border-black/10 dark:border-white/10 text-foreground'
-                  : 'bg-transparent border-transparent text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5',
-              )}
-            >
-              {t('filter.enabledList', { count: enabledSkillsCount })}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              data-testid="skills-filter-disabled"
-              onClick={() => handleStatusFilterClick('disabled')}
-              className={cn(
-                'h-8 rounded-full px-3 text-meta font-medium border shadow-none',
-                statusFilter === 'disabled'
-                  ? 'bg-black/5 dark:bg-white/10 border-black/10 dark:border-white/10 text-foreground'
-                  : 'bg-transparent border-transparent text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5',
-              )}
-            >
-              {t('filter.disabledList', { count: disabledSkillsCount })}
-            </Button>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            {marketplaceAvailable && (
+            <div className="flex flex-wrap items-center gap-1">
+            {(['all', 'enabled', 'disabled'] as const).map((filter) => (
               <Button
-                variant="outline"
+                key={filter}
+                type="button"
+                variant="ghost"
                 size="sm"
-                onClick={() => {
-                  setInstallQuery('');
-                  setInstallSheetOpen(true);
-                }}
-                className="h-8 text-meta font-medium rounded-md px-3 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none"
+                data-testid={`skills-filter-${filter}`}
+                aria-pressed={statusFilter === filter}
+                onClick={() => setStatusFilter(filter)}
+                className={cn(
+                  'h-8 rounded-lg px-3 text-sm font-medium shadow-none',
+                  statusFilter === filter
+                    ? 'bg-black/5 dark:bg-white/10 text-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5',
+                )}
               >
-                {t('actions.installSkill')}
+                {t(filter === 'all' ? 'filter.all' : filter === 'enabled' ? 'filter.enabledList' : 'filter.disabledList', {
+                  count: filter === 'all' ? safeSkills.length : filter === 'enabled' ? enabledSkillsCount : disabledSkillsCount,
+                })}
               </Button>
-            )}
-          </div>
+            ))}
+            </div>
         </div>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto pr-2 pb-10 min-h-0 -mr-2">
+        <div data-testid="skills-list-scroll" className="flex-1 overflow-y-auto pr-2 min-h-0 -mr-2">
           {error && (
             <div className="mb-4 p-4 rounded-xl border border-destructive/50 bg-destructive/10 text-destructive text-sm font-medium flex items-center gap-2">
               <AlertCircle className="h-5 w-5 shrink-0" />
@@ -603,75 +492,51 @@ export function Skills() {
             </div>
           )}
 
-          <div className="flex flex-col gap-1">
+          <div className={cn("grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3", filteredSkills.length === 0 && "h-full")}>
             {filteredSkills.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+              <div data-testid="skills-empty-state" className="col-span-full flex flex-col items-center justify-center text-center p-6 text-muted-foreground">
                 <Puzzle className="h-10 w-10 mb-4 opacity-50" />
-                <p>{searchQuery ? t('noSkillsSearch') : t('noSkillsAvailable')}</p>
+                <p>{searchQuery ? t('noSkillsSearch') : t(statusFilter === 'enabled' ? 'noEnabledSkills' : statusFilter === 'disabled' ? 'noDisabledSkills' : 'noSkillsAvailable')}</p>
               </div>
             ) : (
               filteredSkills.map((skill) => (
-                <div
-                  key={skill.id}
-                  className="group flex flex-row items-center justify-between py-3.5 px-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer border-b border-black/5 dark:border-white/5 last:border-0"
-                  onClick={() => setSelectedSkill(skill)}
-                >
-                  <div className="flex items-start gap-4 flex-1 overflow-hidden pr-4">
-                    <div className="h-10 w-10 shrink-0 flex items-center justify-center text-2xl bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-xl overflow-hidden">
-                      {skill.icon || '🧩'}
+                <article key={skill.id} data-testid="skill-card" className="relative rounded-xl border border-border bg-surface-modal p-4 transition-colors hover:border-foreground/20">
+                  <button type="button" className="block w-full text-left rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={(event) => {
+                    detailTriggerRef.current = event.currentTarget;
+                    setSelectedSkill(skill);
+                    setDetailVisit(visit => visit + 1);
+                    setDetailOpen(true);
+                  }} aria-label={t('detail.open', { name: skill.name })}>
+                    <div className="mb-3 flex items-center gap-2.5 pr-11">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-black/5 text-lg dark:bg-white/10">{skill.icon || '🧩'}</span>
+                      <h3 className="truncate text-sm font-medium">{skill.name}</h3>
+                      {skill.isCore && <Lock className="h-3 w-3 shrink-0 text-muted-foreground" />}
                     </div>
-                    <div className="flex flex-col overflow-hidden">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h3 className="text-sm font-semibold text-foreground truncate">{skill.name}</h3>
-                        {skill.isCore ? <Lock className="h-3 w-3 text-muted-foreground" /> : null}
-                      </div>
-                      <p className="text-sm text-muted-foreground line-clamp-1 pr-6 leading-relaxed">
-                        {skill.description}
-                      </p>
-                      <div className="mt-1 flex items-center gap-2 text-tiny text-foreground/55 min-w-0">
-                        <Badge
-                          variant="secondary"
-                          className="shrink-0 whitespace-nowrap px-1.5 py-0 h-5 text-2xs font-medium bg-black/5 dark:bg-white/10 border-0 shadow-none"
-                        >
-                          {resolveSkillSourceLabel(skill, t)}
-                        </Badge>
-                        <span className="truncate font-mono min-w-0">
-                          {skill.baseDir || t('detail.pathUnavailable')}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-6 shrink-0" onClick={(e) => e.stopPropagation()}>
-                    {skill.version && (
-                      <span className="text-meta font-mono text-muted-foreground">v{skill.version}</span>
-                    )}
-                    <Switch
-                      checked={skill.enabled}
-                      onCheckedChange={(checked) => handleToggle(skill.id, checked)}
-                      disabled={skill.isCore}
-                    />
-                  </div>
-                </div>
+                    <p className="min-h-10 line-clamp-2 text-sm leading-5 text-muted-foreground">{skill.description}</p>
+                    <Badge data-testid="skill-source-badge" variant="secondary" className="mt-3 max-w-full bg-black/5 px-2 font-normal dark:bg-white/10">
+                      <span className="truncate">{resolveSkillSourceLabel(skill, t)}</span>
+                    </Badge>
+                  </button>
+                  <Switch className="absolute right-4 top-[22px] h-5 w-9 [&>span]:h-4 [&>span]:w-4 [&>span]:shadow-sm [&>span[data-state=checked]]:translate-x-4" aria-label={t('actions.toggle', { name: skill.name })} checked={skill.enabled} onCheckedChange={(checked) => handleToggle(skill.id, checked)} disabled={skill.isCore} />
+                </article>
               ))
             )}
           </div>
         </div>
       </div>
 
-      <Sheet open={installSheetOpen && marketplaceAvailable} onOpenChange={setInstallSheetOpen}>
-        <SheetContent
-          className="w-full sm:max-w-[560px] p-0 flex flex-col border-l border-black/10 dark:border-white/10 bg-surface-modal shadow-[0_0_40px_rgba(0,0,0,0.2)]"
-          side="right"
-        >
-          <div className="px-7 py-6 border-b border-black/10 dark:border-white/10">
-            <h2 className="text-2xl font-serif text-foreground font-normal tracking-tight">
+        <DialogContent data-testid="skills-discover" className="flex h-[min(680px,calc(100vh-3rem))] w-[calc(100vw-2rem)] max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-surface-modal shadow-xl">
+          <div className="relative shrink-0 px-6 pt-6">
+            <DialogTitle className="pr-8 font-sans text-lg font-medium tracking-normal">
               {t('marketplace.installDialogTitle')}
-            </h2>
-            <p className="mt-1 text-meta text-foreground/70">{t('marketplace.installDialogSubtitle')}</p>
+            </DialogTitle>
+            <DialogDescription className="mt-1 pr-8 text-sm text-muted-foreground">{t('marketplace.installDialogSubtitle')}</DialogDescription>
+            <DialogClose asChild><Button variant="ghost" size="icon" className="absolute right-3 top-3 h-8 w-8" aria-label={t('common:actions.close')}><X className="h-4 w-4" /></Button></DialogClose>
             <div className="mt-4 flex flex-col md:flex-row gap-2">
               <div className="relative flex items-center bg-black/5 dark:bg-white/5 rounded-xl px-3 py-2 border border-black/10 dark:border-white/10 flex-1">
                 <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
                 <Input
+                  aria-label={t('searchMarketplace')}
                   placeholder={t('searchMarketplace')}
                   value={installQuery}
                   onChange={(e) => setInstallQuery(e.target.value)}
@@ -680,6 +545,7 @@ export function Skills() {
                 {installQuery && (
                   <button
                     type="button"
+                    aria-label={t('actions.clearSearch')}
                     onClick={() => setInstallQuery('')}
                     className="text-foreground/50 hover:text-foreground shrink-0 ml-1"
                   >
@@ -687,17 +553,10 @@ export function Skills() {
                   </button>
                 )}
               </div>
-              <Button
-                variant="outline"
-                disabled
-                className="h-10 rounded-xl border-black/10 dark:border-white/10 bg-transparent text-muted-foreground"
-              >
-                {t('marketplace.sourceLabel')}: {t('marketplace.sourceClawHub')}
-              </Button>
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-6 py-4">
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
             {searchError && (
               <div className="mb-4 p-4 rounded-xl border border-destructive/50 bg-destructive/10 text-destructive text-sm font-medium flex items-center gap-2">
                 <AlertCircle className="h-5 w-5 shrink-0" />
@@ -781,20 +640,16 @@ export function Skills() {
               </div>
             )}
           </div>
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
 
       {/* Skill Detail Dialog */}
       <SkillDetailDialog
+        key={`${selectedSkill?.id ?? ''}:${detailVisit}`}
         skill={selectedSkill}
-        isOpen={!!selectedSkill}
-        onClose={() => setSelectedSkill(null)}
-        onToggle={(enabled) => {
-          if (!selectedSkill) return;
-          handleToggle(selectedSkill.id, enabled);
-          setSelectedSkill({ ...selectedSkill, enabled });
-        }}
-        onUninstall={handleUninstall}
+        isOpen={detailOpen}
+        onClose={() => setDetailOpen(false)}
+        onReturnFocus={() => detailTriggerRef.current?.focus()}
         onOpenFolder={handleOpenSkillFolder}
       />
     </div>

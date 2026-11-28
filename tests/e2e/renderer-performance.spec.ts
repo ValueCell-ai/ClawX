@@ -1,5 +1,6 @@
 import { writeFile } from 'node:fs/promises';
 import type { ElectronApplication, Page, TestInfo } from '@playwright/test';
+import { SIDEBAR_COLLAPSED_WIDTH } from '../../shared/sidebar-layout';
 import {
   closeElectronApp,
   emitAcpSessionUpdates,
@@ -99,6 +100,7 @@ async function openSyntheticChat(app: ElectronApplication): Promise<Page> {
     if (!String(error).includes('ERR_FILE_NOT_FOUND')) throw error;
   }
   await expect(page.getByTestId('main-layout')).toBeVisible();
+  await page.getByTestId(`sidebar-session-${SESSION_KEY}`).click();
   await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
   return page;
 }
@@ -358,7 +360,7 @@ test('profiles sidebar animation and scrolling with rich static Markdown', {
     const sidebar = page.getByTestId('sidebar');
     await startFrameSampling(page, 500);
     await page.getByTestId('sidebar-collapse-toggle').click();
-    await expect.poll(async () => (await sidebar.boundingBox())?.width ?? 0).toBe(68);
+    await expect.poll(async () => (await sidebar.boundingBox())?.width ?? 0).toBe(SIDEBAR_COLLAPSED_WIDTH);
     await page.waitForTimeout(550);
     const sidebarCollapseFrames = await readFramePacing(page);
 

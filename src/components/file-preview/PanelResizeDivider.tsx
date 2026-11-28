@@ -5,9 +5,10 @@
  * On `pointerdown` we capture the pointer, attach window-level
  * `pointermove` / `pointerup` listeners, and convert the cursor X (in
  * pixels) into a panel-width percentage relative to the supplied
- * `containerRef`.  The new width is clamped via the store.
+ * split container. The new width is clamped via the store.
  */
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import {
   ARTIFACT_PANEL_MAX_WIDTH,
@@ -17,12 +18,26 @@ import {
 
 export interface PanelResizeDividerProps {
   /** The flex container that holds chat-left + panel-right. */
-  containerRef: React.RefObject<HTMLElement | null>;
+  container: HTMLElement;
   className?: string;
 }
 
-export function PanelResizeDivider({ containerRef, className }: PanelResizeDividerProps) {
+export function PanelResizeDivider({ container, className }: PanelResizeDividerProps) {
   const setWidthPct = useArtifactPanel((s) => s.setWidthPct);
+  const widthPct = useArtifactPanel((s) => s.widthPct);
+  const { t } = useTranslation('chat');
+  const [containerWidth, setContainerWidth] = useState(0);
+  useLayoutEffect(() => {
+    const update = () => setContainerWidth(container.clientWidth);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [container]);
+  const minimum = containerWidth ? Math.max(ARTIFACT_PANEL_MIN_WIDTH, 320 / containerWidth * 100) : ARTIFACT_PANEL_MIN_WIDTH;
+  const maximum = containerWidth ? Math.max(minimum, Math.min(ARTIFACT_PANEL_MAX_WIDTH, (containerWidth - 280) / containerWidth * 100)) : ARTIFACT_PANEL_MAX_WIDTH;
+  const currentWidth = Math.max(minimum, Math.min(maximum, widthPct));
+  const resize = useCallback((value: number) => setWidthPct(Math.max(minimum, Math.min(maximum, value))), [minimum, maximum, setWidthPct]);
   // Store window listeners in refs so the up-handler can remove the
   // matching move-handler without a self-referential closure (which the
   // `react-hooks/immutability` rule flags).
@@ -53,14 +68,12 @@ export function PanelResizeDivider({ containerRef, className }: PanelResizeDivid
       }
 
       const onMove = (ev: PointerEvent) => {
-        const node = containerRef.current;
-        if (!node) return;
-        const rect = node.getBoundingClientRect();
+        const rect = container.getBoundingClientRect();
         if (rect.width <= 0) return;
         // Right panel width = container right edge - cursor X.
         const rightWidth = rect.right - ev.clientX;
         const pct = (rightWidth / rect.width) * 100;
-        setWidthPct(pct);
+        resize(pct);
       };
       const onUp = () => stopDragging();
 
@@ -71,7 +84,7 @@ export function PanelResizeDivider({ containerRef, className }: PanelResizeDivid
       document.body.style.cursor = 'col-resize';
       document.body.style.userSelect = 'none';
     },
-    [containerRef, setWidthPct, stopDragging],
+    [container, resize, stopDragging],
   );
 
   // Safety: if the divider unmounts mid-drag, clean up listeners.
@@ -81,14 +94,23 @@ export function PanelResizeDivider({ containerRef, className }: PanelResizeDivid
     <div
       role="separator"
       aria-orientation="vertical"
-      aria-valuemin={ARTIFACT_PANEL_MIN_WIDTH}
-      aria-valuemax={ARTIFACT_PANEL_MAX_WIDTH}
+      aria-valuemin={minimum}
+      aria-valuemax={maximum}
+      aria-valuenow={Math.round(currentWidth * 10) / 10}
+      aria-label={t('workspace.resizePanel')}
+      tabIndex={0}
+      onKeyDown={event => {
+        if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+          event.preventDefault(); resize(currentWidth + (event.key === 'ArrowLeft' ? 2 : -2));
+        } else if (event.key === 'Home') { event.preventDefault(); resize(minimum); }
+        else if (event.key === 'End') { event.preventDefault(); resize(maximum); }
+      }}
       onPointerDown={handlePointerDown}
       className={cn(
-        'group relative z-10 hidden w-1.5 shrink-0 cursor-col-resize select-none lg:block',
+        'group relative z-10 hidden w-1.5 shrink-0 cursor-col-resize select-none focus-visible:bg-primary/20 focus-visible:outline-none lg:block',
         className,
       )}
-      title="Drag to resize width"
+      title={t('workspace.resizePanel')}
     >
       {/* Wider hover hit-state */}
       <span

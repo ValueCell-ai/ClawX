@@ -67,11 +67,11 @@ test('retains a failed prompt through session creation, navigation and explicit 
     await expect(localSession).toContainText('请核对合同中所有的交付日期。');
     await existingSession.click();
     await expect(failed).toHaveCount(0);
-    await expect(input).toHaveValue('');
+    await expect(input).toHaveText('');
     await input.fill('Draft for the existing conversation');
     await localSession.click();
     await expect(failed).toContainText(prompt);
-    await expect(input).toHaveValue('');
+    await expect(input).toHaveText('');
     expect(await dispatchedPrompts(app)).toEqual([]);
 
     await page.getByTestId('sidebar-nav-settings').click();
@@ -85,12 +85,12 @@ test('retains a failed prompt through session creation, navigation and explicit 
     await expect.poll(() => dispatchedPrompts(app)).toEqual([prompt]);
     await expect(failed).toContainText('Prompt delivery failed');
     await expect(failed).toContainText(prompt);
-    await expect(input).toHaveValue(nextDraft);
+    await expect(input).toHaveText(nextDraft);
 
     await failed.getByTestId('chat-retry-prompt').click();
     await expect(page.getByTestId('acp-user-message')).toHaveText(prompt);
     await expect(failed).toHaveCount(0);
-    await expect(input).toHaveValue(nextDraft);
+    await expect(input).toHaveText(nextDraft);
     expect(await dispatchedPrompts(app)).toEqual([prompt, prompt]);
   } finally {
     await closeElectronApp(app);

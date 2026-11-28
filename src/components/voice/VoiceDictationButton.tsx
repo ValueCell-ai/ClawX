@@ -66,7 +66,7 @@ export function VoiceDictationButton({
       size="icon"
       data-testid="chat-composer-voice"
       className={cn(
-        'shrink-0 h-8 rounded-lg text-muted-foreground hover:bg-black/5 dark:hover:bg-white/10 hover:text-foreground transition-colors',
+        'shrink-0 h-8 rounded-lg text-muted-foreground hover:text-muted-foreground',
         recording ? 'w-auto gap-1 px-2' : 'w-8',
       )}
       onClick={() => {

@@ -1,15 +1,16 @@
+import { Select, SelectItem } from '@/components/ui/select';
 /**
  * Global image generation settings (agents.defaults.mediaModels.image).
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Eye, EyeOff, ImagePlus, Loader2, Play, RefreshCw, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Eye, EyeOff, Loader2, Play, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   clearImageGenerationSettings,
   fetchImageGenerationSettings,
@@ -17,11 +18,16 @@ import {
   saveImageGenerationSettings,
   type ImageGenerationSettingsSnapshot,
 } from '@/lib/image-generation';
+import { ModelConfigDialog, modelFieldClasses, modelFieldLabelClasses } from './ModelConfigDialog';
+import { ModelConfigActions, ModelConfigHeading, ModelConfigOption, ModelConfigPanels, ModelServiceIcon } from './ModelConfigPanels';
+import { ModelConfigurationSummary } from './ModelConfigurationSummary';
 import { cn } from '@/lib/utils';
 
-const inputClasses =
-  'h-10 rounded-lg font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
-const labelClasses = 'text-sm text-foreground/80 font-bold';
+const inputClasses = modelFieldClasses;
+const labelClasses = modelFieldLabelClasses;
+
+type ImageConfigSection = 'endpoint' | 'advanced';
+type ImageFieldErrors = Partial<Record<'baseUrl' | 'model' | 'apiKey' | 'timeout', string>>;
 
 function extractTestOutputPath(result: unknown): string | null {
   if (!result || typeof result !== 'object') return null;
@@ -35,6 +41,10 @@ function extractTestOutputPath(result: unknown): string | null {
 
 export function ImageGenerationSettings() {
   const { t } = useTranslation(['dashboard', 'settings', 'common']);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [section, setSection] = useState<ImageConfigSection>('endpoint');
+  const [errors, setErrors] = useState<ImageFieldErrors>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -60,6 +70,7 @@ export function ImageGenerationSettings() {
       setRelayApiKey('');
       setShowRelayApiKey(false);
       setTestAgentId(settings.defaultAgentId);
+      setErrors({});
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error));
     } finally {
@@ -74,7 +85,7 @@ export function ImageGenerationSettings() {
   const dirty = useMemo(() => {
     if (!snapshot) return false;
     const timeoutParsed = timeoutMs.trim() ? Number.parseInt(timeoutMs, 10) : null;
-    const savedTimeout = snapshot.config.timeoutMs;
+    const savedTimeout = snapshot.config.timeoutMs ?? 180000;
     return (
       timeoutParsed !== savedTimeout
       || relayBaseUrl.trim() !== (snapshot.openAiRelay?.baseUrl ?? '').trim()
@@ -93,38 +104,46 @@ export function ImageGenerationSettings() {
   }, [snapshot]);
 
   const handleSave = async () => {
+    const timeoutParsed = timeoutMs.trim() ? Number.parseInt(timeoutMs, 10) : null;
+    const baseUrl = relayBaseUrl.trim();
+    const model = relayModel.trim();
+    const apiKey = relayApiKey.trim();
+    const nextErrors: ImageFieldErrors = {};
+    if (!baseUrl) {
+      nextErrors.baseUrl = t('settings:aiProviders.dialog.baseUrlRequired');
+    } else if (!/^https?:\/\//i.test(baseUrl) || !URL.canParse(baseUrl)) {
+      nextErrors.baseUrl = t('settings:aiProviders.dialog.baseUrlInvalid');
+    }
+    if (!model) {
+      nextErrors.model = t('imageGeneration.errors.relayModelRequired');
+    } else if (model.includes('/')) {
+      nextErrors.model = t('imageGeneration.errors.relayModelInvalid');
+    }
+    if (!apiKey && !canKeepRelayApiKey) nextErrors.apiKey = t('settings:aiProviders.dialog.apiKeyRequired');
+    if (timeoutParsed !== null && (!Number.isFinite(timeoutParsed) || timeoutParsed <= 0)) {
+      nextErrors.timeout = t('imageGeneration.errors.invalidTimeout');
+    }
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) {
+      setSection(nextErrors.baseUrl || nextErrors.model || nextErrors.apiKey ? 'endpoint' : 'advanced');
+      return;
+    }
+
     setSaving(true);
     try {
-      const timeoutParsed = timeoutMs.trim() ? Number.parseInt(timeoutMs, 10) : null;
-      if (timeoutParsed !== null && (!Number.isFinite(timeoutParsed) || timeoutParsed <= 0)) {
-        throw new Error(t('imageGeneration.errors.invalidTimeout'));
-      }
-      if (!relayBaseUrl.trim()) {
-        throw new Error(t('imageGeneration.errors.relayBaseUrlRequired'));
-      }
-      if (!relayModel.trim()) {
-        throw new Error(t('imageGeneration.errors.relayModelRequired'));
-      }
-      if (relayModel.includes('/')) {
-        throw new Error(t('imageGeneration.errors.relayModelInvalid'));
-      }
-      const existingRelayKeyUsable = snapshot?.openAiRelay?.apiKeyConfigured
-        && snapshot.openAiRelay.providerKey !== 'openai';
-      if (!relayApiKey.trim() && !existingRelayKeyUsable) {
-        throw new Error(t('imageGeneration.errors.relayApiKeyRequired'));
-      }
       const next = await saveImageGenerationSettings({
         timeoutMs: timeoutParsed,
         openAiRelayEnabled: true,
-        openAiRelayBaseUrl: relayBaseUrl.trim(),
-        openAiRelayModel: relayModel.trim(),
-        openAiRelayApiKey: relayApiKey.trim() || undefined,
+        openAiRelayBaseUrl: baseUrl,
+        openAiRelayModel: model,
+        openAiRelayApiKey: apiKey || undefined,
       });
       setSnapshot(next);
       setRelayBaseUrl(next.openAiRelay?.baseUrl ?? '');
       setRelayModel(next.openAiRelay?.model || 'gpt-image-2');
       setRelayApiKey('');
       setShowRelayApiKey(false);
+      setEditorOpen(false);
       toast.success(t('imageGeneration.toast.saved'));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error));
@@ -143,6 +162,7 @@ export function ImageGenerationSettings() {
       setRelayApiKey('');
       setShowRelayApiKey(false);
       setClearConfirmOpen(false);
+      setEditorOpen(false);
       toast.success(t('imageGeneration.toast.cleared'));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error));
@@ -185,286 +205,176 @@ export function ImageGenerationSettings() {
     }
   };
 
+  const openEditor = () => {
+    setTimeoutMs(String(snapshot?.config.timeoutMs ?? 180000));
+    setRelayBaseUrl(snapshot?.openAiRelay?.baseUrl ?? '');
+    setRelayModel(snapshot?.openAiRelay?.model || 'gpt-image-2');
+    setRelayApiKey('');
+    setShowRelayApiKey(false);
+    setSection('endpoint');
+    setErrors({});
+    setEditorOpen(true);
+  };
+  let service = '';
+  try { service = snapshot?.openAiRelay.baseUrl ? new URL(snapshot.openAiRelay.baseUrl).host : ''; } catch { /* Preserve editable saved settings. */ }
+  const configured = hasConfiguredRelay && Boolean(snapshot?.openAiRelay.apiKeyConfigured || snapshot?.agents.some(agent => agent.configured));
+  const busy = saving || clearing;
+  const canKeepRelayApiKey = !!snapshot?.openAiRelay.apiKeyConfigured && snapshot.openAiRelay.providerKey !== 'openai';
+  const endpointTitle = t('imageGeneration.openAiRelay.title');
+  const advancedTitle = t('settings:aiProviders.dialog.advancedConfig');
+  const advancedIcon = <SlidersHorizontal aria-hidden="true" className="h-5 w-5 shrink-0" />;
+  const closeEditor = () => setEditorOpen(false);
+
   return (
-    <div data-testid="image-generation-settings" className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2
-            data-testid="image-generation-settings-title"
-            className="text-3xl font-serif text-foreground font-normal tracking-tight flex items-center gap-2"
-          >
-            <ImagePlus className="h-7 w-7 text-foreground/70" />
-            {t('imageGeneration.title')}
-          </h2>
-          <p className="text-meta text-muted-foreground mt-2 max-w-2xl">
-            {t('imageGeneration.description')}
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="rounded-full shrink-0"
-          onClick={() => void load()}
-          disabled={loading}
-          data-testid="image-generation-refresh"
+    <div data-testid="image-generation-settings" className="space-y-4">
+      <ModelConfigurationSummary prefix="image-generation" title={t('imageGeneration.title')} description={t('settings:modelManagement.imageDescription')} model={hasConfiguredRelay ? snapshot?.openAiRelay.model || snapshot?.config.primary || undefined : undefined} service={service} configured={configured} loading={loading} onConfigure={openEditor} triggerRef={triggerRef} actions={hasConfiguredRelay && !loading ? (
+        <Tooltip disableHoverableContent>
+          <TooltipTrigger asChild><Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" disabled={clearing} data-testid="image-generation-clear" aria-label={t('imageGeneration.clear')} onClick={() => setClearConfirmOpen(true)}><Trash2 aria-hidden="true" className="h-4 w-4" /></Button></TooltipTrigger>
+          <TooltipContent>{t('imageGeneration.clear')}</TooltipContent>
+        </Tooltip>
+      ) : undefined} />
+      <ModelConfigDialog
+        open={editorOpen}
+        onClose={closeEditor}
+        title={t('imageGeneration.title')}
+        testId="image-generation-config-dialog"
+        layout="split"
+        busy={busy}
+        returnFocusRef={triggerRef}
+        footer={<ModelConfigActions
+          footerTestId="image-generation-footer"
+          onCancel={closeEditor}
+          cancelDisabled={busy}
+          label={t('imageGeneration.save')}
+          testId="image-generation-save"
+          onSubmit={handleSave}
+          disabled={busy || !dirty}
+          busy={saving}
+        />}
+      >
+        <ModelConfigPanels
+          label={t('imageGeneration.title')}
+          navigationTestId="image-generation-config-sections"
+          detailTestId="image-generation-config-details"
+          detailKey={section}
+          options={
+            <ModelConfigOption data-testid="image-generation-endpoint-section" icon={<ModelServiceIcon provider="custom" />} selected={section === 'endpoint'} disabled={busy} onClick={() => setSection('endpoint')}>
+              {endpointTitle}
+            </ModelConfigOption>
+          }
+          trailingOption={
+            <ModelConfigOption data-testid="image-generation-advanced" icon={advancedIcon} selected={section === 'advanced'} disabled={busy} onClick={() => setSection('advanced')}>
+              {advancedTitle}
+            </ModelConfigOption>
+          }
         >
-          <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
-        </Button>
-      </div>
-
-      {loading ? (
-        <div className="flex items-center justify-center py-12 text-muted-foreground bg-black/5 dark:bg-white/5 rounded-3xl border border-dashed border-transparent">
-          <Loader2 className="h-6 w-6 animate-spin" />
-        </div>
-      ) : (
-        <div
-          data-testid="image-generation-settings-surface"
-          className="space-y-5 rounded-2xl bg-surface-input p-1 dark:border-white/10 md:p-1"
-        >
-          <div
-            data-testid="image-generation-endpoint-card"
-            className="rounded-xl border border-black/10 bg-surface-modal p-4 shadow-sm dark:border-white/10"
-          >
-          <div
-            className="space-y-4"
-            data-testid="image-generation-openai-relay"
-          >
-            <div>
-              <Label className={labelClasses}>{t('imageGeneration.openAiRelay.title')}</Label>
-              <p className="text-meta text-muted-foreground mt-1">
-                {t('imageGeneration.openAiRelay.description')}
-              </p>
-            </div>
-
-            <div className="space-y-4 pt-1">
+          <ModelConfigHeading
+            title={section === 'endpoint' ? endpointTitle : advancedTitle}
+            icon={section === 'endpoint' ? <ModelServiceIcon provider="custom" className="h-6 w-6" /> : advancedIcon}
+          />
+          <fieldset disabled={busy} data-testid="image-generation-settings-surface" className="min-w-0 space-y-4">
+            {section === 'endpoint' ? (
+              <div data-testid="image-generation-openai-relay" className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="image-gen-relay-base-url" className={labelClasses}>
-                    {t('imageGeneration.openAiRelay.baseUrl')}
-                  </Label>
+                  <Label htmlFor="image-gen-relay-base-url" className={labelClasses}>{t('settings:aiProviders.dialog.baseUrl')}</Label>
                   <Input
                     id="image-gen-relay-base-url"
                     value={relayBaseUrl}
-                    onChange={(e) => setRelayBaseUrl(e.target.value)}
+                    onChange={event => {
+                      setRelayBaseUrl(event.target.value);
+                      setErrors(previous => ({ ...previous, baseUrl: undefined }));
+                    }}
                     placeholder="https://api.example.com/v1"
                     className={inputClasses}
                     data-testid="image-generation-relay-base-url"
+                    aria-invalid={!!errors.baseUrl}
+                    aria-describedby={errors.baseUrl ? 'image-gen-relay-base-url-error' : undefined}
                   />
-                  <p className="text-tiny text-muted-foreground">
-                    {t('imageGeneration.openAiRelay.baseUrlHint')}
-                  </p>
+                  {errors.baseUrl && <p role="alert" id="image-gen-relay-base-url-error" className="text-sm text-destructive">{errors.baseUrl}</p>}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="image-gen-relay-model" className={labelClasses}>
-                    {t('imageGeneration.openAiRelay.model')}
-                  </Label>
+                  <Label htmlFor="image-gen-relay-model" className={labelClasses}>{t('settings:aiProviders.dialog.modelId')}</Label>
                   <Input
                     id="image-gen-relay-model"
                     value={relayModel}
-                    onChange={(e) => setRelayModel(e.target.value)}
+                    onChange={event => {
+                      setRelayModel(event.target.value);
+                      setErrors(previous => ({ ...previous, model: undefined }));
+                    }}
                     placeholder="gpt-image-2"
                     className={inputClasses}
                     data-testid="image-generation-relay-model"
+                    aria-invalid={!!errors.model}
+                    aria-describedby={errors.model ? 'image-gen-relay-model-error' : undefined}
                   />
-                  <p className="text-tiny text-muted-foreground">
-                    {t('imageGeneration.openAiRelay.modelHint')}
-                  </p>
+                  {errors.model && <p role="alert" id="image-gen-relay-model-error" className="text-sm text-destructive">{errors.model}</p>}
                 </div>
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="space-y-0.5">
-                      <Label htmlFor="image-gen-relay-api-key" className={labelClasses}>
-                        {snapshot?.openAiRelay?.apiKeyConfigured
-                          ? t('settings:aiProviders.dialog.replaceApiKey')
-                          : t('imageGeneration.openAiRelay.apiKey')}
-                      </Label>
-                      <p className="text-xs text-muted-foreground" data-testid="image-generation-api-key-status">
-                        {snapshot?.openAiRelay?.apiKeyConfigured
-                          ? t('settings:aiProviders.dialog.apiKeyConfigured')
-                          : t('settings:aiProviders.dialog.apiKeyMissing')}
-                      </p>
-                    </div>
-                    {snapshot?.openAiRelay?.apiKeyConfigured ? (
-                      <div className="flex items-center gap-1.5 text-tiny font-medium text-green-600 dark:text-green-500 bg-green-500/10 px-2 py-1 rounded-md">
-                        <div className="w-1.5 h-1.5 rounded-full bg-current" />
-                        {t('settings:aiProviders.card.configured')}
-                      </div>
-                    ) : null}
-                  </div>
+                  <Label htmlFor="image-gen-relay-api-key" className={labelClasses}>
+                    {t('settings:aiProviders.dialog.apiKey')}
+                  </Label>
                   <div className="relative">
                     <Input
                       id="image-gen-relay-api-key"
                       type={showRelayApiKey ? 'text' : 'password'}
                       value={relayApiKey}
-                      onChange={(e) => setRelayApiKey(e.target.value)}
-                      placeholder={
-                        snapshot?.openAiRelay?.apiKeyConfigured && snapshot.openAiRelay.providerKey !== 'openai'
-                          ? t('settings:aiProviders.dialog.replaceApiKeyHelp')
-                          : t('imageGeneration.openAiRelay.apiKeyPlaceholder')
-                      }
+                      onChange={event => {
+                        setRelayApiKey(event.target.value);
+                        setErrors(previous => ({ ...previous, apiKey: undefined }));
+                      }}
+                      placeholder={t(canKeepRelayApiKey ? 'settings:aiProviders.dialog.replaceApiKeyHelp' : 'imageGeneration.openAiRelay.apiKeyPlaceholder')}
                       className={cn(inputClasses, 'pr-10')}
                       autoComplete="off"
                       data-testid="image-generation-relay-api-key"
+                      aria-invalid={!!errors.apiKey}
+                      aria-describedby={errors.apiKey ? 'image-gen-relay-api-key-error' : undefined}
                     />
-                    <button
-                      type="button"
-                      onClick={() => setShowRelayApiKey((value) => !value)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    >
+                    <button type="button" onClick={() => setShowRelayApiKey(value => !value)} aria-label={t(showRelayApiKey ? 'settings:aiProviders.dialog.hideKey' : 'settings:aiProviders.dialog.showKey')} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                       {showRelayApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </div>
-                  <p className="text-xs text-muted-foreground" data-testid="image-generation-api-key-help">
-                    {t('settings:aiProviders.dialog.apiKeyStored')}
-                  </p>
+                  {errors.apiKey && <p role="alert" id="image-gen-relay-api-key-error" className="text-sm text-destructive">{errors.apiKey}</p>}
                 </div>
-            </div>
-          </div>
-          </div>
-
-          <div
-            data-testid="image-generation-runtime-card"
-            className="space-y-5 rounded-xl border border-black/10 bg-surface-modal p-4 shadow-sm dark:border-white/10"
-          >
-          <div className="space-y-2 max-w-xs">
-            <Label htmlFor="image-gen-timeout" className={labelClasses}>
-              {t('imageGeneration.timeout')}
-            </Label>
-            <Input
-              id="image-gen-timeout"
-              type="number"
-              min={1000}
-              step={1000}
-              value={timeoutMs}
-              onChange={(e) => setTimeoutMs(e.target.value)}
-              className={inputClasses}
-              data-testid="image-generation-timeout"
-            />
-          </div>
-
-          <div className="space-y-3">
-            <Label className={labelClasses}>{t('imageGeneration.agentAuthTitle')}</Label>
-            <p className="text-meta text-muted-foreground">{t('imageGeneration.agentAuthDesc')}</p>
-            <div className="rounded-2xl border border-black/10 dark:border-white/10 overflow-hidden">
-              <table className="w-full text-sm" data-testid="image-generation-agent-auth-table">
-                <thead>
-                  <tr className="border-b border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 text-left text-meta text-muted-foreground">
-                    <th className="px-4 py-2 font-medium">{t('imageGeneration.agentColumn')}</th>
-                    <th className="px-4 py-2 font-medium">{t('imageGeneration.authColumn')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(snapshot?.agents ?? []).map((agent) => (
-                    <tr
-                      key={agent.id}
-                      className="border-b border-black/5 dark:border-white/5 last:border-0"
-                      data-testid={`image-generation-agent-row-${agent.id}`}
-                    >
-                      <td className="px-4 py-3">
-                        <span className="font-medium">{agent.name}</span>
-                        {agent.isDefault ? (
-                          <Badge variant="outline" className="ml-2 rounded-full text-2xs">
-                            {t('imageGeneration.defaultAgent')}
-                          </Badge>
-                        ) : null}
-                        <span className="block font-mono text-tiny text-muted-foreground mt-0.5">{agent.id}</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        {agent.provider ? (
-                          agent.configured ? (
-                            <Badge className="rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/15">
-                              {t('imageGeneration.authConfigured')}
-                            </Badge>
-                          ) : (
-                            <Badge variant="destructive" className="rounded-full">
-                              {t('imageGeneration.authMissing')}
-                            </Badge>
-                          )
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-          </div>
-
-          <div
-            data-testid="image-generation-actions-card"
-            className="flex flex-wrap items-end gap-4 rounded-xl border border-black/10 bg-surface-modal p-4 shadow-sm dark:border-white/10"
-          >
-            <div className="space-y-2 min-w-[200px]">
-              <Label htmlFor="image-gen-test-agent" className={labelClasses}>
-                {t('imageGeneration.testAgent')}
-              </Label>
-              <select
-                id="image-gen-test-agent"
-                value={testAgentId}
-                onChange={(e) => setTestAgentId(e.target.value)}
-                className={cn(inputClasses, 'w-full bg-background')}
-                data-testid="image-generation-test-agent"
-              >
-                {(snapshot?.agents ?? []).map((agent) => (
-                  <option key={agent.id} value={agent.id}>
-                    {agent.name}
-                    {agent.isDefault ? ` (${t('imageGeneration.defaultAgent')})` : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <Button
-              variant="outline"
-              className="rounded-full h-10"
-              onClick={() => void handleTest()}
-              disabled={testing || !hasConfiguredRelay || dirty}
-              data-testid="image-generation-test-button"
-            >
-              {testing ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <Play className="h-4 w-4 mr-2" />
-              )}
-              {testing ? t('imageGeneration.testing') : t('imageGeneration.testButton')}
-            </Button>
-            <Button
-              className="rounded-full h-10"
-              onClick={() => void handleSave()}
-              disabled={saving || !dirty}
-              data-testid="image-generation-save"
-            >
-              {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              {saving ? t('imageGeneration.saving') : t('imageGeneration.save')}
-            </Button>
-            <Button
-              variant="outline"
-              className="rounded-full h-10 text-destructive hover:text-destructive"
-              onClick={() => setClearConfirmOpen(true)}
-              disabled={clearing || !hasConfiguredRelay}
-              data-testid="image-generation-clear"
-            >
-              {clearing ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <Trash2 className="h-4 w-4 mr-2" />
-              )}
-              {clearing ? t('imageGeneration.clearing') : t('imageGeneration.clear')}
-            </Button>
-          </div>
-        </div>
-      )}
-
-      <ConfirmDialog
-        open={clearConfirmOpen}
-        title={t('imageGeneration.clearConfirmTitle')}
-        message={t('imageGeneration.clearConfirmMessage')}
-        confirmLabel={t('imageGeneration.clearConfirmAction')}
-        cancelLabel={t('common:actions.cancel')}
-        variant="destructive"
-        onConfirm={handleClear}
-        onCancel={() => setClearConfirmOpen(false)}
-      />
+              </div>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="image-gen-timeout" className={labelClasses}>{t('imageGeneration.timeout')}</Label>
+                  <Input
+                    id="image-gen-timeout"
+                    type="number"
+                    min={1000}
+                    step={1000}
+                    value={timeoutMs}
+                    onChange={event => {
+                      setTimeoutMs(event.target.value);
+                      setErrors(previous => ({ ...previous, timeout: undefined }));
+                    }}
+                    className={inputClasses}
+                    data-testid="image-generation-timeout"
+                    aria-invalid={!!errors.timeout}
+                    aria-describedby={errors.timeout ? 'image-gen-timeout-error' : undefined}
+                  />
+                  {errors.timeout && <p role="alert" id="image-gen-timeout-error" className="text-sm text-destructive">{errors.timeout}</p>}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="image-gen-test-agent" className={labelClasses}>{t('imageGeneration.testAgent')}</Label>
+                  <div className="flex flex-wrap gap-2">
+                    <Select id="image-gen-test-agent" value={testAgentId} onValueChange={setTestAgentId} className={cn(inputClasses, 'min-w-0 flex-1')} disabled={busy} data-testid="image-generation-test-agent">
+                      {(snapshot?.agents ?? []).map(agent => <SelectItem key={agent.id} value={agent.id}>{agent.name}{agent.isDefault ? ` (${t('imageGeneration.defaultAgent')})` : ''}</SelectItem>)}
+                    </Select>
+                    <Button type="button" variant="outline" size="sm" onClick={() => void handleTest()} disabled={testing || !hasConfiguredRelay || dirty} data-testid="image-generation-test-button">
+                      {testing ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Play className="mr-2 h-3.5 w-3.5" />}
+                      {t(testing ? 'imageGeneration.testing' : 'imageGeneration.testButton')}
+                    </Button>
+                  </div>
+                </div>
+              </>
+            )}
+          </fieldset>
+        </ModelConfigPanels>
+      </ModelConfigDialog>
+      <ConfirmDialog open={clearConfirmOpen} title={t('imageGeneration.clearConfirmTitle')} message={t('imageGeneration.clearConfirmMessage')} confirmLabel={t('imageGeneration.clearConfirmAction')} cancelLabel={t('common:actions.cancel')} variant="destructive" onConfirm={handleClear} onCancel={() => setClearConfirmOpen(false)} returnFocusTo={triggerRef.current} />
     </div>
   );
 }

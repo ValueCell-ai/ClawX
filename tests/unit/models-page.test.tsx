@@ -1,6 +1,7 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { Models } from '@/pages/Models/index';
 
 const hostApiFetchMock = vi.fn();
@@ -79,7 +80,9 @@ function createUsageEntry(totalTokens: number) {
 function renderModels(initialEntry = '/models') {
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
-      <Models />
+      <TooltipProvider>
+        <Models />
+      </TooltipProvider>
     </MemoryRouter>,
   );
 }
@@ -87,6 +90,7 @@ function renderModels(initialEntry = '/models') {
 describe('Models page auto refresh', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-02T12:00:00.000Z'));
     vi.clearAllMocks();
     settingsState.devModeUnlocked = false;
     gatewayState.status = { state: 'running', port: 18789, connectedAt: 1, pid: 1234 };
@@ -117,6 +121,19 @@ describe('Models page auto refresh', () => {
     expect(hostApiFetchMock).toHaveBeenCalledTimes(2);
   });
 
+
+  it('preserves usage pagination when the background refresh completes', async () => {
+    const entries = Array.from({ length: 11 }, (_, index) => ({ ...createUsageEntry(index + 1), model: `page-model-${index}`, timestamp: new Date().toISOString() }));
+    hostApiFetchMock.mockResolvedValue(entries);
+    renderModels('/models?tab=usage');
+    await act(async () => { await Promise.resolve(); });
+    fireEvent.click(screen.getByRole('button', { name: 'dashboard:recentTokenHistory.next' }));
+    expect(screen.getAllByTestId('token-usage-entry')[0]).toHaveTextContent('page-model-10');
+    await act(async () => { vi.advanceTimersByTime(15_000); await Promise.resolve(); });
+    expect(screen.getAllByTestId('token-usage-entry')[0]).toHaveTextContent('page-model-10');
+    expect(hostApiFetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it('gates voice and image settings behind developer mode', async () => {
     const { unmount } = renderModels();
 
@@ -129,7 +146,7 @@ describe('Models page auto refresh', () => {
     expect(screen.queryByTestId('models-tab-voice')).not.toBeInTheDocument();
     expect(screen.queryByTestId('models-tab-image-generation')).not.toBeInTheDocument();
     expect(screen.getByTestId('providers-settings-panel')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Token Usage History' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Token Usage History' })).not.toBeInTheDocument();
     expect(screen.queryByTestId('models-tab-realtime-talk')).not.toBeInTheDocument();
 
     unmount();
@@ -151,8 +168,9 @@ describe('Models page auto refresh', () => {
     expect(screen.getByTestId('image-generation-settings-panel')).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Token Usage History' })).not.toBeInTheDocument();
 
-    fireEvent.mouseDown(screen.getByTestId('models-tab-chat'), { button: 0 });
-    expect(screen.getByRole('heading', { name: 'Token Usage History' })).toBeInTheDocument();
+    fireEvent.mouseDown(screen.getByTestId('models-tab-usage'), { button: 0 });
+    expect(within(screen.getByRole('columnheader', { name: 'columns.cost' })).getByRole('button', { name: 'costHelp' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Token Usage History' })).not.toBeInTheDocument();
   });
 
   it('opens only an allowed Models tab from the tab query parameter', async () => {

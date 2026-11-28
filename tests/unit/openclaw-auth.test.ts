@@ -2461,6 +2461,13 @@ describe('setOpenClawDefaultModelWithOverride model metadata', () => {
     await rm(testUserData, { recursive: true, force: true });
   });
 
+  it('preserves the global fallback chain when the default provider changes', async () => {
+    await writeOpenClawJson({ agents: { defaults: { model: { primary: 'old/main', fallbacks: ['backup/one', 'backup/two'], custom: 'keep' } } } });
+    const { setOpenClawDefaultModelWithOverride } = await import('@electron/utils/openclaw-auth');
+    await setOpenClawDefaultModelWithOverride('custom-example', 'custom-example/new', { baseUrl: 'https://example.com/v1', api: 'openai-completions' });
+    expect((await readOpenClawJson()).agents).toMatchObject({ defaults: { model: { primary: 'custom-example/new', fallbacks: ['backup/one', 'backup/two'], custom: 'keep' } } });
+  });
+
   it('preserves old rows and infers image input for a newly selected vision model', async () => {
     await writeOpenClawJson({
       models: {

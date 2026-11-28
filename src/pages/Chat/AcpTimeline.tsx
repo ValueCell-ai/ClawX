@@ -11,6 +11,8 @@ import type { AcpTurnTiming } from '@/lib/acp/turn-timings';
 type AcpTimelineProps = {
   snapshot: AcpTimelineSnapshot;
   isStreaming?: boolean;
+  conciseReplies?: boolean;
+  keepLatestTurnExpanded?: boolean;
   error?: string | null;
   errorKind?: 'load' | 'prompt';
   onDismissError?: () => void;
@@ -41,6 +43,8 @@ export function streamingMessageSegmentIds(
 export function AcpTimeline({
   snapshot,
   isStreaming = false,
+  conciseReplies = false,
+  keepLatestTurnExpanded = false,
   error,
   errorKind = 'load',
   onDismissError,
@@ -51,11 +55,12 @@ export function AcpTimeline({
 }: AcpTimelineProps) {
   const groups = groupAcpTimelineItems(snapshot);
   const streamingSegmentIds = streamingMessageSegmentIds(snapshot, isStreaming);
+  const latestTurnExpanded = isStreaming || keepLatestTurnExpanded || Boolean(error);
 
   return (
     <div data-testid="acp-chat-timeline" className="flex flex-col gap-4">
       {error && <AcpErrorBanner message={error} kind={errorKind} onDismiss={onDismissError} />}
-      {groups.map((group) => {
+      {groups.map((group, index) => {
         if (group.kind === 'user') {
           return (
             <div key={group.id} data-acp-group-id={group.id} className="flex flex-col gap-3">
@@ -85,6 +90,7 @@ export function AcpTimeline({
           <div key={group.id} data-acp-group-id={group.id}>
             <AcpAssistantTurn
               group={group}
+              collapseProcess={conciseReplies && !!group.userMessageId && (index !== groups.length - 1 || !latestTurnExpanded)}
               streamingSegmentIds={streamingSegmentIds}
               fileSummaries={fileActivity?.turnSummariesByTurnId[group.id]}
               workspaceRoot={workspaceRoot}

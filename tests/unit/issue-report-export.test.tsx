@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IssueReportExport } from '@/components/settings/IssueReportExport';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { hostApi } from '@/lib/host-api';
 import { useChatStore } from '@/stores/chat';
 import i18n from '@/i18n';
@@ -35,7 +36,7 @@ describe('IssueReportExport', () => {
       skippedSessionKeys: [],
     });
 
-    render(<IssueReportExport />);
+    render(<IssueReportExport />, { wrapper: TooltipProvider });
     fireEvent.click(screen.getByTestId('settings-issue-report-open'));
 
     expect(screen.getByTestId('issue-report-export')).toBeEnabled();
@@ -51,7 +52,7 @@ describe('IssueReportExport', () => {
       loadSessions: vi.fn().mockResolvedValue(undefined),
     });
 
-    render(<IssueReportExport trigger="sidebar" sidebarCollapsed />);
+    render(<IssueReportExport trigger="sidebar" sidebarCollapsed />, { wrapper: TooltipProvider });
 
     const shortcut = screen.getByTestId('sidebar-issue-report-open');
     expect(shortcut).toHaveAccessibleName(enSettings.issueReport.actionTitle);
@@ -74,7 +75,7 @@ describe('IssueReportExport', () => {
       loadSessions: vi.fn().mockResolvedValue(undefined),
     });
 
-    render(<IssueReportExport />);
+    render(<IssueReportExport />, { wrapper: TooltipProvider });
     fireEvent.click(screen.getByTestId('settings-issue-report-open'));
 
     expect(screen.getByTestId(`issue-report-session-${parentKey}`)).toBeInTheDocument();

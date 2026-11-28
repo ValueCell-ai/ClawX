@@ -241,6 +241,7 @@ async function openChat(app: ElectronApplication): Promise<Page> {
   }
   await expect(page.getByTestId('main-layout')).toBeVisible();
   await expect(page.getByTestId('chat-page')).toBeVisible();
+  await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
   return page;
 }
 
@@ -284,7 +285,7 @@ test.describe('ClawX chat file changes', () => {
 
       const panel = page.getByTestId('artifact-panel');
       await expect(panel).toBeVisible();
-      await expect(panel.getByTestId('artifact-panel-tab-preview')).toHaveClass(/bg-foreground\/10/);
+      await expect(panel.getByTestId('artifact-panel-tab-preview')).toHaveAttribute('aria-selected', 'true');
       await expect(panel.getByTestId('artifact-panel-tab-web-browser')).toHaveCount(0);
       await expect(page.getByTestId('html-preview-host')).toHaveAttribute('aria-hidden', 'false');
       await expect.poll(async () => (await getRecordedHostInvocations(app)).some((request) => (
@@ -344,7 +345,7 @@ test.describe('ClawX chat file changes', () => {
 
       const panel = page.getByTestId('artifact-panel');
       await expect(panel.getByRole('heading', { name: 'live.ts' })).toBeVisible();
-      await expect(panel.getByText('File changes (1)')).not.toBeVisible();
+      await expect(panel.getByTestId('acp-change-file-group')).toBeHidden();
       await expect.poll(async () => (await getRecordedHostInvocations(app)).some((request) => (
         request.module === 'files'
         && request.action === 'readWorkspaceText'
@@ -352,7 +353,7 @@ test.describe('ClawX chat file changes', () => {
       ))).toBe(true);
 
       await panel.getByTestId('artifact-panel-tab-changes').click();
-      await expect(panel.getByText('File changes (1)')).toBeVisible();
+      await expect(panel.getByTestId('acp-change-file-group')).toHaveCount(1);
       const changedFile = panel.getByTestId('acp-change-file-src/live.ts');
       await expect(changedFile).toBeVisible();
       await expect(changedFile.locator('span[aria-hidden="true"] > svg')).toHaveCount(1);
@@ -436,9 +437,8 @@ test.describe('ClawX chat file changes', () => {
       await expect(page.getByTestId('acp-file-summary-row')).toHaveCount(0);
 
       const panel = await openChanges(page);
-      await expect(panel.getByText('This session has no file changes yet.')).toBeVisible();
+      await expect(panel.getByTestId('workspace-changes-empty')).toBeVisible();
       await expect(panel.getByTestId('acp-change-file-group')).toHaveCount(0);
-      await expect(panel.getByText(/File changes \(/)).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }
@@ -559,7 +559,7 @@ test.describe('ClawX chat file changes', () => {
       await expect(missingInputWrite).toContainText('Completed', { timeout: 30_000 });
       await expect(page.getByTestId('acp-turn-file-activity')).toHaveCount(0);
       const panel = await openChanges(page);
-      await expect(panel.getByText('This session has no file changes yet.')).toBeVisible();
+      await expect(panel.getByTestId('workspace-changes-empty')).toBeVisible();
     } finally {
       await closeElectronApp(app);
     }
@@ -581,7 +581,7 @@ test.describe('ClawX chat file changes', () => {
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
 
       const panel = await openChanges(page);
-      await expect(panel.getByText('This session has no file changes yet.')).toBeVisible();
+      await expect(panel.getByTestId('workspace-changes-empty')).toBeVisible();
       await expect(panel.getByTestId('acp-change-file-group')).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
@@ -633,8 +633,11 @@ test.describe('ClawX chat file changes', () => {
     const app = await launchElectronApp({ skipSetup: true });
     try {
       await installFileActivityMocks(app, {
-        liveByPrompt: {
-          'Create aligned file': [
+        sessions: [{
+          key: MAIN_SESSION_KEY,
+          title: 'Aligned file activity',
+          updates: [
+            user('align-user', 'Create aligned file'),
             ...writeSequence('write-align', 'src/aligned.ts', 'one\ntwo\n'),
             {
               sessionUpdate: 'agent_message_chunk',
@@ -653,17 +656,20 @@ test.describe('ClawX chat file changes', () => {
               },
             },
           ],
-        },
+        }],
       });
       const page = await openChat(app);
       await page.setViewportSize({ width: 1600, height: 900 });
-      await sendPrompt(page, 'Create aligned file');
 
       const turn = page.getByTestId('acp-assistant-turn');
       const message = turn.getByTestId('acp-assistant-message');
       const files = turn.getByTestId('acp-turn-file-activity');
+      const process = turn.getByRole('button', { name: 'View process', exact: true });
       await expect(message).toContainText('The write finished successfully.', { timeout: 30_000 });
+      await expect(process).toHaveAttribute('aria-expanded', 'false');
       await expect(files).toBeVisible();
+      await expect(turn.getByTestId('acp-tool-call-card')).toHaveCount(0);
+      await process.click();
       await expectVisibleToolCallCards(page, 1);
       const tool = turn.getByTestId('acp-tool-call-card');
 

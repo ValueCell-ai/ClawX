@@ -1,10 +1,10 @@
 # Local HTML Preview Architecture
 
-ClawX no longer exposes a general-purpose embedded Web Browser. The remaining Electron webview is used only to render an authorized local `.html` or `.htm` file inside the existing Preview tab.
+ClawX no longer exposes a general-purpose embedded Web Browser. The remaining Electron webview is used only to render an authorized local `.html` or `.htm` file inside the shared Workspace/Preview file surface.
 
 ## User flow
 
-- Activating local HTML from an attachment, file activity, or Workspace opens Preview.
+- Activating local HTML from an attachment or file activity opens Preview; tree selection retains Workspace and renders in the same shared preview surface.
 - The HTML file menu offers the built-in Preview path alongside compatible system applications.
 - The Preview header offers one file-level action to open the current HTML through the system browser.
 - There is no browser tab, Home page, URL input, navigation history, refresh menu, favicon, cookie/site-data UI, or blank browser entry.
@@ -20,9 +20,9 @@ All links are inert:
 
 ## Renderer flow
 
-HTML entry points build an ordinary `FilePreviewTarget` and call `useArtifactPanel.openPreview`. `FilePreviewBody` renders an HTML anchor in Preview. The route-stable host in `MainLayout` overlays one webview on that anchor and asks `hostApi.webBrowser.navigate` to load the selected file.
+HTML entry points build a scope-specific `FilePreviewTarget`. Conversation entries call `useArtifactPanel.openPreview`; workspace navigation changes the shared focused file without changing the tab. `FilePreviewBody` registers its HTML file, anchor and active state with the reader-owned HTML registry. Workspace and skill readers share this pipeline without changing conversation selection. The anchor owns a `WebBrowserHost` that portals the single selected guest into its reader and asks `hostApi.webBrowser.navigate` to load the selected file.
 
-The host has no browser chrome. It exists only for an HTML `focusedFile`, remains hidden and inert when Preview is not visible, and can recover a crashed guest without restoring browsing state. Because the guest is route-stable and positioned over a Renderer anchor, it raises its stacking level above the fullscreen Preview layer whenever that anchor is portaled to the fullscreen surface.
+The host has no browser chrome. It exists only for a registered HTML reader, remains mounted but hidden and inert when that reader switches to Source or becomes inactive, and releases its guest when the reader unmounts. A dialog reader takes precedence over a background reader; removing an obsolete owner cannot clear another reader. The guest belongs to the same DOM and React modal context as its anchor, preserving dialog dismissal and focus boundaries in narrow drawers and skill dialogs. Crash recovery does not restore browsing state.
 
 ## Main boundary
 
