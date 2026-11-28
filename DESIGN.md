@@ -526,6 +526,10 @@ throughout the app, including reopened conversations.
   choose a purposeful shared variant rather than per-provider layouts.
 - Avoid stacking modal dialogs. File reading from a detail dialog uses the
   existing right drawer and shared reader, with focus returning to its opener.
+- Maximize the chat workspace panel from its header to fill
+  the chat area beside the navigation sidebar. Restoring returns to the width
+  used before maximizing. Reopen at the default split width. Use a brief size
+  transition and respect reduced motion.
 - Icon-only controls need a localized accessible name and a hover/focus tooltip.
   Preserve keyboard operation, Escape/outside dismissal and focus return.
 - Text inputs use a quiet neutral focus border/ring. Keyboard focus must remain

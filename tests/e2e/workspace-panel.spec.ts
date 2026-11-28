@@ -3,10 +3,10 @@ import { E2E_EXCLUSIVE_TAG } from './parallel-policy';
 
 const SESSION = 'agent:main:main';
 const localeCases = [
-  { language: 'en', source: 'Source' },
-  { language: 'zh', source: '源码' },
-  { language: 'ja', source: 'ソース' },
-  { language: 'ru', source: 'Исходник' },
+  { language: 'en', source: 'Source', maximize: 'Maximize workspace panel', restore: 'Restore workspace panel' },
+  { language: 'zh', source: '源码', maximize: '最大化工作空间面板', restore: '还原工作空间面板' },
+  { language: 'ja', source: 'ソース', maximize: 'ワークスペースパネルを最大化', restore: 'ワークスペースパネルを元のサイズに戻す' },
+  { language: 'ru', source: 'Исходник', maximize: 'Развернуть панель рабочего пространства', restore: 'Восстановить размер панели' },
 ];
 
 // This flow exercises Copy path using the real system clipboard.
@@ -106,9 +106,42 @@ test.describe('Workspace panel refinement', { tag: E2E_EXCLUSIVE_TAG }, () => {
         expect(pathLayout.filenameClipped).toBe(false);
         expect(pathLayout.directoryColor).not.toBe(pathLayout.filenameColor);
 
+        const aside = page.getByTestId('artifact-panel-aside');
+        const chat = page.getByTestId('chat-page');
+        const sidebar = page.getByTestId('sidebar');
+        const panelDivider = chat.locator(':scope > [role="separator"]');
+        const maximize = panel.getByTestId('artifact-panel-maximize-toggle');
+        const defaultWidth = (await aside.boundingBox())!.width;
+        await panelDivider.press('ArrowLeft');
+        await expect.poll(async () => (await aside.boundingBox())!.width).toBeGreaterThan(defaultWidth);
+        const splitWidth = (await aside.boundingBox())!.width;
+        const sidebarBounds = await sidebar.boundingBox();
+        await expect(maximize).toHaveAccessibleName(locale.maximize);
+        await maximize.press('Enter');
+        await expect(maximize).toHaveAccessibleName(locale.restore);
+        await expect(page.getByTestId('chat-content-layout')).toBeHidden();
+        await expect(panelDivider).toHaveCount(0);
+        await expect(sidebar).toBeVisible();
+        expect(await sidebar.boundingBox()).toEqual(sidebarBounds);
+        await expect.poll(async () => {
+          const [pane, content] = await Promise.all([aside.boundingBox(), chat.boundingBox()]);
+          return !!pane && !!content && Math.abs(pane.x - content.x) < 1
+            && Math.abs(pane.width - content.width) < 1 && Math.abs(pane.height - content.height) < 1;
+        }).toBe(true);
+        await expect(tree).toBeVisible();
+        await expect(search).toHaveValue('summary');
+        await expect(panel.getByRole('heading', { name: 'Workspace summary', exact: true })).toBeVisible();
+        await page.screenshot({ path: testInfo.outputPath('workspace-maximized.png') });
+
         await panel.getByTestId('artifact-panel-tab-preview').click();
         await expect(panel.getByRole('heading', { name: 'Workspace summary', exact: true })).toBeVisible();
         await expect(panel.getByTestId('file-preview-header')).toHaveCount(1);
+        await expect(maximize).toHaveAccessibleName(locale.restore);
+        await maximize.press('Enter');
+        await expect(maximize).toHaveAccessibleName(locale.maximize);
+        await expect(page.getByTestId('chat-content-layout')).toBeVisible();
+        await expect.poll(async () => (await aside.boundingBox())!.width).toBeCloseTo(splitWidth, 0);
+        await expect(panel.getByRole('heading', { name: 'Workspace summary', exact: true })).toBeVisible();
         await panel.getByTestId('artifact-panel-tab-browser').click();
         await search.fill('sample.html');
         await tree.getByTitle('sample.html', { exact: true }).click();
@@ -163,6 +196,7 @@ test.describe('Workspace panel refinement', { tag: E2E_EXCLUSIVE_TAG }, () => {
         await page.setViewportSize({ width: 900, height: 700 });
         await expect(page.getByTestId('artifact-panel-aside')).toBeVisible();
         await expect(page.getByTestId('artifact-panel-aside')).toHaveAttribute('role', 'dialog');
+        await expect(maximize).toHaveAccessibleName(locale.maximize);
         await expect(panel.getByTestId('file-preview-fullscreen-toggle')).toHaveCount(0);
         await page.setViewportSize({ width: 480, height: 700 });
         await panel.getByTestId('workspace-back-to-files').click();
@@ -170,11 +204,42 @@ test.describe('Workspace panel refinement', { tag: E2E_EXCLUSIVE_TAG }, () => {
         await search.fill('readme');
         await tree.getByTitle('readme.txt', { exact: true }).click();
         await expect(panel.getByTestId('file-preview-header').getByRole('heading', { name: 'readme.txt', exact: true })).toBeVisible();
-        expect(await panel.getByTestId('file-preview-filename').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
-        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
         await page.screenshot({ path: testInfo.outputPath('workspace-narrow.png') });
+        const filenameSize = await panel.getByTestId('file-preview-filename').evaluate(element => ({
+          text: element.scrollWidth,
+          available: element.clientWidth,
+          header: element.closest('header')?.clientWidth,
+          panel: element.closest('[data-testid="artifact-panel-aside"]')?.clientWidth,
+        }));
+        expect(filenameSize.available, JSON.stringify(filenameSize)).toBeGreaterThanOrEqual(filenameSize.text);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        const drawerWidth = (await aside.boundingBox())!.width;
+        await maximize.press('Enter');
+        await expect(maximize).toHaveAccessibleName(locale.restore);
+        await expect(page.getByTestId('chat-content-layout')).toBeHidden();
+        await expect.poll(async () => {
+          const [pane, content] = await Promise.all([aside.boundingBox(), chat.boundingBox()]);
+          return !!pane && !!content && Math.abs(pane.x - content.x) < 1 && Math.abs(pane.width - content.width) < 1;
+        }).toBe(true);
+        expect((await aside.boundingBox())!.width).toBeGreaterThan(drawerWidth);
+        await expect(panel.getByTestId('file-preview-filename')).toHaveText('readme.txt');
+        const newTask = sidebar.getByTestId('sidebar-new-chat');
+        await newTask.focus();
+        await expect(newTask).toBeFocused();
+        await expect(maximize).toHaveAccessibleName(locale.restore);
+        await maximize.press('Enter');
+        await expect(maximize).toHaveAccessibleName(locale.maximize);
+        await expect.poll(async () => (await aside.boundingBox())!.width).toBeCloseTo(drawerWidth, 0);
         await page.keyboard.press('Escape');
         await expect(page.getByTestId('artifact-panel-aside')).toHaveCount(0);
+        await expect(page.getByTestId('chat-toolbar-workspace')).toBeFocused();
+        await page.setViewportSize({ width: 1600, height: 900 });
+        await page.getByTestId('chat-toolbar-workspace').click();
+        await expect(maximize).toHaveAccessibleName(locale.maximize);
+        await expect.poll(async () => (await aside.boundingBox())!.width).toBeCloseTo(defaultWidth, 0);
+        await maximize.click();
+        await panel.getByTestId('artifact-panel-close').click();
+        await expect(aside).toHaveCount(0);
         await expect(page.getByTestId('chat-toolbar-workspace')).toBeFocused();
       } finally { await closeElectronApp(app); }
     });

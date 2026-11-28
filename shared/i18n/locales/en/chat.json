@@ -146,7 +146,9 @@
             "browser": "Workspace"
         },
         "actions": {
-            "back": "Back to list"
+            "back": "Back to list",
+            "maximize": "Maximize workspace panel",
+            "restore": "Restore workspace panel"
         },
         "changes": {
             "heading": "Task changes ({{count}})",

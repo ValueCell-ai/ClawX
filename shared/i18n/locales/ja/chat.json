@@ -146,7 +146,9 @@
             "browser": "ワークスペース"
         },
         "actions": {
-            "back": "一覧に戻る"
+            "back": "一覧に戻る",
+            "maximize": "ワークスペースパネルを最大化",
+            "restore": "ワークスペースパネルを元のサイズに戻す"
         },
         "changes": {
             "heading": "今回の変更（{{count}}）",

@@ -1,9 +1,10 @@
 /** Shared workspace, preview and current-session file-activity panel. */
-import { Eye, FileEdit, FolderTree, X } from 'lucide-react';
+import { Eye, FileEdit, FolderTree, Maximize2, Minimize2, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { AcpSessionFileGroup } from '@/lib/acp/openclaw-file-activities';
 import type { AgentSummary } from '@/types/agent';
 import { useArtifactPanel, type ArtifactTab } from '@/stores/artifact-panel';
@@ -21,9 +22,15 @@ export interface ArtifactPanelProps {
   workspaceLabel?: string;
   runStartedAt?: number | null;
   refreshSignal?: number;
+  maximized?: boolean;
+  onToggleMaximized?: () => void;
+  onClose?: () => void;
 }
 
-export function ArtifactPanel({ fileGroups, uniqueFileCount, agent, workspacePath, workspaceLabel, runStartedAt, refreshSignal }: ArtifactPanelProps) {
+export function ArtifactPanel({
+  fileGroups, uniqueFileCount, agent, workspacePath, workspaceLabel, runStartedAt, refreshSignal,
+  maximized = false, onToggleMaximized, onClose,
+}: ArtifactPanelProps) {
   const { t } = useTranslation('chat');
   const tab = useArtifactPanel(state => state.tab);
   const setTab = useArtifactPanel(state => state.setTab);
@@ -32,6 +39,8 @@ export function ArtifactPanel({ fileGroups, uniqueFileCount, agent, workspacePat
   const close = useArtifactPanel(state => state.close);
   const visibleTab = !WORKSPACE_BROWSER_ENABLED && tab === 'browser' ? 'changes' : tab;
   const isMac = window.electron?.platform === 'darwin';
+  const resizeLabel = t(maximized ? 'artifactPanel.actions.restore' : 'artifactPanel.actions.maximize');
+  const ResizeIcon = maximized ? Minimize2 : Maximize2;
   return (
     <Tabs value={visibleTab} onValueChange={value => setTab(value as ArtifactTab)} data-testid="artifact-panel" className={cn('flex h-full min-h-0 flex-col bg-background', isMac && 'no-drag')}>
       <div className="relative z-30 flex shrink-0 items-center justify-between gap-2 border-b border-border/40 px-3 py-2">
@@ -41,7 +50,23 @@ export function ArtifactPanel({ fileGroups, uniqueFileCount, agent, workspacePat
           <TabsTrigger value="preview" id="artifact-tab-preview" aria-controls="artifact-files-panel" data-testid="artifact-panel-tab-preview" className="h-7 shrink-0 gap-1.5 rounded-lg px-2 py-1 text-xs data-[state=active]:bg-black/5 data-[state=active]:shadow-none dark:data-[state=active]:bg-white/10"><Eye className="h-3.5 w-3.5" />{t('artifactPanel.tabs.preview')}</TabsTrigger>
           <TabsTrigger value="changes" id="artifact-tab-changes" aria-controls="artifact-changes-panel" data-testid="artifact-panel-tab-changes" className="h-7 shrink-0 gap-1.5 rounded-lg px-2 py-1 text-xs data-[state=active]:bg-black/5 data-[state=active]:shadow-none dark:data-[state=active]:bg-white/10"><FileEdit className="h-3.5 w-3.5" />{t('artifactPanel.tabs.changes')}<span className="rounded-md bg-black/5 px-1.5 text-2xs tabular-nums text-muted-foreground dark:bg-white/10" data-testid="artifact-panel-changes-count">{uniqueFileCount}</span></TabsTrigger>
         </TabsList>
-        <Button variant="ghost" size="icon" className="no-drag relative z-10 h-7 w-7 shrink-0" onClick={close} aria-label={t('filePreview.actions.close')} title={t('filePreview.actions.close')}><X className="h-4 w-4" /></Button>
+        <div className="no-drag relative z-10 flex shrink-0 items-center gap-1">
+          {onToggleMaximized && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={onToggleMaximized}
+                  aria-label={resizeLabel} data-testid="artifact-panel-maximize-toggle">
+                  <ResizeIcon aria-hidden="true" className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" align="end">{resizeLabel}</TooltipContent>
+            </Tooltip>
+          )}
+          <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={onClose ?? close}
+            aria-label={t('filePreview.actions.close')} title={t('filePreview.actions.close')} data-testid="artifact-panel-close">
+            <X aria-hidden="true" className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
       <div className="no-drag relative z-0 min-h-0 flex-1 overflow-hidden">
         {WORKSPACE_BROWSER_ENABLED ? (

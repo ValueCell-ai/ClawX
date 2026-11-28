@@ -10,11 +10,9 @@
  * be opened/closed/focused from anywhere (file cards, toolbar buttons,
  * "查看文件变更 →" links, …).
  *
- * `widthPct` is persisted via `zustand/middleware`'s `persist` so the
- * user's preferred split survives reloads.
+ * Split width and maximized state are scoped to the open panel.
  */
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import type { FilePreviewTarget } from '@/components/file-preview/types';
 
 export type ArtifactTab = 'changes' | 'preview' | 'browser';
@@ -34,8 +32,14 @@ export const ARTIFACT_PANEL_MIN_WIDTH = 28;
 export const ARTIFACT_PANEL_MAX_WIDTH = 70;
 export const ARTIFACT_PANEL_DEFAULT_WIDTH = 45;
 
+const defaultPanelSize = {
+  maximized: false,
+  widthPct: ARTIFACT_PANEL_DEFAULT_WIDTH,
+};
+
 interface ArtifactPanelState {
   open: boolean;
+  maximized: boolean;
   tab: ArtifactTab;
   /**
    * The currently selected Preview file. Changes navigation is tracked
@@ -44,7 +48,7 @@ interface ArtifactPanelState {
   focusedFile: FilePreviewTarget | null;
   focusedChange: ArtifactChangeNavigation | null;
   changeNavigationId: number;
-  /** Persisted panel width as a % of the chat container (clamped on read). */
+  /** Split width as a percentage of the chat container. */
   widthPct: number;
   previewSlidePositions: Record<string, number>;
   rememberPreviewSlide: (identity: string, index: number) => void;
@@ -57,6 +61,7 @@ interface ArtifactPanelState {
   /** Open the workspace browser tab. */
   openBrowser: () => void;
   toggle: () => void;
+  toggleMaximized: () => void;
   close: () => void;
   /** Update the panel width (clamped). */
   setWidthPct: (pct: number) => void;
@@ -69,48 +74,40 @@ function clampWidth(pct: number): number {
   return pct;
 }
 
-export const useArtifactPanel = create<ArtifactPanelState>()(
-  persist(
-    (set, get) => ({
-      open: false,
+export const useArtifactPanel = create<ArtifactPanelState>()((set, get) => ({
+  open: false,
+  tab: 'changes',
+  focusedFile: null,
+  focusedChange: null,
+  changeNavigationId: 0,
+  ...defaultPanelSize,
+  previewSlidePositions: {},
+  rememberPreviewSlide: (identity, index) => set(state => {
+    const entries = Object.entries({ ...state.previewSlidePositions, [identity]: index }).slice(-32);
+    return { previewSlidePositions: Object.fromEntries(entries) };
+  }),
+  setTab: (tab) => {
+    // Workspace navigation and Preview share the same focused file;
+    // change-record navigation remains independent.
+    set({
+      tab,
+      focusedFile: get().focusedFile,
+    });
+  },
+  setFocusedFile: (focusedFile) => set({ focusedFile }),
+  openChanges: (focus = null) => set((state) => {
+    const navigationId = state.changeNavigationId + 1;
+    return {
+      open: true,
       tab: 'changes',
-      focusedFile: null,
-      focusedChange: null,
-      changeNavigationId: 0,
-      widthPct: ARTIFACT_PANEL_DEFAULT_WIDTH,
-      previewSlidePositions: {},
-      rememberPreviewSlide: (identity, index) => set(state => {
-        const entries = Object.entries({ ...state.previewSlidePositions, [identity]: index }).slice(-32);
-        return { previewSlidePositions: Object.fromEntries(entries) };
-      }),
-      setTab: (tab) => {
-        // Workspace navigation and Preview share the same focused file;
-        // change-record navigation remains independent.
-        set({
-          tab,
-          focusedFile: get().focusedFile,
-        });
-      },
-      setFocusedFile: (focusedFile) => set({ focusedFile }),
-      openChanges: (focus = null) => set((state) => {
-        const navigationId = state.changeNavigationId + 1;
-        return {
-          open: true,
-          tab: 'changes',
-          focusedChange: focus ? { ...focus, navigationId } : null,
-          changeNavigationId: navigationId,
-        };
-      }),
-      openPreview: (file = null) => set({ open: true, tab: 'preview', focusedFile: file ?? null }),
-      openBrowser: () => set({ open: true, tab: 'browser', focusedFile: get().focusedFile }),
-      toggle: () => set((s) => ({ open: !s.open })),
-      close: () => set({ open: false, focusedFile: null, focusedChange: null, previewSlidePositions: {} }),
-      setWidthPct: (pct) => set({ widthPct: clampWidth(pct) }),
-    }),
-    {
-      name: 'clawx.artifact-panel',
-      // Only persist the user-controlled width — open/tab/focus reset on reload.
-      partialize: (state) => ({ widthPct: state.widthPct }),
-    },
-  ),
-);
+      focusedChange: focus ? { ...focus, navigationId } : null,
+      changeNavigationId: navigationId,
+    };
+  }),
+  openPreview: (file = null) => set({ open: true, tab: 'preview', focusedFile: file ?? null }),
+  openBrowser: () => set({ open: true, tab: 'browser', focusedFile: get().focusedFile }),
+  toggle: () => set(state => ({ open: !state.open, ...defaultPanelSize })),
+  toggleMaximized: () => set(state => state.open ? { maximized: !state.maximized } : state),
+  close: () => set({ open: false, ...defaultPanelSize, focusedFile: null, focusedChange: null, previewSlidePositions: {} }),
+  setWidthPct: (pct) => set({ widthPct: clampWidth(pct) }),
+}));

@@ -5,7 +5,7 @@
  * On `pointerdown` we capture the pointer, attach window-level
  * `pointermove` / `pointerup` listeners, and convert the cursor X (in
  * pixels) into a panel-width percentage relative to the supplied
- * `containerRef`.  The new width is clamped via the store.
+ * split container. The new width is clamped via the store.
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -18,24 +18,22 @@ import {
 
 export interface PanelResizeDividerProps {
   /** The flex container that holds chat-left + panel-right. */
-  containerRef: React.RefObject<HTMLElement | null>;
+  container: HTMLElement;
   className?: string;
 }
 
-export function PanelResizeDivider({ containerRef, className }: PanelResizeDividerProps) {
+export function PanelResizeDivider({ container, className }: PanelResizeDividerProps) {
   const setWidthPct = useArtifactPanel((s) => s.setWidthPct);
   const widthPct = useArtifactPanel((s) => s.widthPct);
   const { t } = useTranslation('chat');
   const [containerWidth, setContainerWidth] = useState(0);
   useLayoutEffect(() => {
-    const element = containerRef.current;
-    if (!element) return;
-    const update = () => setContainerWidth(element.clientWidth);
+    const update = () => setContainerWidth(container.clientWidth);
     update();
     const observer = new ResizeObserver(update);
-    observer.observe(element);
+    observer.observe(container);
     return () => observer.disconnect();
-  }, [containerRef]);
+  }, [container]);
   const minimum = containerWidth ? Math.max(ARTIFACT_PANEL_MIN_WIDTH, 320 / containerWidth * 100) : ARTIFACT_PANEL_MIN_WIDTH;
   const maximum = containerWidth ? Math.max(minimum, Math.min(ARTIFACT_PANEL_MAX_WIDTH, (containerWidth - 280) / containerWidth * 100)) : ARTIFACT_PANEL_MAX_WIDTH;
   const currentWidth = Math.max(minimum, Math.min(maximum, widthPct));
@@ -70,9 +68,7 @@ export function PanelResizeDivider({ containerRef, className }: PanelResizeDivid
       }
 
       const onMove = (ev: PointerEvent) => {
-        const node = containerRef.current;
-        if (!node) return;
-        const rect = node.getBoundingClientRect();
+        const rect = container.getBoundingClientRect();
         if (rect.width <= 0) return;
         // Right panel width = container right edge - cursor X.
         const rightWidth = rect.right - ev.clientX;
@@ -88,7 +84,7 @@ export function PanelResizeDivider({ containerRef, className }: PanelResizeDivid
       document.body.style.cursor = 'col-resize';
       document.body.style.userSelect = 'none';
     },
-    [containerRef, resize, stopDragging],
+    [container, resize, stopDragging],
   );
 
   // Safety: if the divider unmounts mid-drag, clean up listeners.

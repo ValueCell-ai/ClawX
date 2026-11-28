@@ -369,8 +369,9 @@ export function Chat() {
   const respondAcpPermission = useAcpChatSessionStore((s) => s.respondPermission);
   const clearAcpError = useAcpChatSessionStore((s) => s.clearError);
   const panelOpen = useArtifactPanel((s) => s.open);
+  const panelMaximized = useArtifactPanel((s) => s.open && s.maximized);
   const closeArtifactPanel = useArtifactPanel((s) => s.close);
-  const splitContainerRef = useRef<HTMLDivElement | null>(null);
+  const [splitContainer, setSplitContainer] = useState<HTMLDivElement | null>(null);
   const acpLoadInFlightKeyRef = useRef<string | null>(null);
   const [promptOrigin, setPromptOrigin] = useState<string | null>(null);
   const familyRequestIdRef = useRef(0);
@@ -690,7 +691,7 @@ export function Chat() {
 
   return (
     <div
-      ref={splitContainerRef}
+      ref={setSplitContainer}
       data-testid="chat-page"
       className={cn(
         'relative flex min-h-0 -m-6 overflow-hidden transition-colors duration-500',
@@ -700,7 +701,7 @@ export function Chat() {
       )}
       style={{ height: isMac ? 'calc(100vh - 1px)' : 'calc(100vh - 2.5rem)' }}
     >
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col', panelMaximized && 'hidden')}>
         <div className={cn(
           'relative flex shrink-0 items-center px-4 py-2',
           isWindows ? 'gap-4' : 'justify-end',
@@ -972,10 +973,10 @@ export function Chat() {
         </div>
       </div>
 
-      {panelOpen && (
+      {panelOpen && splitContainer && (
         <Suspense fallback={null}>
           <ResponsiveArtifactPanelLazy
-            containerRef={splitContainerRef}
+            container={splitContainer}
             fileGroups={fileActivity.fileGroups}
             uniqueFileCount={fileActivity.uniqueFileCount}
             agent={currentAgent}

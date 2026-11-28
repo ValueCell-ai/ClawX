@@ -146,7 +146,9 @@
             "browser": "工作空间"
         },
         "actions": {
-            "back": "返回列表"
+            "back": "返回列表",
+            "maximize": "最大化工作空间面板",
+            "restore": "还原工作空间面板"
         },
         "changes": {
             "heading": "本次改动（{{count}}）",

@@ -628,7 +628,11 @@ export function FilePreviewBody({
         }
         style={headerLeftInset == null ? undefined : { paddingLeft: headerLeftInset }}
       >
-        <div className={cn("flex min-w-0 flex-1 items-center gap-2", !singleLineHeader && "basis-40")}>
+        <div className={cn(
+          'flex min-w-0 flex-1 items-center gap-2',
+          !singleLineHeader && 'basis-40',
+          singleLineHeader && leadingHeader && 'gap-1',
+        )}>
           {leadingHeader}
           <FilePreviewIcon
             contentType={file.contentType}
