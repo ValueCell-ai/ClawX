@@ -16,15 +16,18 @@ test.describe('ClawX chat model picker', () => {
         const sessionModels = new Map<string, string>([[reviewerKey, refs.betaModelRef]]);
         let catalogUnavailable = false;
         const sessionLevels = new Map<string, string>();
-        const profile = (modelRef?: string, selectedLevel?: string) => ({
-          levels: modelRef?.endsWith('/deepseek-v4.1-flash-1017')
-            ? ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].map(id => ({ id, label: id }))
-            : modelRef === refs.betaModelRef ? [{ id: 'high', label: 'on' }] : [
-            { id: 'off', label: 'off' }, { id: 'high', label: 'high' }, { id: 'adaptive', label: 'adaptive' },
-          ],
-          defaultLevel: modelRef === refs.betaModelRef ? 'high' : 'off',
-          selectedLevel,
-        });
+        const profile = (modelRef?: string, selectedLevel?: string) => {
+          if (modelRef?.endsWith('/model-beta-lite')) return undefined;
+          return {
+            levels: modelRef?.endsWith('/deepseek-v4.1-flash-1017')
+              ? ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].map(id => ({ id, label: id }))
+              : modelRef === refs.betaModelRef ? [{ id: 'high', label: 'on' }] : [
+                { id: 'off', label: 'off' }, { id: 'high', label: 'high' }, { id: 'adaptive', label: 'adaptive' },
+              ],
+            defaultLevel: modelRef === refs.betaModelRef ? 'high' : 'off',
+            selectedLevel,
+          };
+        };
         const hostRequests: Array<{ path: string; method: string; body: unknown }> = [];
         const now = new Date().toISOString();
         let releaseProviderAccounts: (() => void) | undefined;
@@ -144,7 +147,7 @@ test.describe('ClawX chat model picker', () => {
             return makeResponse(request.id, agentsSnapshot());
           }
           if (request?.module === 'sessions' && request.action === 'getDraftThinking') {
-            return makeResponse(request.id, profile(String(body?.modelRef)));
+            return makeResponse(request.id, profile(String(body?.modelRef)) ?? null);
           }
           if (request?.module === 'sessions' && request.action === 'getModel') {
             const key = String(body?.sessionKey);
@@ -300,10 +303,22 @@ test.describe('ClawX chat model picker', () => {
       await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('Follow Agent');
       await expect(page.getByTestId('chat-model-picker-menu')).toContainText('provider/model-beta');
       const modelMenu = page.getByTestId('chat-model-picker-menu');
-      const triggerId = await page.getByTestId('chat-model-picker-button').getAttribute('id');
+      const picker = page.getByTestId('chat-model-picker-button');
+      const triggerId = await picker.getAttribute('id');
       expect(triggerId).toBeTruthy();
       await expect(modelMenu).toHaveAttribute('aria-labelledby', triggerId!);
-      const modelScroll = modelMenu.locator('.overflow-y-auto');
+      const strength = modelMenu.getByRole('group', { name: 'Thinking strength' });
+      const strengthLabel = strength.getByTestId('chat-model-picker-thinking-label');
+      const slider = strength.getByRole('slider', { name: 'Thinking strength' });
+      const resetThinking = strength.getByRole('button', { name: 'Restore default', exact: true });
+      await expect(slider).toBeVisible();
+      await expect(resetThinking).toBeDisabled();
+      await expect(resetThinking).toHaveText('');
+      await expect(resetThinking.locator('svg')).toBeVisible();
+      await expect(picker).toContainText('Off');
+      await settleFloatingSurface(modelMenu);
+      const strengthBounds = await strength.boundingBox();
+      const modelScroll = modelMenu.getByRole('listbox');
       const scrollGeometry = await modelScroll.evaluate(element => ({
         gutter: element.offsetWidth - element.clientWidth,
         overflows: element.scrollHeight > element.clientHeight,
@@ -315,19 +330,37 @@ test.describe('ClawX chat model picker', () => {
       expect(await modelScroll.evaluate(element => element.clientWidth)).toBe(scrollGeometry.clientWidth);
       await page.mouse.wheel(0, 160);
       await expect.poll(() => modelScroll.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+      expect((await strength.boundingBox())!.y).toBeCloseTo(strengthBounds!.y, 0);
       await modelScroll.evaluate(element => { element.scrollTop = 0; });
+      await test.step('keeps the open panel and its slider inside a narrow window', async () => {
+        const viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+        try {
+          await page.setViewportSize({ width: 960, height: 620 });
+          await expect.poll(() => modelMenu.evaluate(element => {
+            const panel = element.getBoundingClientRect();
+            const thumb = element.querySelector('input[type="range"]')?.getBoundingClientRect();
+            return panel.left >= 0 && panel.right <= innerWidth && panel.top >= 0 && panel.bottom <= innerHeight
+              && !!thumb && thumb.bottom <= panel.bottom;
+          })).toBe(true);
+        } finally {
+          await page.setViewportSize(viewport);
+        }
+      });
       const alphaGroup = modelMenu.getByRole('group', { name: 'Alpha', exact: true });
       const betaGroup = modelMenu.getByRole('group', { name: 'Beta', exact: true });
-      const alphaOption = alphaGroup.getByRole('menuitemradio', { name: 'model-alpha', exact: true });
-      const betaOption = betaGroup.getByRole('menuitemradio', { name: 'provider/model-beta', exact: true });
-      await expect(alphaOption).toHaveAttribute('aria-checked', 'true');
-      await expect(modelMenu.locator('[role="group"][aria-label]')).toHaveCount(4);
+      const alphaOption = alphaGroup.getByRole('option', { name: 'model-alpha', exact: true });
+      const betaOption = betaGroup.getByRole('option', { name: 'provider/model-beta', exact: true });
+      const secondaryColor = await strengthLabel.evaluate(element => getComputedStyle(element).color);
+      await expect(strength.getByText('Thinking strength', { exact: true })).toHaveCSS('color', secondaryColor);
+      expect(await alphaOption.evaluate(element => getComputedStyle(element).color)).not.toBe(secondaryColor);
+      await expect(alphaOption).toHaveAttribute('aria-selected', 'true');
+      await expect(modelScroll.getByRole('group')).toHaveCount(4);
       await expect(modelMenu.getByText('Beta', { exact: true })).toHaveCount(1);
-      await expect(betaGroup.getByRole('menuitemradio')).toHaveText(['provider/model-beta', 'model-beta-lite', 'model-alpha']);
-      await expect(alphaGroup.getByRole('menuitemradio', { name: 'model-alpha', exact: true })).toBeVisible();
-      await expect(betaGroup.getByRole('menuitemradio', { name: 'model-alpha', exact: true })).toBeVisible();
-      await expect(betaGroup.getByRole('menuitemradio')).not.toContainText(['Beta', 'Beta', 'Beta']);
-      const betaOptions = betaGroup.getByRole('menuitemradio');
+      await expect(betaGroup.getByRole('option')).toHaveText(['provider/model-beta', 'model-beta-lite', 'model-alpha']);
+      await expect(alphaGroup.getByRole('option', { name: 'model-alpha', exact: true })).toBeVisible();
+      await expect(betaGroup.getByRole('option', { name: 'model-alpha', exact: true })).toBeVisible();
+      await expect(betaGroup.getByRole('option')).not.toContainText(['Beta', 'Beta', 'Beta']);
+      const betaOptions = betaGroup.getByRole('option');
       const firstBeta = await betaOptions.nth(0).boundingBox();
       const secondBeta = await betaOptions.nth(1).boundingBox();
       expect(firstBeta!.height).toBe(28);
@@ -343,10 +376,13 @@ test.describe('ClawX chat model picker', () => {
       await expect(page.getByTestId('chat-model-picker-menu')).toContainText('kimi-k2.7');
       await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('kimi-k2.6');
       await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('moonshot/kimi-k2.7');
-      const gptOption = page.getByTestId('chat-model-picker-menu').getByRole('menuitemradio', { name: 'gpt-5.6', exact: true });
+      const gptOption = page.getByTestId('chat-model-picker-menu').getByRole('option', { name: 'gpt-5.6', exact: true });
       await expect(gptOption.getByTestId('chat-model-picker-option-icon')).toHaveAttribute('data-model-icon', 'openai');
-      const kimiOption = page.getByTestId('chat-model-picker-menu').getByRole('menuitemradio', { name: 'kimi-k2.7', exact: true });
+      const kimiOption = page.getByTestId('chat-model-picker-menu').getByRole('option', { name: 'kimi-k2.7', exact: true });
       await expect(kimiOption.getByTestId('chat-model-picker-option-icon')).toHaveAttribute('data-model-icon', 'kimi');
+      await alphaOption.press('k');
+      await expect(kimiOption).toBeFocused();
+      await expect(alphaOption).toHaveAttribute('aria-selected', 'true');
       // Selecting the effective default pins that concrete model to this session.
       await alphaOption.click();
       await expect.poll(() => app.evaluate((_electron, modelRef) => (
@@ -357,8 +393,8 @@ test.describe('ClawX chat model picker', () => {
           && request.body.modelRef === modelRef) ?? false
       ), alphaModelRef)).toBe(true);
       await expect(page.getByTestId('chat-model-picker-button')).toHaveText(/model-alpha/);
-      await page.getByTestId('chat-model-picker-button').click();
-      await expect(alphaOption).toHaveAttribute('aria-checked', 'true');
+      await expect(modelMenu).toHaveAttribute('data-state', 'open');
+      await expect(alphaOption).toHaveAttribute('aria-selected', 'true');
       await app.evaluate(() => {
         (globalThis as typeof globalThis & { __modelAdmissionPending?: boolean }).__modelAdmissionPending = true;
       });
@@ -373,52 +409,51 @@ test.describe('ClawX chat model picker', () => {
       await app.evaluate(() => {
         (globalThis as typeof globalThis & { __modelAdmissionPending?: boolean }).__modelAdmissionPending = false;
       });
-      await page.getByTestId('chat-model-picker-button').click();
-      await expect(alphaOption).toHaveAttribute('aria-checked', 'true');
-      await expect(gptOption).toHaveAttribute('aria-checked', 'false');
+      await expect(modelMenu).toHaveAttribute('data-state', 'open');
+      await expect(alphaOption).toHaveAttribute('aria-selected', 'true');
+      await expect(gptOption).toHaveAttribute('aria-selected', 'false');
       await gptOption.click();
       await expect(page.getByTestId('chat-model-picker-button')).toHaveText(/gpt-5.6/);
       await expect(page.getByTestId('chat-model-picker-current-icon')).toHaveAttribute('data-model-icon', 'openai');
-      const strength = page.getByRole('button', { name: 'Thinking strength' });
-      const slider = page.getByRole('slider', { name: 'Thinking strength' });
+      await expect(modelMenu).toHaveAttribute('data-state', 'open');
+      await test.step('keeps the model list open for a model without thinking levels', async () => {
+        await betaGroup.getByRole('option', { name: 'model-beta-lite', exact: true }).click();
+        await expect(picker).toHaveText('model-beta-lite');
+        await expect(strength).toHaveCount(0);
+        await expect(modelMenu).toHaveAttribute('data-state', 'open');
+      });
       await test.step('switches a DeepSeek Flash session from max to off', async () => {
-        await page.getByTestId('chat-model-picker-button').click();
-        await alphaGroup.getByRole('menuitemradio', { name: 'deepseek-v4.1-flash-1017', exact: true }).click();
-        await strength.click();
+        await alphaGroup.getByRole('option', { name: 'deepseek-v4.1-flash-1017', exact: true }).press('Enter');
         await expect(slider).toHaveAttribute('max', '7');
         await slider.press('End');
-        await expect(strength).toHaveText('Ultra');
+        await expect(picker).toContainText('Ultra');
         await slider.press('ArrowLeft');
-        await expect(strength).toHaveText('Max');
+        await expect(picker).toContainText('Max');
         await slider.press('Home');
-        await expect(strength).toHaveText('Off');
-        await page.keyboard.press('Escape');
-        await expect(slider).toBeHidden();
-        await expect(strength).toBeFocused();
+        await expect(picker).toContainText('Off');
+        await expect(modelMenu).toHaveAttribute('data-state', 'open');
       });
-      await page.getByTestId('chat-model-picker-button').click();
-      await betaGroup.getByRole('menuitemradio', { name: 'model-alpha', exact: true }).click();
-      await expect(page.getByTestId('chat-model-picker-button')).toHaveText('model-alpha');
-      await page.getByTestId('chat-model-picker-button').click();
-      await expect(betaGroup.getByRole('menuitemradio', { name: 'model-alpha', exact: true })).toHaveAttribute('aria-current', 'true');
-      await expect(alphaGroup.getByRole('menuitemradio', { name: 'model-alpha', exact: true })).not.toHaveAttribute('aria-current', 'true');
+      await betaGroup.getByRole('option', { name: 'model-alpha', exact: true }).click();
+      await expect(picker).toContainText('model-alpha');
+      await expect(betaGroup.getByRole('option', { name: 'model-alpha', exact: true })).toHaveAttribute('aria-current', 'true');
+      await expect(alphaGroup.getByRole('option', { name: 'model-alpha', exact: true })).not.toHaveAttribute('aria-current', 'true');
       await betaOption.click();
       await expect(page.getByTestId('chat-model-picker-button')).toHaveText(/provider\/model-beta/);
       await expect(page.getByTestId('chat-model-picker-button')).not.toContainText('Beta');
       await expect(page.getByTestId('chat-model-picker-current-icon')).toHaveAttribute('data-model-icon', 'fallback');
 
-      await strength.click();
       await expect(slider).toHaveCount(0);
-      await page.getByRole('button', { name: 'On', exact: true }).click();
-      await expect(strength).toHaveText('On');
+      await strength.getByRole('button', { name: 'On', exact: true }).click();
+      await expect(strengthLabel).toHaveText('On');
       await page.keyboard.press('Escape');
+      await expect(modelMenu).toBeHidden();
+      await expect(page.getByTestId('chat-composer-input')).toBeFocused();
 
-      const picker = page.getByTestId('chat-model-picker-button');
       for (const sibling of ['sibling', 'other']) {
         await page.getByTestId(`sidebar-session-agent:main:${sibling}`).click();
         await expect(picker).toHaveText(/model-alpha/);
         await picker.click();
-        await expect(alphaOption).toHaveAttribute('aria-checked', 'true');
+        await expect(alphaOption).toHaveAttribute('aria-selected', 'true');
         await expect(page.getByTestId('chat-model-picker-follow-agent')).toHaveCount(0);
         await picker.click();
       }
@@ -426,19 +461,18 @@ test.describe('ClawX chat model picker', () => {
       await page.getByTestId('sidebar-session-agent:main:main').click();
       await expect(picker).toHaveText(/provider\/model-beta/);
       await picker.click();
-      await expect(betaOption).toHaveAttribute('aria-checked', 'true');
+      await expect(betaOption).toHaveAttribute('aria-selected', 'true');
       await alphaOption.click();
       await expect(picker).toHaveText(/model-alpha/);
 
       await page.getByTestId('sidebar-new-chat').click();
       await picker.click();
-      await expect(alphaOption).toHaveAttribute('aria-checked', 'true');
+      await expect(alphaOption).toHaveAttribute('aria-selected', 'true');
       await expect(page.getByTestId('chat-model-picker-follow-agent')).toHaveCount(0);
       await gptOption.click();
       await expect(picker).toHaveText(/gpt-5.6/);
-      await strength.click();
       await expect(slider).toHaveAttribute('max', '2');
-      await settleFloatingSurface(page.getByRole('dialog', { name: 'Thinking strength' }));
+      await settleFloatingSurface(modelMenu);
       const track = await slider.boundingBox();
       if (!track) throw new Error('Thinking slider is not visible');
       const y = track.y + track.height / 2;
@@ -446,15 +480,15 @@ test.describe('ClawX chat model picker', () => {
       await page.mouse.down();
       await page.mouse.move(track.x + track.width / 2, y, { steps: 5 });
       await expect(slider).toHaveAttribute('aria-valuetext', 'High');
-      await expect(strength).toContainText('Default');
+      await expect(picker).toContainText('Off');
       await page.mouse.move(track.x + track.width - 8, y, { steps: 5 });
       await page.mouse.up();
-      await expect(strength).toHaveText('Adaptive');
-      await page.getByRole('button', { name: 'Default', exact: true }).click();
-      await expect(strength).toContainText('Default');
+      await expect(picker).toContainText('Adaptive');
+      await resetThinking.click();
+      await expect(strengthLabel).toHaveText('Default (Off)');
       await slider.focus();
       await slider.press('End');
-      await expect(strength).toHaveText('Adaptive');
+      await expect(picker).toContainText('Adaptive');
       await page.keyboard.press('Escape');
       // Picking in an unsent draft must not create a Gateway conversation.
       expect(await app.evaluate(() => (
@@ -507,8 +541,8 @@ test.describe('ClawX chat model picker', () => {
         await page.getByTestId('sidebar-session-agent:reviewer:primary').click();
         await expect(picker).toHaveText(/provider\/model-beta/);
         await picker.click();
-        await expect(betaOption).toHaveAttribute('aria-checked', 'true');
-        await expect(gptOption).toHaveAttribute('aria-checked', 'false');
+        await expect(betaOption).toHaveAttribute('aria-selected', 'true');
+        await expect(gptOption).toHaveAttribute('aria-selected', 'false');
         await expect(page.getByTestId('chat-model-picker-follow-agent')).toHaveCount(0);
         await gptOption.click();
         await expect(picker).toHaveText(/gpt-5.6/);

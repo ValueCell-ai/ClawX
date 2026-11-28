@@ -89,7 +89,7 @@ export function useSessionModel(
     void hostApi.sessions.getDraftThinking(sessionKey, draftModel).then((thinking) => {
       if (!cancelled) setDraftProfile({ sessionKey, modelRef: draftModel, thinking: thinking ?? undefined });
     }).catch(() => {
-      if (!cancelled) setDraftProfile(null);
+      if (!cancelled) setDraftProfile({ sessionKey, modelRef: draftModel, thinking: undefined });
     });
     return () => { cancelled = true; };
   }, [canRead, draftModel, sessionKey]);
@@ -142,15 +142,15 @@ export function useSessionModel(
   let value: SessionModel | undefined;
   if (draft || local) value = { modelRef: draft ?? null };
   else if (snapshot?.key === sessionKey) value = snapshot.value;
-  let thinking = value?.thinking;
-  if (isDraft) {
-    const profile = draftProfile?.modelRef === draftModel && draftProfile?.sessionKey === sessionKey
-      ? draftProfile.thinking : undefined;
-    thinking = profile && { ...profile, selectedLevel: draftLevel };
-  }
+  const currentDraftProfile = draftProfile?.modelRef === draftModel && draftProfile?.sessionKey === sessionKey
+    ? draftProfile : null;
+  const thinking = isDraft
+    ? currentDraftProfile?.thinking && { ...currentDraftProfile.thinking, selectedLevel: draftLevel }
+    : value?.thinking;
   return {
     value,
     thinking,
+    thinkingLoading: Boolean(draftModel && canRead && !currentDraftProfile),
     select,
     failed: selectionErrors.has(sessionKey),
     writing: writingKey === sessionKey,

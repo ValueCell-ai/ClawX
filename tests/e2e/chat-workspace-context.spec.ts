@@ -1,4 +1,5 @@
 import { expectMenuSelection } from './fixtures/menu-selection';
+import { settleFloatingSurface } from './fixtures/floating-ui';
 import type { ElectronApplication } from '@playwright/test';
 import {
   closeElectronApp,
@@ -483,6 +484,12 @@ test.describe('ClawX chat workspace context', () => {
         `chat-workspace-option-${encodeURIComponent(GLOBAL_WORKSPACE)}`,
       );
       await expect(globalWorkspaceOption).toHaveText('Global project');
+      await settleFloatingSurface(workspaceMenu);
+      const workspaceGaps = await workspaceMenu.getByRole('menuitemradio').evaluateAll(options =>
+        options.slice(1).map((option, index) =>
+          option.getBoundingClientRect().top - options[index].getBoundingClientRect().bottom));
+      expect(workspaceGaps.length).toBeGreaterThanOrEqual(2);
+      for (const gap of workspaceGaps) expect(gap).toBeCloseTo(4, 0);
       await expectMenuSelection(workspaceMenu.locator('[aria-current="true"]'));
       await expect(globalWorkspaceOption.locator('[data-slot="menu-selection-indicator"]')).toHaveCount(0);
       await expect(workspaceMenu.getByTestId('chat-workspace-choose-other')).toBeVisible();

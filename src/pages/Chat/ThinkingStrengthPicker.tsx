@@ -1,9 +1,10 @@
 import { useRef, useState } from 'react';
-import { ChevronDown, Gauge } from 'lucide-react';
+import { RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { ThinkingProfile } from '@shared/host-api/contract';
+import { getThinkingStrengthLabels, thinkingLevelLabel } from './thinking-strength-labels';
 
 export function ThinkingStrengthPicker({ profile, disabled, onSelect }: {
   profile: ThinkingProfile;
@@ -13,19 +14,11 @@ export function ThinkingStrengthPicker({ profile, disabled, onSelect }: {
   const { t } = useTranslation('chat');
   const [preview, setPreview] = useState<number | null>(null);
   const dragging = useRef(false);
-  const { levels, selectedLevel, defaultLevel } = profile;
-  const index = levels.findIndex(({ id }) => id === (selectedLevel ?? defaultLevel));
-  const levelLabel = (label: string) => t(`composer.thinkingLevels.${label}`, { defaultValue: label });
-  const committedLabel = index >= 0 ? levelLabel(levels[index].label) : '';
-  const defaultLabel = levels.find(({ id }) => id === defaultLevel)?.label;
-  const inheritedLabel = defaultLabel
-    ? t('composer.thinkingDefaultLevel', { level: levelLabel(defaultLabel) })
-    : t('composer.thinkingDefault');
-  const currentLabel = selectedLevel
-    ? committedLabel || t('composer.thinkingAdjusted', { level: levelLabel(selectedLevel) })
-    : inheritedLabel;
-  const previewLabel = preview != null && levels[preview] ? levelLabel(levels[preview].label) : currentLabel;
+  const { levels, selectedLevel } = profile;
+  const { index, current } = getThinkingStrengthLabels(profile, t);
+  const previewLabel = preview != null && levels[preview] ? thinkingLevelLabel(t, levels[preview].label) : current;
   const title = t('composer.thinkingStrength');
+  const resetLabel = t('composer.thinkingRestoreDefault');
   const cancelDrag = () => {
     dragging.current = false;
     setPreview(null);
@@ -39,23 +32,14 @@ export function ThinkingStrengthPicker({ profile, disabled, onSelect }: {
   if (levels.length === 0) return null;
 
   return (
-    <Popover onOpenChange={(open) => { if (!open) cancelDrag(); }}>
-      <PopoverTrigger asChild>
-        <Button type="button" variant="ghost" size="sm" title={title} aria-label={title} disabled={disabled}
-          className="h-8 min-w-0 gap-1 px-1.5 text-muted-foreground">
-          <Gauge className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          <span className="truncate">{currentLabel}</span>
-          <ChevronDown className="h-3 w-3 shrink-0" aria-hidden="true" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent side="top" align="end" aria-label={title}
-        className="w-60 space-y-2 rounded-xl border border-border bg-surface-modal p-3 text-foreground shadow-xl">
-        <div className="flex items-baseline justify-between gap-2 text-sm">
-          <span className="font-medium">{title}</span>
-          <span className="text-right text-muted-foreground">{previewLabel}</span>
-        </div>
+    <div className="space-y-1" role="group" aria-label={title}>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-2 text-sm text-muted-foreground">
+        <span>{title}</span>
+        <span data-testid="chat-model-picker-thinking-label">{previewLabel}</span>
+      </div>
+      <div className="flex items-center gap-2">
         {levels.length > 1 ? (
-          <div>
+          <div className="min-w-0 flex-1">
             <input type="range" min={0} max={levels.length - 1} step={1}
               aria-label={title} aria-valuetext={previewLabel} value={preview ?? Math.max(0, index)}
               disabled={disabled} className="block h-5 w-full cursor-pointer accent-primary disabled:opacity-50"
@@ -78,13 +62,18 @@ export function ThinkingStrengthPicker({ profile, disabled, onSelect }: {
         ) : (
           <Button type="button" variant={selectedLevel === levels[0].id ? 'secondary' : 'outline'} size="sm"
             disabled={disabled} aria-pressed={selectedLevel === levels[0].id}
-            className="w-full" onClick={() => commit(0)}>{levelLabel(levels[0].label)}</Button>
+            className="h-7 min-w-0 flex-1 text-muted-foreground" onClick={() => commit(0)}>{thinkingLevelLabel(t, levels[0].label)}</Button>
         )}
-        <Button type="button" variant="ghost" size="sm" disabled={disabled || !selectedLevel} onClick={() => onSelect(null)}
-          className="text-muted-foreground">
-          {t('composer.thinkingDefault')}
-        </Button>
-      </PopoverContent>
-    </Popover>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button type="button" variant="ghost" size="icon" disabled={disabled || !selectedLevel}
+              aria-label={resetLabel} onClick={() => onSelect(null)} className="h-7 w-7 shrink-0 text-muted-foreground">
+              <RotateCcw aria-hidden="true" className="size-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top" align="end">{resetLabel}</TooltipContent>
+        </Tooltip>
+      </div>
+    </div>
   );
 }

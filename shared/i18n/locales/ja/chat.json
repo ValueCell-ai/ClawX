@@ -289,6 +289,7 @@
         "skillEmpty": "一致する Skill がありません",
         "thinkingStrength": "思考の強度",
         "thinkingDefault": "デフォルト",
+        "thinkingRestoreDefault": "既定値に戻す",
         "thinkingDefaultLevel": "デフォルト（{{level}}）",
         "thinkingAdjusted": "{{level}}（モデルが調整）",
         "thinkingFailed": "思考の強度を変更できませんでした。{{error}}",

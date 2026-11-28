@@ -289,6 +289,7 @@
         "skillEmpty": "未找到匹配的技能",
         "thinkingStrength": "思考强度",
         "thinkingDefault": "默认",
+        "thinkingRestoreDefault": "恢复默认",
         "thinkingDefaultLevel": "默认（{{level}}）",
         "thinkingAdjusted": "{{level}}（由模型调整）",
         "thinkingFailed": "无法更改思考强度。{{error}}",

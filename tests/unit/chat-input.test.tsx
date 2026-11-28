@@ -320,7 +320,7 @@ describe('ChatInput execution agent and composer', () => {
     })).toBeInTheDocument();
 
     fireEvent.keyDown(screen.getByTestId('chat-model-picker-button'), { key: 'ArrowDown' });
-    fireEvent.click(screen.getByRole('menuitemradio', { name: 'gpt-b', exact: true }));
+    fireEvent.click(screen.getByRole('option', { name: 'gpt-b', exact: true }));
     await waitFor(() => {
       expect(modelApi.setModel).toHaveBeenCalledWith('agent:main:session-1', 'custom-bbbbbbbb/gpt-b');
     });
@@ -350,7 +350,7 @@ describe('ChatInput execution agent and composer', () => {
     const picker = screen.getByTestId('chat-model-picker-button');
     await waitFor(() => expect(picker).toHaveTextContent('gpt-a'));
     fireEvent.keyDown(picker, { key: 'ArrowDown' });
-    fireEvent.click(screen.getByRole('menuitemradio', { name: 'gpt-b', exact: true }));
+    fireEvent.click(screen.getByRole('option', { name: 'gpt-b', exact: true }));
     expect(modelApi.setModel).toHaveBeenCalledWith(first, 'custom-bbbbbbbb/gpt-b');
     chatState.currentSessionKey = sibling;
     rerender(<TooltipProvider><ChatInput onSend={vi.fn()} /></TooltipProvider>);
@@ -372,14 +372,14 @@ describe('ChatInput execution agent and composer', () => {
     await waitFor(() => expect(picker).toHaveTextContent(label));
     fireEvent.keyDown(picker, { key: 'ArrowDown' });
     expect(screen.queryByTestId('chat-model-picker-follow-agent')).not.toBeInTheDocument();
-    const selected = screen.getByRole('menuitemradio', { name: label, exact: true });
-    expect(selected).toHaveAttribute('aria-checked', 'true');
+    const selected = screen.getByRole('option', { name: label, exact: true });
+    expect(selected).toHaveAttribute('aria-selected', 'true');
     expect(modelApi.setModel).not.toHaveBeenCalled();
     fireEvent.click(selected);
     await waitFor(() => expect(modelApi.setModel).toHaveBeenCalledWith(chatState.currentSessionKey, modelRef));
     await waitFor(() => expect(picker).toBeEnabled());
     fireEvent.keyDown(picker, { key: 'ArrowDown' });
-    expect(screen.getByRole('menuitemradio', { name: label, exact: true })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('option', { name: label, exact: true })).toHaveAttribute('aria-selected', 'true');
     expect(agentsState.updateAgentModel).not.toHaveBeenCalled();
   });
 
@@ -393,7 +393,7 @@ describe('ChatInput execution agent and composer', () => {
     expect(picker).toHaveTextContent('Choose model');
     fireEvent.keyDown(picker, { key: 'ArrowDown' });
     expect(screen.queryByTestId('chat-model-picker-follow-agent')).not.toBeInTheDocument();
-    expect(screen.queryByRole('menuitemradio', { checked: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { selected: true })).not.toBeInTheDocument();
     expect(modelApi.setModel).not.toHaveBeenCalled();
   });
 
@@ -425,7 +425,7 @@ describe('ChatInput execution agent and composer', () => {
     const picker = screen.getByTestId('chat-model-picker-button');
     await waitFor(() => expect(picker).toHaveTextContent('gpt-b'));
     fireEvent.keyDown(picker, { key: 'ArrowDown' });
-    fireEvent.click(screen.getByRole('menuitemradio', { name: 'gpt-a', exact: true }));
+    fireEvent.click(screen.getByRole('option', { name: 'gpt-a', exact: true }));
     await waitFor(() => expect(toastErrorMock).toHaveBeenCalled());
     expect(picker).toHaveTextContent('gpt-b');
     fillComposer(screen.getByRole('textbox'), 'Keep this draft');
@@ -433,8 +433,8 @@ describe('ChatInput execution agent and composer', () => {
     expect(send).not.toHaveBeenCalled();
     expect(composerText(screen.getByRole('textbox'))).toBe('Keep this draft');
     fireEvent.keyDown(picker, { key: 'ArrowDown' });
-    expect(screen.getByRole('menuitemradio', { name: 'gpt-b', exact: true })).toHaveAttribute('aria-checked', 'true');
-    fireEvent.click(screen.getByRole('menuitemradio', { name: 'gpt-a', exact: true }));
+    expect(screen.getByRole('option', { name: 'gpt-b', exact: true })).toHaveAttribute('aria-selected', 'true');
+    fireEvent.click(screen.getByRole('option', { name: 'gpt-a', exact: true }));
     await waitFor(() => expect(picker).toHaveTextContent('gpt-a'));
     expect(modelApi.setModel).toHaveBeenLastCalledWith(chatState.currentSessionKey, 'custom-aaaaaaaa/gpt-a');
   });
@@ -448,7 +448,7 @@ describe('ChatInput execution agent and composer', () => {
     renderChatInput();
     await waitFor(() => expect(modelApi.getModel).toHaveBeenCalledWith(chatState.currentSessionKey));
     fireEvent.keyDown(screen.getByTestId('chat-model-picker-button'), { key: 'ArrowDown' });
-    fireEvent.click(screen.getByRole('menuitemradio', { name: 'gpt-b', exact: true }));
+    fireEvent.click(screen.getByRole('option', { name: 'gpt-b', exact: true }));
     await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith('composer.modelSwitchFailed'));
     expect(modelApi.setModel.mock.calls).toEqual([[chatState.currentSessionKey, 'custom-bbbbbbbb/gpt-b']]);
     expect(useComposerDraftStore.getState().modelRefs).toEqual({});
@@ -461,10 +461,37 @@ describe('ChatInput execution agent and composer', () => {
     renderChatInput();
     const picker = screen.getByTestId('chat-model-picker-button');
     fireEvent.keyDown(picker, { key: 'ArrowDown' });
-    fireEvent.click(screen.getByRole('menuitemradio', { name: 'gpt-b', exact: true }));
+    fireEvent.click(screen.getByRole('option', { name: 'gpt-b', exact: true }));
     await waitFor(() => expect(picker).toHaveTextContent('gpt-b'));
     expect(useComposerDraftStore.getState().modelRefs[chatState.currentSessionKey]).toBe('custom-bbbbbbbb/gpt-b');
     expect(modelApi.getModel).not.toHaveBeenCalled();
+    expect(modelApi.setModel).not.toHaveBeenCalled();
+  });
+
+  it('keeps the model panel open while replacing a draft model’s thinking levels', async () => {
+    configureAgentAndModelPickers();
+    chatState.sessions[0].createdLocally = true;
+    const newProfile = {
+      levels: [{ id: 'low', label: 'low' }, { id: 'high', label: 'high' }, { id: 'max', label: 'max' }],
+      defaultLevel: 'max',
+    };
+    let publishNewProfile!: (profile: typeof newProfile) => void;
+    modelApi.getDraftThinking
+      .mockResolvedValueOnce({ levels: [{ id: 'off', label: 'off' }, { id: 'low', label: 'low' }], defaultLevel: 'low' })
+      .mockImplementationOnce(() => new Promise(resolve => { publishNewProfile = resolve; }));
+
+    renderChatInput();
+    const picker = screen.getByTestId('chat-model-picker-button');
+    fireEvent.keyDown(picker, { key: 'ArrowDown' });
+    expect(await screen.findByRole('slider')).toHaveAttribute('max', '1');
+    fireEvent.click(screen.getByRole('option', { name: 'gpt-b', exact: true }));
+
+    expect(picker).toHaveTextContent('gpt-b');
+    expect(screen.getByTestId('chat-model-picker-menu')).toHaveAttribute('data-state', 'open');
+    expect(screen.queryByRole('slider')).not.toBeInTheDocument();
+    await act(async () => { publishNewProfile(newProfile); });
+    expect(await screen.findByRole('slider')).toHaveAttribute('max', '2');
+    expect(picker).toHaveTextContent('composer.thinkingLevels.max');
     expect(modelApi.setModel).not.toHaveBeenCalled();
   });
 
@@ -487,9 +514,9 @@ describe('ChatInput execution agent and composer', () => {
     await waitFor(() => expect(picker).toHaveTextContent('gpt-b'));
     if (!listed) await waitFor(() => expect(modelApi.getModel).toHaveBeenCalledWith(sessionKey));
     fireEvent.keyDown(picker, { key: 'ArrowDown' });
-    await waitFor(() => expect(screen.getByRole('menuitemradio', { name: 'gpt-b', exact: true })).toHaveAttribute('aria-checked', 'true'));
+    await waitFor(() => expect(screen.getByRole('option', { name: 'gpt-b', exact: true })).toHaveAttribute('aria-selected', 'true'));
     expect(screen.queryByTestId('chat-model-picker-follow-agent')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('menuitemradio', { name: 'gpt-a', exact: true }));
+    fireEvent.click(screen.getByRole('option', { name: 'gpt-a', exact: true }));
     await waitFor(() => expect(picker).toHaveTextContent('gpt-a'));
     expect(useComposerDraftStore.getState().modelRefs).toEqual({ [sessionKey]: 'custom-aaaaaaaa/gpt-a' });
     expect(modelApi.setModel).not.toHaveBeenCalled();
@@ -1182,7 +1209,7 @@ describe('ChatInput execution agent and composer', () => {
     expect(pickerButton).not.toHaveTextContent('(');
 
     fireEvent.keyDown(pickerButton, { key: 'ArrowDown' });
-    const option = screen.getByRole('menuitemradio', { name: 'gpt-b', exact: true });
+    const option = screen.getByRole('option', { name: 'gpt-b', exact: true });
     expect(option).toHaveTextContent('gpt-b');
     expect(option).not.toHaveTextContent('Beta');
     expect(screen.getByRole('group', { name: 'Beta' })).toContainElement(option);

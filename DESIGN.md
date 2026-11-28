@@ -514,6 +514,12 @@ throughout the app, including reopened conversations.
 - Reuse existing feature capabilities before adding another implementation.
   Model choices in assistants, tasks and Usage share ModelPicker. File readers
   share Workspace preview, and configuration forms reuse ConfigDialogContent.
+- The chat model control shows the model name and effective thinking level in
+  one row. Its provider-grouped list scrolls independently of the thinking
+  controls below it. Keep the panel open when changing models and enable the
+  thinking controls once the newly selected model's levels are available.
+  Use secondary text for the thinking label and level. Render restore-default
+  as a labeled icon action beside the level control.
 - In the composer's Agent menu, place the Agent name and its default model in
   one row. Put the shared model icon after the default-model label and next to
   the model name. Preserve access to full truncated labels.

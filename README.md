@@ -187,7 +187,7 @@ Use the model picker in a conversation to choose a specific model for its next m
 
 For configured OpenAI-compatible providers, ClawX recognizes `gpt-6.2-astra` as a Responses reasoning model and supplies its low through max effort levels.
 
-Open **Thinking strength** beside the model picker and drag the slider. Release to apply the level to the conversation. OpenClaw supplies the choices for the selected model and runtime. Choose **Default** to restore automatic selection.
+The chat model button shows the current model and its thinking level when available. Open it to choose a model and adjust **Thinking strength** at the bottom. Drag the slider to preview a level and release to apply it to the conversation. OpenClaw supplies the levels for the selected model. Choose **Restore default** to use the model default.
 
 For enterprise DeepSeek V4.1 Flash (including the `-1017` model), **Off** explicitly disables thinking on the request. Ordinary enabled levels send `high`, while `xhigh` and `max` send `max`.
 

@@ -53,6 +53,7 @@ import type { AsrMicrophoneAccessResult } from '@shared/host-api/contract';
 import { ModelIcon } from '@/components/common/ModelIcon';
 import { ModelPicker } from '@/components/common/ModelPicker';
 import { ThinkingStrengthPicker } from './ThinkingStrengthPicker';
+import { getThinkingStrengthLabels } from './thinking-strength-labels';
 import { AcpSessionPlan } from './AcpSessionPlan';
 import { AcpSubagentSessions, type AcpSubagentSession } from './AcpSubagentSessions';
 
@@ -316,12 +317,14 @@ export function ChatInput({
     gatewayStatus.state === 'running' && gatewayStatus.gatewayReady !== false, sending, agentModelRef);
   const effectiveModelRef = sessionModel.value?.modelRef || sessionModel.value?.effectiveModelRef || agentModelRef;
   const thinking = sessionModel.thinking;
+  const thinkingLabels = thinking?.levels.length ? getThinkingStrengthLabels(thinking, t) : undefined;
+  const hasModelPickerContent = modelOptions.length > 0 || !!thinkingLabels || sessionModel.thinkingLoading;
   const currentModelLabel = useMemo(() => {
     const matchedOption = modelOptions.find((option) => option.modelRef === effectiveModelRef);
     return matchedOption?.modelId || (effectiveModelRef ? formatModelRefLabel(effectiveModelRef) : t('composer.pickModel'));
   }, [effectiveModelRef, modelOptions, t]);
   const showAgentPicker = !!currentAgent;
-  const showModelPicker = modelOptions.length > 0 || !!sessionModel.value?.modelRef;
+  const showModelPicker = hasModelPickerContent || !!sessionModel.value?.modelRef;
   const chatComposerStatusComponents = rendererExtensionRegistry.getChatComposerStatusComponents();
   const isGatewayUsable = gatewayStatus.state === 'running' && gatewayStatus.gatewayReady !== false;
   const inputDisabled = disabled || admitting;
@@ -403,8 +406,12 @@ export function ChatInput({
   }, [inputDisabled]);
 
   useEffect(() => {
-    if (modelOptions.length === 0) setModelPickerOpen(false);
-  }, [modelOptions.length]);
+    setModelPickerOpen(false);
+  }, [currentSessionKey]);
+
+  useEffect(() => {
+    if (!hasModelPickerContent) setModelPickerOpen(false);
+  }, [hasModelPickerContent]);
 
   const handlePickerOpenChange = useCallback((picker: 'agent' | 'skill' | 'model' | 'workspace', open: boolean) => {
     if (picker === 'workspace' && open && workspaceSelectorDisabled) return;
@@ -501,14 +508,11 @@ export function ChatInput({
 
   const handleSelectModel = async (modelRef: string) => {
     if (!currentSessionKey || !currentAgent || sessionModel.writing || admissionInFlight.current) return;
-    setModelPickerOpen(false);
     if (modelRef === sessionModel.value?.modelRef && !sessionModel.failed) return;
     try {
       await sessionModel.select(modelRef);
     } catch (error) {
       if (composerSessionRef.current === currentSessionKey) toast.error(t('composer.modelSwitchFailed', { error: String(error) }));
-    } finally {
-      if (composerSessionRef.current === currentSessionKey) editorRef.current?.focus();
     }
   };
 
@@ -1098,20 +1102,28 @@ export function ChatInput({
                   onValueChange={ref => void handleSelectModel(ref)}
                   disabled={inputDisabled || sending || !currentAgent} busy={sessionModel.writing}
                   onCloseAutoFocus={handlePickerCloseAutoFocus}
+                  panel={{
+                    detail: thinkingLabels?.effective,
+                    footer: thinking?.levels.length ? (
+                      <ThinkingStrengthPicker
+                        key={JSON.stringify([currentSessionKey, effectiveModelRef, thinking.levels.map(({ id }) => id)])}
+                        profile={thinking}
+                        disabled={inputDisabled || sending || sessionModel.writing || !isGatewayUsable}
+                        onSelect={(level) => {
+                          if (sessionModel.writing || admissionInFlight.current) return;
+                          void sessionModel.select(undefined, level).catch((error) => {
+                            if (composerSessionRef.current === currentSessionKey) toast.error(t('composer.thinkingFailed', { error: String(error) }));
+                          });
+                        }}
+                      />
+                    ) : sessionModel.thinkingLoading && (
+                      <div role="status" aria-busy="true" className="flex min-h-12 items-center justify-between gap-2 text-sm text-muted-foreground">
+                        <span>{t('composer.thinkingStrength')}</span>
+                        <Loader2 aria-hidden="true" className="size-4 shrink-0 motion-safe:animate-spin" />
+                      </div>
+                    ),
+                  }}
                 />}
-
-                {thinking && (
-                  <ThinkingStrengthPicker
-                    key={JSON.stringify([currentSessionKey, effectiveModelRef, thinking.levels.map(({ id }) => id)])}
-                    profile={thinking}
-                    disabled={inputDisabled || sending || sessionModel.writing || !isGatewayUsable}
-                    onSelect={(level) => {
-                      void sessionModel.select(undefined, level).catch((error) => {
-                        if (composerSessionRef.current === currentSessionKey) toast.error(t('composer.thinkingFailed', { error: String(error) }));
-                      });
-                    }}
-                  />
-                )}
 
                 {devModeUnlocked && (
                   <VoiceDictationButton
@@ -1185,7 +1197,10 @@ export function ChatInput({
                       data-testid="chat-workspace-menu"
                       className="clawx-menu-list max-h-80 w-64 overflow-y-auto rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10"
                     >
-                      <DropdownMenu.RadioGroup value={isDefaultWorkspacePath(workspacePath) ? "default" : normalizeWorkspacePath(workspacePath) || ""}>
+                      <DropdownMenu.RadioGroup
+                        value={isDefaultWorkspacePath(workspacePath) ? "default" : normalizeWorkspacePath(workspacePath) || ""}
+                        className="clawx-menu-list"
+                      >
                       <DropdownMenu.RadioItem value="default" asChild>
                       <button
                         type="button"
