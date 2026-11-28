@@ -506,6 +506,8 @@ throughout the app, including reopened conversations.
   process to show. Use **View process** when timing is unavailable. Expanding
   shows the original items in order. Detailed mode uses the existing inline
   timeline and its tool controls.
+- Tool cards use a concise localized action name and a matching icon for
+  recognized tools. Keep the recorded argument summary and details available.
 
 ### Interaction and reuse
 

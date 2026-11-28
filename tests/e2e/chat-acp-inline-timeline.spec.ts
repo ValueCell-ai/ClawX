@@ -1851,6 +1851,15 @@ test.describe('ClawX ACP inline timeline', () => {
 
   test('collapses multiple replayed tool calls into one group after the turn completes', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
+    const additionalTools = [
+      { title: 'skills_read: name: weather', label: 'Load skill: name: weather', icon: 'book-open', input: { name: 'weather' } },
+      { title: 'edit: path: weather.md', label: 'Edit file: path: weather.md', icon: 'file-pen-line', input: { path: 'weather.md' } },
+      { title: 'web_search: query: weather', label: 'Search the web: query: weather', icon: 'search', input: { query: 'weather' } },
+      { title: 'wait: id: sample', label: 'Wait for execution: id: sample', icon: 'hourglass', input: { id: 'sample' } },
+      { title: 'tool_search: query: files', label: 'Search tools: query: files', icon: 'search-code', input: { query: 'files' } },
+      { title: 'bash: pwd', label: 'Run command: pwd', icon: 'monitor-play' },
+      { title: 'cron: action: list', label: 'Manage scheduled tasks: action: list', icon: 'calendar-clock', input: { action: 'list' } },
+    ];
 
     try {
       await installAcpChatMocks(app);
@@ -1950,6 +1959,15 @@ test.describe('ClawX ACP inline timeline', () => {
           content: [{ type: 'content', content: { type: 'text', text: 'weather.md' } }],
           locations: [],
         },
+        ...additionalTools.map(({ title, input }, index) => ({
+          sessionUpdate: 'tool_call',
+          toolCallId: `history-localized-tool-${index}`,
+          title,
+          rawInput: input,
+          status: 'completed',
+          content: [{ type: 'content', content: { type: 'text', text: 'Completed sample tool' } }],
+          locations: [],
+        })),
         {
           sessionUpdate: 'agent_message',
           messageId: 'history-assistant',
@@ -1972,7 +1990,7 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(0);
 
       await expandAcpToolCallsGroup(page);
-      await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(11);
+      await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(11 + additionalTools.length);
       await expect(page.getByText('Update plan: plan: [{"step":"Check weather"}]', { exact: true })).toBeVisible();
       await expect(page.getByText('Read web page: url: https://example.com/weather', { exact: true })).toBeVisible();
       await expect(page.getByText('Control browser: action: navigate', { exact: true })).toBeVisible();
@@ -1987,7 +2005,10 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(page.getByTestId('acp-tool-icon-list-checks')).toBeVisible();
       await expect(page.getByTestId('acp-tool-icon-globe')).toBeVisible();
       await expect(page.getByTestId('acp-tool-icon-square-mouse-pointer')).toBeVisible();
-      await expect(page.getByTestId('acp-tool-icon-monitor-play')).toBeVisible();
+      const commandCard = group.getByTestId('acp-tool-call-card').filter({
+        has: page.getByText('Run command: command: pwd', { exact: true }),
+      });
+      await expect(commandCard.getByTestId('acp-tool-icon-monitor-play')).toBeVisible();
       await expect(page.getByTestId('acp-tool-icon-scan-text')).toBeVisible();
       await expect(page.getByTestId('acp-tool-icon-save')).toBeVisible();
       await expect(page.getByTestId('acp-tool-icon-bot')).toBeVisible();
@@ -1995,6 +2016,17 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(page.getByTestId('acp-tool-icon-mouse-pointer-click')).toBeVisible();
       await expect(page.getByTestId('acp-tool-icon-code-xml')).toBeVisible();
       await expect(page.getByTestId('acp-tool-icon-list-tree')).toBeVisible();
+      for (const { label, icon } of additionalTools) {
+        const header = page.getByText(label, { exact: true });
+        const card = group.getByTestId('acp-tool-call-card').filter({ has: header });
+        await expect(header).toBeVisible();
+        await expect(card.getByTestId(`acp-tool-icon-${icon}`)).toBeVisible();
+      }
+      const skillCard = group.getByTestId('acp-tool-call-card').filter({
+        has: page.getByText('Load skill: name: weather', { exact: true }),
+      });
+      await skillCard.getByTestId('acp-tool-toggle').click();
+      await expect(skillCard.getByTestId('acp-tool-input-pre')).toContainText('"name": "weather"');
       const codeCard = page.getByTestId('acp-tool-call-card').filter({ hasText: 'Run code: code: return 1 + 1' });
       await expect(codeCard).toHaveAttribute('data-expanded', 'false');
       await codeCard.getByTestId('acp-tool-toggle').click();

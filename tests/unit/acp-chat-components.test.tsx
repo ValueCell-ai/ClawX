@@ -8,6 +8,7 @@ import { AcpTurnFileActivity } from '@/pages/Chat/AcpTurnFileActivity';
 import type { AcpTimelineSnapshot, AttachmentRenderPart, CompactionItem, ToolCallItem } from '@/lib/acp/timeline-types';
 import type { AcpFileActivityProjection } from '@/lib/acp/openclaw-file-activities';
 import { useArtifactPanel } from '@/stores/artifact-panel';
+import englishChat from '@shared/i18n/locales/en/chat.json';
 
 const openAttachmentMock = vi.hoisted(() => vi.fn());
 const listAttachmentOpenHandlersMock = vi.hoisted(() => vi.fn());
@@ -52,19 +53,14 @@ vi.mock('react-i18next', () => ({
     t: (key: string, options?: Record<string, unknown>) => {
       if (i18nLanguage.value === 'zh' && key === 'acp.turnDuration') return `用时 ${String(options?.duration ?? '')}`;
       if (i18nLanguage.value === 'zh' && key === 'acp.turnElapsed') return `已处理 ${String(options?.duration ?? '')}`;
+      const toolNamePrefix = 'acp.toolName.';
+      if (key.startsWith(toolNamePrefix)) {
+        const toolName = key.slice(toolNamePrefix.length) as keyof typeof englishChat.acp.toolName;
+        return englishChat.acp.toolName[toolName] ?? key;
+      }
       const labels: Record<string, string> = {
         'acp.thought': 'Thought',
         'acp.tool': 'Tool',
-        'acp.toolName.updatePlan': 'Update plan',
-        'acp.toolName.webFetch': 'Read web page',
-        'acp.toolName.browser': 'Control browser',
-        'acp.toolName.execCommand': 'Run command',
-        'acp.toolName.execCode': 'Run code',
-        'acp.toolName.listFiles': 'List files',
-        'acp.toolName.read': 'Read',
-        'acp.toolName.write': 'Write',
-        'acp.toolName.spawnSubagent': 'Spawn subagent',
-        'acp.toolName.memorySearch': 'Search memory',
         'acp.expandTool': 'Expand tool result',
         'acp.collapseTool': 'Collapse tool result',
         'acp.expandToolGroup': 'Expand tool calls',
@@ -1417,11 +1413,40 @@ describe('ACP chat timeline components', () => {
     ['write: path: report.md', undefined, 'Write: path: report.md', 'save'],
     ['sessions_spawn: task: Review', undefined, 'Spawn subagent: task: Review', 'bot'],
     ['memory_search: query: release plan', undefined, 'Search memory: query: release plan', 'database'],
+    ['edit: path: notes.md', undefined, 'Edit file: path: notes.md', 'file-pen-line'],
+    ['apply_patch: input: sample.patch', undefined, 'Apply patch: input: sample.patch', 'file-diff'],
+    ['process: action: list', undefined, 'Manage process: action: list', 'activity'],
+    ['code_execution: language: python', undefined, 'Run remote code: language: python', 'cloud-cog'],
+    ['secrets: action: list', undefined, 'Manage credentials: action: list', 'key-round'],
+    ['web_search: query: release notes', undefined, 'Search the web: query: release notes', 'search'],
+    ['x_search: query: release notes', undefined, 'Search X posts: query: release notes', 'message-square-text'],
+    ['memory_get: path: MEMORY.md', undefined, 'Read memory: path: MEMORY.md', 'file-text'],
+    ['personal_instructions: action: show', undefined, 'Edit personal instructions: action: show', 'user-round-pen'],
+    ['agents_wait: runIds: []', undefined, 'Wait for subagents: runIds: []', 'hourglass'],
+    ['sessions_yield: reason: awaiting report', undefined, 'Wait for follow-up: reason: awaiting report', 'pause'],
+    ['subagents: action: list', undefined, 'Manage background tasks: action: list', 'workflow'],
+    ['skill_workshop: action: list', undefined, 'Manage skills: action: list', 'library-big'],
+    ['skills_search: query: document', undefined, 'Search skills: query: document', 'file-search'],
+    ['skills_read: name: docx', undefined, 'Load skill: name: docx', 'book-open'],
+    ['wait: id: pending', undefined, 'Wait for execution: id: pending', 'hourglass'],
+    ['tool_search: query: file', undefined, 'Search tools: query: file', 'search-code'],
+    ['tool_describe: id: read', undefined, 'View tool details: id: read', 'info'],
+    ['dispatch_action: id: read', undefined, 'Call tool: id: read', 'play'],
+    ['automations: action: list', undefined, 'Manage scheduled tasks: action: list', 'calendar-clock'],
+    ['bash: pwd', undefined, 'Run command: pwd', 'monitor-play'],
+    ['cron: action: list', undefined, 'Manage scheduled tasks: action: list', 'calendar-clock'],
   ])('renders %s with its localized label and icon', (title, input, label, icon) => {
     render(<AcpToolCallCard item={toolCallItem({ title, input, status: 'running', outputParts: [] })} />);
 
     expect(screen.getByTestId('acp-tool-call-card')).toHaveTextContent(label);
     expect(screen.getByTestId(`acp-tool-icon-${icon}`)).toBeInTheDocument();
+  });
+
+  it.each(['llm-task: example', 'constructor'])('keeps the original title and ordinary tool styling for %s', (title) => {
+    render(<AcpToolCallCard item={toolCallItem({ title, status: 'running', outputParts: [] })} />);
+
+    expect(screen.getByText(title, { exact: true })).toBeVisible();
+    expect(screen.queryAllByTestId(/^acp-tool-icon-/)).toHaveLength(0);
   });
 
   it('keeps the wrench before the tool label and places the specialized icon after it for a single tool call', () => {
