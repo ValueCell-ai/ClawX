@@ -758,7 +758,7 @@ while absent ACP content cannot be repaired by changing its React presentation.
 tool families, Code Mode and Tool Search controls, and recorded aliases.
 
 ClawX maintains its own label/icon mapping in
-[`AcpToolCallCard.tsx`](../../src/pages/Chat/AcpToolCallCard.tsx). OpenClaw's tool
+[`tool-call-presentation.ts`](../../src/pages/Chat/tool-call-presentation.ts). OpenClaw's tool
 catalog and WebUI display metadata do not automatically populate that mapping.
 The implemented follow-up is described in
 [`chat-code-and-list-tools`](../specs/tasks/chat-code-and-list-tools.md):

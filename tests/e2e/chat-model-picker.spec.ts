@@ -294,16 +294,41 @@ test.describe('ClawX chat model picker', () => {
       });
 
       await page.getByTestId('sidebar-session-agent:main:main').click();
-      await expect(page.getByTestId('chat-model-picker-button')).toHaveText(/model-alpha/);
-      await expect(page.getByTestId('chat-model-picker-button')).not.toContainText('Alpha');
+      const picker = page.getByTestId('chat-model-picker-button');
+      await expect(picker).toHaveText(/model-alpha/);
+      await expect(picker).not.toContainText('Alpha');
       await expect(page.getByTestId('chat-model-picker-current-icon')).toHaveAttribute('data-model-icon', 'fallback');
-      await page.getByTestId('chat-model-picker-button').click();
+      await test.step('uses a background highlight and stable text colors on composer controls', async () => {
+        const composer = page.getByTestId('chat-composer-box');
+        const controls = [
+          composer.getByRole('button', { name: 'Attach files', exact: true }),
+          composer.getByTestId('chat-composer-agent'),
+          composer.getByTestId('chat-composer-skill'),
+          picker,
+        ];
+        const dark = await page.locator('html').evaluate((element) => element.classList.contains('dark'));
+        const hoverBackground = dark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)';
+        for (const control of controls) {
+          await expect(control).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+          const restingColor = await control.evaluate((element) => getComputedStyle(element).color);
+          await expect.poll(async () => {
+            await control.hover();
+            return control.evaluate((element) => {
+              const { backgroundColor, color } = getComputedStyle(element);
+              return { backgroundColor, color };
+            });
+          }).toEqual({ backgroundColor: hoverBackground, color: restingColor });
+        }
+        await page.locator('html').evaluate((element) => element.classList.toggle('dark'));
+        await expect(picker).toHaveCSS('background-color', dark ? 'rgba(0, 0, 0, 0.05)' : 'rgba(255, 255, 255, 0.1)');
+        await page.locator('html').evaluate((element, originalDark) => element.classList.toggle('dark', originalDark), dark);
+      });
+      await picker.click();
       await expect(page.getByTestId('chat-model-picker-menu')).toBeVisible();
       await expect(page.getByTestId('chat-model-picker-follow-agent')).toHaveCount(0);
       await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('Follow Agent');
       await expect(page.getByTestId('chat-model-picker-menu')).toContainText('provider/model-beta');
       const modelMenu = page.getByTestId('chat-model-picker-menu');
-      const picker = page.getByTestId('chat-model-picker-button');
       const triggerId = await picker.getAttribute('id');
       expect(triggerId).toBeTruthy();
       await expect(modelMenu).toHaveAttribute('aria-labelledby', triggerId!);

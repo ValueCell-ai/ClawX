@@ -1,84 +1,21 @@
 import { useEffect, useState } from 'react';
 import {
-  Activity,
-  BookOpen,
-  Bot,
-  CalendarClock,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
   CircleDashed,
-  CloudCog,
-  CodeXml,
-  Database,
-  FileDiff,
-  FilePenLine,
-  FileSearch,
-  FileText,
-  Globe,
-  Hourglass,
-  Info,
-  KeyRound,
-  LibraryBig,
-  ListChecks,
-  ListTree,
   Loader2,
-  MessageSquareText,
-  MonitorPlay,
-  MousePointerClick,
-  Pause,
-  Play,
-  Save,
-  ScanText,
-  Search,
-  SearchCode,
-  SquareMousePointer,
-  UserRoundPen,
-  Workflow,
   Wrench,
   XCircle,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { Button } from '@/components/ui/button';
 import type { RenderPart, ToolCallItem } from '@/lib/acp/timeline-types';
 import { cn } from '@/lib/utils';
 import { AcpRenderPart } from './AcpMessageSegment';
+import { describeToolCall } from './tool-call-presentation';
 
 const TOOL_AUTO_COLLAPSE_DELAY_MS = 1_000;
-const EXEC_CODE_PRESENTATION = { icon: CodeXml, iconName: 'code-xml', labelKey: 'acp.toolName.execCode' } as const;
-
-const TOOL_PRESENTATIONS = {
-  update_plan: { icon: ListChecks, iconName: 'list-checks', labelKey: 'acp.toolName.updatePlan' },
-  web_fetch: { icon: Globe, iconName: 'globe', labelKey: 'acp.toolName.webFetch' },
-  browser: { icon: SquareMousePointer, iconName: 'square-mouse-pointer', labelKey: 'acp.toolName.browser' },
-  computer: { icon: MousePointerClick, iconName: 'mouse-pointer-click', labelKey: 'acp.toolName.computer' },
-  exec: { icon: MonitorPlay, iconName: 'monitor-play', labelKey: 'acp.toolName.execCommand' },
-  ls: { icon: ListTree, iconName: 'list-tree', labelKey: 'acp.toolName.listFiles' },
-  read: { icon: ScanText, iconName: 'scan-text', labelKey: 'acp.toolName.read' },
-  write: { icon: Save, iconName: 'save', labelKey: 'acp.toolName.write' },
-  sessions_spawn: { icon: Bot, iconName: 'bot', labelKey: 'acp.toolName.spawnSubagent' },
-  memory_search: { icon: Database, iconName: 'database', labelKey: 'acp.toolName.memorySearch' },
-  edit: { icon: FilePenLine, iconName: 'file-pen-line', labelKey: 'acp.toolName.editFile' },
-  apply_patch: { icon: FileDiff, iconName: 'file-diff', labelKey: 'acp.toolName.applyPatch' },
-  process: { icon: Activity, iconName: 'activity', labelKey: 'acp.toolName.manageProcess' },
-  code_execution: { icon: CloudCog, iconName: 'cloud-cog', labelKey: 'acp.toolName.remoteCode' },
-  secrets: { icon: KeyRound, iconName: 'key-round', labelKey: 'acp.toolName.manageCredentials' },
-  web_search: { icon: Search, iconName: 'search', labelKey: 'acp.toolName.webSearch' },
-  x_search: { icon: MessageSquareText, iconName: 'message-square-text', labelKey: 'acp.toolName.xSearch' },
-  memory_get: { icon: FileText, iconName: 'file-text', labelKey: 'acp.toolName.memoryRead' },
-  personal_instructions: { icon: UserRoundPen, iconName: 'user-round-pen', labelKey: 'acp.toolName.editPersonalInstructions' },
-  agents_wait: { icon: Hourglass, iconName: 'hourglass', labelKey: 'acp.toolName.waitSubagents' },
-  sessions_yield: { icon: Pause, iconName: 'pause', labelKey: 'acp.toolName.awaitFollowUp' },
-  subagents: { icon: Workflow, iconName: 'workflow', labelKey: 'acp.toolName.manageBackgroundTasks' },
-  skill_workshop: { icon: LibraryBig, iconName: 'library-big', labelKey: 'acp.toolName.manageSkills' },
-  skills_search: { icon: FileSearch, iconName: 'file-search', labelKey: 'acp.toolName.searchSkills' },
-  skills_read: { icon: BookOpen, iconName: 'book-open', labelKey: 'acp.toolName.loadSkill' },
-  wait: { icon: Hourglass, iconName: 'hourglass', labelKey: 'acp.toolName.waitExecution' },
-  tool_search: { icon: SearchCode, iconName: 'search-code', labelKey: 'acp.toolName.searchTools' },
-  tool_describe: { icon: Info, iconName: 'info', labelKey: 'acp.toolName.describeTool' },
-  dispatch_action: { icon: Play, iconName: 'play', labelKey: 'acp.toolName.dispatchTool' },
-  automations: { icon: CalendarClock, iconName: 'calendar-clock', labelKey: 'acp.toolName.manageAutomations' },
-} as const;
-
 type ExpansionState = {
   toolCallId: string;
   expanded: boolean;
@@ -87,27 +24,6 @@ type ExpansionState = {
 
 function statusLabelKey(status: ToolCallItem['status']): string {
   return `acp.${status}`;
-}
-
-function execPresentation(input: Record<string, unknown> | undefined, titleArguments: string) {
-  if (typeof input?.code === 'string' && input.code.trim()) return EXEC_CODE_PRESENTATION;
-  if (typeof input?.command === 'string' && input.command.trim()) return TOOL_PRESENTATIONS.exec;
-  if (/^code:\s*\S/.test(titleArguments)) return EXEC_CODE_PRESENTATION;
-  if (/^command:\s*\S/.test(titleArguments)) return TOOL_PRESENTATIONS.exec;
-  return undefined;
-}
-
-function resolveToolPresentation(
-  toolName: string,
-  input: Record<string, unknown> | undefined,
-  titleArguments: string,
-) {
-  if (toolName === 'exec') return execPresentation(input, titleArguments);
-  if (toolName === 'bash') return execPresentation(input, titleArguments) ?? TOOL_PRESENTATIONS.exec;
-
-  const name = toolName === 'cron' ? 'automations' : toolName;
-  if (!Object.hasOwn(TOOL_PRESENTATIONS, name)) return undefined;
-  return TOOL_PRESENTATIONS[name as keyof typeof TOOL_PRESENTATIONS];
 }
 
 function formatToolInput(input: unknown): string | null {
@@ -142,23 +58,24 @@ function AcpToolOutputPart({ part }: { part: RenderPart }) {
   return <AcpRenderPart part={part} tone="process" />;
 }
 
-export function AcpToolCallCard({ item, grouped = false }: { item: ToolCallItem; grouped?: boolean }) {
+export function AcpToolCallCard({ item, variant = 'standalone' }: {
+  item: ToolCallItem;
+  variant?: 'standalone' | 'grouped' | 'process';
+}) {
   const { t } = useTranslation('chat');
-  const input = typeof item.input === 'object' && item.input !== null
-    ? item.input as Record<string, unknown>
-    : undefined;
-  const separator = item.title.indexOf(':');
-  const toolName = (separator === -1 ? item.title : item.title.slice(0, separator)).trim();
-  const titleArguments = separator === -1 ? '' : item.title.slice(separator + 1).trim();
-  const presentation = resolveToolPresentation(toolName, input, titleArguments);
-  const ToolIcon = presentation?.icon;
-  const title = presentation
-    ? `${t(presentation.labelKey)}${separator === -1 ? '' : item.title.slice(separator)}`
-    : item.title;
-  const toolInput = formatToolInput(item.input);
+  const { name, argumentsSuffix, presentation, target } = describeToolCall(item);
+  const inProcess = variant === 'process';
+  const standalone = variant === 'standalone';
+  const ToolIcon = presentation?.icon ?? (inProcess ? Wrench : undefined);
+  const title = inProcess
+    ? (presentation ? t(presentation.labelKey) : (name || item.title))
+    : (presentation ? `${t(presentation.labelKey)}${argumentsSuffix}` : item.title);
+  const toolInput = inProcess && item.input === undefined
+    ? argumentsSuffix.slice(1).trim() || null
+    : formatToolInput(item.input);
   const hasDetails = Boolean(item.error) || item.outputParts.length > 0 || toolInput !== null;
   const isFinished = item.status === 'completed' || item.status === 'failed';
-  const shouldStartExpanded = !hasDetails || !(item.historical && isFinished);
+  const shouldStartExpanded = !hasDetails || !((inProcess || item.historical) && isFinished);
   const [expansionState, setExpansionState] = useState<ExpansionState>(() => ({
     toolCallId: item.toolCallId,
     expanded: shouldStartExpanded,
@@ -171,14 +88,14 @@ export function AcpToolCallCard({ item, grouped = false }: { item: ToolCallItem;
   const expanded = (() => {
     if (!hasDetails) return true;
     if (manualOverride) return currentExpansionState.expanded;
-    if (item.historical && isFinished) return false;
+    if ((inProcess || item.historical) && isFinished) return false;
     if (!isFinished) return true;
     return currentExpansionState.expanded;
   })();
 
   useEffect(() => {
     if (manualOverride) return;
-    if (!hasDetails || item.historical || !isFinished) return;
+    if (!hasDetails || inProcess || item.historical || !isFinished) return;
 
     const timer = window.setTimeout(() => {
       setExpansionState((state) => {
@@ -190,20 +107,34 @@ export function AcpToolCallCard({ item, grouped = false }: { item: ToolCallItem;
       });
     }, TOOL_AUTO_COLLAPSE_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [hasDetails, item.historical, isFinished, item.toolCallId, manualOverride, shouldStartExpanded]);
+  }, [hasDetails, inProcess, item.historical, isFinished, item.toolCallId, manualOverride, shouldStartExpanded]);
 
   const toggleLabel = expanded ? t('acp.collapseTool') : t('acp.expandTool');
+  const identity = (
+    <>
+      {standalone && <Wrench className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
+      {standalone && (
+        <span className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('acp.tool')}</span>
+      )}
+      {ToolIcon && <ToolIcon className="size-4 shrink-0 text-muted-foreground" data-testid={presentation && `acp-tool-icon-${presentation.iconName}`} aria-hidden="true" />}
+      <span className={cn('min-w-0 truncate font-medium', inProcess ? 'text-sm' : 'text-xs text-muted-foreground')}>
+        {title}
+        {inProcess && target && <span className="font-normal text-muted-foreground">{' · '}{target}</span>}
+      </span>
+    </>
+  );
 
   return (
     <div
       data-testid="acp-tool-call-card"
       data-expanded={expanded ? 'true' : 'false'}
-      className={cn('w-full min-w-0 rounded-lg px-0', grouped ? 'py-0' : 'py-0.5')}
+      className={cn('w-full min-w-0 rounded-lg px-0', standalone ? 'py-0.5' : 'py-0')}
     >
       <div className="flex min-w-0 items-center justify-between gap-3">
         {hasDetails ? (
-          <button
+          <Button
             type="button"
+            variant="ghost"
             data-testid="acp-tool-toggle"
             onClick={() => {
               setExpansionState((state) => {
@@ -214,29 +145,24 @@ export function AcpToolCallCard({ item, grouped = false }: { item: ToolCallItem;
               });
             }}
             aria-expanded={expanded}
-            aria-label={toggleLabel}
+            aria-label={inProcess ? undefined : toggleLabel}
             title={toggleLabel}
             className={cn(
-              'flex min-w-0 flex-1 items-center gap-2 rounded-lg text-left leading-5 transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 dark:hover:bg-white/10',
-              grouped ? 'px-1 py-1' : 'p-1',
+              'h-auto min-w-0 flex-1 justify-start gap-2 rounded-lg px-1 text-left leading-5',
+              inProcess ? 'py-0.5 text-muted-foreground' : 'py-1',
             )}
           >
             {expanded ? <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" /> : <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
-            {!grouped && <Wrench className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
-            {!grouped && (
-              <span className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('acp.tool')}</span>
-            )}
-            {ToolIcon && <ToolIcon className="h-4 w-4 shrink-0 text-muted-foreground" data-testid={`acp-tool-icon-${presentation.iconName}`} aria-hidden="true" />}
-            <span className="min-w-0 truncate text-xs font-medium text-muted-foreground">{title}</span>
-          </button>
+            {identity}
+          </Button>
         ) : (
-          <div className={cn('flex min-w-0 flex-1 items-center gap-2 leading-5', grouped && 'px-1 py-1')}>
-            {!grouped && <Wrench className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
-            {!grouped && (
-              <span className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('acp.tool')}</span>
-            )}
-            {ToolIcon && <ToolIcon className="h-4 w-4 shrink-0 text-muted-foreground" data-testid={`acp-tool-icon-${presentation.iconName}`} aria-hidden="true" />}
-            <span className="min-w-0 truncate text-xs font-medium text-muted-foreground">{title}</span>
+          <div className={cn(
+            'flex min-w-0 flex-1 items-center gap-2 leading-5',
+            !standalone && 'px-1 py-1',
+            inProcess && 'py-0.5 text-muted-foreground',
+          )}>
+            {inProcess && <span className="size-4 shrink-0" aria-hidden="true" />}
+            {identity}
           </div>
         )}
         <span className="inline-flex shrink-0 items-center gap-1 px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -246,7 +172,7 @@ export function AcpToolCallCard({ item, grouped = false }: { item: ToolCallItem;
       </div>
 
       {hasDetails && (
-        <div className={cn('grid transition-[grid-template-rows] duration-200 ease-out', expanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
+        <div className="clawx-inline-disclosure" data-state={expanded ? 'open' : 'closed'}>
           <div className="min-h-0 overflow-hidden" aria-hidden={!expanded}>
             {item.error && (
               <div className="mt-3 rounded-xl border border-red-500/20 bg-surface-input px-3 py-2 text-sm text-red-700 dark:text-red-400">

@@ -162,7 +162,7 @@ function translate(key: string, vars?: Record<string, unknown>): string {
     case 'composer.skillPreviewNotFound':
       return 'Skill not found';
     case 'composer.contextUsage':
-      return `${String(vars?.percentage ?? '')} context used: ${String(vars?.used ?? '')} / ${String(vars?.total ?? '')} tokens`;
+      return `${String(vars?.percentage ?? '')} context used: ${String(vars?.used ?? '')} / ${String(vars?.total ?? '')} Tokens`;
     case 'acp.subagentSessions.count':
       return `Subagents: ${String(vars?.count ?? '')}`;
     case 'acp.subagentSessions.expand':
@@ -295,14 +295,14 @@ describe('ChatInput execution agent and composer', () => {
   it('shows active ACP context usage in an accessible tooltip', async () => {
     renderChatInput(vi.fn(), { used: 25_000, size: 100_000 });
 
-    const indicator = screen.getByRole('progressbar', { name: '25% context used: 25,000 / 100,000 tokens' });
+    const indicator = screen.getByRole('progressbar', { name: '25% context used: 25 K / 100 K Tokens' });
     expect(indicator).toHaveAttribute('data-testid', 'chat-composer-context-usage');
     expect(indicator).toHaveAttribute('aria-valuenow', '25');
-    expect(indicator).toHaveTextContent('25%');
+    expect(indicator).toHaveTextContent(/^$/);
 
     fireEvent.focus(indicator);
 
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('25% context used: 25,000 / 100,000 tokens');
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('25% context used: 25 K / 100 K Tokens');
   });
 
   it('switches the task model without changing the Agent and accepts refreshed native usage', async () => {
@@ -316,7 +316,7 @@ describe('ChatInput execution agent and composer', () => {
     const { rerender } = render(<TooltipProvider delayDuration={0}><ChatInput draftKey={chatState.currentSessionKey} onSend={vi.fn()} contextUsage={contextUsage} /></TooltipProvider>);
 
     expect(screen.getByRole('progressbar', {
-      name: '17% context used: 68,000 / 400,000 tokens',
+      name: '17% context used: 68 K / 400 K Tokens',
     })).toBeInTheDocument();
 
     fireEvent.keyDown(screen.getByTestId('chat-model-picker-button'), { key: 'ArrowDown' });
@@ -326,7 +326,7 @@ describe('ChatInput execution agent and composer', () => {
     });
     expect(agentsState.updateAgentModel).not.toHaveBeenCalled();
     expect(await screen.findByRole('progressbar', {
-      name: '25% context used: 68,000 / 272,000 tokens',
+      name: '25% context used: 68 K / 272 K Tokens',
     })).toBeInTheDocument();
 
     rerender(
@@ -335,7 +335,7 @@ describe('ChatInput execution agent and composer', () => {
       </TooltipProvider>,
     );
     expect(screen.getByRole('progressbar', {
-      name: '26% context used: 68,000 / 260,000 tokens',
+      name: '26% context used: 68 K / 260 K Tokens',
     })).toBeInTheDocument();
   });
 

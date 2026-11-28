@@ -504,10 +504,19 @@ throughout the app, including reopened conversations.
   available in the turn. Fold only when a reply stays on screen.
 - The duration label becomes a disclosure with a chevron when there is a
   process to show. Use **View process** when timing is unavailable. Expanding
-  shows the original items in order. Detailed mode uses the existing inline
-  timeline and its tool controls.
+  shows the original items in order with a thin, muted leading rule and
+  compact spacing between entries. Use the same brief height transition as
+  tool details when opening the process, and respect reduced motion. Show each
+  tool call as a row that opens its input and output directly. Align the final
+  reply with the transcript column. Detailed mode keeps consecutive tool calls
+  grouped in the inline timeline.
 - Tool cards use a concise localized action name and a matching icon for
-  recognized tools. Keep the recorded argument summary and details available.
+  recognized tools. Concise process rows show the action, status, and a short
+  target when available from the recorded input. The opened row shows the
+  recorded input and output, using the recorded argument summary if the input
+  is unavailable.
+  A tool group header lists the first two distinct action names in call
+  order and adds a localized suffix when more distinct actions follow.
 
 ### Interaction and reuse
 
@@ -525,6 +534,9 @@ throughout the app, including reopened conversations.
 - In the composer's Agent menu, place the Agent name and its default model in
   one row. Put the shared model icon after the default-model label and next to
   the model name. Preserve access to full truncated labels.
+- Composer controls use the shared neutral background on hover with stable
+  label and icon colors. The primary send action uses the primary hover
+  background.
 - Treat consistency as consistent behavior as well as matching colors. Equivalent
   actions and fields across pages share the same components, interaction states,
   density and visual roles. Reuse a shared primitive or capability rather than

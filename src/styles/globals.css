@@ -290,6 +290,23 @@
     .clawx-floating-surface[data-state] { animation: none; }
   }
 
+  .clawx-inline-disclosure {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows 200ms ease-out;
+  }
+  .clawx-inline-disclosure[data-state='closed'] {
+    grid-template-rows: 0fr;
+  }
+  @starting-style {
+    .clawx-inline-disclosure[data-animate-on-mount='true'] {
+      grid-template-rows: 0fr;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .clawx-inline-disclosure { transition: none; }
+  }
+
   .sidebar-nav-text.sidebar-nav-text {
     @apply text-sm font-normal leading-4;
   }

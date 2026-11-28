@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { conciseAssistantTurnItems, groupAcpTimelineItems } from '@/lib/acp/timeline-groups';
+import { conciseAssistantTurn, groupAcpTimelineItems } from '@/lib/acp/timeline-groups';
 import { createEmptyAcpTimeline } from '@/lib/acp/reducer';
 import type { AcpTimelineSnapshot, MessageSegmentItem, TimelineItem, ToolCallItem } from '@/lib/acp/timeline-types';
 
@@ -11,7 +11,7 @@ function timelineWithItems(items: AcpTimelineSnapshot['itemsById']): AcpTimeline
   };
 }
 
-describe('conciseAssistantTurnItems', () => {
+describe('conciseAssistantTurn', () => {
   const message = (id: string): MessageSegmentItem => ({
     kind: 'message-segment', role: 'assistant', id, messageId: id, segmentIndex: 0,
     parts: [{ kind: 'markdown', text: id }],
@@ -29,7 +29,10 @@ describe('conciseAssistantTurnItems', () => {
     };
     const answer = [message('Reply part one'), message('Reply part two')];
     const items = [message('I will inspect'), tool('read'), image, error, message('First findings'), tool('check'), ...answer];
-    expect(conciseAssistantTurnItems(items, 'complete')).toEqual([image, error, ...answer]);
+    expect(conciseAssistantTurn(items, 'complete')).toEqual({
+      items: [image, error, ...answer],
+      processLength: 6,
+    });
   });
 
   it('leaves unconfirmed, unfinished, and reply-less turns inline', () => {
@@ -46,12 +49,16 @@ describe('conciseAssistantTurnItems', () => {
       [{ ...read, status: 'running' }, reply],
       [read, reply, { kind: 'permission', id: 'request', requestId: 'request', title: 'Continue', options: [], status: 'pending' }],
     ];
-    for (const items of cases) expect(conciseAssistantTurnItems(items, 'complete')).toBe(items);
+    for (const items of cases) {
+      const display = conciseAssistantTurn(items, 'complete');
+      expect(display.items).toBe(items);
+      expect(display.processLength).toBe(0);
+    }
 
     const live = [read, reply];
-    expect(conciseAssistantTurnItems(live, 'running')).toBe(live);
-    expect(conciseAssistantTurnItems(live)).toBe(live);
-    expect(conciseAssistantTurnItems([{ ...read, historical: true }, reply])).toEqual([reply]);
+    expect(conciseAssistantTurn(live, 'running')).toEqual({ items: live, processLength: 0 });
+    expect(conciseAssistantTurn(live)).toEqual({ items: live, processLength: 0 });
+    expect(conciseAssistantTurn([{ ...read, historical: true }, reply])).toEqual({ items: [reply], processLength: 1 });
   });
 });
 

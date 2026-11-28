@@ -838,7 +838,7 @@ test.describe('ClawX ACP inline timeline', () => {
 
       await oldConversation.click();
       await expect(page.getByTestId('acp-assistant-message')).toContainText('Previous answer');
-      await expect(page.getByRole('progressbar', { name: '2% context used: 18,554 / 1,048,576 tokens' })).toBeVisible();
+      await expect(page.getByRole('progressbar', { name: '2% context used: 18.6 K / 1,048.6 K Tokens' })).toBeVisible();
       await expect(page.getByTestId('acp-chat-timeline')).not.toContainText('Start an independent task');
       expect((await getRecordedAcpLoadSessionKeys(app)).at(-1)).toBe(MAIN_SESSION_KEY);
     } finally {
@@ -865,11 +865,13 @@ test.describe('ClawX ACP inline timeline', () => {
         { sessionUpdate: 'usage_update', used: 25_000, size: 100_000 },
       ]);
 
-      const indicator = page.getByRole('progressbar', { name: '25% context used: 25,000 / 100,000 tokens' });
+      const indicator = page.getByRole('progressbar', { name: '25% context used: 25 K / 100 K Tokens' });
       await expect(indicator).toBeVisible({ timeout: 30_000 });
       await expect(indicator).toHaveAttribute('data-testid', 'chat-composer-context-usage');
       await expect(indicator).toHaveAttribute('aria-valuenow', '25');
-      await expect(indicator).toContainText('25%');
+      await expect(indicator).toHaveText('');
+      await expect(indicator.locator('svg')).toHaveCSS('height', '20px');
+      await expect(indicator).toHaveCSS('width', '20px');
       await expect(page.getByTestId('chat-composer-footer').getByTestId('chat-composer-context-usage')).toHaveCount(0);
       await expect(page.getByTestId('chat-composer-model-controls').getByTestId('chat-composer-context-usage')).toBeVisible();
       await expect(page.getByTestId('chat-composer-model-controls').locator(':scope > *').first()).toHaveAttribute('data-testid', 'chat-composer-context-usage');
@@ -879,8 +881,9 @@ test.describe('ClawX ACP inline timeline', () => {
       expect(sendBox).toBeTruthy();
       expect(indicatorBox!.x).toBeLessThan(sendBox!.x);
       expect(Math.abs(indicatorBox!.y + indicatorBox!.height / 2 - sendBox!.y - sendBox!.height / 2)).toBeLessThan(2);
-      await indicator.focus();
-      await expect(page.getByRole('tooltip')).toHaveText('25% context used: 25,000 / 100,000 tokens');
+      await expect(page.getByRole('tooltip')).toHaveCount(0);
+      await indicator.hover();
+      await expect(page.getByRole('tooltip')).toHaveText('25% context used: 25 K / 100 K Tokens');
       await page.setViewportSize({ width: 900, height: 650 });
       await expect(indicator).toBeInViewport();
       await expect(page.getByTestId('chat-composer-send')).toBeInViewport();
@@ -1163,6 +1166,7 @@ test.describe('ClawX ACP inline timeline', () => {
       const turn = page.getByTestId('acp-assistant-turn');
       const duration = turn.getByTestId('acp-turn-duration');
       const separator = turn.getByTestId('acp-turn-duration-separator');
+      const process = turn.getByTestId('acp-turn-process');
       const tool = turn.getByTestId('acp-tool-call-card');
       const progress = turn.getByText('I will read the activity log.', { exact: true });
       const reply = turn.getByTestId('acp-assistant-message').filter({ hasText: 'Historical turn measured' });
@@ -1171,37 +1175,74 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(duration).toHaveText('Took 6 sec');
       await expect(duration).toHaveCSS('font-size', '14px');
       await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      await expect(process).toHaveCount(0);
       await expect(progress).toHaveCount(0);
       await expect(tool).toHaveCount(0);
+      const restingColor = await toggle.evaluate((element) => getComputedStyle(element).color);
+      const foregroundColor = await reply.evaluate((element) => getComputedStyle(element).color);
+      expect(restingColor).not.toBe(foregroundColor);
+      await toggle.hover();
+      await expect(toggle).toHaveCSS('color', foregroundColor);
+      await expect(toggle).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+      await page.evaluate(() => document.documentElement.classList.toggle('dark'));
+      await expect.poll(async () => {
+        const currentForeground = await reply.evaluate((element) => getComputedStyle(element).color);
+        const currentHoverColor = await toggle.evaluate((element) => getComputedStyle(element).color);
+        return currentForeground !== foregroundColor && currentHoverColor === currentForeground;
+      }).toBe(true);
+      await expect(toggle).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+      await page.evaluate(() => document.documentElement.classList.toggle('dark'));
+      await page.emulateMedia({ reducedMotion: 'no-preference' });
+      await turn.evaluate((element) => {
+        element.addEventListener('transitionrun', (event) => {
+          if (event.propertyName === 'grid-template-rows' && event.target instanceof HTMLElement
+            && event.target.hasAttribute('data-animate-on-mount')) {
+            element.setAttribute('data-process-transition-ran', 'true');
+          }
+        });
+      });
       await toggle.press('Enter');
       await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-      await expect(progress).toBeVisible();
-      await expect(tool).toBeVisible();
+      await expect(turn).toHaveAttribute('data-process-transition-ran', 'true');
+      await expect(process.getByText('I will read the activity log.', { exact: true })).toBeVisible();
+      await expect(progress).toHaveCSS('font-size', '16px');
+      await expect(process.getByTestId('acp-tool-call-card')).toBeVisible();
+      await expect(process).toHaveCSS('border-left-width', '1px');
+      await expect(process).toHaveCSS('row-gap', '6px');
       await expect.poll(async () => {
-        const [toggleBounds, separatorBounds, progressBounds, toolBounds, replyBounds] = await Promise.all([
+        const [toggleBounds, durationBounds, separatorBounds, processBounds, progressBounds, toolBounds, replyBounds] = await Promise.all([
           toggle.boundingBox(),
+          duration.boundingBox(),
           separator.boundingBox(),
+          process.boundingBox(),
           progress.boundingBox(),
           tool.boundingBox(),
           reply.boundingBox(),
         ]);
-        const textRight = await duration.evaluate((element) => {
-          const range = document.createRange();
-          range.selectNodeContents(element);
-          return range.getBoundingClientRect().right;
-        });
-        return !!toggleBounds && !!separatorBounds && !!progressBounds && !!toolBounds && !!replyBounds
+        return !!toggleBounds && !!durationBounds && !!separatorBounds && !!processBounds && !!progressBounds && !!toolBounds && !!replyBounds
+          && separatorBounds.x === durationBounds.x
           && separatorBounds.x === toggleBounds.x
+          && separatorBounds.x === replyBounds.x
+          && processBounds.x === replyBounds.x + 8
+          && progressBounds.x > replyBounds.x && toolBounds.x > replyBounds.x
           && separatorBounds.width === toggleBounds.width
           && separatorBounds.width < replyBounds.width
-          && separatorBounds.x + separatorBounds.width > textRight
+          && separatorBounds.x + separatorBounds.width > durationBounds.x + durationBounds.width
           && toggleBounds.y + toggleBounds.height < separatorBounds.y
           && separatorBounds.y + separatorBounds.height < progressBounds.y
           && progressBounds.y < toolBounds.y && toolBounds.y < replyBounds.y;
       }).toBe(true);
       await toggle.click();
+      await expect(process).toHaveCount(0);
       await expect(progress).toHaveCount(0);
       await expect(reply).toBeVisible();
+
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await toggle.click();
+      await expect(process).toBeVisible();
+      await expect(turn.locator('[data-animate-on-mount]')).toHaveCSS('transition-property', 'none');
+      await toggle.click();
+      await expect(process).toHaveCount(0);
 
       await navigateToSection(page, 'general');
       const display = page.getByRole('group', { name: 'Reply display' });
@@ -1212,9 +1253,11 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(detailed).toHaveAttribute('aria-pressed', 'true');
       await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
       await expect(progress).toBeVisible();
+      await expect(progress).toHaveCSS('font-size', '16px');
       await expect(tool).toBeVisible();
       await expect(reply).toBeVisible();
       await expect(toggle).toHaveCount(0);
+      await expect(process).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }
@@ -1606,14 +1649,20 @@ test.describe('ClawX ACP inline timeline', () => {
       ]);
       expect(messageBounds!.x).toBeCloseTo(timelineBounds!.x, 0);
 
-      await assistantMessage.hover();
       const copyButton = page.getByTestId('acp-assistant-copy');
+      await expect(copyButton).toHaveCSS('opacity', '0');
+      await assistantMessage.hover();
+      await expect(copyButton).toHaveCSS('opacity', '1');
+      await expect(copyButton).toHaveCSS('width', '24px');
+      await expect(copyButton).toHaveCSS('height', '24px');
       await expect.poll(async () => {
         const [assistantBox, copyBox] = await Promise.all([
           assistantMessage.boundingBox(),
           copyButton.boundingBox(),
         ]);
-        return !!assistantBox && !!copyBox && copyBox.x <= assistantBox.x + 8;
+        if (!assistantBox || !copyBox) return false;
+        const gap = copyBox.y - assistantBox.y - assistantBox.height;
+        return copyBox.x <= assistantBox.x + 8 && gap >= 0 && gap <= 8;
       }).toBe(true);
       await copyButton.click();
 
@@ -1849,7 +1898,7 @@ test.describe('ClawX ACP inline timeline', () => {
     }
   });
 
-  test('collapses multiple replayed tool calls into one group after the turn completes', async ({ launchElectronApp }) => {
+  test('shows replayed tool calls directly in Concise and keeps the group in Detailed', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
     const additionalTools = [
       { title: 'skills_read: name: weather', label: 'Load skill: name: weather', icon: 'book-open', input: { name: 'weather' } },
@@ -1982,14 +2031,51 @@ test.describe('ClawX ACP inline timeline', () => {
       const page = await openChat(app, MAIN_SESSION_KEY);
 
       await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
-      await page.getByRole('button', { name: 'Took 12 sec', exact: true }).click();
+      const duration = page.getByRole('button', { name: 'Took 12 sec', exact: true });
+      const process = page.getByTestId('acp-turn-process');
       const group = page.getByTestId('acp-tool-calls-group');
+      const reply = page.getByText('Hangzhou is cloudy today.', { exact: true });
+      await expect(reply).toBeVisible();
+      await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(0);
+      await duration.click();
+      await expect(group).toHaveCount(0);
+
+      const processCards = process.getByTestId('acp-tool-call-card');
+      await expect(processCards).toHaveCount(11 + additionalTools.length);
+      await expect(processCards.nth(0).getByRole('button', { name: 'Update plan', exact: true })).toBeVisible();
+      await expect(processCards.nth(0).getByText('Update plan', { exact: true })).toHaveCSS('font-size', '14px');
+      const fetchToggle = processCards.nth(1).getByRole('button', { name: 'Read web page', exact: true });
+      await expect(fetchToggle).toHaveAttribute('aria-expanded', 'false');
+      await fetchToggle.click();
+      await expect(processCards.nth(1).getByTestId('acp-tool-input-pre')).toBeVisible();
+      await expect(processCards.nth(1).getByTestId('acp-tool-input-pre')).toHaveText('url: https://example.com/weather');
+      await fetchToggle.click();
+      await expect(processCards.nth(2).getByText('Failed', { exact: true })).toBeVisible();
+      const code = processCards.nth(9);
+      const codeToggle = code.getByRole('button', { name: 'Run code', exact: true });
+      await expect(codeToggle).toHaveAttribute('aria-expanded', 'false');
+      await codeToggle.click();
+      await expect(code.getByTestId('acp-tool-input-pre')).toBeVisible();
+      await expect(code.getByTestId('acp-tool-input-pre')).toContainText('const total = 1 + 1;');
+      await expect(code.getByTestId('acp-tool-output-pre')).toHaveText('2');
+      await expect(process.getByRole('button', { name: 'Load skill · weather', exact: true })).toBeVisible();
+      await expect(reply).toBeVisible();
+
+      await navigateToSection(page, 'general');
+      const display = page.getByRole('group', { name: 'Reply display' });
+      await display.getByRole('button', { name: 'Detailed' }).click();
+      await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
+      await expect(duration).toHaveCount(0);
+      await expect(process).toHaveCount(0);
       await expect(group).toBeVisible();
       await expect(group).toHaveAttribute('data-collapsed', 'true');
+      const groupSummary = 'Update plan, Read web page and more';
+      await expect(group).toHaveText(groupSummary);
       await expect(group.locator('svg').first()).not.toHaveClass(/group-hover:translate-x-0\.5/);
       await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(0);
 
       await expandAcpToolCallsGroup(page);
+      await expect(group.getByTestId('acp-tool-calls-group-collapse')).toHaveText(groupSummary);
       await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(11 + additionalTools.length);
       await expect(page.getByText('Update plan: plan: [{"step":"Check weather"}]', { exact: true })).toBeVisible();
       await expect(page.getByText('Read web page: url: https://example.com/weather', { exact: true })).toBeVisible();

@@ -1,5 +1,6 @@
 import { forwardRef, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { ChevronDown, Loader2 } from 'lucide-react';
+import { ghostButtonHoverBackground } from '@/components/ui/button';
 import * as DropdownMenu from '@/components/ui/dropdown-menu';
 import { MenuSelectionIndicator } from '@/components/ui/menu-selection';
 import { menuOptionStateClass } from '@/components/ui/menu-selection-styles';
@@ -152,7 +153,8 @@ export const ModelPicker = forwardRef<HTMLButtonElement, ModelPickerProps>(funct
         }
       } : undefined}
       className={cn(
-        'inline-flex h-8 min-w-0 max-w-[140px] items-center gap-1 rounded-lg px-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 sm:max-w-[220px]',
+        'inline-flex h-8 min-w-0 max-w-[140px] items-center gap-1 rounded-lg px-1.5 text-sm font-medium text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 sm:max-w-[220px]',
+        panel ? ghostButtonHoverBackground : 'hover:bg-transparent hover:text-foreground',
         (isOpen || busy) && 'text-foreground', className,
       )}
     >

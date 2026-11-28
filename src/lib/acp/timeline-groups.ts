@@ -41,22 +41,27 @@ function keepProcessItemVisible(item: TimelineItem): boolean {
   return parts.some((part) => part.kind === 'attachment' || part.kind === 'image' || part.kind === 'error');
 }
 
-export function conciseAssistantTurnItems(items: TimelineItem[], status?: AcpTurnTiming['status']): TimelineItem[] {
-  if (status === 'running' || items.some(isPendingActivity)) return items;
+export function conciseAssistantTurn(items: TimelineItem[], status?: AcpTurnTiming['status']) {
+  const fullTurn = { items, processLength: 0 };
+  if (status === 'running' || items.some(isPendingActivity)) return fullTurn;
 
   // Tool updates reuse the original timeline item. Find the boundary in display order.
   for (let index = items.length - 1; index >= 0; index -= 1) {
     const tool = items[index];
     if (tool.kind !== 'tool-call') continue;
-    if (status !== 'complete' && !tool.historical) return items;
+    if (status !== 'complete' && !tool.historical) return fullTurn;
 
     const hasReply = items.slice(index + 1).some((item) => (
       item.kind === 'message-segment' && item.role === 'assistant' && !item.compat?.provisionalText
       && item.parts.some((part) => part.kind === 'markdown' && part.text.trim().length > 0)
     ));
-    return hasReply ? items.filter((item, itemIndex) => itemIndex > index || keepProcessItemVisible(item)) : items;
+    if (!hasReply) return fullTurn;
+    return {
+      items: items.filter((item, itemIndex) => itemIndex > index || keepProcessItemVisible(item)),
+      processLength: index + 1,
+    };
   }
-  return items;
+  return fullTurn;
 }
 
 function isUserMessageSegment(item: TimelineItem): item is MessageSegmentItem & { role: 'user' } {

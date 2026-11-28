@@ -3,6 +3,7 @@ import { AlertCircle, Check, Copy } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Streamdown, type Components } from 'streamdown';
 import { BrowserLink } from '@/components/common/BrowserLink';
+import { Button } from '@/components/ui/button';
 import {
   streamdownAnimation,
   streamdownControls,
@@ -155,22 +156,22 @@ export function AcpAssistantHoverBar({ text }: { text: string }) {
   const label = copied ? t('acp.copied') : t('acp.copy');
 
   return (
-    <div className="flex w-full justify-start px-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
-      <button
-        type="button"
-        data-testid="acp-assistant-copy"
-        aria-label={label}
-        title={label}
-        onClick={() => void copyContent()}
-        className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 dark:hover:bg-white/10"
-      >
-        {copied ? (
-          <Check className="h-3.5 w-3.5 text-green-700 dark:text-green-400" aria-hidden="true" />
-        ) : (
-          <Copy className="h-3.5 w-3.5" aria-hidden="true" />
-        )}
-      </button>
-    </div>
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      data-testid="acp-assistant-copy"
+      aria-label={label}
+      title={label}
+      onClick={() => void copyContent()}
+      className="-my-1 size-6 text-muted-foreground opacity-0 transition duration-150 group-hover:opacity-100 group-focus-within:opacity-100 motion-reduce:transition-none"
+    >
+      {copied ? (
+        <Check className="size-3 text-green-700 dark:text-green-400" aria-hidden="true" />
+      ) : (
+        <Copy className="size-3" aria-hidden="true" />
+      )}
+    </Button>
   );
 }
 

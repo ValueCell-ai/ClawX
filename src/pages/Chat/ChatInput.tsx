@@ -11,7 +11,7 @@ import {
   type SetStateAction,
 } from 'react';
 import { CircleAlert, SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, Bot, ChevronDown } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button, ghostButtonHoverBackground } from '@/components/ui/button';
 import * as DropdownMenu from '@/components/ui/dropdown-menu';
 import { hasFloatingSurface } from '@/components/ui/floating-ui';
 import { Popover, PopoverTrigger } from '@/components/ui/popover';
@@ -124,14 +124,22 @@ function getContextUsage(value: unknown, modelContextWindow?: number): ContextUs
   };
 }
 
+function createContextTokenFormatter(locale?: string) {
+  const number = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 });
+  return (tokens: number) => {
+    const thousands = tokens / 1_000;
+    return thousands > 0 && thousands < 0.1
+      ? `< ${number.format(0.1)} K`
+      : `${number.format(thousands)} K`;
+  };
+}
+
 function ContextUsageIndicator({
   usage,
   label,
-  percentageLabel,
 }: {
   usage: ContextUsage;
   label: string;
-  percentageLabel: string;
 }) {
   const radius = 7;
   const circumference = 2 * Math.PI * radius;
@@ -151,9 +159,9 @@ function ContextUsageIndicator({
           aria-valuemax={100}
           aria-valuenow={roundedPercent}
           aria-valuetext={label}
-          className="inline-flex shrink-0 items-center gap-1 rounded-md px-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+          className="inline-flex shrink-0 items-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
         >
-          <svg viewBox="0 0 20 20" className="h-3 w-3 text-primary" aria-hidden="true">
+          <svg viewBox="0 0 20 20" className="size-5 text-primary" aria-hidden="true">
             <circle cx="10" cy="10" r={radius} fill="none" stroke="currentColor" strokeWidth="2" className="text-black/10 dark:text-white/15" />
             <circle
               cx="10"
@@ -168,9 +176,6 @@ function ContextUsageIndicator({
               transform="rotate(-90 10 10)"
             />
           </svg>
-          <span aria-hidden="true" className="text-tiny font-medium tabular-nums">
-            {percentageLabel}
-          </span>
         </span>
       </TooltipTrigger>
       <TooltipContent side="top" className="text-xs">
@@ -361,14 +366,15 @@ export function ChatInput({
     ? undefined
     : sessionModel.value?.contextWindow ?? (!sessionModel.value?.modelRef ? currentAgent?.contextWindow : undefined);
   const activeContextUsage = getContextUsage(contextUsage, contextWindowOverride);
-  const contextUsagePercentage = activeContextUsage
-    ? new Intl.NumberFormat(i18n.resolvedLanguage, { style: 'percent', maximumFractionDigits: 0 }).format(activeContextUsage.percent / 100)
-    : null;
-  const contextUsageLabel = activeContextUsage && contextUsagePercentage
+  const formatContextTokens = useMemo(
+    () => createContextTokenFormatter(i18n.resolvedLanguage),
+    [i18n.resolvedLanguage],
+  );
+  const contextUsageLabel = activeContextUsage
     ? t('composer.contextUsage', {
-      percentage: contextUsagePercentage,
-      used: new Intl.NumberFormat(i18n.resolvedLanguage).format(activeContextUsage.used),
-      total: new Intl.NumberFormat(i18n.resolvedLanguage).format(activeContextUsage.size),
+      percentage: new Intl.NumberFormat(i18n.resolvedLanguage, { style: 'percent', maximumFractionDigits: 0 }).format(activeContextUsage.percent / 100),
+      used: formatContextTokens(activeContextUsage.used),
+      total: formatContextTokens(activeContextUsage.size),
     })
     : null;
   useEffect(() => {
@@ -987,7 +993,7 @@ export function ChatInput({
               <Button
                 variant="ghost"
                 size="icon"
-                className="shrink-0 h-8 w-8 rounded-lg text-muted-foreground hover:bg-black/5 dark:hover:bg-white/10 hover:text-foreground transition-colors"
+                className="shrink-0 h-8 w-8 rounded-lg text-muted-foreground hover:text-muted-foreground"
                 onClick={pickFiles}
                 disabled={inputDisabled || sending}
                 title={t('composer.attachFiles')}
@@ -1003,7 +1009,7 @@ export function ChatInput({
                     variant="ghost"
                     data-testid="chat-composer-agent"
                     className={cn(
-                      'h-8 gap-1.5 rounded-lg px-1.5 text-meta text-foreground/80 hover:bg-black/5 dark:hover:bg-white/10 transition-colors',
+                      'h-8 gap-1.5 rounded-lg px-1.5 text-meta text-foreground/80 hover:text-foreground/80',
                       pickerOpen && 'bg-black/5 dark:bg-white/10'
                     )}
                     disabled={sending || imageGenerating || admitting || sessionModel.writing}
@@ -1057,7 +1063,8 @@ export function ChatInput({
                       type="button"
                       data-testid="chat-composer-skill"
                       className={cn(
-                        'inline-flex h-8 items-center gap-1 rounded-lg px-1.5 text-meta font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50',
+                        'inline-flex h-8 items-center gap-1 rounded-lg px-1.5 text-meta font-medium text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50',
+                        ghostButtonHoverBackground,
                         skillPickerOpen && 'text-foreground',
                       )}
                       disabled={inputDisabled || sending}
@@ -1085,11 +1092,10 @@ export function ChatInput({
               </div>
 
               <div data-testid="chat-composer-model-controls" className="ml-auto flex min-w-0 items-center gap-1">
-                {activeContextUsage && contextUsageLabel && contextUsagePercentage && (
+                {activeContextUsage && contextUsageLabel && (
                   <ContextUsageIndicator
                     usage={activeContextUsage}
                     label={contextUsageLabel}
-                    percentageLabel={contextUsagePercentage}
                   />
                 )}
                 {showModelPicker && <ModelPicker
@@ -1144,10 +1150,10 @@ export function ChatInput({
                   data-testid="chat-composer-send"
                   className={`shrink-0 h-8 w-8 rounded-full transition-colors motion-reduce:transition-none ${
                     (sending || canSend)
-                      ? 'bg-primary-action text-primary-foreground shadow-sm hover:bg-primary-action-hover'
+                      ? 'shadow-sm'
                       : 'text-muted-foreground/50 hover:bg-transparent bg-transparent'
                   }`}
-                  variant="ghost"
+                  variant={sending || canSend ? 'default' : 'ghost'}
                   title={sending ? t('composer.stop') : t('composer.send')}
                 >
                   {sending ? (
@@ -1181,7 +1187,7 @@ export function ChatInput({
                       'text-meta font-medium text-foreground/75 transition-colors',
                       workspaceSelectorDisabled
                         ? 'cursor-default border-transparent opacity-80'
-                        : 'hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10',
+                        : ghostButtonHoverBackground,
                     )}
                   >
                     <FolderOpen className="h-3 w-3 shrink-0" />

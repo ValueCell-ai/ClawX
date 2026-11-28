@@ -18,6 +18,7 @@ touchedAreas:
 expectedUserBehavior:
   - Concise is the local default. Detailed keeps the inline timeline and persists across reloads.
   - Each eligible turn can expand its process from the duration label or View process.
+  - In the expanded Concise process, each tool opens its own details directly. Detailed keeps consecutive tool calls grouped.
   - Running and unresolved turns and turns without a reply after the last tool stay inline.
 requiredProfiles:
   - fast

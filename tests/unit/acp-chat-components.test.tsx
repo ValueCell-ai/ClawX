@@ -65,7 +65,8 @@ vi.mock('react-i18next', () => ({
         'acp.collapseTool': 'Collapse tool result',
         'acp.expandToolGroup': 'Expand tool calls',
         'acp.collapseToolGroup': 'Collapse tool calls',
-        'acp.toolGroupSummary': '{{count}} tool calls',
+        'acp.toolGroupActionSeparator': englishChat.acp.toolGroupActionSeparator,
+        'acp.toolGroupMoreActions': englishChat.acp.toolGroupMoreActions,
         'acp.permission': 'Permission',
         'acp.plan': 'Plan',
         'acp.running': 'Running',
@@ -823,7 +824,7 @@ describe('ACP chat timeline components', () => {
     const message = screen.getByTestId('acp-assistant-message');
     const duration = screen.getByTestId('acp-turn-duration');
     expect(screen.queryByTestId('acp-turn-file-activity')).not.toBeInTheDocument();
-    expect(message.previousElementSibling).toBe(duration.parentElement);
+    expect(message.previousElementSibling).toContainElement(duration);
   });
 
   it('routes deleted path-only activity to Changes without rendering counts', () => {
@@ -1172,8 +1173,32 @@ describe('ACP chat timeline components', () => {
 
     const group = screen.getByTestId('acp-tool-calls-group');
     expect(group).toHaveAttribute('data-collapsed', 'true');
-    expect(group).toHaveTextContent('3 tool calls');
+    expect(group).toHaveTextContent('exec, image and more');
     expect(screen.queryByTestId('acp-tool-call-card')).not.toBeInTheDocument();
+  });
+
+  it('lists distinct tool actions in call order and marks omitted actions', () => {
+    const items = [
+      'exec: code: return 1',
+      'skills_read: name: docx',
+      'exec: code: return 2',
+      'bash: pwd',
+    ].map((title, index) => toolCallItem({
+      id: `tool:summary-${index}`,
+      toolCallId: `summary-${index}`,
+      historical: true,
+      title,
+    }));
+    const label = 'Run code, Load skill';
+    const { rerender } = render(<AcpToolCallsGroup items={items.slice(0, 3)} />);
+    expect(screen.getByTestId('acp-tool-calls-group')).toHaveTextContent(new RegExp(`^${label}$`));
+
+    rerender(<AcpToolCallsGroup items={items} />);
+    expect(screen.getByTestId('acp-tool-calls-group')).toHaveTextContent(`${label} and more`);
+
+    fireEvent.click(screen.getByTestId('acp-tool-calls-group'));
+    expect(screen.getByTestId('acp-tool-calls-group-collapse')).toHaveTextContent(`${label} and more`);
+    expect(screen.getAllByTestId('acp-tool-call-card')).toHaveLength(items.length);
   });
 
   it('expands the tool group to show individual tool cards when clicked', () => {
